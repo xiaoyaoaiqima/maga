@@ -1,0 +1,97 @@
+# 阶段1: 构建依赖
+FROM rs-tcr.tencentcloudcr.com/rsbase/python:3.12-slim-builder as builder
+
+WORKDIR /app
+
+
+# 配置 apt 和 pip 镜像源（一次性配置）
+RUN unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY && \
+    rm -f /etc/apt/apt.conf.d/*proxy* 2>/dev/null || true && \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
+        sed -i 's|http://security.debian.org|http://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true && \
+        sed -i 's|http://security.debian.org|http://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list 2>/dev/null || true; \
+    fi && \
+    pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
+    pip config set global.trusted-host mirrors.aliyun.com
+
+# 安装构建依赖
+RUN unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY && \
+    rm -f /etc/apt/apt.conf.d/*proxy* 2>/dev/null || true && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        default-libmysqlclient-dev \
+        pkg-config \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 Python 依赖
+COPY requirements.txt .
+RUN unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY && \
+    pip install --no-cache-dir --user --retries 10 --timeout 120 -r requirements.txt && \
+    # 强制把 typing-extensions 安装进 --user 目录（会被 COPY 到运行时镜像）。
+    # 否则如果 builder 基础镜像 /usr/local 里“刚好已有” typing-extensions，pip 可能不会装到 /root/.local，
+    # 导致运行时镜像（只复制 /root/.local）里缺模块而启动失败。
+    pip install --no-cache-dir --user --retries 10 --timeout 120 --upgrade --force-reinstall --no-deps "typing-extensions>=4.12.0"
+
+# 安装 raap_trace_sdk 工具包
+COPY dist/wheels/raap_trace_sdk-*.whl /tmp/
+RUN unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY && \
+    # 使用 --no-deps 避免 wheel 触发依赖解析导致依赖版本被意外升级
+    if ls /tmp/raap_trace_sdk-*.whl 1> /dev/null 2>&1; then \
+        pip install --no-cache-dir --user --no-deps /tmp/raap_trace_sdk-*.whl && \
+        echo "✅ raap_trace_sdk 安装完成"; \
+    else \
+        echo "⚠️ raap_trace_sdk wheel 文件不存在，跳过安装"; \
+    fi
+
+
+# 阶段2: 运行时镜像
+FROM rs-tcr.tencentcloudcr.com/rsbase/python:3.12-slim-raap
+
+WORKDIR /app
+
+# 注意：以下操作已在基础镜像中完成，无需重复：
+# - apt 源配置
+# - pip 源配置
+# - 运行时依赖安装（default-libmysqlclient-dev, curl）
+# - 用户创建（appuser）
+# 基础镜像保持 root 用户，由应用 Dockerfile 控制用户切换
+
+# 从构建阶段复制已安装的包
+COPY --from=builder /root/.local /home/appuser/.local
+
+# 验证并确保关键依赖存在
+RUN unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY && \
+    PYTHONPATH=/home/appuser/.local/lib/python3.12/site-packages:$PYTHONPATH \
+    python3 -c "import typing_extensions; print('typing_extensions OK:', getattr(typing_extensions, '__version__', 'unknown'))" && \
+    chown -R appuser:appuser /home/appuser/.local
+
+# 复制应用代码（proto 文件由业务自己处理，不在这里生成）
+COPY app/ ./app/
+COPY proto/ ./proto/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
+
+# 创建日志目录并设置权限
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app
+
+
+# 设置环境变量
+ENV PATH=/home/appuser/.local/bin:$PATH
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV TZ=Asia/Shanghai
+
+# 切换到非root用户
+USER appuser
+
+# 暴露端口（HTTP 和 gRPC）
+EXPOSE ${PORT:-5100}
+EXPOSE 50051
+
+# 启动命令
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-5100}"]

@@ -1,0 +1,8 @@
+
+
+@Library('jenkins-shared-lib') _
+
+ciCdPipeline([
+    serviceName: 'raap-service-orchestrator',
+    dockerfilePath: 'Dockerfile.prod'
+])

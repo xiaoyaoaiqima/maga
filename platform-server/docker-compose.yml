@@ -1,0 +1,81 @@
+services:
+  # MySQL 8.0
+  mysql:
+    image: mysql:8.0
+    container_name: raap_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: raap_db
+      MYSQL_USER: raap
+      MYSQL_PASSWORD: raap123456
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot123456"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 7.0
+  redis:
+    image: redis:7.0-alpine
+    container_name: raap_redis
+    restart: always
+    command: redis-server --requirepass redis123456
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis123456", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # FastAPI Service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: raap_orchestrator-service
+    restart: always
+    ports:
+      - "5101:5101"
+    environment:
+      - APP_NAME=service_template
+      - APP_ENV=development
+      - APP_DEBUG=True
+      - APP_PORT=5100
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=raap
+      - MYSQL_PASSWORD=raap123456
+      - MYSQL_DATABASE=raap_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redis123456
+      - REDIS_DB=0
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5101/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  mysql_data:
+  redis_data:
+

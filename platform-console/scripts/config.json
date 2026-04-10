@@ -1,0 +1,20 @@
+{
+  "dev": {
+    "ssh": {
+      "host": "10.101.40.8",
+      "port": 22,
+      "username": "root"
+    },
+    "targets": {
+      "personal": "/opt/1panel/www/sites/dev-raap-maike.sharpasshark.com/index",
+      "official": "/opt/1panel/www/sites/dev-raap.sharpasshark.com/index"
+    }
+  },
+  "prod": {
+    "ssh": {
+      "host": "10.101.40.8",
+      "port": 22,
+      "username": "root"
+    }
+  }
+}

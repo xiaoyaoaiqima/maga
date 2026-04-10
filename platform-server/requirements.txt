@@ -1,0 +1,50 @@
+# FastAPI
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.7.4
+pydantic-settings==2.3.4
+email-validator==2.1.1
+typing-extensions==4.12.0
+# Database
+sqlalchemy==2.0.25
+aiomysql==0.2.0
+alembic==1.13.1
+
+# Redis
+redis==5.0.1
+hiredis==2.3.2
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.6
+greenlet==3.1.1
+
+# Monitoring
+prometheus-client==0.19.0
+opentelemetry-api==1.22.0
+opentelemetry-sdk==1.22.0
+opentelemetry-instrumentation-fastapi==0.43b0
+opentelemetry-instrumentation-sqlalchemy==0.43b0
+opentelemetry-exporter-otlp==1.22.0
+
+# Utilities
+python-dotenv==1.0.0
+httpx==0.26.0
+loguru==0.7.2
+regex==2024.11.6
+openpyxl==3.1.5
+PyPDF2==3.0.1
+python-docx==1.1.2
+python-pptx==0.6.23
+
+# Cloud Storage
+cos-python-sdk-v5==1.9.30
+
+# Scheduler
+apscheduler==3.10.4
+
+# SDK runtime dependencies
+langchain-core>=0.3.0
+langchain-openai>=0.1.0

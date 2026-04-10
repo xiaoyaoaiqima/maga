@@ -1,0 +1,345 @@
+/**
+ * MAGA Console - 全局动画样式
+ *
+ * 包含：
+ * - 按钮点击反馈动画
+ * - 列表项渐入动画
+ * - 表单验证动画
+ * - 页面过渡动画
+ */
+
+/* ==================== 按钮点击反馈动画 ==================== */
+
+/* 按钮基础增强 */
+.btn-enhanced {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-enhanced:active {
+  transform: scale(0.95);
+}
+
+/* 波纹效果 */
+.btn-enhanced::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  content: '';
+  background: rgb(255 255 255 / 50%);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition:
+    width 0.6s ease-out,
+    height 0.6s ease-out;
+}
+
+.btn-enhanced.clicked::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* ==================== 列表项渐入动画 ==================== */
+
+.list-enter-active {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+/* Stagger 渐入效果（通过 CSS 变量控制延迟） */
+.list-item-staggered {
+  opacity: 0;
+  animation: slide-in-up 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: var(--stagger-delay, 0ms);
+}
+
+@keyframes slide-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==================== 表单验证动画 ==================== */
+
+/* Shake 效果 */
+.shake-enter-active {
+  animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes shake {
+  10%,
+  90% {
+    transform: translate3d(-1px, 0, 0);
+  }
+
+  20%,
+  80% {
+    transform: translate3d(2px, 0, 0);
+  }
+
+  30%,
+  50%,
+  70% {
+    transform: translate3d(-4px, 0, 0);
+  }
+
+  40%,
+  60% {
+    transform: translate3d(4px, 0, 0);
+  }
+}
+
+/* 错误提示淡入 */
+.error-fade-enter-active {
+  transition: all 0.3s ease;
+}
+
+.error-fade-enter-from {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+/* ==================== 页面过渡动画 ==================== */
+
+/* Fade + Slide */
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition: all 0.3s ease;
+}
+
+.page-fade-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+/* Slide from right（适合 Drawer） */
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-right-enter-from {
+  transform: translateX(100%);
+}
+
+.slide-right-leave-to {
+  transform: translateX(100%);
+}
+
+/* ==================== 骨架屏动画 ==================== */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted) / 20%) 0%,
+    hsl(var(--muted) / 40%) 50%,
+    hsl(var(--muted) / 20%) 100%
+  );
+  background-size: 200% 100%;
+  border-radius: 4px;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* 骨架屏 pulse 变体 */
+.skeleton-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ==================== 加载动画 ==================== */
+
+/* 旋转加载 */
+.spin-loading {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 点点加载 */
+.dot-loading span {
+  animation: dot-bounce 1.4s infinite ease-in-out both;
+}
+
+.dot-loading span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.dot-loading span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes dot-bounce {
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+  }
+
+  40% {
+    transform: scale(1);
+  }
+}
+
+/* ==================== 成功/失败动画 ==================== */
+
+/* 成功对勾 */
+.check-success {
+  animation: check-success 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes check-success {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+
+  50% {
+    transform: scale(1.2);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 错误震动 */
+.error-shake {
+  animation: error-shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes error-shake {
+  10%,
+  90% {
+    transform: translate3d(-1px, 0, 0);
+  }
+
+  20%,
+  80% {
+    transform: translate3d(2px, 0, 0);
+  }
+
+  30%,
+  50%,
+  70% {
+    transform: translate3d(-4px, 0, 0);
+  }
+
+  40%,
+  60% {
+    transform: translate3d(4px, 0, 0);
+  }
+}
+
+/* ==================== 卡片悬停效果 ==================== */
+
+.card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-hover:hover {
+  box-shadow: 0 12px 24px -8px rgb(0 0 0 / 15%);
+  transform: translateY(-4px);
+}
+
+/* ==================== 数字滚动动画 ==================== */
+
+.count-up {
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==================== 工具类 ==================== */
+
+/* 延迟类（用于 stagger 动画） */
+.delay-100 {
+  animation-delay: 100ms;
+}
+
+.delay-200 {
+  animation-delay: 200ms;
+}
+
+.delay-300 {
+  animation-delay: 300ms;
+}
+
+.delay-400 {
+  animation-delay: 400ms;
+}
+
+.delay-500 {
+  animation-delay: 500ms;
+}
+
+/* 持续时间类 */
+.duration-300 {
+  transition-duration: 300ms;
+}
+
+.duration-500 {
+  transition-duration: 500ms;
+}
+
+.duration-700 {
+  transition-duration: 700ms;
+}
+
+/* 缓动函数类 */
+.ease-in {
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+}
+
+.ease-out {
+  transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
+}
+
+.ease-in-out {
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}

@@ -1,0 +1,1 @@
+"""MAGA platform modules."""

@@ -1,0 +1,175 @@
+{
+  "workbench": {
+    "title": "Agent 工作台",
+    "description": "创建和管理您的 AI Agent，组合 Expert 完成复杂任务",
+    "quickCreate": "快速创建",
+    "myAgents": "我的 Agent",
+    "blankCreate": "从空白创建",
+    "selectTemplate": "选择模板",
+    "template": {
+      "all": "全部",
+      "content": "内容生成",
+      "marketing": "营销推广",
+      "analysis": "内容分析",
+      "custom": "自定义"
+    },
+    "stats": {
+      "total": "我的 Agent",
+      "active": "运行中",
+      "draft": "草稿",
+      "todayExec": "今日执行"
+    },
+    "status": {
+      "draft": "草稿",
+      "active": "运行中",
+      "archived": "已归档"
+    },
+    "actions": {
+      "continue": "继续配置",
+      "execute": "执行任务",
+      "view": "查看",
+      "edit": "编辑",
+      "duplicate": "复制",
+      "archive": "归档",
+      "delete": "删除",
+      "unarchive": "取消归档"
+    },
+    "empty": {
+      "title": "暂无 Agent，选择上方模板开始创建",
+      "createFirst": "创建第一个 Agent"
+    },
+    "progress": "配置完成度"
+  },
+  "wizard": {
+    "title": "创建 {type} Agent",
+    "steps": {
+      "1": {
+        "title": "配置关键词",
+        "description": "选择要使用的关键词维度"
+      },
+      "2": {
+        "title": "组合策略",
+        "description": "组合不同维度的关键词"
+      },
+      "3": {
+        "title": "配置 Expert",
+        "description": "选择生文、审核、打分等专家"
+      },
+      "4": {
+        "title": "组装预览",
+        "description": "设置 Agent 名称、描述、执行顺序"
+      },
+      "5": {
+        "title": "完成",
+        "description": "Agent 创建成功"
+      }
+    },
+    "actions": {
+      "next": "下一步",
+      "prev": "上一步",
+      "saveDraft": "保存草稿",
+      "submit": "创建 Agent",
+      "cancel": "取消",
+      "skip": "跳过"
+    },
+    "validation": {
+      "needKeyword": "请至少选择一个维度的关键词",
+      "needStrategy": "请至少添加一个策略组合",
+      "needExpert": "需要至少配置生文专家和审核专家",
+      "needName": "请填写 Agent 名称",
+      "needDescription": "请填写 Agent 描述"
+    },
+    "success": {
+      "title": "Agent 创建成功！",
+      "subtitle": "您现在可以开始使用这个 Agent 执行任务了",
+      "execute": "立即执行任务",
+      "backToWorkbench": "返回工作台",
+      "createAnother": "创建另一个 Agent"
+    },
+    "keywords": {
+      "dimensions": "关键词维度",
+      "selected": "已选 {count} 个",
+      "selectedDimensions": "已选维度",
+      "selectHint": "请从左侧选择维度",
+      "keywordSearch": "搜索关键词...",
+      "selectAll": "全选",
+      "clear": "清空",
+      "quickAdd": "推荐添加更多维度以获得更丰富的组合：",
+      "totalCombinations": "预估组合数"
+    },
+    "strategy": {
+      "title": "策略配置",
+      "add": "添加策略",
+      "selectExisting": "选择现有策略",
+      "customCombination": "自定义组合数量",
+      "customCombinationLabel": "或 自定义组合数量：",
+      "generateCustom": "生成自定义组合",
+      "empty": "暂无策略，请添加",
+      "previewTitle": "组合示例（前3个）",
+      "keywordsOverview": "已选关键词",
+      "requiredHint": "⚠️ 还需要添加以下必需专家："
+    },
+    "expert": {
+      "types": {
+        "GENERATION": "生文专家",
+        "CRITIC": "审核专家",
+        "SCORING": "打分专家",
+        "ANALYSIS": "分析专家",
+        "CUSTOM": "自定义专家"
+      },
+      "required": "必需",
+      "add": "添加",
+      "remove": "删除",
+      "select": "选择专家",
+      "empty": "暂无专家，请添加",
+      "summary": "已添加专家 ({count})",
+      "descriptions": {
+        "GENERATION": "负责生成内容",
+        "CRITIC": "负责审核内容质量",
+        "SCORING": "负责对内容打分",
+        "ANALYSIS": "负责分析内容"
+      }
+    },
+    "review": {
+      "title": "组装预览",
+      "completeness": "配置完整性",
+      "completenessProgress": "完成度",
+      "basicInfo": "Agent 基本信息",
+      "agentName": "Agent 名称",
+      "agentDesc": "Agent 描述",
+      "namePlaceholder": "请输入 Agent 名称",
+      "descPlaceholder": "请描述这个 Agent 的用途",
+      "keywordsOverview": "关键词配置",
+      "strategyOverview": "策略配置",
+      "expertOverview": "Expert 配置",
+      "notConfigured": "未配置",
+      "estimate": "预估执行量",
+      "perExecution": "单次执行",
+      "expertCalls": "Expert 调用",
+      "hint": "Agent 名称将显示在列表中，描述可以帮助其他用户理解这个 Agent 的用途。"
+    },
+    "draft": {
+      "saved": "草稿已保存",
+      "saveFailed": "保存草稿失败",
+      "continue": "继续配置"
+    }
+  },
+  "templates": {
+    "articleWriter": {
+      "name": "生文 Agent",
+      "description": "生成高质量文章内容，包含生文、审核、打分完整流程"
+    },
+    "marketingCopy": {
+      "name": "营销文案 Agent",
+      "description": "生成营销推广文案，适用于广告、社交媒体等场景"
+    },
+    "contentAnalysis": {
+      "name": "内容分析 Agent",
+      "description": "分析现有内容的质量、风格、问题等"
+    },
+    "custom": {
+      "name": "自定义 Agent",
+      "description": "自由组合 Expert，创建自定义 Agent"
+    }
+  }
+}

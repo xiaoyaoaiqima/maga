@@ -1,0 +1,74 @@
+{
+  "name": "@maga/console",
+  "version": "1.0.0",
+  "description": "MAGA Console",
+  "homepage": "",
+  "bugs": "",
+  "repository": {
+    "type": "git",
+    "url": "",
+    "directory": "apps/raap-admin"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "MAGA Team"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "pnpm vite build --mode production",
+    "build:analyze": "pnpm vite build --mode analyze",
+    "dev": "pnpm vite --mode development",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit --skipLibCheck"
+  },
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "dependencies": {
+    "3d-force-graph": "^1.73.4",
+    "@ant-design/icons-vue": "^7.0.1",
+    "@antv/g6": "^5.0.24",
+    "@guolao/vue-monaco-editor": "^1.6.0",
+    "@vben-core/shadcn-ui": "workspace:*",
+    "@vben/access": "workspace:*",
+    "@vben/common-ui": "workspace:*",
+    "@vben/constants": "workspace:*",
+    "@vben/hooks": "workspace:*",
+    "@vben/icons": "workspace:*",
+    "@vben/layouts": "workspace:*",
+    "@vben/locales": "workspace:*",
+    "@vben/plugins": "workspace:*",
+    "@vben/preferences": "workspace:*",
+    "@vben/request": "workspace:*",
+    "@vben/stores": "workspace:*",
+    "@vben/styles": "workspace:*",
+    "@vben/types": "workspace:*",
+    "@vben/utils": "workspace:*",
+    "@vueuse/core": "catalog:",
+    "ant-design-vue": "catalog:",
+    "d3-force-3d": "^3.0.5",
+    "dayjs": "catalog:",
+    "diff": "^7.0.0",
+    "echarts": "catalog:",
+    "echarts-wordcloud": "^2.1.0",
+    "gsap": "^3.12.5",
+    "monaco-editor": "^0.55.1",
+    "pinia": "catalog:",
+    "secure-ls": "^2.0.0",
+    "sortablejs": "^1.15.6",
+    "three": "^0.170.0",
+    "three-spritetext": "^1.9.5",
+    "throttle-debounce": "^5.0.2",
+    "vis-data": "^7.1.9",
+    "vis-network": "^9.1.9",
+    "vue": "catalog:",
+    "vue-router": "catalog:",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/diff": "^6.0.0",
+    "@types/sortablejs": "^1.15.9",
+    "@types/three": "^0.182.0",
+    "@vben/vite-config": "workspace:*"
+  }
+}

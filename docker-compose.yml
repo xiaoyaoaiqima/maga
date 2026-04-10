@@ -1,0 +1,51 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: maga-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: maga
+      MYSQL_USER: maga
+      MYSQL_PASSWORD: maga123456
+    command: --default-authentication-plugin=mysql_native_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - maga_mysql:/var/lib/mysql
+
+  redis:
+    image: redis:7-alpine
+    container_name: maga-redis
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./platform-server
+    container_name: maga-backend
+    environment:
+      APP_NAME: maga_platform_server
+      APP_PORT: 5100
+      DAPR_HTTP_PORT: 5100
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: maga
+      MYSQL_PASSWORD: maga123456
+      MYSQL_DATABASE: maga
+      MYSQL_ANALYTICS_HOST: mysql
+      MYSQL_ANALYTICS_PORT: 3306
+      MYSQL_ANALYTICS_USER: maga
+      MYSQL_ANALYTICS_PASSWORD: maga123456
+      MYSQL_ANALYTICS_DATABASE: maga
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      ORCHESTRATOR_BASE_URL: http://127.0.0.1:5100
+    ports:
+      - "5100:5100"
+    depends_on:
+      - mysql
+      - redis
+
+volumes:
+  maga_mysql:

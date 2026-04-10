@@ -1,0 +1,90 @@
+{
+  "name": "maga-console-monorepo",
+  "version": "1.0.0",
+  "description": "MAGA Console",
+  "private": true,
+  "license": "MIT",
+  "author": {
+    "name": "MAGA Team"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm -F @maga/console run dev",
+    "build": "pnpm -F @maga/console run build",
+    "build:analyze": "pnpm -F @maga/console run build:analyze",
+    "preview": "pnpm -F @maga/console run preview",
+    "lint": "vsh lint",
+    "format": "vsh lint --format",
+    "check:type": "turbo run typecheck",
+    "clean": "node ./scripts/clean.mjs",
+    "reinstall": "pnpm clean --del-lock && pnpm install",
+    "maintain": "./scripts/maintain.sh",
+    "postinstall": "pnpm -r run stub --if-present",
+    "preinstall": "npx only-allow pnpm"
+  },
+  "dependencies": {
+    "@tanstack/table-core": "^8.21.3",
+    "@tanstack/vue-table": "^8.21.3"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "catalog:",
+    "@changesets/cli": "catalog:",
+    "@commitlint/cli": "catalog:",
+    "@commitlint/config-conventional": "catalog:",
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "@vben/commitlint-config": "workspace:*",
+    "@vben/eslint-config": "workspace:*",
+    "@vben/prettier-config": "workspace:*",
+    "@vben/stylelint-config": "workspace:*",
+    "@vben/tailwind-config": "workspace:*",
+    "@vben/tsconfig": "workspace:*",
+    "@vben/turbo-run": "workspace:*",
+    "@vben/vite-config": "workspace:*",
+    "@vben/vsh": "workspace:*",
+    "@vitejs/plugin-vue": "catalog:",
+    "@vitejs/plugin-vue-jsx": "catalog:",
+    "@vue/test-utils": "catalog:",
+    "autoprefixer": "catalog:",
+    "cross-env": "catalog:",
+    "cspell": "catalog:",
+    "happy-dom": "catalog:",
+    "is-ci": "catalog:",
+    "lefthook": "catalog:",
+    "playwright": "catalog:",
+    "rimraf": "catalog:",
+    "tailwindcss": "catalog:",
+    "turbo": "catalog:",
+    "typescript": "catalog:",
+    "unbuild": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "vue": "^3.5.26",
+    "vue-tsc": "catalog:"
+  },
+  "engines": {
+    "node": ">=20.12.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.22.0",
+  "pnpm": {
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "eslint": "*"
+      }
+    },
+    "overrides": {
+      "@ast-grep/napi": "catalog:",
+      "@ctrl/tinycolor": "catalog:",
+      "clsx": "catalog:",
+      "esbuild": "0.25.3",
+      "jiti": "catalog:",
+      "pinia": "catalog:",
+      "vue": "catalog:"
+    },
+    "neverBuiltDependencies": [
+      "canvas",
+      "node-gyp"
+    ]
+  }
+}

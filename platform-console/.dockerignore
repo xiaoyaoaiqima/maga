@@ -1,0 +1,14 @@
+node_modules
+dist
+.turbo
+.git
+.DS_Store
+.idea
+.cursor
+.vscode
+apps/**/dist
+apps/**/node_modules
+packages/**/dist
+packages/**/node_modules
+internal/**/dist
+internal/**/node_modules
