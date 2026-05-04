@@ -13,5 +13,6 @@
 - 单体后端 `platform-server`
 - 管理台前端 `platform-console`
 - Docker Compose 本地启动
+- [MAGA MVP 架构](./MAGA_MVP_ARCHITECTURE.md)
 
 旧的部署与微服务材料已逐步归档，阅读时优先参考当前目录下的最新文档。
