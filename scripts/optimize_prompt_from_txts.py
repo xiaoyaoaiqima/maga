@@ -236,6 +236,56 @@ def normalize_result(parsed: dict[str, Any]) -> dict[str, Any]:
     return parsed
 
 
+def format_multiline_value(value: Any, indent: str = "  ") -> list[str]:
+    text = str(value)
+    if "\n" not in text:
+        return [text]
+    lines = ["|"]
+    for line in text.splitlines():
+        lines.append(f"{indent}{line}")
+    return lines
+
+
+def format_result_for_console(result: dict[str, Any]) -> str:
+    """Render parsed JSON as copy-friendly text without JSON quote escaping."""
+    lines: list[str] = []
+    scalar_fields = (
+        "prompt_issue",
+        "modify_suggestion",
+        "added_content",
+        "removed_content",
+        "revised_prompt",
+        "confidence",
+    )
+    for field in scalar_fields:
+        values = format_multiline_value(result.get(field, ""), indent="  ")
+        if len(values) == 1:
+            lines.append(f"{field}: {values[0]}")
+        else:
+            lines.append(f"{field}: {values[0]}")
+            lines.extend(values[1:])
+
+    patches = result.get("patches")
+    lines.append("patches:")
+    if not isinstance(patches, list) or not patches:
+        lines.append("  []")
+        return "\n".join(lines)
+
+    for index, patch in enumerate(patches, start=1):
+        if not isinstance(patch, dict):
+            lines.append(f"  - #{index}: {patch}")
+            continue
+        lines.append(f"  - #{index}")
+        for field in ("operation", "old_text", "new_text", "reason"):
+            values = format_multiline_value(patch.get(field, ""), indent="      ")
+            if len(values) == 1:
+                lines.append(f"    {field}: {values[0]}")
+            else:
+                lines.append(f"    {field}: {values[0]}")
+                lines.extend(values[1:])
+    return "\n".join(lines)
+
+
 def with_timestamp_suffix(path: Path, run_id: str) -> Path:
     return path.with_name(f"{path.stem}_{run_id}{path.suffix}")
 
@@ -338,7 +388,7 @@ def main() -> int:
             print(f"output written: {output_path}")
             print(f"debug log written: {debug_path}")
         else:
-            print(output)
+            print(format_result_for_console(parsed))
             print(f"debug log written: {debug_path}", file=sys.stderr)
         return 0
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError) as e:
