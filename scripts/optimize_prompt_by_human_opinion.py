@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Single prompt optimizer MVP.
+Global prompt optimizer from human feedback.
 
-Reads prompt/content/problem from three TXT files, calls an OpenAI-compatible
-chat completions API, and writes prompt optimization advice to stdout or a file.
+Reads a prompt TXT and a human-opinion/problem TXT, calls an OpenAI-compatible
+chat completions API, and writes global prompt cleanup advice to stdout or JSON.
 """
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ from typing import Any
 DEFAULT_BASE_URL = "https://aihubmix.com/v1"
 DEFAULT_MODEL = "gpt-5.5"
 DEFAULT_TEMPERATURE = 0.2
-DEFAULT_MAX_TOKENS = 3000
-DEFAULT_TIMEOUT_SECONDS = 60
+DEFAULT_MAX_TOKENS = 4000
+DEFAULT_TIMEOUT_SECONDS = 90
 DEFAULT_OUTPUT_DIR = "prompt_optimize_results"
 
 
@@ -41,60 +41,64 @@ def load_dotenv(path: Path = Path(".env")) -> None:
             os.environ[key] = value
 
 
-SYSTEM_PROMPT = """你是一个资深小红书内容生产与提示词优化专家。
-你需要根据原始生文提示词、生成结果和运营审查问题，反推出提示词设计上的缺陷，并给出可执行的修改方案。
-优先修改规则指令，尽量不修改痛点描述/卖点描述这类纯描述类提示词。
+SYSTEM_PROMPT = """你是一个资深提示词架构师，擅长整理冗长、重复、矛盾的内容生成提示词。
+你需要根据“原始提示词”和“人类优化意见”，从全局视角诊断提示词结构问题，并给出可执行的整理方案。
+
+这个任务不是根据某一篇生成内容做局部修补，而是根据人类意见优化整份提示词。常见背景包括：
+- 提示词太长，规则重复，模型注意力被分散。
+- 不同章节存在同义重复、强弱不一致或互相矛盾。
+- 上层规则和局部规则边界不清，导致执行优先级混乱。
+- 禁止项、允许项、示例、卖点、结构要求混在一起，导致模型误读。
+- 人类希望保留核心控制力，同时降低冗余和冲突。
 
 优化原则：
-- 只提出能被“生成结果 + 运营审查问题”直接支持的最小必要修改，避免把单个问题扩展成更宽、更硬的禁令。
-- 修改前必须先检查原提示词是否已经存在同义或近义规则；如果已有规则覆盖该要求，不要重复新增同义规则，应诊断为已有规则作用范围不够明确、被局部规则稀释或表达不够可执行。
-- 禁止过度泛化：如果问题是某个固定句式或表达方式违规，只禁止该句式/表达方式，不要额外禁止关键词在其他合理语境中出现。
-- 不要新增位置类、开场类、结构类限制，除非运营审查问题明确指出位置、开场或结构本身有问题。
-- 新增规则应尽量贴近原提示词已有规则的颗粒度，一次只解决当前证据能解释的问题。
-- 同一个根因只能输出一个最小 patch；不要把同一要求同时写进总规则和子规则，也不要同时 replace 两段来表达同一个修改意图。
-- 如果需要增强一条已有要求，优先修改最贴近生成失败位置的局部规则；只有当局部规则缺失时，才修改更上层的总规则。
-- 如果某条建议属于“可能有帮助但证据不足”，不要写入 added_content 或 patches，可在 modify_suggestion 中弱提示。
+- 以人类意见为最高依据；不要引入人类意见没有要求的新创作方向、新品牌规则或新内容策略。
+- 优先做全局整理：去重、合并同义规则、消除矛盾、明确优先级、把规则放回更合适的章节。
+- 不要为了简洁删除关键红线、品牌限制、合规限制、输入变量约束和必须完成的任务目标。
+- 如果两条规则语义相同但强度不同，保留更清晰、更可执行的一条，并在 reason 中说明取舍。
+- 如果两条规则冲突，优先保留更贴近任务目标、合规红线或人类意见的一条；不要简单并列保留。
+- patches 应服务于全局结构整理，可以包含 delete、replace、insert_after、insert_before，但每个 patch 都必须能被人工直接定位。
+- 同一处问题只输出一个 patch；不要用多个 patch 重复表达同一个整理意图。
+- 如果需要大段重组，优先输出少量“replace 整段”的 patch，而不是很多碎片化 patch。
+- 如果人类意见不足以支持直接修改，只在 risk_notes 或 modify_suggestion 中提示，不要写入 patches。
 
 请只输出 JSON，不要输出 Markdown，不要解释 JSON 外的内容。
 所有字段值都必须是合法 JSON 字符串；如果包含换行，请使用 \\n 转义，不要输出未转义的真实换行。
 JSON 字段必须包含：
-- prompt_issue: 原提示词的问题在哪里
-- modify_suggestion: 应该怎么修改，要求具体可执行
-- added_content: 建议新增到原提示词里的内容，只写新增片段；如果没有新增则返回空字符串
-- removed_content: 建议从原提示词中删除或弱化的内容，只写删除片段；如果没有删除则返回空字符串
+- prompt_issue: 从全局视角说明原提示词的主要问题。
+- modify_suggestion: 具体整理策略，说明应该删什么、合并什么、保留什么。
+- added_content: 建议新增到原提示词里的内容，只写新增片段；如果没有新增则返回空字符串。
+- removed_content: 建议删除或弱化的原文片段摘要；如果没有删除则返回空字符串。
 - patches: 数组，给出可直接人工替换的修改块。每个元素必须包含 operation、old_text、new_text、reason。
   - operation 只能是 replace、delete、insert_after、insert_before 之一。
   - old_text 必须是原提示词中可以直接搜索定位的连续原文片段；如果是新增，请填写插入位置附近的原文锚点。
   - new_text 是替换后或新增后的内容；如果是删除则返回空字符串。
-  - reason 用一句话说明为什么这样改。
-  - patches 之间不得语义重复；如果两个 patch 的 new_text 在解决同一件事，只保留更贴近问题位置、改动更小的一个。
-- revised_prompt: 默认返回空字符串，不要输出完整修改后提示词，避免超长截断
-- confidence: 0 到 1 之间的小数，表示你对诊断的置信度
+  - reason 用一句话说明这条 patch 如何解决重复、矛盾、冗长或优先级问题。
+- revised_prompt: 默认返回空字符串，不要输出完整修改后提示词，避免超长截断。
+- risk_notes: 说明本次整理可能影响的约束或需要人工复核的点；如果没有则返回空字符串。
+- confidence: 0 到 1 之间的小数，表示你对诊断的置信度。
 """
 
 
 USER_PROMPT_TEMPLATE = """# 背景信息
-## 生文用到的提示词:
+## 原始提示词:
 {prompt}
 
-## 生成的内容：
-{content}
-
-## 运营审查发现的问题：
+## 人类优化意见 / 问题描述:
 {problem}
 
 # 你的任务
-输出生文提示词的问题在哪里，怎么修改。"""
+请直接根据人类意见，从全局视角优化这份提示词。
+重点检查重复、矛盾、冗长、规则散落、优先级不清、示例污染和局部规则覆盖全局规则等问题。"""
 
 
 def parse_args() -> argparse.Namespace:
     load_dotenv()
     parser = argparse.ArgumentParser(
-        description="Read prompt/content/problem TXT files and optimize the generation prompt.",
+        description="Read prompt/problem TXT files and globally optimize a prompt from human feedback.",
     )
-    parser.add_argument("--prompt-file", required=True, help="TXT file containing the generation prompt.")
-    parser.add_argument("--content-file", required=True, help="TXT file containing generated content.")
-    parser.add_argument("--problem-file", required=True, help="TXT file containing operation review problems.")
+    parser.add_argument("--prompt-file", required=True, help="TXT file containing the prompt to optimize.")
+    parser.add_argument("--problem-file", required=True, help="TXT file containing human feedback/opinion.")
     parser.add_argument("--output", help="Optional output JSON filename/path. If omitted, prints to stdout.")
     parser.add_argument(
         "--output-dir",
@@ -140,27 +144,22 @@ def read_required_text(path: Path, label: str) -> str:
     return text
 
 
-def build_user_prompt(prompt: str, content: str, problem: str, include_revised_prompt: bool) -> str:
-    user_prompt = USER_PROMPT_TEMPLATE.format(
-        prompt=prompt,
-        content=content,
-        problem=problem,
-    )
+def build_user_prompt(prompt: str, problem: str, include_revised_prompt: bool) -> str:
+    user_prompt = USER_PROMPT_TEMPLATE.format(prompt=prompt, problem=problem)
     if include_revised_prompt:
         return (
             user_prompt
-        + "\n\n# 输出要求补充\n"
-        + "可以输出完整 revised_prompt，但必须保证 JSON 完整闭合。"
-        + "同时必须输出 patches 数组，便于人工定位替换。"
-    )
+            + "\n\n# 输出要求补充\n"
+            + "可以输出完整 revised_prompt，但必须保证 JSON 完整闭合。"
+            + "即使输出完整 revised_prompt，也必须输出 patches 数组，便于人工定位关键改动。"
+        )
     return (
         user_prompt
         + "\n\n# 输出要求补充\n"
         + "不要输出完整 revised_prompt，请将 revised_prompt 返回为空字符串。"
-        + "请重点输出 patches 数组，便于人工按 old_text 搜索定位并替换。"
+        + "请重点输出 patches 数组，优先给出少量高价值的全局整理 patch。"
         + "如果不能找到可直接搜索的原文片段，不要编造 old_text，请选择最接近的原文锚点并使用 insert_after 或 insert_before。"
-        + "输出 patches 前先做一次去重检查：同一根因、同一修改意图只保留一个 patch。"
-        + "如果原提示词已经有同义要求，只能修改最贴近生成失败位置的那条原文，不要在其他位置重复新增同义要求。"
+        + "输出 patches 前先做一次去重检查：同一根因、同一整理意图只保留一个 patch。"
     )
 
 
@@ -266,6 +265,7 @@ def normalize_result(parsed: dict[str, Any]) -> dict[str, Any]:
     parsed.setdefault("added_content", "")
     parsed.setdefault("removed_content", "")
     parsed.setdefault("revised_prompt", "")
+    parsed.setdefault("risk_notes", "")
     parsed.setdefault("confidence", "")
     patches = parsed.get("patches")
     if not isinstance(patches, list):
@@ -292,6 +292,7 @@ def format_result_for_console(result: dict[str, Any]) -> str:
         "added_content",
         "removed_content",
         "revised_prompt",
+        "risk_notes",
         "confidence",
     )
     for field in scalar_fields:
@@ -343,14 +344,13 @@ def write_debug_log(
     user_prompt: str,
 ) -> Path:
     debug_dir.mkdir(parents=True, exist_ok=True)
-    debug_path = debug_dir / f"prompt_optimize_debug_{run_id}.json"
+    debug_path = debug_dir / f"human_prompt_optimize_debug_{run_id}.json"
     payload = {
         "run_id": run_id,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "problem": problem,
         "input_files": {
             "prompt_file": str(Path(args.prompt_file)),
-            "content_file": str(Path(args.content_file)),
             "problem_file": str(Path(args.problem_file)),
         },
         "model_params": {
@@ -380,10 +380,9 @@ def main() -> int:
             raise ValueError("未配置 API Key，请设置 OPENAI_API_KEY / AIHUBMIX_API_KEY，或传入 --api-key")
 
         prompt = read_required_text(Path(args.prompt_file), "prompt")
-        content = read_required_text(Path(args.content_file), "content")
         problem = read_required_text(Path(args.problem_file), "problem")
         run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        user_prompt = build_user_prompt(prompt, content, problem, args.include_revised_prompt)
+        user_prompt = build_user_prompt(prompt, problem, args.include_revised_prompt)
         debug_path = write_debug_log(
             debug_dir=Path(args.debug_dir),
             run_id=run_id,
@@ -412,6 +411,7 @@ def main() -> int:
                 "removed_content": "",
                 "patches": [],
                 "revised_prompt": "",
+                "risk_notes": "",
                 "confidence": "",
                 "raw_output": raw_output,
                 "parse_error": f"{type(e).__name__}: {e}",

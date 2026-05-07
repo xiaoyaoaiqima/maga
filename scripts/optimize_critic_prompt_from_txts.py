@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
-DEFAULT_MODEL = "deepseek-v4-flash"
+DEFAULT_BASE_URL = "https://aihubmix.com/v1"
+DEFAULT_MODEL = "gpt-5.5"
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MAX_TOKENS = 3000
 DEFAULT_TIMEOUT_SECONDS = 60
@@ -178,6 +178,37 @@ def normalize_chat_completions_url(url: str) -> str:
     return value
 
 
+def build_chat_payload(
+    *,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+    max_tokens: int,
+    json_mode: bool,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": temperature,
+    }
+    token_param = "max_completion_tokens" if model.lower().startswith("gpt-5") else "max_tokens"
+    payload[token_param] = max_tokens
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    return payload
+
+
+def read_http_error(error: urllib.error.HTTPError) -> str:
+    body = error.read().decode("utf-8", errors="replace").strip()
+    if body:
+        return f"HTTP {error.code}: {body}"
+    return f"HTTP {error.code}: {error.reason}"
+
+
 def call_openai_compatible(
     *,
     api_key: str,
@@ -190,17 +221,14 @@ def call_openai_compatible(
     timeout: int,
     json_mode: bool,
 ) -> str:
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
+    payload = build_chat_payload(
+        model=model,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        json_mode=json_mode,
+    )
 
     req = urllib.request.Request(
         normalize_chat_completions_url(base_url),
@@ -211,8 +239,11 @@ def call_openai_compatible(
             "Content-Type": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read().decode("utf-8")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        raise ValueError(read_http_error(e)) from e
     result = json.loads(raw)
     return (((result.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
 

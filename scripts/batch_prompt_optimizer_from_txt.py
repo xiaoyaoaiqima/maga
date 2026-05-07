@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
-DEFAULT_MODEL = "deepseek-v4-flash"
+DEFAULT_BASE_URL = "https://aihubmix.com/v1"
+DEFAULT_MODEL = "gpt-5.5"
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MAX_TOKENS = 3000
 DEFAULT_TIMEOUT_SECONDS = 60
@@ -67,9 +67,12 @@ SYSTEM_PROMPT = """你是一个资深小红书内容生产与提示词优化专�
 
 优化原则：
 - 只提出能被“生成结果 + 运营审查问题”直接支持的最小必要修改，避免把单个问题扩展成更宽、更硬的禁令。
+- 修改前必须先检查原提示词是否已经存在同义或近义规则；如果已有规则覆盖该要求，不要重复新增同义规则，应诊断为已有规则作用范围不够明确、被局部规则稀释或表达不够可执行。
 - 禁止过度泛化：如果问题是某个固定句式或表达方式违规，只禁止该句式/表达方式，不要额外禁止关键词在其他合理语境中出现。
 - 不要新增位置类、开场类、结构类限制，除非运营审查问题明确指出位置、开场或结构本身有问题。
 - 新增规则应尽量贴近原提示词已有规则的颗粒度，一次只解决当前证据能解释的问题。
+- 同一个根因只能输出一个最小修改意图；不要把同一要求同时写进 added_content 和 removed_content，也不要用多段文字重复表达同一个修改点。
+- 如果需要增强一条已有要求，优先修改最贴近生成失败位置的局部规则；只有当局部规则缺失时，才修改更上层的总规则。
 - 如果某条建议属于“可能有帮助但证据不足”，不要写入 added_content，可在 modify_suggestion 中弱提示。
 
 请只输出 JSON，不要输出 Markdown，不要解释 JSON 外的内容。
@@ -103,7 +106,9 @@ USER_PROMPT_TEMPLATE = """# 背景信息
 
 # 输出要求补充
 不要输出完整 revised_prompt，请将 revised_prompt 返回为空字符串。
-请重点输出 added_content 和 removed_content，便于人工合并修改。"""
+请重点输出 added_content 和 removed_content，便于人工合并修改。
+输出前先做一次去重检查：同一根因、同一修改意图只保留一个最小修改点。
+如果原提示词已经有同义要求，只能修改最贴近生成失败位置的那条原文，不要在其他位置重复新增同义要求。"""
 
 
 def parse_args() -> argparse.Namespace:
@@ -202,6 +207,37 @@ def normalize_chat_completions_url(url: str) -> str:
     return value
 
 
+def build_chat_payload(
+    *,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+    max_tokens: int,
+    json_mode: bool,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": temperature,
+    }
+    token_param = "max_completion_tokens" if model.lower().startswith("gpt-5") else "max_tokens"
+    payload[token_param] = max_tokens
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    return payload
+
+
+def read_http_error(error: urllib.error.HTTPError) -> str:
+    body = error.read().decode("utf-8", errors="replace").strip()
+    if body:
+        return f"HTTP {error.code}: {body}"
+    return f"HTTP {error.code}: {error.reason}"
+
+
 def call_openai_compatible(
     *,
     api_key: str,
@@ -214,17 +250,14 @@ def call_openai_compatible(
     timeout: int,
     json_mode: bool,
 ) -> str:
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
+    payload = build_chat_payload(
+        model=model,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        json_mode=json_mode,
+    )
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         normalize_chat_completions_url(base_url),
@@ -235,8 +268,11 @@ def call_openai_compatible(
             "Content-Type": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read().decode("utf-8")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        raise ValueError(read_http_error(e)) from e
     result = json.loads(raw)
     return (((result.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
 
