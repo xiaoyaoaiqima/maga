@@ -1,0 +1,82 @@
+"""API tests for starting protocol v0.1 generation runs."""
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from app.api.v1.endpoints.content_agent import router
+from app.core.database import get_db
+from app.models.base import Base
+from app.models.content_agent import ExecutorRegistry
+from app.models.maga_core import MAGA_CORE_TABLE_NAMES
+from fastapi import FastAPI
+
+
+@pytest_asyncio.fixture
+async def start_generation_client():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        tables = [Base.metadata.tables[name] for name in MAGA_CORE_TABLE_NAMES]
+        await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=tables))
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add(
+            ExecutorRegistry(
+                executor_code="hermes_xhs_writer",
+                executor_type="hermes_profile",
+                invoke_url="mock://xhs-writer/invoke",
+                supported_capabilities_json=[{"capability": "xhs.interpret_brief", "schema_version": "1"}],
+            )
+        )
+        await session.commit()
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1/content-agent")
+
+    async def override_get_db():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        yield client
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_start_generation_endpoint_creates_task_run_stage_and_invokes_mock_executor(start_generation_client):
+    response = await start_generation_client.post(
+        "/api/v1/content-agent/generation/start",
+        json={
+            "product_topic": "A2 奶粉",
+            "target_audience": "新手妈妈",
+            "style": "情绪共情",
+            "executor_code": "hermes_xhs_writer",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["task_id"]
+    assert data["run_id"]
+    assert data["stage_call_id"]
+    assert data["capability"] == "xhs.interpret_brief"
+    assert data["stage_status"] == "succeeded"
+    assert data["invoke_mode"] == "sync"
+    assert data["output"]["structured_brief"]["product_topic"] == "A2 奶粉"
+    assert data["output"]["structured_brief"]["target_audience"] == "新手妈妈"
+    assert data["output"]["structured_brief"]["style"] == "情绪共情"
+
+
+@pytest.mark.asyncio
+async def test_start_generation_endpoint_returns_404_when_executor_missing(start_generation_client):
+    response = await start_generation_client.post(
+        "/api/v1/content-agent/generation/start",
+        json={"product_topic": "A2 奶粉", "executor_code": "missing_executor"},
+    )
+
+    assert response.status_code == 404

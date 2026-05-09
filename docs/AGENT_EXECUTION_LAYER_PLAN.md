@@ -31,37 +31,9 @@ Hermes 负责“怎么执行、怎么推理、怎么调用工具”。
 
 ### 1. MAGA 的业务护城河是营销内容生成
 
-MAGA 当前最重要的领域能力包括：
+MAGA 的领域能力深度绑定营销内容生成业务（详见 §三.1）。把 MAGA 抽象成泛 Agent 工作台会稀释产品定位，也会增加不必要复杂度。
 
-- 品牌和产品资料建模
-- 活动 brief 管理
-- 小红书内容生成链路
-- 人设、痛点、卖点、场景、风格、语料体系
-- GE/AE Expert 分工
-- 法律、平台、品牌约束
-- AI 味、优雅度、内容丰富度、人群多样性等质量评估
-- Prompt 资产治理和版本迭代
-- 人工反馈、内容改写、Prompt 优化闭环
-
-这些能力都强依赖营销内容生成业务。如果为了兼容数据分析、客服、BI、知识库问答等场景，把 MAGA 抽象成泛 Agent 工作台，会稀释产品定位，也会增加不必要复杂度。
-
-### 2. 数据分析 Agent 应该是另一个业务工作台
-
-如果未来要做数据分析 Agent，更合理的形态是新建一个数据分析业务工作台，而不是塞进 MAGA。
-
-原因：
-
-| 维度 | 营销内容生成 | 数据分析 |
-|---|---|---|
-| 核心对象 | 品牌、产品、活动、语料、文案 | 数据源、表、指标、SQL、图表、报告 |
-| 用户问题 | 帮我生成一篇能发的小红书笔记 | 为什么转化率下降，按维度拆解原因 |
-| 输出形态 | 标题、正文、hashtag、评分、改写建议 | SQL、表格、图表、洞察、报告 |
-| 风险重点 | 合规、平台规则、品牌一致性、AI 味 | 数据准确性、口径一致性、权限、可复现 |
-| 护城河 | 内容生产流程和语料/Prompt 闭环 | 语义层、指标体系、分析归因和数据治理 |
-
-两类产品可以复用 Agent 执行协议、trace viewer、artifact 存储等技术模式，但不应该强行共用同一个业务工作台。
-
-### 3. 只保留轻量执行层兼容
+### 2. 只保留轻量执行层兼容
 
 MAGA 不做泛平台，但需要避免和 Hermes 绑定死。
 
@@ -226,63 +198,59 @@ Hermes 通过 MAGA API 拉任务、取资产、写 trace、传 artifact、更新
 │  营销内容生成工作台        │
 └─────────────┬────────────┘
               │
-┌─────────────▼────────────┐
-│       MAGA Backend        │
-│  FastAPI / MySQL / Redis  │
-└─────────────┬────────────┘
-              │
-      API: task / asset / trace / artifact / status
-              │
-┌─────────────▼────────────┐
+┌─────────────▼─────────────┐
+│       MAGA Backend         │
+│  FastAPI / MySQL / Redis   │
+│  调度器 + 状态机 + 决策     │
+└─────────────┬─────────────┘
+              │ ① invoke_capability  (push)
+              │ ② event/artifact/human-review (callback)
+              ▼
+┌──────────────────────────┐
 │ Hermes profile: xhs-writer│
-│  GE/AE 编排 + 模型调用     │
+│  阶段内并行 + LLM 调用     │
 └──────────────────────────┘
 ```
 
-MAGA 提供任务、资产和回写接口。
+控制流（详见 [EXECUTOR_PROTOCOL.md](./EXECUTOR_PROTOCOL.md) §三）：
 
-Hermes 作为 worker：
+1. MAGA 创建 run，决定首阶段 capability
+2. MAGA 主动调 Executor `/invoke` 启动 stage，传入资产 snapshot
+3. Executor 在阶段内并行多 LLM、流式回写 events、上传 artifacts
+4. Executor 调 `complete_capability` 返回 stage 结果
+5. MAGA 校验、聚合、决定下一阶段（继续 / 重写 / 人审 / 终止）
+6. 循环 2-5 直到 run 进入终态
 
-1. claim 一个 pending task
-2. 拉取 brief 和资产
-3. 执行 GE/AE 生文流程
-4. 逐步回写 trace event
-5. 上传 draft/final/score report 等 artifact
-6. 标记 task 成功、失败或需要人工审核
+关键：MAGA 是 push 调度方，每阶段后由 MAGA 决策；Hermes 是被动 endpoint，不持有 run 级状态机。
 
 ---
 
-## 六、轻量执行层兼容设计
+## 六、v0.1 数据模型
 
-MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。
+MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定义 v0.1 协议的物理表结构（与 [EXECUTOR_PROTOCOL.md](./EXECUTOR_PROTOCOL.md) v0.1 对齐）。
 
 ### 1. executor_registry
 
-用于登记外部执行器。
-
-建议字段：
+用于登记外部执行器。只描述"谁来执行"，不承载业务逻辑。
 
 | 字段 | 说明 |
 |---|---|
 | id | 主键 |
 | executor_code | 例如 `hermes_xhs_writer` |
 | executor_type | 例如 `hermes_profile` / `http_worker` / `langgraph_service` |
-| profile_name | Hermes profile 名，如 `xhs-writer` |
 | display_name | 展示名称 |
-| capabilities | 能力列表，如 `xhs_generate`, `xhs_rewrite` |
-| trigger_mode | `polling` / `webhook` / `manual` |
-| endpoint | 可选，HTTP worker 地址 |
+| protocol_version | 与协议 major 版本对齐，默认 `0.1` |
+| invoke_url | MAGA 调 Executor 的 base URL（push 模式发起点） |
+| supported_capabilities_json | 实际能力清单，含 `capability` 与 `schema_version` |
+| auth_token_secret_ref | Executor → MAGA 的 Bearer token 的密钥管理引用 |
+| hmac_secret_ref | MAGA → Executor 的 HMAC 签名密钥引用 |
 | config_json | 非密配置 |
 | enabled | 是否启用 |
 | create_time/update_time | 时间 |
 
-注意：executor_registry 只描述“谁来执行”，不承载业务逻辑。
-
 ### 2. content_agent_task
 
 内容生成任务表。保持内容业务语义，不命名成泛化的 `agent_task`。
-
-建议字段：
 
 | 字段 | 说明 |
 |---|---|
@@ -305,182 +273,130 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。
 
 一次 task 可以有多次 run。
 
-建议字段：
-
 | 字段 | 说明 |
 |---|---|
 | id | 主键 |
 | task_id | 关联 content_agent_task |
 | run_code | run 编码 |
+| run_token | 每个 run 启动时生成的 ULID；所有 Executor → MAGA 写动作必须带，用于 INV-6 防抢占 |
 | executor_code | 执行器 |
 | executor_type | 执行器类型快照 |
 | external_run_id | Hermes 或其他 worker 侧 run id |
 | status | run 状态 |
+| status_substate | 协议第四章定义的子状态，如 `running.drafting` |
+| current_stage_call_id | 当前激活 stage call；用于快速定位 |
+| rewrite_round | 已完成的改写轮数 |
+| weighted_score_summary_json | MAGA 聚合后的 hard/soft 分数缓存，便于前台展示 |
 | model_summary_json | 使用模型摘要 |
 | config_snapshot_json | 执行配置快照 |
 | started_at/finished_at | 时间 |
 | error_message | 错误 |
 | create_time/update_time | 时间 |
 
-### 4. content_agent_event
+### 4. content_agent_stage_call
 
-结构化 trace event。
+协议中"Stage Call"的物理对应。一次 run 内每个 capability 调用都落一行，是 trace 与 artifact 的中观分组键。
 
-建议字段：
+| 字段 | 说明 |
+|---|---|
+| id | 主键 |
+| stage_call_id | 协议层 ULID（见 EXECUTOR_PROTOCOL §6.1），全局唯一 |
+| run_id | 关联 content_agent_run |
+| sequence_no | run 内序号，从 1 起递增；同一 capability 多次调用（如 rewrite）每次新一行 |
+| capability | 如 `xhs.interpret_brief` / `xhs.run_ae_analysis` |
+| schema_version | capability schema 版本 |
+| invoke_mode | `sync` / `async` |
+| status | `pending/running/succeeded/failed/cancelled/timeout` |
+| input_snapshot_json | 入参信封的 input 部分 |
+| output_snapshot_json | 出参信封的 output 部分 |
+| stats_json | 出参信封的 stats（耗时、token 汇总） |
+| error_code | 协议第 8.1 节的错误码 |
+| error_message | 错误信息 |
+| retry_of_stage_call_id | 重试链上一跳；首次为 null |
+| started_at | 调用 invoke 时间 |
+| finished_at | complete/fail 落库时间 |
+| deadline_at | invoke 时声明的 deadline |
+| create_time/update_time | 时间 |
+
+### 5. content_agent_event
+
+结构化 trace event。分组键为 `stage_call_id`。
 
 | 字段 | 说明 |
 |---|---|
 | id | 主键 |
 | run_id | 关联 content_agent_run |
-| step | 例如 `ae_score`, `ge_generate`, `rewrite` |
+| stage_call_id | 关联 content_agent_stage_call，必填 |
 | event_type | `llm_call/tool_call/artifact_created/error/status` |
 | expert_code | 可选，如 `ai_smell`, `legal` |
 | model_code | 可选 |
 | input_snapshot_json | 输入快照 |
 | output_snapshot_json | 输出快照 |
+| otel_attributes_json | OpenTelemetry GenAI 字段（见协议第十章） |
 | message | 简要说明 |
 | latency_ms | 耗时 |
 | token_usage_json | token 使用 |
 | metadata_json | 扩展数据 |
+| idempotency_key | 与 run_id 联合唯一；用于 Executor 上报的幂等 |
 | create_time | 时间 |
 
-### 5. content_agent_artifact
+### 6. content_agent_artifact
 
 执行产物。
-
-建议字段：
 
 | 字段 | 说明 |
 |---|---|
 | id | 主键 |
 | run_id | 关联 content_agent_run |
-| artifact_type | `brief_snapshot/draft/final_content/score_report/conflict_report/prompt_patch` |
+| stage_call_id | 关联 content_agent_stage_call |
+| artifact_code | 协议返回的对外 ID（如 `art_01HF7Z...`），与自增 `id` 区分 |
+| artifact_type | `brief_snapshot/draft/final_content/score_report/conflict_report/prompt_patch/debug_log` |
 | name | 名称 |
 | content_text | 文本内容 |
 | content_json | JSON 内容 |
 | file_url | 文件型产物地址 |
-| version_no | 版本 |
+| version_no | 改写轮次（rewrite_round），便于前台对比 |
 | metadata_json | 扩展数据 |
+| idempotency_key | 与 run_id 联合唯一 |
 | create_time | 时间 |
 
----
+### 7. content_agent_human_review
 
-## 七、MAGA 与 Hermes 的 API 边界
+人审 gate 的一等公民表，对应协议 7.2 `request_human_review`。
 
-### 1. Hermes 拉取任务
+| 字段 | 说明 |
+|---|---|
+| id | 主键 |
+| run_id | 关联 content_agent_run |
+| stage_call_id | 关联触发评审的 stage call；可空（如 MAGA 自发触发） |
+| reason | `max_rewrites_reached/hard_ae_failed/executor_requested` 等 |
+| payload_json | Executor 上报的待评审数据（draft、score_report 等引用） |
+| response_schema_json | 提交响应必须遵循的 JSON Schema |
+| ui_hint | `review_form/side_by_side_diff/free_form` |
+| status | `pending/responded/cancelled/expired` |
+| responder_user_id | 处理人 |
+| response_json | 用户提交内容 |
+| requested_at | 触发时间 |
+| responded_at | 处理时间 |
+| create_time/update_time | 时间 |
 
-```http
-POST /api/v1/content-agent/tasks/claim
-```
+### 8. 索引与唯一约束
 
-请求：
-
-```json
-{
-  "executor_code": "hermes_xhs_writer",
-  "capabilities": ["xhs_generate"]
-}
-```
-
-响应：
-
-```json
-{
-  "task_id": 123,
-  "run_id": 456,
-  "task_type": "xhs_generate",
-  "input": {
-    "brand": "meadjohnson",
-    "product": "a2_dueltz",
-    "style": "情绪共情标题",
-    "target_audience": "二胎经验妈妈"
-  },
-  "asset_refs": {
-    "brief_id": 10,
-    "expert_registry_version": 3,
-    "style_template_version": 7
-  }
-}
-```
-
-### 2. Hermes 拉取资产
-
-```http
-GET /api/v1/content-agent/tasks/{task_id}/context
-```
-
-返回执行所需上下文：
-
-- brief
-- expert registry
-- brief_type mapping
-- persona/rubric/corpus 引用
-- style templates
-- redline/policy
-- model routing hints
-
-### 3. Hermes 回写 event
-
-```http
-POST /api/v1/content-agent/runs/{run_id}/events
-```
-
-请求：
-
-```json
-{
-  "step": "ae_score",
-  "event_type": "llm_call",
-  "expert_code": "ai_smell",
-  "model_code": "doubao-seed-2-0-mini-260428",
-  "input_snapshot": {},
-  "output_snapshot": {},
-  "latency_ms": 1200,
-  "token_usage": {}
-}
-```
-
-### 4. Hermes 上传 artifact
-
-```http
-POST /api/v1/content-agent/runs/{run_id}/artifacts
-```
-
-请求：
-
-```json
-{
-  "artifact_type": "draft",
-  "name": "draft_v1",
-  "content_text": "...",
-  "metadata": {
-    "rewrite_round": 1
-  }
-}
-```
-
-### 5. Hermes 更新 run 状态
-
-```http
-POST /api/v1/content-agent/runs/{run_id}/status
-```
-
-请求：
-
-```json
-{
-  "status": "succeeded",
-  "output_summary": {
-    "title": "...",
-    "score": 86,
-    "final_artifact_id": 789
-  }
-}
-```
+| 表 | 索引/约束 | 用途 |
+|---|---|---|
+| content_agent_stage_call | UNIQUE(stage_call_id) | 协议幂等 |
+| content_agent_stage_call | UNIQUE(run_id, sequence_no) | 顺序保证 |
+| content_agent_stage_call | INDEX(status, deadline_at) | 超时扫描 |
+| content_agent_event | UNIQUE(run_id, idempotency_key) | Executor 上报幂等 |
+| content_agent_event | INDEX(stage_call_id, create_time) | 阶段内事件回放 |
+| content_agent_artifact | UNIQUE(run_id, idempotency_key) | 上传幂等 |
+| content_agent_artifact | UNIQUE(artifact_code) | 对外引用 |
+| content_agent_run | UNIQUE(run_token) | 防抢占校验 |
+| executor_registry | UNIQUE(executor_code) | 注册唯一性 |
 
 ---
 
-## 八、xhs-writer 现状与迁移映射
+## 七、xhs-writer 现状与迁移映射
 
 当前 Hermes `xhs-writer` profile 中已经有一套可运行的本地原型：
 
@@ -511,18 +427,18 @@ POST /api/v1/content-agent/runs/{run_id}/status
 
 ---
 
-## 九、推荐落地阶段
+## 八、推荐落地阶段
 
-### 阶段 1：MAGA 存任务、run、结果，Hermes 继续本地执行
+### 阶段 1：MAGA 存任务、run、结果，Hermes 实现 invoke endpoint
 
-目标：验证“工作台 + Agent worker”闭环。
+目标：验证"工作台 + Agent worker"闭环（push 模式）。
 
 做法：
 
-1. MAGA 增加 executor_registry、content_agent_task、content_agent_run、content_agent_event、content_agent_artifact。
-2. MAGA 增加最小 API：claim task、get context、post event、post artifact、update status。
-3. Hermes `xhs-writer` 仍然读本地 `experts/`、`ge_writer/`、`campaigns/`。
-4. Hermes 跑完后将 draft、final、score report、trace 写回 MAGA。
+1. MAGA 按 §六 建表：executor_registry / content_agent_task / content_agent_run / content_agent_stage_call / content_agent_event / content_agent_artifact / content_agent_human_review。
+2. MAGA 实现 [EXECUTOR_PROTOCOL.md](./EXECUTOR_PROTOCOL.md) §7.2 的回调 endpoints（events / artifacts / human-review / complete / fail / heartbeat），以及调度器主动调 Executor `/invoke` 的 push 路径与状态机推进逻辑。
+3. Hermes `xhs-writer` 暴露 `/invoke` endpoint，按协议接收 capability 调用；本地仍读 `experts/`、`ge_writer/`、`campaigns/` 作为资产源（snapshot 由 MAGA 在 invoke 入参中传入或本地兜底）。
+4. Hermes 在阶段内回写 events/artifacts，capability 完成后调 `complete_capability`；run 终态由 MAGA 据 stage 结果决定。
 5. MAGA 前端展示任务状态、最终稿和基础 trace。
 
 这个阶段不迁移所有语料和 prompt。
@@ -570,7 +486,7 @@ MAGA 仍是营销内容生成工作台，不升级为通用 Agent 平台。
 
 ---
 
-## 十、当前阶段不要做什么
+## 九、当前阶段不要做什么
 
 不要做：
 
@@ -578,7 +494,6 @@ MAGA 仍是营销内容生成工作台，不升级为通用 Agent 平台。
 - 通用 DAG / workflow 编排器
 - 面向所有业务的万能 Agent 控制台
 - 用通用 JSON 表单替代内容生成任务页
-- 为未来数据分析提前建 datasource/metric/chart/report 模型
 - 让普通用户看到 Agent/Expert/Tool/Trace 的复杂概念
 - 让 Hermes 直接写 MAGA MySQL
 - 让 MAGA 强依赖 Hermes 本地文件路径
@@ -587,28 +502,7 @@ MAGA 仍是营销内容生成工作台，不升级为通用 Agent 平台。
 
 ---
 
-## 十一、与 MAGA MVP 架构的关系
-
-本方案补充 `MAGA_MVP_ARCHITECTURE.md` 的“内部生文架构”。
-
-原 MVP 原则保持不变：
-
-- 前台极简
-- 后台复杂
-- 语料可选
-- 编排隐藏
-- 输出直接可用
-
-本方案进一步明确：
-
-- 后台复杂度由 MAGA 管理和沉淀
-- Agent 执行可外置到 Hermes profile
-- MAGA 不把 Hermes 当成护城河，而把业务资产和质量闭环当成护城河
-- Hermes 只是当前执行层，未来可替换
-
----
-
-## 十二、最终定位
+## 十、最终定位
 
 最终产品形态：
 

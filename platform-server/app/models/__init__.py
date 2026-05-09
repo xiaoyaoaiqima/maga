@@ -67,7 +67,9 @@ from app.models.prompt_optimizer import (
 from app.models.content_agent import (
     ContentAgentArtifact,
     ContentAgentEvent,
+    ContentAgentHumanReview,
     ContentAgentRun,
+    ContentAgentStageCall,
     ContentAgentTask,
     ExecutorRegistry,
 )
@@ -139,6 +141,8 @@ __all__ = [
     "ExecutorRegistry",
     "ContentAgentTask",
     "ContentAgentRun",
+    "ContentAgentStageCall",
     "ContentAgentEvent",
     "ContentAgentArtifact",
+    "ContentAgentHumanReview",
 ]

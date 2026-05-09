@@ -1,10 +1,11 @@
 """Tests for content agent execution-layer service."""
 import pytest
 import pytest_asyncio
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models.base import Base
-from app.models.content_agent import ContentAgentTask
+from app.models.content_agent import ContentAgentRun, ContentAgentTask
 from app.schemas.content_agent import (
     ContentAgentArtifactCreate,
     ContentAgentClaimRequest,
@@ -79,6 +80,54 @@ async def test_claim_task_returns_none_when_no_pending_task_matches_capability(d
     )
 
     assert claim is None
+
+
+@pytest.mark.asyncio
+async def test_claim_task_can_claim_task_without_pinned_executor(db_session):
+    service = ContentAgentService(db_session)
+    task = await service.create_task(
+        ContentAgentTaskCreate(
+            task_code="task-shared-001",
+            task_type="xhs_generate",
+            executor_code=None,
+            input_snapshot={"product_topic": "A2 奶粉"},
+        )
+    )
+
+    claim = await service.claim_task(
+        ContentAgentClaimRequest(executor_code="hermes_xhs_writer", capabilities=["xhs_generate"])
+    )
+
+    assert claim is not None
+    assert claim.task_id == task.id
+
+
+@pytest.mark.asyncio
+async def test_claim_task_does_not_create_duplicate_runs_when_called_twice(db_session):
+    service = ContentAgentService(db_session)
+    task = await service.create_task(
+        ContentAgentTaskCreate(
+            task_code="task-atomic-001",
+            task_type="xhs_generate",
+            executor_code="hermes_xhs_writer",
+            input_snapshot={"product_topic": "A2 奶粉"},
+        )
+    )
+
+    first_claim = await service.claim_task(
+        ContentAgentClaimRequest(executor_code="hermes_xhs_writer", capabilities=["xhs_generate"])
+    )
+    second_claim = await service.claim_task(
+        ContentAgentClaimRequest(executor_code="hermes_xhs_writer", capabilities=["xhs_generate"])
+    )
+
+    run_count = await db_session.scalar(select(func.count()).select_from(ContentAgentRun))
+    refreshed = await db_session.get(ContentAgentTask, task.id)
+
+    assert first_claim is not None
+    assert second_claim is None
+    assert run_count == 1
+    assert refreshed.status == "running"
 
 
 @pytest.mark.asyncio
