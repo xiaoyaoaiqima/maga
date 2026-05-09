@@ -310,9 +310,22 @@ MVP 推荐的内部工作流如下：
 
 如果不通过，则进入定向改写，再次检查。
 
-### 3. 编排框架定位
+### 3. Agent 执行层定位
 
-MVP 阶段仍可使用 LangGraph 或类似编排框架作为内部底座。
+MVP 阶段允许将复杂执行过程外置到 Hermes profile（例如 `xhs-writer`）或其他 Agent runtime 中，但 MAGA 仍然是营销内容生成的业务工作台和 source of truth。
+
+职责边界：
+
+- MAGA 负责品牌、产品、活动、语料、Prompt、Expert 配置、任务、trace、artifact、评估和人工审核。
+- Hermes 负责具体执行：拉取任务、组织 GE/AE、调用模型、生成草稿、评分改写、回写结果。
+- Hermes 不直接读写 MAGA 数据库，只通过 MAGA API 交互。
+- MAGA 不改造成通用 Agent 平台，只保留轻量 executor 抽象，以便未来替换执行层。
+
+详细方案见：[MAGA Agent 执行层改造方案](./AGENT_EXECUTION_LAYER_PLAN.md)
+
+### 4. 编排框架定位
+
+MVP 阶段仍可使用 LangGraph、Hermes profile 或类似编排框架作为内部底座。
 
 它的定位是：
 

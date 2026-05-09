@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     APP_PORT: int = 5100
 
     # MySQL
+    DATABASE_URL: str = ""  # 可选：覆盖主库连接，便于本地 SQLite smoke test
     MYSQL_HOST: str = "mysql"
     MYSQL_PORT: int = 3306
     MYSQL_USER: str = "maga"
@@ -146,6 +147,8 @@ class Settings(BaseSettings):
     @property
     def MYSQL_DATABASE_URL(self) -> str:
         """Generate MySQL database URL (主库)"""
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
         return (
             f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
             f"@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"

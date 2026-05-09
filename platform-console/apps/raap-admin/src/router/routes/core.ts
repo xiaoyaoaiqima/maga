@@ -78,6 +78,16 @@ const coreRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'ExpertPromptOptimizer',
+        path: 'expert/prompt-optimizer',
+        component: () => import('#/views/expert/prompt-optimizer/index.vue'),
+        meta: {
+          title: '提示词优化工作台',
+          icon: 'RobotOutlined',
+          activeMenu: '/expert/prompt-optimizer',
+        },
+      },
+      {
         name: 'DashboardPanel',
         path: 'dashboard/:panelId',
         component: () => import('#/views/dashboard/ai-dashboard/index.vue'),

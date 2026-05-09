@@ -56,6 +56,21 @@ from app.models.ban_term import BanTerm, BanTermMeta
 from app.models.base import Base
 from app.models.base_model import BaseModel
 from app.models.model_config import ModelConfig
+from app.models.prompt_optimizer import (
+    PromptAsset,
+    PromptEvaluation,
+    PromptIssue,
+    PromptOptimizerRun,
+    PromptPatch,
+    PromptVersion,
+)
+from app.models.content_agent import (
+    ContentAgentArtifact,
+    ContentAgentEvent,
+    ContentAgentRun,
+    ContentAgentTask,
+    ExecutorRegistry,
+)
 
 __all__ = [
     "Plugin",
@@ -115,4 +130,15 @@ __all__ = [
     "Base",
     "BaseModel",
     "ModelConfig",
+    "PromptAsset",
+    "PromptVersion",
+    "PromptIssue",
+    "PromptOptimizerRun",
+    "PromptPatch",
+    "PromptEvaluation",
+    "ExecutorRegistry",
+    "ContentAgentTask",
+    "ContentAgentRun",
+    "ContentAgentEvent",
+    "ContentAgentArtifact",
 ]

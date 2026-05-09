@@ -11,22 +11,13 @@ MAGA 是一个面向营销内容生成场景的 Agent 平台。
 ## 开发方式
 
 ```bash
-make up
+make dev
 ```
 
 这会启动：
 
-- MySQL
-- Redis
-- MAGA Platform Server
-
-然后在本地启动前端：
-
-```bash
-cd platform-console
-pnpm install
-pnpm dev
-```
+- Docker 容器：MySQL / Redis / MAGA Platform Server
+- 本机进程：MAGA Console 前端开发服务
 
 访问地址：
 
@@ -37,9 +28,11 @@ pnpm dev
 
 ```bash
 make up        # 启动 mysql / redis / backend
+make dev       # 启动 Docker 后端栈和本机前端
+make dev-stop  # 停止 Docker 后端栈和本机前端
 make down      # 停止容器
 make build     # 构建 backend 镜像
 make logs      # 查看容器日志
 make ps        # 查看容器状态
-make dev       # 提示本地前端启动方式
+make local-dev # 旧本机启动方式（不用 Docker）
 ```

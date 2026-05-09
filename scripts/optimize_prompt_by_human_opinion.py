@@ -14,6 +14,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -22,9 +23,17 @@ from typing import Any
 DEFAULT_BASE_URL = "https://aihubmix.com/v1"
 DEFAULT_MODEL = "gpt-5.5"
 DEFAULT_TEMPERATURE = 0.2
-DEFAULT_MAX_TOKENS = 4000
+DEFAULT_MAX_TOKENS = 8000
 DEFAULT_TIMEOUT_SECONDS = 90
 DEFAULT_OUTPUT_DIR = "prompt_optimize_results"
+
+
+@dataclass(frozen=True)
+class ChatCompletionResult:
+    content: str
+    finish_reason: str
+    usage: dict[str, Any]
+    raw_response: dict[str, Any]
 
 
 def load_dotenv(path: Path = Path(".env")) -> None:
@@ -214,7 +223,7 @@ def call_openai_compatible(
     max_tokens: int,
     timeout: int,
     json_mode: bool,
-) -> str:
+) -> ChatCompletionResult:
     payload = build_chat_payload(
         model=model,
         system_prompt=system_prompt,
@@ -239,7 +248,26 @@ def call_openai_compatible(
     except urllib.error.HTTPError as e:
         raise ValueError(read_http_error(e)) from e
     result = json.loads(raw)
-    return (((result.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+    choices = result.get("choices") or [{}]
+    choice = choices[0] if choices else {}
+    message = choice.get("message") or {}
+    usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
+    return ChatCompletionResult(
+        content=(message.get("content") or "").strip(),
+        finish_reason=str(choice.get("finish_reason") or ""),
+        usage=usage,
+        raw_response=result,
+    )
+
+
+def build_empty_content_error(completion: ChatCompletionResult) -> str:
+    usage_text = json.dumps(completion.usage, ensure_ascii=False)
+    return (
+        "模型返回了空 content，无法解析 JSON。"
+        f"finish_reason={completion.finish_reason or 'unknown'}，usage={usage_text}。"
+        "如果 finish_reason=length 且 reasoning_tokens 接近 max_tokens，"
+        "请提高 --max-tokens，或缩短输入提示词。"
+    )
 
 
 def extract_json_object(text: str) -> dict[str, Any]:
@@ -302,6 +330,15 @@ def format_result_for_console(result: dict[str, Any]) -> str:
         else:
             lines.append(f"{field}: {values[0]}")
             lines.extend(values[1:])
+
+    for field in ("parse_error", "raw_output"):
+        if field in result:
+            values = format_multiline_value(result.get(field, ""), indent="  ")
+            if len(values) == 1:
+                lines.append(f"{field}: {values[0]}")
+            else:
+                lines.append(f"{field}: {values[0]}")
+                lines.extend(values[1:])
 
     patches = result.get("patches")
     lines.append("patches:")
@@ -373,6 +410,22 @@ def write_debug_log(
     return debug_path
 
 
+def append_debug_response_summary(debug_path: Path, completion: ChatCompletionResult) -> None:
+    payload = json.loads(debug_path.read_text(encoding="utf-8"))
+    # 只记录响应摘要，避免把完整模型输出写进 debug 日志造成文件过大。
+    payload["response_summary"] = {
+        "finish_reason": completion.finish_reason,
+        "content_length": len(completion.content),
+        "usage": completion.usage,
+        "raw_response_id": completion.raw_response.get("id"),
+        "raw_response_model": completion.raw_response.get("model"),
+    }
+    debug_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     args = parse_args()
     try:
@@ -390,7 +443,7 @@ def main() -> int:
             problem=problem,
             user_prompt=user_prompt,
         )
-        raw_output = call_openai_compatible(
+        completion = call_openai_compatible(
             api_key=args.api_key,
             base_url=args.base_url,
             model=args.model,
@@ -401,6 +454,10 @@ def main() -> int:
             timeout=args.timeout,
             json_mode=not args.no_json_mode,
         )
+        append_debug_response_summary(debug_path, completion)
+        raw_output = completion.content
+        if not raw_output:
+            raise ValueError(f"{build_empty_content_error(completion)} debug log written: {debug_path}")
         try:
             parsed = normalize_result(extract_json_object(raw_output))
         except (json.JSONDecodeError, ValueError) as e:

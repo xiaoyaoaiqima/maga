@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     agents,
     auth,
     compat_invoke,
+    content_agent,
     cache_monitor,
     calibration_records,
     calibration_tasks,
@@ -31,6 +32,7 @@ from app.api.v1.endpoints import (
     metrics,
     plugin_contexts,
     plugins,
+    prompt_optimizer,
     publish,
     richness_analysis,
     test_cases,
@@ -80,6 +82,8 @@ api_router.include_router(job_create_drafts.router, prefix="/job-create/drafts",
 api_router.include_router(job_variants.router, prefix="/job-variants", tags=["job-variants"])
 api_router.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 api_router.include_router(expert_tasks.router, prefix="/expert-tasks", tags=["expert-tasks"])
+api_router.include_router(content_agent.router, prefix="/content-agent", tags=["content-agent"])
+api_router.include_router(prompt_optimizer.router, prefix="/prompt-optimizer", tags=["prompt-optimizer"])
 
 # Snapshot management endpoints
 api_router.include_router(snapshots.router)

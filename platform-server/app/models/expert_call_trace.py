@@ -365,11 +365,11 @@ class ExpertCallTrace(Base):
         # 阶段+状态统计
         Index("idx_stage_status", "stage", "status"),
         # 实验分析
-        Index("idx_experiment", "experiment_id", "experiment_group"),
+        Index("idx_expert_call_trace_experiment", "experiment_id", "experiment_group"),
         # 模型统计
         Index("idx_model_created", "model_code", "created_at"),
         # Provider 统计
-        Index("idx_provider", "provider_code", "created_at"),
+        Index("idx_expert_call_trace_provider", "provider_code", "created_at"),
         # 成本统计
         Index("idx_cost", "total_cost", "created_at"),
         # RLHF 审核人统计
@@ -381,4 +381,3 @@ class ExpertCallTrace(Base):
             f"<ExpertCallTrace(id={self.id}, job_id={self.job_id}, "
             f"stage={self.stage}, status={self.status})>"
         )
-

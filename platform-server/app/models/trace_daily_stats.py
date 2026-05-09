@@ -204,8 +204,8 @@ class TraceDailyStats(Base):
         Index("idx_stat_date", "stat_date"),
         Index("idx_stage", "stage"),
         Index("idx_expert_code", "expert_config_code"),
-        Index("idx_experiment", "experiment_id", "experiment_group"),
-        Index("idx_provider", "provider_code"),
+        Index("idx_trace_daily_stats_experiment", "experiment_id", "experiment_group"),
+        Index("idx_trace_daily_stats_provider", "provider_code"),
     )
 
     def __repr__(self) -> str:
@@ -227,4 +227,3 @@ class TraceDailyStats(Base):
         if self.total_count == 0:
             return 0.0
         return round((self.failed_count + self.timeout_count) / self.total_count * 100, 2)
-

@@ -43,7 +43,7 @@ class CorpusTemplate(Base):
 
     __table_args__ = (
         Index("idx_category_type", "category_type"),
-        Index("idx_tenant", "tenant_code"),
+        Index("idx_corpus_templates_tenant", "tenant_code"),
         Index("idx_code", "code"),
         # 复合唯一索引：允许相同 code 存在于不同的 is_deleted 状态
         # 例如：code='persona_v1', is_deleted=0 和 code='persona_v1', is_deleted=1 可以共存

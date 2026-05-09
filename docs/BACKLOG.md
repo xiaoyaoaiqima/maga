@@ -38,6 +38,7 @@
 
 | 任务 | 说明 | 预计时间 | 相关文档 |
 |------|------|---------|---------|
+| **提示词优化工作台 MVP - 数据闭环** | 将现有自动优化提示词脚本系统化，支持 Prompt/Run/Patch 存储、三类优化模式、结构化结果查询 | 2 天 | [PROMPT_OPTIMIZER_WORKBENCH_MVP.md](./PROMPT_OPTIMIZER_WORKBENCH_MVP.md) |
 | **Ban V2 防幻觉审核** | 解决 LLM 审核误报违禁词问题，证据驱动 + 后验证 | 1 天 | [ENHANCED_BAN_GUIDE.md](../raap-service-ag/docs/ENHANCED_BAN_GUIDE.md) |
 | **A/B 实验前端** | 实验配置与管理页面 `/trace/experiments` | 2 天 | [plan.md#3.12](./docs/plan.md) |
 | **微服务版本管理** | `system_version` 表 + 版本显示逻辑 | 0.5 天 | [plan.md#二](./docs/plan.md) |
@@ -46,6 +47,7 @@
 
 | 任务 | 说明 | 预计时间 | 相关文档 |
 |------|------|---------|---------|
+| **提示词优化工作台 MVP - 人工审阅** | 支持 patch 接受/拒绝/编辑、唯一命中自动应用、保存为新 Prompt 版本、版本 diff | 2 天 | [PROMPT_OPTIMIZER_WORKBENCH_MVP.md](./PROMPT_OPTIMIZER_WORKBENCH_MVP.md) |
 | **RLHF 统计报表** | 前端页面 `/rlhf/stats` | 1 天 | [RLHF_SYSTEM_DESIGN.md](./docs/RLHF_SYSTEM_DESIGN.md) |
 | **RLHF 每日统计任务** | `GET /api/v1/rlhf/stats/daily` Scheduler | 0.5 天 | [plan.md#3.16.4](./docs/plan.md) |
 | **对齐治理中心指标** | 输入治理/多样性/内容丰富度/平台对抗（10+项） | 2 天 | [METRICS_SYSTEM_DESIGN.md](./docs/METRICS_SYSTEM_DESIGN.md) |

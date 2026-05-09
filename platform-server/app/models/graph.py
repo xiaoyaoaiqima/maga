@@ -40,10 +40,10 @@ class GraphNode(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
     __table_args__ = (
-        Index("idx_tenant", "tenant_code"),
+        Index("idx_nodes_tenant", "tenant_code"),
         Index("idx_label", "label"),
         Index("idx_tenant_label", "tenant_code", "label"),
-        Index("idx_status", "is_active"),
+        Index("idx_nodes_status", "is_active"),
         Index("idx_name", "name"),
         Index("uk_tenant_label_name", "tenant_code", "label", "name", "is_deleted", unique=True),
     )
@@ -80,7 +80,7 @@ class GraphEdge(Base):
         Index("uk_edge", "tenant_code", "source_node_id", "target_node_id", "relation_type", "is_active", "is_deleted", unique=True),
         Index("idx_edge_tenant", "tenant_code"),
         Index("idx_source", "source_node_id"),
-        Index("idx_target", "target_node_id"),
+        Index("idx_edges_target", "target_node_id"),
         Index("idx_relation", "relation_type"),
         Index("idx_source_relation", "source_node_id", "relation_type"),
         Index("idx_tenant_source_relation", "tenant_code", "source_node_id", "relation_type"),

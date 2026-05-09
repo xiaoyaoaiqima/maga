@@ -137,8 +137,8 @@ class ABExperiment(Base):
 
     # 索引
     __table_args__ = (
-        Index("idx_status", "status"),
-        Index("idx_target", "target_type", "target_code"),
+        Index("idx_ab_experiment_status", "status"),
+        Index("idx_ab_experiment_target", "target_type", "target_code"),
         Index("idx_created", "created_at"),
     )
 
@@ -182,4 +182,3 @@ class ABExperiment(Base):
                 }
 
         return self.groups[-1] if self.groups else {"group": "control", "variant": None}
-

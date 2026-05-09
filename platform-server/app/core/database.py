@@ -17,21 +17,46 @@ from sqlalchemy.sql import text
 from app.core.config import settings
 from app.models.base import Base
 
+
+def _engine_options(url: str, *, analytics: bool = False) -> dict:
+    if url.startswith("sqlite"):
+        return {
+            "echo": settings.MYSQL_ECHO,
+            "pool_pre_ping": True,
+        }
+    if analytics:
+        return {
+            "echo": settings.MYSQL_ECHO,
+            "pool_size": settings.MYSQL_ANALYTICS_POOL_SIZE,
+            "max_overflow": settings.MYSQL_ANALYTICS_MAX_OVERFLOW,
+            "pool_pre_ping": True,
+            "pool_recycle": 1800,
+            "pool_timeout": 30,
+            "connect_args": {
+                "autocommit": False,
+                "connect_timeout": 5,
+            },
+        }
+    return {
+        "echo": settings.MYSQL_ECHO,
+        "pool_size": settings.MYSQL_POOL_SIZE,
+        "max_overflow": settings.MYSQL_MAX_OVERFLOW,
+        "pool_pre_ping": True,
+        "pool_recycle": 1800,
+        "pool_timeout": 30,
+        "connect_args": {
+            "autocommit": False,
+            "connect_timeout": 10,
+        },
+    }
+
+
 # Create async engine
 # 注意：aiomysql 连接不是线程安全的，每个线程/事件循环应该使用独立的连接
 # pool_pre_ping=True 确保连接在使用前被检查，无效连接会被替换
 engine: AsyncEngine = create_async_engine(
     settings.MYSQL_DATABASE_URL,
-    echo=settings.MYSQL_ECHO,
-    pool_size=settings.MYSQL_POOL_SIZE,
-    max_overflow=settings.MYSQL_MAX_OVERFLOW,
-    pool_pre_ping=True,  # 连接前检查连接是否有效，避免使用无效连接
-    pool_recycle=1800,  # 30分钟后回收连接（比 MySQL wait_timeout 更短）
-    pool_timeout=30,  # 获取连接超时时间
-    connect_args={
-        "autocommit": False,  # 确保使用事务
-        "connect_timeout": 10,  # 连接超时 10 秒（aiomysql 支持）
-    },
+    **_engine_options(settings.MYSQL_DATABASE_URL),
 )
 
 # Create async session factory
@@ -47,16 +72,7 @@ async_session_factory = async_sessionmaker(
 # 注意：如果分析库不可访问，会在 get_analytics_db 中降级到主库
 analytics_engine: AsyncEngine = create_async_engine(
     settings.MYSQL_ANALYTICS_DATABASE_URL,
-    echo=settings.MYSQL_ECHO,
-    pool_size=settings.MYSQL_ANALYTICS_POOL_SIZE,
-    max_overflow=settings.MYSQL_ANALYTICS_MAX_OVERFLOW,
-    pool_pre_ping=True,
-    pool_recycle=1800,
-    pool_timeout=30,
-    connect_args={
-        "autocommit": False,
-        "connect_timeout": 5,  # 分析库连接超时时间更短，快速失败
-    },
+    **_engine_options(settings.MYSQL_ANALYTICS_DATABASE_URL, analytics=True),
 )
 
 # Create async analytics session factory
