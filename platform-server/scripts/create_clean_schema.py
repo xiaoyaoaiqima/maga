@@ -43,9 +43,11 @@ async def seed_clean_schema(
     *,
     maga_worker_invoke_url: str = MAGA_WORKER_INVOKE_URL,
     xhs_writer_invoke_url: str | None = None,
+    executor_token: str | None = "test-token",
 ) -> None:
     """Seed baseline executor registry rows for the clean schema."""
     legacy_invoke_url = xhs_writer_invoke_url or maga_worker_invoke_url
+    config_json = {"executor_token": executor_token} if executor_token else None
     rows = [
         {
             "executor_code": DEFAULT_EXECUTOR_CODE,
@@ -55,6 +57,7 @@ async def seed_clean_schema(
             "protocol_version": "0.1",
             "invoke_url": maga_worker_invoke_url,
             "supported_capabilities_json": MAGA_WORKER_SUPPORTED_CAPABILITY_SPECS,
+            "config_json": config_json,
             "enabled": 1,
         },
         {
@@ -65,6 +68,7 @@ async def seed_clean_schema(
             "protocol_version": "0.1",
             "invoke_url": legacy_invoke_url,
             "supported_capabilities_json": XHS_CAPABILITY_SPECS,
+            "config_json": config_json,
             "enabled": 1,
         },
     ]
@@ -84,6 +88,7 @@ async def create_clean_schema(
     seed: bool = False,
     maga_worker_invoke_url: str = MAGA_WORKER_INVOKE_URL,
     xhs_writer_invoke_url: str | None = None,
+    executor_token: str | None = "test-token",
 ) -> None:
     """Create the clean MAGA core schema using current SQLAlchemy model metadata."""
     tables = _selected_tables()
@@ -96,6 +101,7 @@ async def create_clean_schema(
                 conn,
                 maga_worker_invoke_url=maga_worker_invoke_url,
                 xhs_writer_invoke_url=xhs_writer_invoke_url,
+                executor_token=executor_token,
             )
 
 
@@ -105,6 +111,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--drop", action="store_true", help="Drop clean core tables before creating them")
     parser.add_argument("--seed", action="store_true", help="Seed baseline executor registry rows")
     parser.add_argument("--maga-worker-invoke-url", default=MAGA_WORKER_INVOKE_URL, help="Invoke URL for hermes_maga_worker executor seed")
+    parser.add_argument(
+        "--executor-token",
+        default="test-token",
+        help="Local dev executor token written to executor_registry.config_json; pass an empty string to omit",
+    )
     parser.add_argument(
         "--xhs-writer-invoke-url",
         default=None,
@@ -124,6 +135,7 @@ async def _amain(argv: Iterable[str] | None = None) -> None:
             seed=args.seed,
             maga_worker_invoke_url=args.maga_worker_invoke_url,
             xhs_writer_invoke_url=args.xhs_writer_invoke_url,
+            executor_token=args.executor_token or None,
         )
     finally:
         await engine.dispose()

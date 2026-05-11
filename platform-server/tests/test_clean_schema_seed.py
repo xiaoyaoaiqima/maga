@@ -32,6 +32,7 @@ async def test_seed_clean_schema_registers_hermes_maga_worker_executor():
     assert executor.profile_name == "maga-worker"
     assert executor.protocol_version == "0.1"
     assert executor.invoke_url == "http://127.0.0.1:8765/invoke"
+    assert executor.config_json == {"executor_token": "test-token"}
     capabilities = {item["capability"] for item in executor.supported_capabilities_json}
     assert capabilities >= {
         "xhs.interpret_brief",

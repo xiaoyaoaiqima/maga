@@ -4,11 +4,33 @@ BACKEND_PORT ?= 5100
 FRONTEND_PORT ?= 3100
 FRONTEND_LOG := .local/logs/frontend.log
 FRONTEND_PID := .local/pids/frontend.pid
+DEV_MYSQL_URL ?= mysql+aiomysql://maga:maga123456@127.0.0.1:3306/maga
+MAGA_WORKER_INVOKE_URL ?= http://host.docker.internal:8765/invoke
+MAGA_WORKER_EXECUTOR_TOKEN ?= test-token
 
-.PHONY: up down build logs ps dev dev-stop dev-status dev-logs frontend-start frontend-stop frontend-status frontend-logs local-dev local-dev-stop local-dev-status local-dev-logs
+.PHONY: up seed-dev-executors down build logs ps dev dev-stop dev-status dev-logs frontend-start frontend-stop frontend-status frontend-logs local-dev local-dev-stop local-dev-status local-dev-logs
 
 up:
 	docker compose up --build -d mysql redis backend
+	$(MAKE) seed-dev-executors
+
+seed-dev-executors:
+	@echo "Seeding content-agent executors ..."
+	@cd platform-server && \
+		for i in $$(seq 1 30); do \
+			if ../.venv/bin/python scripts/create_clean_schema.py \
+				--seed \
+				--database-url "$(DEV_MYSQL_URL)" \
+				--maga-worker-invoke-url "$(MAGA_WORKER_INVOKE_URL)" \
+				--executor-token "$(MAGA_WORKER_EXECUTOR_TOKEN)"; then \
+				echo "Content-agent executors are ready."; \
+				exit 0; \
+			fi; \
+			echo "Waiting for MySQL to accept seed ($$i/30) ..."; \
+			sleep 1; \
+		done; \
+		echo "Failed to seed content-agent executors." >&2; \
+		exit 1
 
 down:
 	docker compose down

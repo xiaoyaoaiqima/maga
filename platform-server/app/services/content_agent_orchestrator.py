@@ -11,6 +11,7 @@ from app.core.content_agent_defaults import normalize_executor_code
 from app.models.content_agent import ContentAgentRun, ContentAgentStageCall, ExecutorRegistry
 from app.schemas.content_agent import (
     ContentAgentRunCompleteRequest,
+    ContentAgentRunFailRequest,
     ContentAgentStageCallCompleteRequest,
     ContentAgentStageCallCreate,
     ContentAgentStageCallFailRequest,
@@ -29,6 +30,15 @@ MVP_XHS_CAPABILITIES = [
 ]
 REWRITE_XHS_CAPABILITY = "xhs.rewrite_draft"
 MAX_MVP_REWRITE_ROUNDS = 1
+
+
+class ContentAgentInvokeError(RuntimeError):
+    """Raised when a live executor call fails before returning a protocol result."""
+
+    def __init__(self, message: str, *, run_id: int, stage_call_id: str):
+        super().__init__(message)
+        self.run_id = run_id
+        self.stage_call_id = stage_call_id
 
 
 @dataclass(frozen=True)
@@ -153,11 +163,28 @@ class ContentAgentOrchestrator:
             callback_base_url=self.callback_base_url,
             deadline_at=stage_call.deadline_at,
         )
-        invoke_result = await self.invocation_client.invoke(
-            invoke_url=executor.invoke_url,
-            envelope=envelope,
-            executor_token=self._executor_token(executor),
-        )
+        try:
+            invoke_result = await self.invocation_client.invoke(
+                invoke_url=executor.invoke_url,
+                envelope=envelope,
+                executor_token=self._executor_token(executor),
+            )
+        except Exception as exc:
+            message = self._invoke_exception_message(exc, stage_call.capability)
+            stage_call = await self.service.fail_stage_call(
+                run.id,
+                stage_call.stage_call_id,
+                ContentAgentStageCallFailRequest(
+                    error_code="executor_invoke_error",
+                    error_message=message,
+                    retryable=True,
+                    details={"exception_type": type(exc).__name__},
+                ),
+                validate_transition=False,
+            )
+            await self.service.fail_run(run.id, ContentAgentRunFailRequest(error_message=message))
+            await self.db.refresh(run)
+            raise ContentAgentInvokeError(message, run_id=run.id, stage_call_id=stage_call.stage_call_id) from exc
 
         if invoke_result.status == "succeeded":
             stage_call = await self.service.complete_stage_call(
@@ -182,6 +209,12 @@ class ContentAgentOrchestrator:
             )
             await self.db.refresh(run)
         return stage_call, invoke_result
+
+    def _invoke_exception_message(self, exc: Exception, capability: str) -> str:
+        text = str(exc).strip()
+        if text:
+            return text
+        return f"Executor invoke failed during {capability}: {type(exc).__name__}"
 
     def _input_for_capability(self, capability: str, context: dict[str, Any]) -> dict[str, Any]:
         if capability == "xhs.interpret_brief":

@@ -2,13 +2,14 @@
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models.base import Base
-from app.models.content_agent import ExecutorRegistry
+from app.models.content_agent import ContentAgentRun, ContentAgentStageCall, ContentAgentTask, ExecutorRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 from app.schemas.content_agent import ContentAgentTaskCreate
-from app.services.content_agent_orchestrator import ContentAgentOrchestrator
+from app.services.content_agent_orchestrator import ContentAgentInvokeError, ContentAgentOrchestrator
 from app.services.executor_invocation_service import InvokeResult
 
 
@@ -20,6 +21,11 @@ class FakeInvocationClient:
     async def invoke(self, *, invoke_url, envelope, executor_token=None):
         self.calls.append({"invoke_url": invoke_url, "envelope": envelope, "executor_token": executor_token})
         return self.result
+
+
+class RaisingInvocationClient:
+    async def invoke(self, *, invoke_url, envelope, executor_token=None):
+        raise TimeoutError()
 
 
 @pytest_asyncio.fixture
@@ -144,6 +150,44 @@ async def test_start_generation_run_marks_failed_sync_stage_failed(db_session):
     assert result.stage_call.status == "failed"
     assert result.invoke_result.status == "failed"
     assert result.stage_call.error_code == "model_error"
+
+
+@pytest.mark.asyncio
+async def test_run_mvp_generation_chain_marks_stage_and_run_failed_when_executor_call_raises(db_session):
+    db_session.add(
+        ExecutorRegistry(
+            executor_code="hermes_maga_worker",
+            executor_type="hermes_profile",
+            invoke_url="https://executor.example.com/invoke",
+        )
+    )
+    await db_session.flush()
+    orchestrator = ContentAgentOrchestrator(
+        db_session,
+        invocation_client=RaisingInvocationClient(),
+        callback_base_url="https://maga.example.com/api/v1/content-agent",
+    )
+
+    with pytest.raises(ContentAgentInvokeError, match="xhs.interpret_brief"):
+        await orchestrator.run_mvp_generation_chain(
+            ContentAgentTaskCreate(
+                task_type="xhs_generate",
+                executor_code="hermes_maga_worker",
+                input_snapshot={"product_topic": "美素佳儿源悦"},
+            )
+        )
+
+    task = (await db_session.execute(select(ContentAgentTask))).scalar_one()
+    run = (await db_session.execute(select(ContentAgentRun))).scalar_one()
+    stage = (await db_session.execute(select(ContentAgentStageCall))).scalar_one()
+
+    assert task.status == "failed"
+    assert task.error_message == "Executor invoke failed during xhs.interpret_brief: TimeoutError"
+    assert run.status == "failed"
+    assert run.error_message == task.error_message
+    assert stage.status == "failed"
+    assert stage.error_code == "executor_invoke_error"
+    assert stage.error_message == task.error_message
 
 
 @pytest.mark.asyncio
