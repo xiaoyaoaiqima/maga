@@ -69,10 +69,11 @@ MAGA 仍是 source of truth；`maga-worker` 只作为执行器，不直连 MAGA 
 
 ### maga-worker / 历史 xhs-writer 现状
 
-- 核心运行时代码在：`/Users/luxifa/.hermes/profiles/xhs-writer/workspace/tools/xhs_runtime.py`。
+- 当前主运行时代码在：`/Users/luxifa/.hermes/profiles/maga-worker/workspace/tools/xhs_runtime.py`。
+- 历史能力来源在：`/Users/luxifa/.hermes/profiles/xhs-writer/workspace/tools/xhs_runtime.py`，只作为迁移参考和回退依据。
 - 当前入口是本地函数 `run_full_flow(brief_path)`，端到端跑 10 步并写 notes/debug 文件。
 - `maga-worker` 目标 profile 路径为：`/Users/luxifa/.hermes/profiles/maga-worker`。
-- 当前没有协议 v0.1 HTTP `/invoke` 服务迁入 `maga-worker`。
+- 协议 v0.1 HTTP `/invoke` 服务已迁入 `maga-worker`，历史 `xhs-writer` workspace 可暂时保留兼容副本。
 - runtime 中已有可复用函数：`call_ae`、`build_writing_spec`、`call_ge`、`aggregate_scores`、`run_full_flow`。
 - 最小接通可以先实现一个 `maga-worker` HTTP executor adapter，逐步把 `xhs.*` capability 映射到这些函数。
 
@@ -216,7 +217,7 @@ MAGA 仍是 source of truth；`maga-worker` 只作为执行器，不直连 MAGA 
 已完成 Step 1-3 的最小可运行切片：
 
 1. MAGA -> Executor 已支持 `Authorization: Bearer <executor_token>`；本地 MVP token 来源为 `ExecutorRegistry.config_json.executor_token`。
-2. 迁移期历史 xhs-writer workspace 已新增 FastAPI `/invoke` skeleton，后续应搬迁或注册为 `maga-worker` 的 `xhs.*` 能力：
+2. 迁移期历史 xhs-writer workspace 已新增 FastAPI `/invoke` skeleton，已在 2026-05-11 搬迁到 `maga-worker`；历史路径仅保留兼容副本：
    - `/Users/luxifa/.hermes/profiles/xhs-writer/workspace/tools/maga_executor_server.py`
    - `/Users/luxifa/.hermes/profiles/xhs-writer/workspace/tests/test_maga_executor_server.py`
 3. MAGA 新增真实 HTTP E2E 测试：
@@ -230,6 +231,22 @@ MAGA 仍是 source of truth；`maga-worker` 只作为执行器，不直连 MAGA 
    - `maga-worker` / 历史 xhs-writer skeleton：`5 passed in 0.13s`
 
 下一步进入 Step 4/5：逐步把 skeleton deterministic handler 替换为 `xhs_runtime.py` 薄 adapter，并按最新协议把 `xhs.generate_draft` 改成 artifact-based flow（response 只返回 `draft_artifact_id`）。
+
+## 进展记录（2026-05-11）
+
+已把执行入口从历史 `xhs-writer` workspace 收敛到 `maga-worker` workspace：
+
+1. `maga-worker` workspace 已具备独立 `/invoke` skeleton 和 `xhs.*` runtime adapter：
+   - `/Users/luxifa/.hermes/profiles/maga-worker/workspace/tools/maga_executor_server.py`
+   - `/Users/luxifa/.hermes/profiles/maga-worker/workspace/tools/maga_runtime_adapter.py`
+   - `/Users/luxifa/.hermes/profiles/maga-worker/workspace/tools/xhs_runtime.py`
+2. runtime 的 profile/workspace 路径已改为按当前文件位置自定位，不再硬编码历史 `xhs-writer` 目录。
+3. 历史 `xhs-writer` 的专家资产、GE 风格库、campaign/brief 只作为本地迁移兜底复制到 `maga-worker/workspace`；生产 source of truth 仍是 MAGA API。
+4. MAGA E2E 测试已改为启动 `maga-worker/workspace` 下的 `/invoke` server。
+
+当前验证结果：
+
+- `maga-worker` workspace：`17 passed in 0.36s`
 
 ## MVP 输入结构补充约定（2026-05-09）
 

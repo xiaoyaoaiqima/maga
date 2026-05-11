@@ -21,7 +21,7 @@ from app.models.base import Base
 from app.models.content_agent import ContentAgentStageCall, ExecutorRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 
-XHS_WORKSPACE = Path("/Users/luxifa/.hermes/profiles/xhs-writer/workspace")
+MAGA_WORKER_WORKSPACE = Path("/Users/luxifa/.hermes/profiles/maga-worker/workspace")
 PYTHON = Path("/Users/luxifa/maga/.venv/bin/python")
 
 
@@ -61,7 +61,7 @@ def maga_worker_server():
             "--port",
             str(port),
         ],
-        cwd=str(XHS_WORKSPACE),
+        cwd=str(MAGA_WORKER_WORKSPACE),
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
