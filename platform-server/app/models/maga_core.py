@@ -22,6 +22,7 @@ from app.models.content_agent import (
     ContentBatchJob,
     ContentBatchItem,
     ContentBatchItemVersion,
+    ContentFeedback,
     ExecutorRegistry,
 )
 
@@ -76,6 +77,7 @@ MAGA_CORE_MODELS = (
     ContentBatchJob,
     ContentBatchItem,
     ContentBatchItemVersion,
+    ContentFeedback,
     ContentAgentTask,
     ContentAgentRun,
     ContentAgentStageCall,

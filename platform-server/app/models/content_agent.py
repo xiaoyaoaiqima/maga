@@ -80,6 +80,27 @@ class ContentBatchItemVersion(Base):
     create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), nullable=True)
 
 
+class ContentFeedback(Base):
+    """Run-outside operator feedback used by later training and prompt optimization."""
+
+    __tablename__ = "content_feedback"
+
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
+    batch_id: Mapped[Optional[int]] = mapped_column(BIGINT_PK, nullable=True, index=True, comment="批次ID")
+    item_id: Mapped[int] = mapped_column(BIGINT_PK, nullable=False, index=True, comment="批次文章ID")
+    version_id: Mapped[Optional[int]] = mapped_column(BIGINT_PK, nullable=True, index=True, comment="反馈版本ID")
+    task_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True, comment="任务ID")
+    run_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True, comment="Run ID")
+    artifact_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True, comment="Artifact ID")
+    action: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="反馈动作")
+    review_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="评审状态")
+    quoted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="引用片段")
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="反馈内容")
+    submitter: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True, comment="提交人")
+    metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, comment="扩展数据")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), nullable=True)
+
+
 class ExecutorRegistry(Base):
     """Registered execution worker, e.g. Hermes profile maga-worker."""
 

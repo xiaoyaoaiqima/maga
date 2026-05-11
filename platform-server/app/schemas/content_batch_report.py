@@ -35,6 +35,7 @@ class ContentBatchReportSummary(BaseSchema):
     rewrite_item_count: int = 0
     remaining_rewrite_required_count: int = 0
     forbidden_hit_count: int = 0
+    feedback_count: int = 0
     avg_body_chars: float | None = None
     max_pairwise_jaccard_2gram: float = 0.0
 
@@ -61,6 +62,7 @@ class ContentBatchReportItem(BaseSchema):
     review_status: str | None = None
     latest_version_no: int | None = None
     human_feedback_text: str | None = None
+    feedback_count: int = 0
     reject_reasons: list[ContentBatchRejectReason] = Field(default_factory=list)
     runtime_mode: str | None = None
     generation_duration_ms: int | None = None

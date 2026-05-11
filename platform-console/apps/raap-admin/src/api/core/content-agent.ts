@@ -36,6 +36,7 @@ export namespace ContentAgentApi {
     rewrite_item_count: number;
     remaining_rewrite_required_count: number;
     forbidden_hit_count: number;
+    feedback_count: number;
     avg_body_chars?: null | number;
     max_pairwise_jaccard_2gram: number;
   }
@@ -62,6 +63,7 @@ export namespace ContentAgentApi {
     review_status?: null | string;
     latest_version_no?: null | number;
     human_feedback_text?: null | string;
+    feedback_count: number;
     reject_reasons: Array<{
       source: string;
       code?: null | string;

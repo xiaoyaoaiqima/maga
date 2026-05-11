@@ -6,7 +6,14 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models.base import Base
-from app.models.content_agent import ContentAgentRun, ContentAgentStageCall, ContentBatchItem, ContentBatchItemVersion, ContentBatchJob
+from app.models.content_agent import (
+    ContentAgentRun,
+    ContentAgentStageCall,
+    ContentBatchItem,
+    ContentBatchItemVersion,
+    ContentBatchJob,
+    ContentFeedback,
+)
 from app.services.content_batch_report_service import ContentBatchReportService
 
 
@@ -20,6 +27,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
                 ContentBatchJob.__table__,
                 ContentBatchItem.__table__,
                 ContentBatchItemVersion.__table__,
+                ContentFeedback.__table__,
                 ContentAgentStageCall.__table__,
                 ContentAgentRun.__table__,
             ],
@@ -130,6 +138,16 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
                 },
             )
         )
+        session.add(
+            ContentFeedback(
+                batch_id=job.id,
+                item_id=1,
+                action="request_revision",
+                review_status="needs_revision",
+                comment="开头再具体一点",
+                submitter="reviewer-a",
+            )
+        )
         await session.commit()
 
         report = await ContentBatchReportService(session).get_batch_report(job.id)
@@ -158,6 +176,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
     assert first.generation_duration_ms == 1200
     assert first.total_duration_ms == 3200
     assert first.trace_run_id == 101
+    assert first.feedback_count == 1
     assert first.trace_stage_calls[0].stage_call_id == "stage-101-generate"
     assert first.final_path == "/tmp/runtime-fast-101/final.md"
     assert first.debug_dir == "/tmp/runtime-fast-101"

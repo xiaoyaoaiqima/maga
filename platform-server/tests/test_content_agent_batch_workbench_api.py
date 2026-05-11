@@ -4,12 +4,13 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.v1.endpoints.content_agent import router
 from app.core.database import get_db
 from app.models.base import Base
-from app.models.content_agent import ExecutorRegistry
+from app.models.content_agent import ContentFeedback, ExecutorRegistry
 from app.models.maga_assets import AssetRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 
@@ -58,14 +59,15 @@ async def content_agent_workbench_client():
     app.dependency_overrides[get_db] = override_get_db
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-        yield client
+        yield client, session_factory
 
     await engine.dispose()
 
 
 @pytest.mark.asyncio
 async def test_batch_workbench_can_start_batch_then_list_and_open_report(content_agent_workbench_client):
-    response = await content_agent_workbench_client.post(
+    client, _session_factory = content_agent_workbench_client
+    response = await client.post(
         "/api/v1/content-agent/batches/start",
         json={
             "asset_key": "yuanyue",
@@ -92,14 +94,14 @@ async def test_batch_workbench_can_start_batch_then_list_and_open_report(content
     assert data["report"]["items"][0]["title"]
     assert data["report"]["items"][0]["body"]
 
-    list_response = await content_agent_workbench_client.get("/api/v1/content-agent/batches", params={"limit": 10})
+    list_response = await client.get("/api/v1/content-agent/batches", params={"limit": 10})
     assert list_response.status_code == 200
     list_data = list_response.json()["data"]
     assert list_data["total"] == 1
     assert list_data["items"][0]["batch_id"] == data["batch_id"]
     assert list_data["items"][0]["summary"]["generated_count"] == 2
 
-    report_response = await content_agent_workbench_client.get(
+    report_response = await client.get(
         f"/api/v1/content-agent/batches/{data['batch_id']}/report"
     )
     assert report_response.status_code == 200
@@ -110,7 +112,8 @@ async def test_batch_workbench_can_start_batch_then_list_and_open_report(content
 
 @pytest.mark.asyncio
 async def test_batch_workbench_uses_default_executor_when_form_sends_blank_code(content_agent_workbench_client):
-    response = await content_agent_workbench_client.post(
+    client, _session_factory = content_agent_workbench_client
+    response = await client.post(
         "/api/v1/content-agent/batches/start",
         json={
             "asset_key": "yuanyue",
@@ -131,7 +134,8 @@ async def test_batch_workbench_uses_default_executor_when_form_sends_blank_code(
 
 @pytest.mark.asyncio
 async def test_batch_workbench_can_record_operator_feedback_and_manual_edit(content_agent_workbench_client):
-    start_response = await content_agent_workbench_client.post(
+    client, _session_factory = content_agent_workbench_client
+    start_response = await client.post(
         "/api/v1/content-agent/batches/start",
         json={
             "asset_key": "yuanyue",
@@ -145,7 +149,7 @@ async def test_batch_workbench_can_record_operator_feedback_and_manual_edit(cont
     assert start_response.status_code == 200
     item = start_response.json()["data"]["report"]["items"][0]
 
-    feedback_response = await content_agent_workbench_client.post(
+    feedback_response = await client.post(
         f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
         json={
             "action": "request_revision",
@@ -159,7 +163,7 @@ async def test_batch_workbench_can_record_operator_feedback_and_manual_edit(cont
     assert feedback_data["version_no"] == 1
     assert feedback_data["item"]["human_feedback_text"] == "开头再具体一点，少一点总结腔。"
 
-    manual_edit_response = await content_agent_workbench_client.post(
+    manual_edit_response = await client.post(
         f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
         json={
             "action": "manual_edit",
@@ -176,7 +180,7 @@ async def test_batch_workbench_can_record_operator_feedback_and_manual_edit(cont
     assert manual_data["item"]["title"] == "我家便便不规律那阵子，转源悦后的真实记录"
     assert manual_data["item"]["body"] == "这是运营人工改后的正文，保留真实经历，也避免医疗化表达。"
 
-    approve_response = await content_agent_workbench_client.post(
+    approve_response = await client.post(
         f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
         json={"action": "approve", "feedback_text": "可发布", "created_by": "reviewer-a"},
     )
@@ -184,15 +188,58 @@ async def test_batch_workbench_can_record_operator_feedback_and_manual_edit(cont
     approve_data = approve_response.json()["data"]
     assert approve_data["review_status"] == "approved"
     assert approve_data["version_no"] == 3
+    assert approve_data["item"]["feedback_count"] == 3
 
-    report_response = await content_agent_workbench_client.get(
+    report_response = await client.get(
         f"/api/v1/content-agent/batches/{start_response.json()['data']['batch_id']}/report"
     )
     report_item = report_response.json()["data"]["items"][0]
+    assert report_response.json()["data"]["summary"]["feedback_count"] == 3
     assert report_item["status"] == "approved"
     assert report_item["review_status"] == "approved"
     assert report_item["latest_version_no"] == 3
     assert report_item["human_feedback_text"] == "可发布"
+    assert report_item["feedback_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_batch_feedback_is_persisted_for_training(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    start_response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "count": 1,
+            "created_by": "ops",
+        },
+    )
+    item = start_response.json()["data"]["report"]["items"][0]
+
+    feedback_response = await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={
+            "action": "request_revision",
+            "feedback_text": "开头像真实妈妈一点，少一点口号。",
+            "created_by": "reviewer-a",
+        },
+    )
+
+    assert feedback_response.status_code == 200
+    feedback_data = feedback_response.json()["data"]
+    assert feedback_data["item"]["feedback_count"] == 1
+
+    async with session_factory() as session:
+        feedback = (await session.execute(select(ContentFeedback))).scalar_one()
+    assert feedback.item_id == item["item_id"]
+    assert feedback.version_id == feedback_data["version_id"]
+    assert feedback.action == "request_revision"
+    assert feedback.review_status == "needs_revision"
+    assert feedback.comment == "开头像真实妈妈一点，少一点口号。"
+    assert feedback.submitter == "reviewer-a"
+    assert feedback.metadata_json["source"] == "content_batch_workbench"
 
 
 def _yuanyue_assets() -> list[AssetRegistry]:

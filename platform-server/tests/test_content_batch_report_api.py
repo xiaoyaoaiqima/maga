@@ -9,7 +9,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.api.v1.endpoints.content_agent import router
 from app.core.database import get_db
 from app.models.base import Base
-from app.models.content_agent import ContentAgentRun, ContentAgentStageCall, ContentBatchItem, ContentBatchItemVersion, ContentBatchJob
+from app.models.content_agent import (
+    ContentAgentRun,
+    ContentAgentStageCall,
+    ContentBatchItem,
+    ContentBatchItemVersion,
+    ContentBatchJob,
+    ContentFeedback,
+)
 
 
 @pytest_asyncio.fixture
@@ -22,6 +29,7 @@ async def batch_report_client():
                 ContentBatchJob.__table__,
                 ContentBatchItem.__table__,
                 ContentBatchItemVersion.__table__,
+                ContentFeedback.__table__,
                 ContentAgentRun.__table__,
                 ContentAgentStageCall.__table__,
             ],

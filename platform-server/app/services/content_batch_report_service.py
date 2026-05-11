@@ -7,7 +7,14 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.content_agent import ContentAgentRun, ContentAgentStageCall, ContentBatchItem, ContentBatchItemVersion, ContentBatchJob
+from app.models.content_agent import (
+    ContentAgentRun,
+    ContentAgentStageCall,
+    ContentBatchItem,
+    ContentBatchItemVersion,
+    ContentBatchJob,
+    ContentFeedback,
+)
 from app.schemas.content_batch_report import (
     ContentBatchListItem,
     ContentBatchRejectReason,
@@ -38,7 +45,11 @@ class ContentBatchReportService:
         for job in jobs:
             items = await self._batch_items(job.id)
             versions_by_item = await self._latest_versions_for_items(items)
-            report_items = [self._report_item(item, [], versions_by_item.get(item.id), None) for item in items]
+            feedback_counts = await self._feedback_counts_for_items(items)
+            report_items = [
+                self._report_item(item, [], versions_by_item.get(item.id), None, feedback_counts.get(item.id, 0))
+                for item in items
+            ]
             list_items.append(
                 ContentBatchListItem(
                     batch_id=job.id,
@@ -63,12 +74,14 @@ class ContentBatchReportService:
         stages_by_run = self._group_stages_by_run(stage_calls)
         runs_by_id = await self._runs_for_items(items)
         versions_by_item = await self._latest_versions_for_items(items)
+        feedback_counts = await self._feedback_counts_for_items(items)
         report_items = [
             self._report_item(
                 item,
                 stages_by_run.get(item.run_id or -1, []),
                 versions_by_item.get(item.id),
                 runs_by_id.get(item.run_id or -1),
+                feedback_counts.get(item.id, 0),
             )
             for item in items
         ]
@@ -89,7 +102,8 @@ class ContentBatchReportService:
         stage_calls = await self._stage_calls_for_items([item])
         latest_version = (await self._latest_versions_for_items([item])).get(item.id)
         run = (await self._runs_for_items([item])).get(item.run_id or -1)
-        return self._report_item(item, stage_calls, latest_version, run)
+        feedback_count = (await self._feedback_counts_for_items([item])).get(item.id, 0)
+        return self._report_item(item, stage_calls, latest_version, run, feedback_count)
 
     async def _require_job(self, batch_id: int) -> ContentBatchJob:
         result = await self.db.execute(select(ContentBatchJob).where(ContentBatchJob.id == batch_id))
@@ -136,6 +150,17 @@ class ContentBatchReportService:
             latest.setdefault(version.item_id, version)
         return latest
 
+    async def _feedback_counts_for_items(self, items: list[ContentBatchItem]) -> dict[int, int]:
+        item_ids = [item.id for item in items if item.id]
+        if not item_ids:
+            return {}
+        result = await self.db.execute(
+            select(ContentFeedback.item_id, func.count(ContentFeedback.id))
+            .where(ContentFeedback.item_id.in_(item_ids))
+            .group_by(ContentFeedback.item_id)
+        )
+        return {int(item_id): int(count or 0) for item_id, count in result.all()}
+
     def _group_stages_by_run(self, stage_calls: list[ContentAgentStageCall]) -> dict[int, list[ContentAgentStageCall]]:
         grouped: dict[int, list[ContentAgentStageCall]] = {}
         for stage in stage_calls:
@@ -148,6 +173,7 @@ class ContentBatchReportService:
         stage_calls: list[ContentAgentStageCall],
         latest_version: ContentBatchItemVersion | None = None,
         run: ContentAgentRun | None = None,
+        feedback_count: int = 0,
     ) -> ContentBatchReportItem:
         quality = item.quality_json or {}
         review = quality.get("review_report") or {}
@@ -177,6 +203,7 @@ class ContentBatchReportService:
             review_status=latest_version.review_status if latest_version else (quality.get("human_review") or {}).get("review_status"),
             latest_version_no=latest_version.version_no if latest_version else None,
             human_feedback_text=latest_version.feedback_text if latest_version else (quality.get("human_review") or {}).get("feedback_text"),
+            feedback_count=feedback_count,
             reject_reasons=self._reject_reasons(item, review, text),
             runtime_mode=runtime_result.get("mode") or quality.get("executor"),
             generation_duration_ms=self._stage_duration_ms(generation_stage) if generation_stage else None,
@@ -308,6 +335,7 @@ class ContentBatchReportService:
             rewrite_item_count=sum(1 for item in items if item.rewrite_reason or item.rewrite_rounds),
             remaining_rewrite_required_count=sum(1 for item in items if item.rewrite_required is True),
             forbidden_hit_count=forbidden_hit_count,
+            feedback_count=sum(item.feedback_count for item in items),
             avg_body_chars=round(sum(body_lengths) / len(body_lengths), 2) if body_lengths else None,
             max_pairwise_jaccard_2gram=self._max_pairwise_jaccard([item.body or "" for item in generated]),
         )

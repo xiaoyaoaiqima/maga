@@ -79,6 +79,10 @@ from app.models.content_agent import (
     ContentAgentRun,
     ContentAgentStageCall,
     ContentAgentTask,
+    ContentBatchJob,
+    ContentBatchItem,
+    ContentBatchItemVersion,
+    ContentFeedback,
     ExecutorRegistry,
 )
 
@@ -153,6 +157,10 @@ __all__ = [
     "PromptPatch",
     "PromptEvaluation",
     "ExecutorRegistry",
+    "ContentBatchJob",
+    "ContentBatchItem",
+    "ContentBatchItemVersion",
+    "ContentFeedback",
     "ContentAgentTask",
     "ContentAgentRun",
     "ContentAgentStageCall",

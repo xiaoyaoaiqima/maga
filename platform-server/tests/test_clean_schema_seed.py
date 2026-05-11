@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-from app.models.content_agent import ExecutorRegistry
+from app.models.content_agent import ContentFeedback, ExecutorRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 from app.models.base import Base
 from scripts.create_clean_schema import seed_clean_schema
@@ -43,3 +43,32 @@ async def test_seed_clean_schema_registers_hermes_maga_worker_executor():
     }
     assert "asset.query" not in capabilities
     assert "feedback.collect" not in capabilities
+
+
+@pytest.mark.asyncio
+async def test_clean_schema_includes_content_feedback_table():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        tables = [Base.metadata.tables[name] for name in MAGA_CORE_TABLE_NAMES]
+        await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=tables))
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        feedback = ContentFeedback(
+            batch_id=1,
+            item_id=1,
+            action="request_revision",
+            review_status="needs_revision",
+            comment="开头像真实妈妈一点",
+            submitter="reviewer-a",
+        )
+        session.add(feedback)
+        await session.commit()
+
+        saved = await session.scalar(select(ContentFeedback).where(ContentFeedback.item_id == 1))
+
+    await engine.dispose()
+
+    assert saved is not None
+    assert saved.comment == "开头像真实妈妈一点"
+    assert saved.submitter == "reviewer-a"

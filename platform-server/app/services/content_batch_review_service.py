@@ -4,7 +4,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.content_agent import ContentBatchItem, ContentBatchItemVersion
+from app.models.content_agent import ContentBatchItem, ContentBatchItemVersion, ContentFeedback
 from app.schemas.content_batch_report import (
     ContentBatchItemFeedbackRequest,
     ContentBatchItemFeedbackResponse,
@@ -68,6 +68,24 @@ class ContentBatchReviewService:
             metadata_json={"batch_id": item.batch_id, "item_no": item.item_no},
         )
         self.db.add(version)
+        await self.db.flush()
+        feedback = ContentFeedback(
+            batch_id=item.batch_id,
+            item_id=item.id,
+            version_id=version.id,
+            task_id=item.task_id,
+            run_id=item.run_id,
+            action=request.action,
+            review_status=review_status,
+            comment=request.feedback_text,
+            submitter=request.created_by,
+            metadata_json={
+                "item_no": item.item_no,
+                "source": "content_batch_workbench",
+                "manual_edit": request.action == "manual_edit",
+            },
+        )
+        self.db.add(feedback)
         await self.db.flush()
 
         report_item = await ContentBatchReportService(self.db).build_item_report(item)

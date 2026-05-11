@@ -37,13 +37,17 @@ const {
   Spin,
   Statistic,
   Tag,
+  Tabs,
 } = Antd as any;
 const { TextArea } = Input as any;
 const { Group: RadioGroup, Button: RadioButton } = Radio as any;
 const { Option: SelectOption } = Select as any;
+const { TabPane } = Tabs as any;
 
 type GenerationMode = 'batch' | 'single';
+type WorkspaceTab = 'generation' | 'training';
 
+const activeWorkspaceTab = ref<WorkspaceTab>('generation');
 const generationMode = ref<GenerationMode>('batch');
 const generating = ref(false);
 const batchLoading = ref(false);
@@ -65,6 +69,35 @@ const formState = reactive({
 
 const selectedItems = computed(() => selectedReport.value?.items || []);
 const selectedSummary = computed(() => selectedReport.value?.summary || null);
+const trainingItems = computed(() =>
+  selectedItems.value.filter(
+    (item) =>
+      item.review_status ||
+      item.human_feedback_text ||
+      item.feedback_count ||
+      item.reject_reasons?.length ||
+      item.hard_pass === false ||
+      item.rewrite_required,
+  ),
+);
+const trainingSummary = computed(() => {
+  const items = selectedItems.value;
+  return {
+    approved_count: items.filter((item) => item.review_status === 'approved')
+      .length,
+    feedback_count: selectedSummary.value?.feedback_count || 0,
+    manual_edited_count: items.filter(
+      (item) => item.review_status === 'manual_edited',
+    ).length,
+    needs_revision_count: items.filter(
+      (item) => item.review_status === 'needs_revision',
+    ).length,
+    reject_reason_count: items.reduce(
+      (total, item) => total + (item.reject_reasons?.length || 0),
+      0,
+    ),
+  };
+});
 
 const statusColor = (status?: string) => {
   if (status === 'approved') return 'green';
@@ -118,6 +151,35 @@ const traceLines = (item: ContentAgentApi.BatchReportItem) => [
     )} ${stage.stage_call_id}`.trim(),
   ),
 ];
+
+const feedbackDigestLines = computed(() => {
+  if (!selectedReport.value) return [];
+  return [
+    `batch_id: ${selectedReport.value.batch_id}`,
+    `asset_key: ${selectedReport.value.asset_key}`,
+    `product_topic: ${selectedReport.value.product_topic}`,
+    `target_audience: ${selectedReport.value.target_audience || '-'}`,
+    `style: ${selectedReport.value.style || '-'}`,
+    '',
+    ...trainingItems.value.flatMap((item) => [
+      `#${item.item_no} ${item.title || '未生成标题'}`,
+      `review_status: ${reviewStatusLabel(item.review_status)}`,
+      `hard_pass: ${
+        item.hard_pass === true ? 'pass' : item.hard_pass === false ? 'fail' : '-'
+      }`,
+      `reject_reasons: ${
+        item.reject_reasons?.length
+          ? item.reject_reasons.map((reason) => reason.message).join('；')
+          : '-'
+      }`,
+      `human_feedback: ${item.human_feedback_text || '-'}`,
+      `runtime: ${item.runtime_mode || '-'} / generation ${formatDuration(
+        item.generation_duration_ms,
+      )}`,
+      '',
+    ]),
+  ];
+});
 
 const showTrace = (item: ContentAgentApi.BatchReportItem) => {
   Modal.info({
@@ -182,6 +244,14 @@ const loadBatches = async () => {
   } finally {
     batchLoading.value = false;
   }
+};
+
+const copyFeedbackDigest = async () => {
+  if (!trainingItems.value.length) {
+    message.warning('当前批次暂无可复制的反馈摘要');
+    return;
+  }
+  await copyText(feedbackDigestLines.value.join('\n'));
 };
 
 const openReport = async (batchId: number, showLoading = true) => {
@@ -515,221 +585,379 @@ onMounted(() => {
               </Space>
             </template>
 
-            <Descriptions :column="2" size="small" bordered>
-              <DescriptionsItem label="主题">
-                {{ selectedReport.product_topic }}
-              </DescriptionsItem>
-              <DescriptionsItem label="人群">
-                {{ selectedReport.target_audience || '-' }}
-              </DescriptionsItem>
-              <DescriptionsItem label="风格">
-                {{ selectedReport.style || '-' }}
-              </DescriptionsItem>
-              <DescriptionsItem label="资产键">
-                {{ selectedReport.asset_key }}
-              </DescriptionsItem>
-            </Descriptions>
+            <Tabs v-model:active-key="activeWorkspaceTab" class="workspace-tabs">
+              <TabPane key="generation" tab="实际产文">
+                <Descriptions :column="2" size="small" bordered>
+                  <DescriptionsItem label="主题">
+                    {{ selectedReport.product_topic }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="人群">
+                    {{ selectedReport.target_audience || '-' }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="风格">
+                    {{ selectedReport.style || '-' }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="资产键">
+                    {{ selectedReport.asset_key }}
+                  </DescriptionsItem>
+                </Descriptions>
 
-            <Row v-if="selectedSummary" class="mt-4" :gutter="12">
-              <Col :span="4">
-                <Statistic
-                  title="总篇数"
-                  :value="selectedSummary.total_count"
-                />
-              </Col>
-              <Col :span="4">
-                <Statistic
-                  title="已生成"
-                  :value="selectedSummary.generated_count"
-                />
-              </Col>
-              <Col :span="4">
-                <Statistic
-                  title="红线通过"
-                  :value="selectedSummary.hard_pass_count"
-                />
-              </Col>
-              <Col :span="4">
-                <Statistic
-                  title="自动改写"
-                  :value="selectedSummary.rewrite_item_count"
-                />
-              </Col>
-              <Col :span="4">
-                <Statistic
-                  title="待继续改"
-                  :value="selectedSummary.remaining_rewrite_required_count"
-                />
-              </Col>
-              <Col :span="4">
-                <Statistic
-                  title="禁用词命中"
-                  :value="selectedSummary.forbidden_hit_count"
-                />
-              </Col>
-            </Row>
-
-            <Alert
-              v-if="
-                selectedSummary?.forbidden_hit_count ||
-                selectedSummary?.remaining_rewrite_required_count
-              "
-              class="mt-4"
-              message="这批内容仍有风险项，请优先查看标红文章。"
-              show-icon
-              type="warning"
-            />
-
-            <Divider />
-
-            <List :data-source="selectedItems" item-layout="vertical">
-              <template #renderItem="{ item }">
-                <ListItem :key="item.item_id">
-                  <Card class="article-card" :bordered="true">
-                    <template #title>
-                      <Space wrap>
-                        <span>第 {{ item.item_no }} 篇</span>
-                        <Tag :color="statusColor(item.status)">
-                          {{ item.status }}
-                        </Tag>
-                        <Tag :color="passColor(item.hard_pass)">
-                          红线{{
-                            item.hard_pass === true
-                              ? '通过'
-                              : item.hard_pass === false
-                                ? '未通过'
-                                : '未知'
-                          }}
-                        </Tag>
-                        <Tag
-                          v-if="item.rewrite_rounds || item.rewrite_reason"
-                          color="blue"
-                        >
-                          已自动改写
-                        </Tag>
-                        <Tag v-if="item.forbidden_hits.length > 0" color="red">
-                          禁用词 {{ item.forbidden_hits.join('、') }}
-                        </Tag>
-                        <Tag v-if="item.review_status" color="purple">
-                          {{ reviewStatusLabel(item.review_status) }} · v{{
-                            item.latest_version_no || 1
-                          }}
-                        </Tag>
-                        <Tag v-if="item.runtime_mode" color="cyan">
-                          {{ item.runtime_mode }}
-                        </Tag>
-                        <Tag v-if="item.generation_duration_ms">
-                          生文 {{ formatDuration(item.generation_duration_ms) }}
-                        </Tag>
-                        <Tag v-if="item.total_duration_ms">
-                          总耗时 {{ formatDuration(item.total_duration_ms) }}
-                        </Tag>
-                      </Space>
-                    </template>
-                    <template #extra>
-                      <Space>
-                        <Button size="small" @click="copyArticle(item)">
-                          复制
-                        </Button>
-                        <Button
-                          v-if="item.trace_run_id || item.run_id"
-                          size="small"
-                          @click="showTrace(item)"
-                        >
-                          Trace
-                        </Button>
-                        <Button size="small" @click="showQuality(item)">
-                          质量报告
-                        </Button>
-                      </Space>
-                    </template>
-
-                    <h3>{{ item.title || '未生成标题' }}</h3>
-                    <div v-if="item.body" class="article-body">
-                      {{ item.body }}
-                    </div>
-                    <Alert
-                      v-else
-                      :message="item.error_message || '正文尚未生成'"
-                      type="error"
+                <Row v-if="selectedSummary" class="mt-4" :gutter="12">
+                  <Col :span="4">
+                    <Statistic
+                      title="总篇数"
+                      :value="selectedSummary.total_count"
                     />
+                  </Col>
+                  <Col :span="4">
+                    <Statistic
+                      title="已生成"
+                      :value="selectedSummary.generated_count"
+                    />
+                  </Col>
+                  <Col :span="4">
+                    <Statistic
+                      title="红线通过"
+                      :value="selectedSummary.hard_pass_count"
+                    />
+                  </Col>
+                  <Col :span="4">
+                    <Statistic
+                      title="自动改写"
+                      :value="selectedSummary.rewrite_item_count"
+                    />
+                  </Col>
+                  <Col :span="4">
+                    <Statistic
+                      title="待继续改"
+                      :value="selectedSummary.remaining_rewrite_required_count"
+                    />
+                  </Col>
+                  <Col :span="4">
+                    <Statistic
+                      title="禁用词命中"
+                      :value="selectedSummary.forbidden_hit_count"
+                    />
+                  </Col>
+                </Row>
 
-                    <Alert
-                      v-if="item.reject_reasons?.length"
-                      class="mt-3"
-                      type="error"
-                      show-icon
-                    >
-                      <template #message>
-                        <div class="reject-reasons">
-                          <div
-                            v-for="reason in item.reject_reasons"
-                            :key="`${reason.source}-${reason.code}-${reason.message}`"
-                            class="reject-reason-item"
-                          >
-                            <Tag color="red">
-                              {{ rejectSourceLabel(reason.source) }}
+                <Alert
+                  v-if="
+                    selectedSummary?.forbidden_hit_count ||
+                    selectedSummary?.remaining_rewrite_required_count
+                  "
+                  class="mt-4"
+                  message="这批内容仍有风险项，请优先查看标红文章。"
+                  show-icon
+                  type="warning"
+                />
+
+                <Divider />
+
+                <List :data-source="selectedItems" item-layout="vertical">
+                  <template #renderItem="{ item }">
+                    <ListItem :key="item.item_id">
+                      <Card class="article-card" :bordered="true">
+                        <template #title>
+                          <Space wrap>
+                            <span>第 {{ item.item_no }} 篇</span>
+                            <Tag :color="statusColor(item.status)">
+                              {{ item.status }}
                             </Tag>
-                            <span v-if="reason.code" class="reason-code">
-                              {{ reason.code }}
-                            </span>
-                            <span>{{ reason.message }}</span>
-                            <span v-if="reason.evidence?.length">
-                              证据：{{ reason.evidence.join('；') }}
-                            </span>
-                          </div>
+                            <Tag :color="passColor(item.hard_pass)">
+                              红线{{
+                                item.hard_pass === true
+                                  ? '通过'
+                                  : item.hard_pass === false
+                                    ? '未通过'
+                                    : '未知'
+                              }}
+                            </Tag>
+                            <Tag
+                              v-if="item.rewrite_rounds || item.rewrite_reason"
+                              color="blue"
+                            >
+                              已自动改写
+                            </Tag>
+                            <Tag
+                              v-if="item.forbidden_hits.length > 0"
+                              color="red"
+                            >
+                              禁用词 {{ item.forbidden_hits.join('、') }}
+                            </Tag>
+                            <Tag v-if="item.review_status" color="purple">
+                              {{ reviewStatusLabel(item.review_status) }} · v{{
+                                item.latest_version_no || 1
+                              }}
+                            </Tag>
+                            <Tag v-if="item.runtime_mode" color="cyan">
+                              {{ item.runtime_mode }}
+                            </Tag>
+                            <Tag v-if="item.generation_duration_ms">
+                              生文
+                              {{ formatDuration(item.generation_duration_ms) }}
+                            </Tag>
+                            <Tag v-if="item.total_duration_ms">
+                              总耗时 {{ formatDuration(item.total_duration_ms) }}
+                            </Tag>
+                          </Space>
+                        </template>
+                        <template #extra>
+                          <Space>
+                            <Button size="small" @click="copyArticle(item)">
+                              复制
+                            </Button>
+                            <Button
+                              v-if="item.trace_run_id || item.run_id"
+                              size="small"
+                              @click="showTrace(item)"
+                            >
+                              Trace
+                            </Button>
+                            <Button size="small" @click="showQuality(item)">
+                              质量报告
+                            </Button>
+                          </Space>
+                        </template>
+
+                        <h3>{{ item.title || '未生成标题' }}</h3>
+                        <div v-if="item.body" class="article-body">
+                          {{ item.body }}
                         </div>
-                      </template>
-                    </Alert>
+                        <Alert
+                          v-else
+                          :message="item.error_message || '正文尚未生成'"
+                          type="error"
+                        />
 
-                    <div class="article-meta mt-3">
-                      <Tag v-if="item.opening_type">
-                        {{ item.opening_type }}
-                      </Tag>
-                      <Tag v-if="item.structure_type">
-                        {{ item.structure_type }}
-                      </Tag>
-                      <Tag>字数 {{ item.body_chars }}</Tag>
-                      <Tag>建议 {{ item.suggestion_count }}</Tag>
-                      <Tag>替换 {{ item.replacement_count }}</Tag>
-                      <Tag v-if="item.trace_run_id || item.run_id">
-                        Run #{{ item.trace_run_id || item.run_id }}
-                      </Tag>
-                    </div>
+                        <Alert
+                          v-if="item.reject_reasons?.length"
+                          class="mt-3"
+                          type="error"
+                          show-icon
+                        >
+                          <template #message>
+                            <div class="reject-reasons">
+                              <div
+                                v-for="reason in item.reject_reasons"
+                                :key="`${reason.source}-${reason.code}-${reason.message}`"
+                                class="reject-reason-item"
+                              >
+                                <Tag color="red">
+                                  {{ rejectSourceLabel(reason.source) }}
+                                </Tag>
+                                <span v-if="reason.code" class="reason-code">
+                                  {{ reason.code }}
+                                </span>
+                                <span>{{ reason.message }}</span>
+                                <span v-if="reason.evidence?.length">
+                                  证据：{{ reason.evidence.join('；') }}
+                                </span>
+                              </div>
+                            </div>
+                          </template>
+                        </Alert>
 
+                        <div class="article-meta mt-3">
+                          <Tag v-if="item.opening_type">
+                            {{ item.opening_type }}
+                          </Tag>
+                          <Tag v-if="item.structure_type">
+                            {{ item.structure_type }}
+                          </Tag>
+                          <Tag>字数 {{ item.body_chars }}</Tag>
+                          <Tag>建议 {{ item.suggestion_count }}</Tag>
+                          <Tag>替换 {{ item.replacement_count }}</Tag>
+                          <Tag v-if="item.trace_run_id || item.run_id">
+                            Run #{{ item.trace_run_id || item.run_id }}
+                          </Tag>
+                        </div>
+
+                        <div
+                          v-if="item.trace_stage_calls?.length"
+                          class="trace-stage-list"
+                        >
+                          <span>执行链路</span>
+                          <Tag
+                            v-for="stage in item.trace_stage_calls"
+                            :key="stage.stage_call_id"
+                            :color="
+                              stage.status === 'succeeded'
+                                ? 'green'
+                                : stage.status === 'failed'
+                                  ? 'red'
+                                  : 'blue'
+                            "
+                          >
+                            {{ stage.capability }} ·
+                            {{ formatDuration(stage.duration_ms) }}
+                          </Tag>
+                        </div>
+
+                        <Divider />
+                        <div class="feedback-placeholder">
+                          <Alert
+                            v-if="item.human_feedback_text"
+                            class="mb-2"
+                            :message="`最近反馈：${item.human_feedback_text}`"
+                            show-icon
+                            type="success"
+                          />
+                          <TextArea
+                            v-model:value="feedbackDrafts[item.item_id]"
+                            placeholder="填写运营修改意见；点“提交修改意见”会记录待改状态，点“人工编辑保存”可直接改标题/正文。"
+                            :rows="2"
+                          />
+                          <Space class="mt-2">
+                            <Button
+                              size="small"
+                              type="primary"
+                              :loading="reviewingItemId === item.item_id"
+                              @click="submitFeedback(item, 'approve')"
+                            >
+                              通过
+                            </Button>
+                            <Button
+                              size="small"
+                              :loading="reviewingItemId === item.item_id"
+                              @click="submitFeedback(item, 'request_revision')"
+                            >
+                              提交修改意见
+                            </Button>
+                            <Button
+                              size="small"
+                              :loading="reviewingItemId === item.item_id"
+                              @click="openManualEdit(item)"
+                            >
+                              人工编辑保存
+                            </Button>
+                          </Space>
+                        </div>
+                      </Card>
+                    </ListItem>
+                  </template>
+                </List>
+              </TabPane>
+
+              <TabPane key="training" tab="训练反馈">
+                <div class="training-panel">
+                  <Row :gutter="12">
+                    <Col :span="4">
+                      <Statistic
+                        title="已通过"
+                        :value="trainingSummary.approved_count"
+                      />
+                    </Col>
+                    <Col :span="4">
+                      <Statistic
+                        title="待修改"
+                        :value="trainingSummary.needs_revision_count"
+                      />
+                    </Col>
+                    <Col :span="4">
+                      <Statistic
+                        title="人工编辑"
+                        :value="trainingSummary.manual_edited_count"
+                      />
+                    </Col>
+                    <Col :span="4">
+                      <Statistic
+                        title="反馈数"
+                        :value="trainingSummary.feedback_count"
+                      />
+                    </Col>
+                    <Col :span="4">
+                      <Statistic
+                        title="驳回原因"
+                        :value="trainingSummary.reject_reason_count"
+                      />
+                    </Col>
+                    <Col :span="4">
+                      <Button block @click="copyFeedbackDigest">
+                        复制反馈摘要
+                      </Button>
+                    </Col>
+                  </Row>
+
+                  <Empty
+                    v-if="trainingItems.length === 0"
+                    class="mt-4"
+                    description="当前批次还没有审核反馈或驳回原因"
+                  />
+
+                  <div v-else class="training-list">
                     <div
-                      v-if="item.trace_stage_calls?.length"
-                      class="trace-stage-list"
+                      v-for="item in trainingItems"
+                      :key="item.item_id"
+                      class="training-item"
                     >
-                      <span>执行链路</span>
-                      <Tag
-                        v-for="stage in item.trace_stage_calls"
-                        :key="stage.stage_call_id"
-                        :color="
-                          stage.status === 'succeeded'
-                            ? 'green'
-                            : stage.status === 'failed'
-                              ? 'red'
-                              : 'blue'
-                        "
-                      >
-                        {{ stage.capability }} ·
-                        {{ formatDuration(stage.duration_ms) }}
-                      </Tag>
-                    </div>
-
-                    <Divider />
-                    <div class="feedback-placeholder">
+                      <div class="training-item-header">
+                        <Space wrap>
+                          <strong>第 {{ item.item_no }} 篇</strong>
+                          <Tag :color="passColor(item.hard_pass)">
+                            红线{{
+                              item.hard_pass === true
+                                ? '通过'
+                                : item.hard_pass === false
+                                  ? '未通过'
+                                  : '未知'
+                            }}
+                          </Tag>
+                          <Tag v-if="item.review_status" color="purple">
+                            {{ reviewStatusLabel(item.review_status) }}
+                          </Tag>
+                          <Tag v-if="item.feedback_count" color="geekblue">
+                            反馈 {{ item.feedback_count }}
+                          </Tag>
+                          <Tag v-if="item.generation_duration_ms">
+                            生文 {{ formatDuration(item.generation_duration_ms) }}
+                          </Tag>
+                        </Space>
+                        <Space>
+                          <Button
+                            v-if="item.trace_run_id || item.run_id"
+                            size="small"
+                            @click="showTrace(item)"
+                          >
+                            Trace
+                          </Button>
+                          <Button size="small" @click="showQuality(item)">
+                            质量报告
+                          </Button>
+                        </Space>
+                      </div>
+                      <div class="training-title">
+                        {{ item.title || '未生成标题' }}
+                      </div>
+                      <div v-if="item.reject_reasons?.length" class="mt-2">
+                        <div
+                          v-for="reason in item.reject_reasons"
+                          :key="`${reason.source}-${reason.code}-${reason.message}`"
+                          class="reject-reason-item"
+                        >
+                          <Tag color="red">
+                            {{ rejectSourceLabel(reason.source) }}
+                          </Tag>
+                          <span v-if="reason.code" class="reason-code">
+                            {{ reason.code }}
+                          </span>
+                          <span>{{ reason.message }}</span>
+                          <span v-if="reason.evidence?.length">
+                            证据：{{ reason.evidence.join('；') }}
+                          </span>
+                        </div>
+                      </div>
                       <Alert
                         v-if="item.human_feedback_text"
-                        class="mb-2"
-                        :message="`最近反馈：${item.human_feedback_text}`"
+                        class="mt-2"
+                        :message="`人工反馈：${item.human_feedback_text}`"
                         show-icon
                         type="success"
                       />
                       <TextArea
                         v-model:value="feedbackDrafts[item.item_id]"
-                        placeholder="填写运营修改意见；点“提交修改意见”会记录待改状态，点“人工编辑保存”可直接改标题/正文。"
+                        class="mt-2"
+                        placeholder="补充这篇为什么好/不好。"
                         :rows="2"
                       />
                       <Space class="mt-2">
@@ -757,10 +985,10 @@ onMounted(() => {
                         </Button>
                       </Space>
                     </div>
-                  </Card>
-                </ListItem>
-              </template>
-            </List>
+                  </div>
+                </div>
+              </TabPane>
+            </Tabs>
           </Card>
 
           <Card v-else :bordered="false">
@@ -815,6 +1043,10 @@ onMounted(() => {
 
 .article-card {
   width: 100%;
+}
+
+.workspace-tabs :deep(.ant-tabs-nav) {
+  margin-bottom: 16px;
 }
 
 .article-body {
@@ -881,5 +1113,36 @@ onMounted(() => {
   grid-column: 1 / -1;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.training-panel {
+  min-height: 280px;
+}
+
+.training-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.training-item {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+}
+
+.training-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.training-title {
+  margin-top: 8px;
+  color: #262626;
+  font-weight: 600;
 }
 </style>
