@@ -24,10 +24,18 @@ async def start_generation_client():
     async with session_factory() as session:
         session.add(
             ExecutorRegistry(
-                executor_code="hermes_xhs_writer",
+                executor_code="hermes_maga_worker",
                 executor_type="hermes_profile",
-                invoke_url="mock://xhs-writer/invoke",
-                supported_capabilities_json=[{"capability": "xhs.interpret_brief", "schema_version": "1"}],
+                profile_name="maga-worker",
+                display_name="Hermes MAGA worker",
+                invoke_url="mock://maga-worker/invoke",
+                supported_capabilities_json=[
+                    {"capability": "xhs.interpret_brief", "schema_version": "1"},
+                    {"capability": "xhs.run_ae_analysis", "schema_version": "1"},
+                    {"capability": "xhs.generate_draft", "schema_version": "1"},
+                    {"capability": "xhs.run_ae_review", "schema_version": "1"},
+                    {"capability": "xhs.rewrite_draft", "schema_version": "1"},
+                ],
             )
         )
         await session.commit()
@@ -48,14 +56,14 @@ async def start_generation_client():
 
 
 @pytest.mark.asyncio
-async def test_start_generation_endpoint_creates_task_run_stage_and_invokes_mock_executor(start_generation_client):
+async def test_start_generation_endpoint_returns_publishable_title_and_body(start_generation_client):
     response = await start_generation_client.post(
         "/api/v1/content-agent/generation/start",
         json={
-            "product_topic": "A2 奶粉",
+            "product_topic": "美素佳儿源悦",
             "target_audience": "新手妈妈",
             "style": "情绪共情",
-            "executor_code": "hermes_xhs_writer",
+            "executor_code": "hermes_maga_worker",
         },
     )
 
@@ -63,20 +71,33 @@ async def test_start_generation_endpoint_creates_task_run_stage_and_invokes_mock
     data = response.json()["data"]
     assert data["task_id"]
     assert data["run_id"]
-    assert data["stage_call_id"]
-    assert data["capability"] == "xhs.interpret_brief"
-    assert data["stage_status"] == "succeeded"
-    assert data["invoke_mode"] == "sync"
-    assert data["output"]["structured_brief"]["product_topic"] == "A2 奶粉"
-    assert data["output"]["structured_brief"]["target_audience"] == "新手妈妈"
-    assert data["output"]["structured_brief"]["style"] == "情绪共情"
+    assert data["title"]
+    assert data["body"]
+    assert "美素佳儿源悦" in data["title"]
+    assert "新手妈妈" in data["body"]
+    assert "output" not in data
+    assert "stage_call_id" not in data
+    assert "capability" not in data
+
+
+@pytest.mark.asyncio
+async def test_start_generation_endpoint_uses_default_executor_when_form_sends_blank_code(start_generation_client):
+    response = await start_generation_client.post(
+        "/api/v1/content-agent/generation/start",
+        json={"product_topic": "美素佳儿源悦", "executor_code": "  "},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["title"]
+    assert data["body"]
 
 
 @pytest.mark.asyncio
 async def test_start_generation_endpoint_returns_404_when_executor_missing(start_generation_client):
     response = await start_generation_client.post(
         "/api/v1/content-agent/generation/start",
-        json={"product_topic": "A2 奶粉", "executor_code": "missing_executor"},
+        json={"product_topic": "美素佳儿源悦", "executor_code": "missing_executor"},
     )
 
     assert response.status_code == 404

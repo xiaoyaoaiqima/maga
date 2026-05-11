@@ -34,6 +34,14 @@ from app.models.calibration_record import CalibrationRecord
 from app.models.calibration_task import CalibrationTask
 from app.models.ab_test import ABTest
 from app.models.metric_definition import MetricDefinition
+from app.models.dashboard_data_cache import (
+    DashboardDataCacheDemoConfig,
+    DashboardDataCacheDistributedLock,
+    DashboardDataCacheRefreshConfig,
+    DashboardDataCacheRefreshHistory,
+    DashboardDataCacheResponse,
+    DashboardDataCacheWarmupConfig,
+)
 from app.models.sys_user import SysUser
 from app.models.sys_role import SysRole
 from app.models.sys_menu import SysMenu
@@ -109,6 +117,12 @@ __all__ = [
     "CalibrationTask",
     "ABTest",
     "MetricDefinition",
+    "DashboardDataCacheResponse",
+    "DashboardDataCacheRefreshConfig",
+    "DashboardDataCacheRefreshHistory",
+    "DashboardDataCacheDemoConfig",
+    "DashboardDataCacheDistributedLock",
+    "DashboardDataCacheWarmupConfig",
     "SysUser",
     "SysRole",
     "SysMenu",

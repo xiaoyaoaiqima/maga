@@ -1,9 +1,19 @@
 """Content-agent execution-layer endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.content_agent_defaults import normalize_executor_code
 from app.core.database import get_db
 from app.schemas.base import ResponseData
+from app.schemas.content_batch_report import (
+    ContentBatchExecutionSummary,
+    ContentBatchItemFeedbackRequest,
+    ContentBatchItemFeedbackResponse,
+    ContentBatchListResponse,
+    ContentBatchReportResponse,
+    ContentBatchStartRequest,
+    ContentBatchStartResponse,
+)
 from app.schemas.content_agent import (
     ContentAgentArtifactCreate,
     ContentAgentArtifactResponse,
@@ -11,7 +21,6 @@ from app.schemas.content_agent import (
     ContentAgentClaimResponse,
     ContentAgentEventCreate,
     ContentAgentEventResponse,
-    ContentAgentHeartbeatRequest,
     ContentAgentHumanReviewRequest,
     ContentAgentHumanReviewResponse,
     ContentAgentRunCompleteRequest,
@@ -20,22 +29,28 @@ from app.schemas.content_agent import (
     ContentAgentSnapshotResponse,
     ContentAgentStartGenerationRequest,
     ContentAgentStartGenerationResponse,
-    ContentAgentStageCallCompleteRequest,
-    ContentAgentStageCallFailRequest,
-    ContentAgentStageCallResponse,
     ContentAgentTaskCreate,
     ContentAgentTaskResponse,
 )
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.content_agent_service import ContentAgentService
-from app.services.executor_invocation_service import MockExecutorInvocationClient
+from app.services.content_batch_execution_service import ContentBatchExecutionService
+from app.services.content_batch_planner import ContentBatchPlanner
+from app.services.content_batch_report_service import ContentBatchReportService
+from app.services.content_batch_review_service import ContentBatchReviewService
+from app.services.executor_invocation_service import ExecutorInvocationClient, MockExecutorInvocationClient
 
 router = APIRouter()
 
 
+def _normalized_executor_code(executor_code: str | None) -> str:
+    """Treat empty/whitespace executor form input as the default MAGA worker executor."""
+    return normalize_executor_code(executor_code)
+
+
 def _map_protocol_error(exc: ValueError) -> HTTPException:
     message = str(exc)
-    if "run token" in message or "not current" in message:
+    if "run token" in message or "not current" in message or "stage header" in message:
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message)
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message)
 
@@ -55,31 +70,122 @@ def _task_create_from_start_request(request: ContentAgentStartGenerationRequest)
     )
 
 
+def _invocation_client_for_invoke_url(invoke_url: str | None):
+    """Use the local deterministic mock only for explicit mock:// executor URLs."""
+    if invoke_url and invoke_url.startswith("mock://"):
+        return MockExecutorInvocationClient()
+    return ExecutorInvocationClient()
+
+
 @router.post("/generation/start", response_model=ResponseData[ContentAgentStartGenerationResponse])
 async def start_generation(
     request: ContentAgentStartGenerationRequest,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseData[ContentAgentStartGenerationResponse]:
-    invocation_client = MockExecutorInvocationClient() if request.executor_code == "hermes_xhs_writer" else None
+    service = ContentAgentService(db)
+    executor_code = _normalized_executor_code(request.executor_code)
+    executor = await service.get_executor(executor_code)
+    if not executor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="executor not found")
+    invocation_client = _invocation_client_for_invoke_url(executor.invoke_url)
     orchestrator = ContentAgentOrchestrator(
         db,
         invocation_client=invocation_client,
         callback_base_url="/api/v1/content-agent",
     )
     try:
-        result = await orchestrator.start_generation_run(_task_create_from_start_request(request))
+        task_request = _task_create_from_start_request(request)
+        task_request.executor_code = executor_code
+        result = await orchestrator.run_mvp_generation_chain(task_request)
     except ValueError as exc:
         raise _map_protocol_error(exc) from exc
     response = ContentAgentStartGenerationResponse(
         task_id=result.run.task_id,
         run_id=result.run.id,
-        stage_call_id=result.stage_call.stage_call_id,
-        capability=result.stage_call.capability,
-        stage_status=result.stage_call.status,
-        invoke_mode=result.invoke_result.mode,
-        output=result.stage_call.output_snapshot,
+        title=result.final_content["title"],
+        body=result.final_content["body"],
     )
-    return ResponseData(message="Generation run started", data=response)
+    return ResponseData(message="Generation completed", data=response)
+
+
+@router.post("/batches/start", response_model=ResponseData[ContentBatchStartResponse])
+async def start_batch_generation(
+    request: ContentBatchStartRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchStartResponse]:
+    service = ContentAgentService(db)
+    executor_code = _normalized_executor_code(request.executor_code)
+    executor = await service.get_executor(executor_code)
+    if not executor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="executor not found")
+    invocation_client = _invocation_client_for_invoke_url(executor.invoke_url)
+    try:
+        job = await ContentBatchPlanner(db).create_batch_plan(
+            asset_key=request.asset_key,
+            product_topic=request.product_topic,
+            target_audience=request.target_audience,
+            style=request.style,
+            count=request.count,
+            created_by=request.created_by,
+        )
+        execution = await ContentBatchExecutionService(
+            db,
+            invocation_client=invocation_client,
+            callback_base_url="/api/v1/content-agent",
+            executor_code=executor_code,
+        ).execute_batch_items(job.id, limit=request.count, created_by=request.created_by)
+        report = await ContentBatchReportService(db).get_batch_report(job.id)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    response = ContentBatchStartResponse(
+        batch_id=job.id,
+        batch_code=job.batch_code,
+        execution=ContentBatchExecutionSummary(
+            requested_limit=execution.requested_limit,
+            generated_count=execution.generated_count,
+            failed_count=execution.failed_count,
+            item_ids=execution.item_ids,
+        ),
+        report=report,
+    )
+    return ResponseData(message="Batch generation completed", data=response)
+
+
+@router.get("/batches", response_model=ResponseData[ContentBatchListResponse])
+async def list_batches(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchListResponse]:
+    batches = await ContentBatchReportService(db).list_batch_reports(limit=limit, offset=offset)
+    return ResponseData(data=batches)
+
+
+@router.post("/batch-items/{item_id}/feedback", response_model=ResponseData[ContentBatchItemFeedbackResponse])
+async def submit_batch_item_feedback(
+    item_id: int,
+    request: ContentBatchItemFeedbackRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchItemFeedbackResponse]:
+    service = ContentBatchReviewService(db)
+    try:
+        result = await service.submit_feedback(item_id, request)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    return ResponseData(message="Operator feedback saved", data=result)
+
+
+@router.get("/batches/{batch_id}/report", response_model=ResponseData[ContentBatchReportResponse])
+async def get_batch_report(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchReportResponse]:
+    service = ContentBatchReportService(db)
+    try:
+        report = await service.get_batch_report(batch_id)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    return ResponseData(data=report)
 
 
 @router.post("/tasks", response_model=ResponseData[ContentAgentTaskResponse])
@@ -143,65 +249,22 @@ async def create_artifact(
     return ResponseData(message="产物写入成功", data=ContentAgentArtifactResponse.model_validate(artifact))
 
 
-@router.post(
-    "/runs/{run_id}/stage-calls/{stage_call_id}/complete",
-    response_model=ResponseData[ContentAgentStageCallResponse],
-)
-async def complete_stage_call(
-    run_id: int,
-    stage_call_id: str,
-    request: ContentAgentStageCallCompleteRequest,
-    db: AsyncSession = Depends(get_db),
-) -> ResponseData[ContentAgentStageCallResponse]:
-    service = ContentAgentService(db)
-    try:
-        stage_call = await service.complete_stage_call(run_id, stage_call_id, request)
-    except ValueError as exc:
-        raise _map_protocol_error(exc) from exc
-    return ResponseData(message="Stage 完成", data=ContentAgentStageCallResponse.model_validate(stage_call))
-
-
-@router.post(
-    "/runs/{run_id}/stage-calls/{stage_call_id}/fail",
-    response_model=ResponseData[ContentAgentStageCallResponse],
-)
-async def fail_stage_call(
-    run_id: int,
-    stage_call_id: str,
-    request: ContentAgentStageCallFailRequest,
-    db: AsyncSession = Depends(get_db),
-) -> ResponseData[ContentAgentStageCallResponse]:
-    service = ContentAgentService(db)
-    try:
-        stage_call = await service.fail_stage_call(run_id, stage_call_id, request)
-    except ValueError as exc:
-        raise _map_protocol_error(exc) from exc
-    return ResponseData(message="Stage 失败状态已记录", data=ContentAgentStageCallResponse.model_validate(stage_call))
-
-
-@router.post("/runs/{run_id}/heartbeat", response_model=ResponseData[ContentAgentRunResponse])
-async def heartbeat(
-    run_id: int,
-    request: ContentAgentHeartbeatRequest,
-    db: AsyncSession = Depends(get_db),
-) -> ResponseData[ContentAgentRunResponse]:
-    service = ContentAgentService(db)
-    try:
-        run = await service.record_heartbeat(run_id, request)
-    except ValueError as exc:
-        raise _map_protocol_error(exc) from exc
-    return ResponseData(message="Heartbeat 已记录", data=ContentAgentRunResponse.model_validate(run))
-
-
 @router.post("/runs/{run_id}/human-review", response_model=ResponseData[ContentAgentHumanReviewResponse])
 async def request_human_review(
     run_id: int,
     request: ContentAgentHumanReviewRequest,
+    x_stage_call_id: str | None = Header(default=None, alias="X-Stage-Call-Id"),
+    x_maga_protocol_version: str | None = Header(default=None, alias="X-Maga-Protocol-Version"),
     db: AsyncSession = Depends(get_db),
 ) -> ResponseData[ContentAgentHumanReviewResponse]:
     service = ContentAgentService(db)
     try:
-        review = await service.request_human_review(run_id, request)
+        review = await service.request_human_review(
+            run_id,
+            request,
+            stage_call_id_header=x_stage_call_id,
+            protocol_version_header=x_maga_protocol_version,
+        )
     except ValueError as exc:
         raise _map_protocol_error(exc) from exc
     return ResponseData(message="人审请求已记录", data=ContentAgentHumanReviewResponse.model_validate(review))

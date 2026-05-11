@@ -127,6 +127,28 @@ def test_write_xhs_brief_yaml_creates_parent_directory(tmp_path: Path):
     assert yaml.safe_load(output_path.read_text(encoding="utf-8"))["products"] == ["a2_dueltz"]
 
 
+def test_build_xhs_brief_reads_word_count_from_internal_content_constraints():
+    snapshot = {
+        "task_id": 1004,
+        "run_id": 2005,
+        "task_type": "xhs_generate",
+        "input": {
+            "brief_type": "xhs_product_seeding_professional_advisor",
+            "brand": "meadjohnson",
+            "product_code": "a2_dueltz",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "content_constraints": {"word_count": 200},
+        },
+        "asset_refs": {},
+    }
+
+    brief = build_xhs_brief(snapshot)
+
+    assert brief["content_structure"] == {"word_count": 200}
+
+
 def test_build_xhs_brief_requires_brand_and_products():
     snapshot = {"task_id": 1004, "run_id": None, "task_type": "xhs_generate", "input": {}, "asset_refs": {}}
 

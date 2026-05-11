@@ -42,12 +42,12 @@ async def test_clean_schema_includes_stage_call_and_human_review_tables(db_sessi
 async def test_start_run_creates_run_token_and_current_stage_call(db_session):
     service = ContentAgentService(db_session)
     task = await service.create_task(
-        ContentAgentTaskCreate(task_type="xhs_generate", input_snapshot={"product_topic": "A2 奶粉"})
+        ContentAgentTaskCreate(task_type="xhs_generate", input_snapshot={"product_topic": "美素佳儿源悦"})
     )
 
     run, stage_call = await service.start_run_with_stage(
         task.id,
-        executor_code="hermes_xhs_writer",
+        executor_code="hermes_maga_worker",
         stage=ContentAgentStageCallCreate(
             stage_call_id="stage-interpret-001",
             capability="xhs.interpret_brief",
@@ -65,12 +65,12 @@ async def test_start_run_creates_run_token_and_current_stage_call(db_session):
 
 
 @pytest.mark.asyncio
-async def test_stage_complete_requires_current_stage_and_run_token(db_session):
+async def test_stage_complete_requires_current_stage(db_session):
     service = ContentAgentService(db_session)
     task = await service.create_task(ContentAgentTaskCreate(task_type="xhs_generate"))
     run, _ = await service.start_run_with_stage(
         task.id,
-        executor_code="hermes_xhs_writer",
+        executor_code="hermes_maga_worker",
         stage=ContentAgentStageCallCreate(
             stage_call_id="stage-generate-001",
             capability="xhs.generate_draft",
@@ -78,12 +78,11 @@ async def test_stage_complete_requires_current_stage_and_run_token(db_session):
         ),
     )
 
-    with pytest.raises(ValueError, match="run token"):
+    with pytest.raises(ValueError, match="not current"):
         await service.complete_stage_call(
             run.id,
-            "stage-generate-001",
+            "stale-stage",
             ContentAgentStageCallCompleteRequest(
-                run_token="bad-token",
                 output={"draft_artifact_id": "art-001"},
                 stats={"total_latency_ms": 100},
             ),
@@ -93,7 +92,6 @@ async def test_stage_complete_requires_current_stage_and_run_token(db_session):
         run.id,
         "stage-generate-001",
         ContentAgentStageCallCompleteRequest(
-            run_token=run.run_token,
             output={"draft_artifact_id": "art-001"},
             stats={"total_latency_ms": 100},
         ),
@@ -110,7 +108,7 @@ async def test_stage_fail_marks_stage_failed_but_leaves_run_for_maga_decision(db
     task = await service.create_task(ContentAgentTaskCreate(task_type="xhs_generate"))
     run, _ = await service.start_run_with_stage(
         task.id,
-        executor_code="hermes_xhs_writer",
+        executor_code="hermes_maga_worker",
         stage=ContentAgentStageCallCreate(stage_call_id="stage-review-001", capability="xhs.run_ae_review"),
     )
 
@@ -118,7 +116,6 @@ async def test_stage_fail_marks_stage_failed_but_leaves_run_for_maga_decision(db
         run.id,
         "stage-review-001",
         ContentAgentStageCallFailRequest(
-            run_token=run.run_token,
             error_code="model_error",
             error_message="provider 5xx",
             retryable=True,
@@ -138,7 +135,7 @@ async def test_event_and_artifact_are_idempotent_per_run_key_and_grouped_by_stag
     task = await service.create_task(ContentAgentTaskCreate(task_type="xhs_generate"))
     run, _ = await service.start_run_with_stage(
         task.id,
-        executor_code="hermes_xhs_writer",
+        executor_code="hermes_maga_worker",
         stage=ContentAgentStageCallCreate(stage_call_id="stage-ae-001", capability="xhs.run_ae_analysis"),
     )
 

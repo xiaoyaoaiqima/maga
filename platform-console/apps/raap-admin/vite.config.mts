@@ -15,6 +15,12 @@ const project_dir = dirname(fileURLToPath(import.meta.url));
  * 后者覆盖前者
  */
 function loadProxyTarget(mode: string): string {
+  const envProxyTarget = process.env.VITE_PROXY_TARGET?.trim();
+  // make dev 会注入本地后端地址，命令行环境变量应优先于 .env 文件。
+  if (envProxyTarget) {
+    return envProxyTarget;
+  }
+
   const cwd = process.cwd();
   const files = ['.env', '.env.local', `.env.${mode}`, `.env.${mode}.local`];
   let proxyTarget = 'http://localhost:5100'; // 默认值

@@ -4,9 +4,7 @@ import type {
 } from '@vben/types';
 
 import { generateAccessible } from '@vben/access';
-import { preferences } from '@vben/preferences';
 
-import { getAllMenusApi } from '#/api';
 import { BasicLayout, IFrameView } from '#/layouts';
 
 const forbiddenComponent = () => import('#/views/_core/fallback/forbidden.vue');
@@ -19,12 +17,12 @@ async function generateAccess(options: GenerateMenuAndRoutesOptions) {
     IFrameView,
   };
 
-  return await generateAccessible(preferences.app.accessMode, {
+  return await generateAccessible('frontend', {
     ...options,
-    fetchMenuListAsync: async () => {
-      const backendMenus = await getAllMenusApi();
-      return backendMenus;
-    },
+    // 侧边栏 Tab 改为前端 routes/frontend-tabs.ts 显式控制；
+    // 这里不能再读取可持久化的 preferences.app.accessMode，避免旧缓存里的 backend
+    // 让 fetchMenuListAsync 返回空数组后生成空菜单。
+    fetchMenuListAsync: async () => [],
     // 可以指定没有权限跳转403页面
     forbiddenComponent,
     // 如果 route.meta.menuVisibleWithForbidden = true

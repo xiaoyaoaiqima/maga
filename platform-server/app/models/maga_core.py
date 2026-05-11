@@ -10,6 +10,7 @@ from sqlalchemy import BigInteger, DateTime, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.maga_assets import AssetChangeProposal, AssetChangeRequest, AssetImportRun, AssetRegistry
 from app.models.content_agent import (
     BIGINT_PK,
     ContentAgentArtifact,
@@ -18,6 +19,9 @@ from app.models.content_agent import (
     ContentAgentRun,
     ContentAgentStageCall,
     ContentAgentTask,
+    ContentBatchJob,
+    ContentBatchItem,
+    ContentBatchItemVersion,
     ExecutorRegistry,
 )
 
@@ -69,12 +73,19 @@ MAGA_CORE_MODELS = (
     ExecutorRegistry,
     ContentBrief,
     BriefSnapshot,
+    ContentBatchJob,
+    ContentBatchItem,
+    ContentBatchItemVersion,
     ContentAgentTask,
     ContentAgentRun,
     ContentAgentStageCall,
     ContentAgentEvent,
     ContentAgentArtifact,
     ContentAgentHumanReview,
+    AssetRegistry,
+    AssetImportRun,
+    AssetChangeRequest,
+    AssetChangeProposal,
 )
 
 MAGA_CORE_TABLE_NAMES = tuple(model.__tablename__ for model in MAGA_CORE_MODELS)

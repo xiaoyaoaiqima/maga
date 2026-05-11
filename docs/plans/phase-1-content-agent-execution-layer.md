@@ -1,10 +1,10 @@
 # Phase 1 Content Agent Execution Layer Implementation Plan
 
-> **For Hermes:** Use subagent-driven-development or Codex for isolated implementation/review tasks, but keep MAGA as marketing content source of truth and Hermes/xhs-writer as execution worker.
+> **For Hermes:** Use subagent-driven-development or Codex for isolated implementation/review tasks, but keep MAGA as marketing content source of truth and Hermes `maga-worker` as execution worker.
 
-**Goal:** Build the first local development slice of MAGA's content-agent execution layer so xhs-writer can claim generation tasks and write back trace/artifacts.
+**Goal:** Build the first local development slice of MAGA's content-agent execution layer so `maga-worker` can claim generation tasks and write back trace/artifacts.
 
-**Architecture:** Add MAGA-native content-agent tables, schemas, service logic, and FastAPI endpoints. Keep executor abstraction lightweight and content-specific; do not build a generic Agent platform. xhs-writer integration remains API/file-adapter based during local development and must not become a production filesystem boundary.
+**Architecture:** Add MAGA-native content-agent tables, schemas, service logic, and FastAPI endpoints. Keep executor abstraction lightweight and content-specific; do not build a generic Agent platform. `maga-worker` integration remains API/file-adapter based during local development and must not become a production filesystem boundary. Historical `xhs-writer` code is only the source of the `xhs.*` capability inside `maga-worker`.
 
 **Tech Stack:** FastAPI, SQLAlchemy async, Alembic, MySQL JSON columns, Pydantic v2.
 
@@ -74,7 +74,7 @@
 
 ### Task 4: Add API endpoints
 
-**Objective:** Expose the execution boundary required by xhs-writer.
+**Objective:** Expose the execution boundary required by `maga-worker`.
 
 **Files:**
 - Create: `platform-server/app/api/v1/endpoints/content_agent.py`
@@ -106,11 +106,11 @@
 
 ---
 
-## Batch 2: First local xhs-writer adapter
+## Batch 2: First local maga-worker adapter
 
 ### Task 6: Snapshot to xhs brief adapter
 
-**Objective:** Convert ContentTask snapshot to xhs-writer brief YAML/dict.
+**Objective:** Convert ContentTask snapshot to the `maga-worker` `xhs.*` brief YAML/dict.
 
 **Files:**
 - Create: `scripts/content_agent_snapshot_to_xhs_brief.py`
@@ -130,11 +130,11 @@
 
 ### Task 7: Manual end-to-end dry run
 
-**Objective:** Validate the MAGA API boundary with a mock task before connecting real xhs-writer runtime.
+**Objective:** Validate the MAGA API boundary with a mock task before connecting real `maga-worker` runtime.
 
 **Flow:**
 1. Create pending task.
-2. Claim as `hermes_xhs_writer`.
+2. Claim as `hermes_maga_worker`.
 3. Write one status event.
 4. Write one draft artifact.
 5. Write one final_content artifact.

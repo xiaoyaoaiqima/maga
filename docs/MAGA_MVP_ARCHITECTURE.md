@@ -204,6 +204,8 @@ MVP 首页应是一个极简任务页，而不是多模块后台。
 - 正文
 - 复制操作
 
+说明：MVP 输出口径固定为“标题 + 正文”。hashtag/话题标签暂不作为交付字段；如生成链路内部保留 tags，只用于内部实验，不展示、不写入 start_generation 响应。
+
 ### 3. 前台不做的事
 
 MVP 前台明确不做以下内容：
@@ -299,6 +301,8 @@ MVP 推荐的内部工作流如下：
 职责：
 
 - 检查标题和正文是否符合输出要求
+- hard AE 任一不过时，触发一次定向改写；改写输入必须带上一轮 draft 与完整 review_report
+- 最终返回给前台的结果只包含 title/body，不包含 hashtags
 - 检查结构是否完整
 - 检查是否有明显违禁或过强广告感
 - 检查是否达到“可以直接复制发布”的标准
@@ -307,12 +311,12 @@ MVP 推荐的内部工作流如下：
 
 ### 3. Agent 执行层定位
 
-MVP 阶段允许将复杂执行过程外置到 Hermes profile（例如 `xhs-writer`）或其他 Agent runtime 中，但 MAGA 仍然是营销内容生成的业务工作台和 source of truth。
+MVP 阶段允许将复杂执行过程外置到 Hermes profile 或其他 Agent runtime 中，但 MAGA 仍然是营销内容生成的业务工作台和 source of truth。前期默认 Hermes profile 统一命名为 `maga-worker`，内部用 capability 区分产文、资产提案、人工反馈训练和 Prompt 优化能力；不再把 `xhs-writer`、`maga-asset-steward`、`feedback-trainer` 作为必须独立管理的生产 profile。
 
 职责边界：
 
 - MAGA 负责品牌、产品、活动、语料、Prompt、Expert 配置、任务、trace、artifact、评估和人工审核。
-- Hermes 负责具体执行：拉取任务、组织 GE/AE、调用模型、生成草稿、评分改写、回写结果。
+- Hermes `maga-worker` 负责具体执行：拉取任务、组织 GE/AE、调用模型、生成草稿、评分改写、分析反馈、生成资产/Prompt 提案、回写结果。
 - Hermes 不直接读写 MAGA 数据库，只通过 MAGA API 交互。
 - MAGA 不改造成通用 Agent 平台，只保留轻量 executor 抽象，以便未来替换执行层。
 

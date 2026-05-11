@@ -1,0 +1,18 @@
+services:
+  backend:
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5100"
+      - --reload
+      - --reload-dir
+      - /app/app
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./platform-server/app:/app/app
+      - ./platform-server/alembic:/app/alembic
+      - ./platform-server/alembic.ini:/app/alembic.ini

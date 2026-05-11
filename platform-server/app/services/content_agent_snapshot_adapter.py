@@ -154,7 +154,11 @@ def _build_persona_target(source: Mapping[str, Any]) -> dict[str, Any]:
 
 def _build_content_structure(source: Mapping[str, Any]) -> dict[str, Any]:
     structure: dict[str, Any] = {}
+    constraints = _as_dict(source.get("content_constraints"))
     for key in ("word_count", "emoji", "title_style", "layout"):
-        if key in source and source[key] is not None:
-            structure[key] = source[key]
+        value = source.get(key)
+        if value is None:
+            value = constraints.get(key)
+        if value is not None:
+            structure[key] = value
     return structure

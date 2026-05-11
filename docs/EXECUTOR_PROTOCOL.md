@@ -2,7 +2,7 @@
 
 ## 〇、本文件定位
 
-定义 MAGA（控制面）和任意 Executor（执行面，例如 Hermes `xhs-writer` profile）之间的稳定接口契约。
+定义 MAGA（控制面）和任意 Executor（执行面，例如前期统一 Hermes `maga-worker` profile）之间的稳定接口契约。
 
 适用范围：
 
@@ -40,7 +40,7 @@ Executor 在 capability 执行期间不得发起任何"自主"的外部访问。
 | 本地纯计算 | calculator、json_validator、本地 regex | 允许（视为内部实现） |
 | 协议内回写 | report_event / upload_artifact / request_human_review / complete_capability | 允许（这是协议本身） |
 
-LLM 提供商内置工具（如某些模型的 web_search）默认禁用；要启用必须在 capability 入参 `executor_hints.enabled_provider_tools` 中显式列出，且 MAGA 端记录在 trace。
+LLM 提供商内置工具（如某些模型的 web_search）默认禁用。v0.1 不开启用机制，需要时 v0.2 协议扩展。
 
 ### INV-2：MAGA 是 source of truth
 
@@ -88,7 +88,7 @@ Executor 不直接写 run 状态。Executor 通过 `complete_capability` / `fail
 | Run | 一次具体执行尝试。一个 Task 可有多次 Run（重试或人工触发的复跑） |
 | Stage | Run 内的一个阶段，对应一次 capability 调用 |
 | Capability | Executor 提供的、可被 MAGA 调用的能力单元 |
-| Profile | 某个 Executor 实例的能力组合（如 `hermes:xhs-writer`） |
+| Profile | 某个 Executor 实例的能力组合（如 `hermes:maga-worker`） |
 | Stage Call | 一次具体的 capability 调用，由 `stage_call_id` 唯一标识 |
 | Artifact | Capability 产出的可追溯对象（draft、final、score_report 等） |
 | Event | Capability 执行过程中的细粒度可观测事件（llm_call、tool_call、warning 等） |
@@ -119,7 +119,7 @@ Executor 不直接写 run 状态。Executor 通过 `complete_capability` / `fail
 - Stage 完成时 Executor 调 `complete_capability`，MAGA 校验、落库、决定下一阶段。
 - 阶段之间天然是 gate：MAGA 可在任意阶段间插入人审、超时、重试、取消。
 
-阶段间通信：默认 **sync HTTP**（`invoke_capability` 阻塞返回 stage 结果），事件通过 callback URL 异步流式回写。Long-running stage（>60s）可降级为 **async ack + callback**：Executor 立即返回 `202 Accepted` + `stage_call_id`，结果通过 `complete_capability` 回调送达。同一个 capability 必须支持其中至少一种，建议两种都支持。
+阶段间通信：**sync HTTP**。`invoke_capability` 阻塞返回 stage 结果；events / artifacts / human-review 在阶段执行期间通过协议固定路径回写到 MAGA（路径见 §6.1）。Capability 必须在 `executor_hints.timeout_seconds` 内完成；超时由 MAGA 端 HTTP 客户端处理，标 stage `failed(timeout)`。MVP 不支持 async ack 模式。
 
 ---
 
@@ -159,7 +159,6 @@ running.rewriting
 合法转移由 MAGA 校验。Executor 调用任何会转移状态的 RPC 时，MAGA 必须做以下检查：
 
 - `run.status` 在转移前置集合内
-- `run.run_token` 与请求中一致（防止旧 worker 抢占）
 - `stage_call_id` 与 MAGA 当前期望的 stage 一致
 
 不合法转移返回 `409 Conflict`，Executor 应**停止该 run 的工作**而不是重试。
@@ -182,6 +181,8 @@ Capability 命名约定：`<domain>.<verb_noun>`。MAGA 用 `domain` 选 Executo
 
 新增 capability 不需要 bump 协议 major 版本，但 capability 自身的入参/出参 schema 有自己的 `schema_version`。
 
+Capability 域可扩展。`xhs.*` 是 v0.1 唯一启用的内容生成域；未来 prompt 优化、评测回放等会在 `prompt.*`、`eval.*` 等域下新增 capability。新增域不破坏 v0.1 协议——Executor 在调用 MAGA 注册 endpoint 时声明自己实现的 capability 列表即可（v0.2 加 `executor_registry` 字段或独立配置）。
+
 ---
 
 ## 六、Capability 入参与出参 Schema
@@ -199,32 +200,30 @@ Capability 命名约定：`<domain>.<verb_noun>`。MAGA 用 `domain` 选 Executo
   "run_id": "run_01HF7Z2K...",
   "task_id": "task_01HF7Z1A...",
   "capability": "xhs.interpret_brief",
-  "schema_version": "1",
-  "callback": {
-    "events_url":   "https://maga/api/v1/content-agent/runs/.../events",
-    "artifacts_url":"https://maga/api/v1/content-agent/runs/.../artifacts",
-    "human_review_url":"https://maga/api/v1/content-agent/runs/.../human-review",
-    "complete_url": "https://maga/api/v1/content-agent/runs/.../stage-calls/.../complete",
-    "fail_url":     "https://maga/api/v1/content-agent/runs/.../stage-calls/.../fail"
-  },
   "executor_hints": {
     "model_overrides": { "ge_main": "deepseek-v3.2" },
-    "enabled_provider_tools": [],
-    "max_parallelism": 8,
     "timeout_seconds": 60
   },
-  "deadline_at": "2026-05-08T12:34:56Z",
   "input": { /* capability-specific, 见下 */ }
 }
 ```
 
-出参（同步 `complete` 模式或 `complete_capability` callback body）信封：
+回调地址不在入参中传递。Executor 启动时配 `MAGA_BASE_URL` 环境变量，按协议固定路径拼接：
+
+```
+{MAGA_BASE_URL}/api/v1/content-agent/runs/{run_id}/events
+{MAGA_BASE_URL}/api/v1/content-agent/runs/{run_id}/artifacts
+{MAGA_BASE_URL}/api/v1/content-agent/runs/{run_id}/human-review
+```
+
+回调路径是协议契约的一部分，MAGA 不可单方面变更。v0.2 视需求加 `callback_overrides` 字段允许指向不同服务（如 artifacts 走 OSS）。
+
+出参（sync `/invoke` 响应 body）信封：
 
 ```json
 {
   "stage_call_id": "stage_01HF7Z3Q...",
   "status": "succeeded",
-  "schema_version": "1",
   "output": { /* capability-specific */ },
   "stats": {
     "total_latency_ms": 18234,
@@ -232,6 +231,17 @@ Capability 命名约定：`<domain>.<verb_noun>`。MAGA 用 `domain` 选 Executo
     "total_input_tokens": 12450,
     "total_output_tokens": 2340
   }
+}
+```
+
+失败时响应 body：
+
+```json
+{
+  "stage_call_id": "stage_01HF7Z3Q...",
+  "status": "failed",
+  "error_code": "model_error" | "input_invalid" | "internal_error",
+  "error_message": "..."
 }
 ```
 
@@ -311,9 +321,9 @@ Capability 命名约定：`<domain>.<verb_noun>`。MAGA 用 `domain` 选 Executo
 }
 ```
 
-并行策略：Executor 必须并行执行多个 AE。Executor 端可控并行度；MAGA 通过 `executor_hints.max_parallelism` 限制上限。
+并行策略：Executor 内部并行执行多个 AE，并行度自决。
 
-部分失败处理：单个 AE 失败可记入 `failed_aes` 不阻塞整体；超过阈值（≥ `ae_specs.length / 2`）则整 capability 失败。
+部分失败处理：MVP 任一 AE 失败 = 整 capability 失败。`failed_aes` 字段保留为 v0.2 partial-success 语义预留，v0.1 总是空数组。
 
 ### 6.4 `xhs.generate_draft`
 
@@ -359,7 +369,7 @@ Capability 命名约定：`<domain>.<verb_noun>`。MAGA 用 `domain` 选 Executo
 
 ```json
 {
-  "draft": { "title": "...", "body": "...", "hashtags": ["..."] },
+  "draft": { "title": "...", "body": "..." },
   "structured_brief": {...},
   "assets": { "brand": "@brand_snapshot", "...": "..." },
   "hard_ae_specs": [
@@ -411,16 +421,17 @@ Capability 命名约定：`<domain>.<verb_noun>`。MAGA 用 `domain` 选 Executo
 
 ```json
 {
-  "previous_draft": { "title": "...", "body": "...", "hashtags": ["..."] },
+  "previous_draft": { "title": "...", "body": "..." },
   "structured_brief": {...},
   "assets": { "brand": "@brand_snapshot", "...": "..." },
-  "feedbacks": {
-    "hard_failures": [
-      { "ae_code": "compliance_redline", "feedback": "..." }
+  "review_report": {
+    "hard_results": [
+      { "ae_code": "compliance_redline", "pass": false, "feedback": "..." }
     ],
-    "soft_low_scores": [
+    "soft_scores": [
       { "ae_code": "naturalness_ai_smell", "score": 76, "feedback": "..." }
-    ]
+    ],
+    "failed_aes": ["compliance_redline"]
   },
   "rewrite_round": 1,
   "ge_spec": { "ge_code": "ge_main", "model_code": "deepseek-v3.2", "persona": "@prompt_snapshot" }
@@ -431,12 +442,12 @@ Capability 命名约定：`<domain>.<verb_noun>`。MAGA 用 `domain` 选 Executo
 
 ```json
 {
-  "draft_artifact_id": "art_01HF7Z...",
+  "final": { "title": "...", "body": "..." },
   "rewrite_notes": "..."
 }
 ```
 
-`draft_artifact_id` 同 6.4 节，引用阶段内 `upload_artifact` 落库的新 draft；不冗余传正文。
+`final` 是改写后的可交付内容。MVP 对外交付只取 `title` + `body`；如果 Executor 内部草稿包含 hashtags，MAGA 也不会把它并入 `final_content`。
 
 由 MAGA 中转 feedback（rewrite-decision-1：feedback 不在 Executor 端缓存）。`rewrite_round` 用于让 GE 知道是第几轮（影响 prompt 风格），不是控制流变量。
 
@@ -450,22 +461,9 @@ Capability 命名约定：`<domain>.<verb_noun>`。MAGA 用 `domain` 选 Executo
 
 发起一次 capability 调用。Body 为第 6.1 节的入参信封。
 
-响应分两种：
+响应：`200 OK` + 出参信封（含 `output` 或 `error_code`）。MVP 不区分 sync/async，全部 sync 阻塞返回。
 
-- **同步模式**：`200 OK` + 出参信封（含 `output`）。
-- **异步模式**：`202 Accepted` + `{ "stage_call_id": "...", "ack_at": "..." }`。结果稍后通过 `POST {callback.complete_url}` 送达。
-
-Executor 必须根据 capability 类型选择支持哪种；MAGA 通过响应 status 区分。
-
-幂等：相同 `stage_call_id` 重入必须返回与首次相同的结果（同步模式直接返回，异步模式按已记录的状态回应）。
-
-#### `POST {executor_base}/cancel`
-
-```json
-{ "run_id": "...", "stage_call_id": "...", "reason": "user_cancelled" }
-```
-
-Executor 应尽快放弃当前工作并返回 `200 OK`。Cancel 不保证立即生效，但 MAGA 收到 `200` 后会单方面把状态置为 `cancelled`，后续来的 `complete_capability` 一律 `409`。
+幂等：相同 `stage_call_id` 重入应返回与首次相同的结果。
 
 ### 7.2 Executor → MAGA
 
@@ -474,33 +472,29 @@ Executor 应尽快放弃当前工作并返回 `200 OK`。Cancel 不保证立即�
 ```
 X-Maga-Protocol-Version: 0.1
 Authorization: Bearer <executor_token>
-Idempotency-Key: <ulid>
 X-Stage-Call-Id: <stage_call_id>
-X-Run-Token: <run_token>
 ```
 
 #### `POST /api/v1/content-agent/runs/{run_id}/events`
 
-流式上报 capability 执行内的事件。Body：
+流式上报 capability 执行内的事件（在 sync `/invoke` 调用持有期间，通过独立连接回写）。Body：
 
 ```json
 {
   "stage_call_id": "stage_...",
-  "event_type": "llm_call" | "tool_call" | "warning" | "info" | "retry" | "stage_progress",
+  "event_type": "llm_call" | "warning" | "info",
   "occurred_at": "2026-05-08T12:34:56.789Z",
   "expert_code": "ai_smell",
-  "model_code":  "doubao-seed-2-0-mini",
-  "duration_ms": 1234,
   "input_snapshot":  { "...": "..." },
   "output_snapshot": { "...": "..." },
   "otel_attributes": {
-    "gen_ai.system": "doubao",
     "gen_ai.request.model": "doubao-seed-2-0-mini",
     "gen_ai.usage.input_tokens": 1234,
     "gen_ai.usage.output_tokens": 567,
     "maga.run_id": "run_...",
     "maga.expert_code": "ai_smell"
   },
+  "latency_ms": 1234,
   "message": "..."
 }
 ```
@@ -517,8 +511,7 @@ X-Run-Token: <run_token>
   "content_text": "...",
   "content_json": null,
   "file_url": null,
-  "version_no": 1,
-  "metadata": { "rewrite_round": 1 }
+  "version_no": 1
 }
 ```
 
@@ -530,116 +523,80 @@ X-Run-Token: <run_token>
 {
   "stage_call_id": "stage_...",
   "reason": "max_rewrites_reached" | "hard_ae_failed" | "executor_requested",
-  "payload": { "...": "..." },
-  "response_schema": { "...": "JSON Schema" },
-  "ui_hint": "review_form" | "side_by_side_diff" | "free_form"
+  "payload": { "...": "..." }
 }
 ```
 
-请求该 run 进入 `needs_review` 状态。MAGA 校验后返回 `200 OK`；Executor 应停止该 stage 的进一步动作并退出。
+请求该 run 进入 `needs_review` 状态。MAGA 校验后返回 `200 OK`；Executor 应停止该 stage 的进一步动作并退出。MVP 阶段评审表单 UI 硬编码在前端，不在协议中传 schema。
 
 后续由 MAGA 在用户提交反馈后，通过 `invoke_capability` 重启一个新 stage（或新 run）。Executor 不直接接收 human response，需要的字段会以 input 形式重新传入。
 
-#### `POST {callback.complete_url}` 或 `POST /api/v1/content-agent/runs/{run_id}/stage-calls/{stage_call_id}/complete`
-
-异步模式下用于送达结果。同步模式不调用此 endpoint。Body 为第 6.1 节的出参信封。
-
-#### `POST {callback.fail_url}` 或 `POST /api/v1/content-agent/runs/{run_id}/stage-calls/{stage_call_id}/fail`
-
-```json
-{
-  "stage_call_id": "stage_...",
-  "error_code": "executor_timeout" | "model_error" | "input_invalid" | "internal_error" | "...",
-  "error_message": "...",
-  "retryable": true,
-  "details": { "...": "..." }
-}
-```
-
-#### `POST /api/v1/content-agent/runs/{run_id}/heartbeat`（可选）
-
-```json
-{ "stage_call_id": "stage_...", "progress_hint": "ae_3_of_9", "occurred_at": "..." }
-```
-
-异步模式下建议每 15s 一次。MAGA 在 `deadline_at` 之前未收到 heartbeat 也未收到 complete，会单方面把 stage 标 `failed(timeout)` 并允许重试。
-
 ---
 
-## 八、错误码与重试
+## 八、错误码与幂等
 
-### 8.1 错误分类
+### 8.1 错误码
 
-| 类别 | 示例 | retryable | MAGA 默认行为 |
-|---|---|---|---|
-| `input_invalid` | schema 校验失败、缺字段 | false | 直接 `failed`，不自动重试 |
-| `asset_version_drift` | 入参资产版本与 MAGA 当前不一致 | false | 应不会发生，是 MAGA bug |
-| `model_error` | 模型 API 5xx | true | 退避重试，最多 N 次 |
-| `model_rate_limit` | 模型 API 429 | true | 长退避重试 |
-| `executor_timeout` | 超 `deadline_at` | true | 重试新 stage_call |
-| `executor_internal` | Executor 自身崩溃 | true | 重试 |
-| `business_reject` | 模型连续生成不合规内容 | false | 转 `needs_review` |
+Capability 失败时 `/invoke` 响应 `status=failed` + `error_code`：
 
-`retryable` 由 Executor 标注，MAGA 据此决定重试。
+| `error_code` | 含义 |
+|---|---|
+| `input_invalid` | schema 校验失败、缺字段 |
+| `model_error` | 模型 API 调用失败 |
+| `executor_timeout` | 超 `executor_hints.timeout_seconds` |
+| `executor_internal` | Executor 自身崩溃 |
+| `business_reject` | 模型连续生成不合规内容；MAGA 转 `needs_review` |
 
-### 8.2 重试策略
+MVP 不做自动重试。失败的 stage 直接落 `failed`，由运营手动决定重新开 task 还是放弃。v0.2 再加重试策略。
 
-- 重试由 MAGA 发起，**不**由 Executor 自行重启 stage_call。
-- 每次重试生成新的 `stage_call_id`，但保留同一个 `run_id`。
-- 默认退避：1s → 4s → 16s，最多 3 次。
-- 业务 capability 自身的 max_attempts 由 MAGA 决定（通常配置在 task_type 级）。
+### 8.2 幂等
 
-### 8.3 幂等
+MAGA → Executor 的 `/invoke` 通过 `stage_call_id` 幂等：相同 ID 重入应返回与首次相同的结果。
 
-- MAGA → Executor 的 `invoke_capability` 通过 `stage_call_id` 幂等。
-- Executor → MAGA 的所有写动作（events / artifacts / complete / fail / human-review）通过 `Idempotency-Key` 幂等。Server 端用 `(run_id, idempotency_key)` 做唯一索引。
+Executor → MAGA 的写动作（events / artifacts / human-review）MVP 不做去重；假定单 worker 单连接不会重发。如出现极少量重复行，前台展示侧合并。v0.2 视实际情况加 `Idempotency-Key`。
 
 ---
 
 ## 九、安全与认证
 
-v0.1 简化方案：
+MVP 简化方案：
 
-- MAGA 为每个 Executor 签发 `executor_token`（长期），Executor 调 MAGA 时带 `Authorization: Bearer <token>`。
-- MAGA 调 Executor 时签 HMAC：`X-Maga-Signature: hmac_sha256(secret, body || stage_call_id || timestamp)`，Executor 校验。
-- 时间戳偏移 > 5 分钟拒绝。
-- 仅允许 HTTPS。
+- MAGA 为每个 Executor 配一个 `executor_token`（长期 bearer），双向使用：Executor 调 MAGA 带 `Authorization: Bearer <token>`，MAGA 调 Executor 也带同一 token。
+- 严格说这是 shared secret 而非 bearer，token 泄露双向都受影响。MVP 单 worker 内网部署可接受，**v0.2 必须拆为两个独立 token**（`executor_inbound_token` / `maga_inbound_token`），可独立轮转。
+- MVP 假定内网或本地部署。
 
-未决（v0.2 再定）：
+v0.2 再加（公网部署前必须做）：
 
-- 多租户 / 行级权限
+- 双向 token 拆分（见上）
+- HMAC 签名（防中间人篡改）
 - 资产签名 URL 的密钥管理
 - Token 自动轮转
+- 多租户 / 行级权限
 
 ---
 
 ## 十、OpenTelemetry GenAI 字段映射
 
-所有 LLM 调用事件的 `otel_attributes` 必须包含：
-
-| 字段 | 来源 | 含义 |
-|---|---|---|
-| `gen_ai.system` | OTel 标准 | 模型供应商，如 `doubao` / `deepseek` / `openai` |
-| `gen_ai.request.model` | OTel 标准 | 模型 ID |
-| `gen_ai.request.temperature` | OTel 标准 | 采样温度 |
-| `gen_ai.request.max_tokens` | OTel 标准 | 上限 |
-| `gen_ai.usage.input_tokens` | OTel 标准 | 实际输入 token |
-| `gen_ai.usage.output_tokens` | OTel 标准 | 实际输出 token |
-| `gen_ai.response.finish_reasons` | OTel 标准 | 终止原因 |
-
-MAGA 域扩展（必传）：
+LLM 调用事件 `otel_attributes` MVP 必须包含的最小字段（采用 OTel GenAI 命名以便未来无缝接入观测平台）：
 
 | 字段 | 含义 |
 |---|---|
-| `maga.task_id` | 关联 task |
+| `gen_ai.request.model` | 模型 ID |
+| `gen_ai.usage.input_tokens` | 输入 token |
+| `gen_ai.usage.output_tokens` | 输出 token |
+
+MAGA 域扩展 MVP 必传：
+
+| 字段 | 含义 |
+|---|---|
 | `maga.run_id` | 关联 run |
 | `maga.stage_call_id` | 关联 stage call |
-| `maga.capability` | 当前 capability |
 | `maga.expert_code` | 当前 AE/GE |
-| `maga.brand_id` / `maga.product_id` / `maga.campaign_id` | 业务对象 |
-| `maga.prompt_version_id` | 使用的 prompt 版本 |
+| `maga.prompt_version_id` | 使用的 prompt 版本（外循环聚合用） |
 
-Hermes 私有扩展使用 `hermes.*`，仅供调试，不替代标准字段。
+其他 OTel 字段（`gen_ai.system` / `temperature` / `finish_reasons` 等）和 MAGA 字段（`task_id` / `capability` / `brand_id` 等）best-effort 上报，不强制。v0.2 视聚合分析需求再约束。
+
+Hermes 私有扩展使用 `hermes.*`，仅供调试。
 
 ---
 
@@ -655,7 +612,7 @@ Hermes 私有扩展使用 `hermes.*`，仅供调试，不替代标准字段。
 
 ### V-1：替换执行器零业务表改动
 
-把现有 Hermes `xhs-writer` 替换为另一个 Executor（例如一个 LangGraph 服务、一个 OpenAI Assistants worker），需要的改动**仅限**：
+把现有 Hermes `maga-worker` 替换为另一个 Executor（例如一个 LangGraph 服务、一个 OpenAI Assistants worker），需要的改动**仅限**：
 
 - `executor_registry` 新增一行
 - 新 Executor 实现五个 capability 的 invoke endpoint

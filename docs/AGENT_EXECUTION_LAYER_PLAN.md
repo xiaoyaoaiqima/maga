@@ -13,8 +13,10 @@ MAGA 的定位保持为：
 Hermes 的定位是：
 
 - 当前默认 Agent 执行层
-- 以 `xhs-writer` profile 作为小红书内容生成 worker
-- 负责复杂推理、工具调用、GE/AE 编排、模型调用和结果回写
+- 以 `maga-worker` profile 作为前期统一内容 worker
+- 负责复杂推理、工具调用、GE/AE 编排、模型调用、资产提案、反馈训练提案和结果回写
+
+前期为了降低本地开发和服务器部署复杂度，不拆 `xhs-writer` / `maga-asset-steward` / `feedback-trainer` 三个 profile；统一收敛到一个 Hermes profile：`maga-worker`。能力边界用 capability 区分，数据边界仍由 MAGA API 保证。
 
 未来可以替换 Hermes，或新增其他 Agent runtime，但 MAGA 的核心护城河不放在 runtime，而放在营销内容生成的业务逻辑、资产、流程、trace、评估和人机协作闭环中。
 
@@ -42,7 +44,7 @@ MAGA 不做泛平台，但需要避免和 Hermes 绑定死。
 也就是说：
 
 - MAGA 可以登记多个 executor
-- 当前 executor 是 Hermes profile `xhs-writer`
+- 当前 executor 是 Hermes profile `maga-worker`
 - 未来 executor 可以是 LangGraph 服务、自研 Python worker、Dify workflow、OpenAI Assistants、Claude/Codex 类 worker 等
 - 无论 executor 怎么变，MAGA 仍然掌握业务资产、任务、trace、结果和评估
 
@@ -98,7 +100,7 @@ MAGA 是 source of truth，负责所有需要被人看、改、复用、审计�
 - AE instruction
 - draft v0/v1/v2
 - final content
-- title/body/hashtags
+- title/body（前台只展示标题 + 正文；hashtag 可作为内部草稿字段存在，但不进入 MVP 交付结果）
 - score report
 - conflict report
 - prompt patch
@@ -141,16 +143,16 @@ Hermes workspace 可以存：
 
 但 Hermes workspace 不是最终数据源。正式资产和正式产物必须回写 MAGA。
 
-#### Profile 级专职能力
+#### Profile 级能力
 
-`xhs-writer` profile 表示一个专职小红书写作 worker。
+`maga-worker` profile 表示前期统一内容 worker，内部承载多组专职 capability：
 
-后续可以继续新增：
+- `xhs.*`：小红书产文、审核、改写，承接原 `xhs-writer` 能力
+- `asset.*`：资料清洗、资产变更提案，承接 Asset Steward 能力
+- `feedback.*`：人工反馈总结、训练建议、资产/规则优化建议
+- `prompt.*`：Prompt patch 提案和优化建议
 
-- `xhs-critic`
-- `xhs-rewriter`
-- `xhs-prompt-optimizer`
-- `xhs-corpus-curator`
+后续如果某组能力变复杂，再拆成独立 profile 或服务；拆分不应改变 MAGA 的业务表和 API 边界。
 
 但品牌、产品、活动、语料不应该通过复制 profile 表达，而应该存在 MAGA 中。
 
@@ -176,7 +178,7 @@ Hermes workspace 可以存：
 
 ### 5. 和 Agent 工作习惯绑定的，放 Hermes profile/skill
 
-例如：`xhs-writer` 如何按 GE/AE 流程生文，如何处理低分重写。
+例如：`maga-worker` 内部的 `xhs.*` 能力如何按 GE/AE 流程生文，如何处理低分重写；`asset.*` 能力如何把资料整理成资产变更提案。
 
 ### 6. 临时文件放 Hermes，正式 artifact 放 MAGA
 
@@ -207,8 +209,9 @@ Hermes 通过 MAGA API 拉任务、取资产、写 trace、传 artifact、更新
               │ ② event/artifact/human-review (callback)
               ▼
 ┌──────────────────────────┐
-│ Hermes profile: xhs-writer│
-│  阶段内并行 + LLM 调用     │
+│ Hermes profile: maga-worker│
+│  xhs/asset/feedback/prompt  │
+│  capabilities + LLM 调用    │
 └──────────────────────────┘
 ```
 
@@ -236,15 +239,11 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定
 | 字段 | 说明 |
 |---|---|
 | id | 主键 |
-| executor_code | 例如 `hermes_xhs_writer` |
+| executor_code | 例如 `hermes_maga_worker` |
 | executor_type | 例如 `hermes_profile` / `http_worker` / `langgraph_service` |
 | display_name | 展示名称 |
-| protocol_version | 与协议 major 版本对齐，默认 `0.1` |
 | invoke_url | MAGA 调 Executor 的 base URL（push 模式发起点） |
-| supported_capabilities_json | 实际能力清单，含 `capability` 与 `schema_version` |
-| auth_token_secret_ref | Executor → MAGA 的 Bearer token 的密钥管理引用 |
-| hmac_secret_ref | MAGA → Executor 的 HMAC 签名密钥引用 |
-| config_json | 非密配置 |
+| auth_token | 双向 bearer token 的明文或环境变量名（MVP 简化方案） |
 | enabled | 是否启用 |
 | create_time/update_time | 时间 |
 
@@ -258,14 +257,11 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定
 | task_code | 任务编码 |
 | task_type | `xhs_generate` / `xhs_rewrite` / `prompt_optimize` |
 | status | `pending/running/succeeded/failed/needs_review/cancelled` |
-| priority | 优先级 |
 | executor_code | 指向 executor_registry |
 | brand_id/product_id/campaign_id | 业务引用 |
 | brief_id | brief 引用 |
 | input_snapshot_json | 执行时输入快照 |
-| output_summary_json | 结果摘要 |
 | error_message | 失败原因 |
-| retry_count | 重试次数 |
 | created_by | 创建人 |
 | create_time/update_time | 时间 |
 
@@ -278,17 +274,9 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定
 | id | 主键 |
 | task_id | 关联 content_agent_task |
 | run_code | run 编码 |
-| run_token | 每个 run 启动时生成的 ULID；所有 Executor → MAGA 写动作必须带，用于 INV-6 防抢占 |
 | executor_code | 执行器 |
-| executor_type | 执行器类型快照 |
-| external_run_id | Hermes 或其他 worker 侧 run id |
 | status | run 状态 |
-| status_substate | 协议第四章定义的子状态，如 `running.drafting` |
-| current_stage_call_id | 当前激活 stage call；用于快速定位 |
 | rewrite_round | 已完成的改写轮数 |
-| weighted_score_summary_json | MAGA 聚合后的 hard/soft 分数缓存，便于前台展示 |
-| model_summary_json | 使用模型摘要 |
-| config_snapshot_json | 执行配置快照 |
 | started_at/finished_at | 时间 |
 | error_message | 错误 |
 | create_time/update_time | 时间 |
@@ -304,40 +292,32 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定
 | run_id | 关联 content_agent_run |
 | sequence_no | run 内序号，从 1 起递增；同一 capability 多次调用（如 rewrite）每次新一行 |
 | capability | 如 `xhs.interpret_brief` / `xhs.run_ae_analysis` |
-| schema_version | capability schema 版本 |
-| invoke_mode | `sync` / `async` |
-| status | `pending/running/succeeded/failed/cancelled/timeout` |
+| status | `pending/running/succeeded/failed/timeout` |
 | input_snapshot_json | 入参信封的 input 部分 |
 | output_snapshot_json | 出参信封的 output 部分 |
 | stats_json | 出参信封的 stats（耗时、token 汇总） |
 | error_code | 协议第 8.1 节的错误码 |
 | error_message | 错误信息 |
-| retry_of_stage_call_id | 重试链上一跳；首次为 null |
 | started_at | 调用 invoke 时间 |
-| finished_at | complete/fail 落库时间 |
-| deadline_at | invoke 时声明的 deadline |
+| finished_at | 响应落库时间 |
 | create_time/update_time | 时间 |
 
 ### 5. content_agent_event
 
-结构化 trace event。分组键为 `stage_call_id`。
+结构化 trace event。分组键为 `stage_call_id`。Token 用量、模型 ID 等结构化数据全部落 `otel_attributes_json`，不另开列。
 
 | 字段 | 说明 |
 |---|---|
 | id | 主键 |
 | run_id | 关联 content_agent_run |
 | stage_call_id | 关联 content_agent_stage_call，必填 |
-| event_type | `llm_call/tool_call/artifact_created/error/status` |
+| event_type | `llm_call/warning/info` |
 | expert_code | 可选，如 `ai_smell`, `legal` |
-| model_code | 可选 |
 | input_snapshot_json | 输入快照 |
 | output_snapshot_json | 输出快照 |
 | otel_attributes_json | OpenTelemetry GenAI 字段（见协议第十章） |
 | message | 简要说明 |
-| latency_ms | 耗时 |
-| token_usage_json | token 使用 |
-| metadata_json | 扩展数据 |
-| idempotency_key | 与 run_id 联合唯一；用于 Executor 上报的幂等 |
+| latency_ms | 耗时（denormalize 自 otel，便于按延迟排序） |
 | create_time | 时间 |
 
 ### 6. content_agent_artifact
@@ -356,13 +336,11 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定
 | content_json | JSON 内容 |
 | file_url | 文件型产物地址 |
 | version_no | 改写轮次（rewrite_round），便于前台对比 |
-| metadata_json | 扩展数据 |
-| idempotency_key | 与 run_id 联合唯一 |
 | create_time | 时间 |
 
 ### 7. content_agent_human_review
 
-人审 gate 的一等公民表，对应协议 7.2 `request_human_review`。
+人审 gate 的一等公民表，对应协议 7.2 `request_human_review`。**run 内阻塞型**：Executor 主动请求暂停，等运营响应后 resume 同一 run。MVP 评审表单 UI 硬编码在前端，不在表里存 schema。
 
 | 字段 | 说明 |
 |---|---|
@@ -371,8 +349,6 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定
 | stage_call_id | 关联触发评审的 stage call；可空（如 MAGA 自发触发） |
 | reason | `max_rewrites_reached/hard_ae_failed/executor_requested` 等 |
 | payload_json | Executor 上报的待评审数据（draft、score_report 等引用） |
-| response_schema_json | 提交响应必须遵循的 JSON Schema |
-| ui_hint | `review_form/side_by_side_diff/free_form` |
 | status | `pending/responded/cancelled/expired` |
 | responder_user_id | 处理人 |
 | response_json | 用户提交内容 |
@@ -380,25 +356,43 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定
 | responded_at | 处理时间 |
 | create_time/update_time | 时间 |
 
-### 8. 索引与唯一约束
+### 8. content_feedback
+
+**run 外异步型**人工反馈表。运营在拿到 final 之后做 inline 批注（选中片段 + 写一句评论），不阻塞任何 run，用于沉淀到 prompt 优化外循环。
+
+MVP 阶段刻意保持极简——所有 stage_call_id / prompt_version_id / expert_code 等聚合维度由后端通过 `artifact_id` JOIN 推导，运营前端不感知。
+
+| 字段 | 说明 |
+|---|---|
+| id | 主键 |
+| artifact_id | 关联 content_agent_artifact（必填，定位到具体 final/draft） |
+| quoted_text | 有问题的原文片段，如 `"明明吃得也不少"` |
+| comment | 为什么有问题 / 该怎么改，运营自由文本 |
+| submitter_user_id | 提交人 |
+| create_time | 提交时间 |
+
+未来扩展（不在 MVP 范围）：
+
+- `status` 工作流字段（已采纳/已拒绝/已触发优化）
+- `category` 自动分类（由后端 LLM 打标，运营仍不感知）
+- 反馈聚合视图：按 prompt_version_id 列出 feedback 喂给 prompt_optimizer
+
+### 9. 索引与唯一约束
 
 | 表 | 索引/约束 | 用途 |
 |---|---|---|
 | content_agent_stage_call | UNIQUE(stage_call_id) | 协议幂等 |
 | content_agent_stage_call | UNIQUE(run_id, sequence_no) | 顺序保证 |
-| content_agent_stage_call | INDEX(status, deadline_at) | 超时扫描 |
-| content_agent_event | UNIQUE(run_id, idempotency_key) | Executor 上报幂等 |
 | content_agent_event | INDEX(stage_call_id, create_time) | 阶段内事件回放 |
-| content_agent_artifact | UNIQUE(run_id, idempotency_key) | 上传幂等 |
 | content_agent_artifact | UNIQUE(artifact_code) | 对外引用 |
-| content_agent_run | UNIQUE(run_token) | 防抢占校验 |
+| content_feedback | INDEX(artifact_id, create_time) | 按 artifact 列 feedback |
 | executor_registry | UNIQUE(executor_code) | 注册唯一性 |
 
 ---
 
-## 七、xhs-writer 现状与迁移映射
+## 七、maga-worker 与 xhs-writer 迁移映射
 
-当前 Hermes `xhs-writer` profile 中已经有一套可运行的本地原型：
+目标生产 profile 统一命名为 `maga-worker`。当前本地 `xhs-writer` profile 中已经有一套可运行的小红书产文原型，短期作为 `maga-worker` 的 `xhs.*` 能力来源逐步迁入：
 
 ```text
 /Users/luxifa/.hermes/profiles/xhs-writer/workspace
@@ -420,7 +414,7 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定
 | `experts/*/score_rubric.md` | PromptAsset / PromptVersion，类型 `score_rubric` |
 | `ge_writer/style_templates.md` | 风格模板资产 |
 | `campaigns/_current/brief.yaml` | 内容任务 brief |
-| `tools/xhs_runtime.py` | Hermes worker 执行逻辑，短期保留在 Hermes |
+| `tools/xhs_runtime.py` | `maga-worker` 的 `xhs.*` 执行逻辑，短期保留在 Hermes |
 | `notes/*-debug/` | content_agent_event / content_agent_artifact |
 
 迁移顺序不要一次性全部迁完。优先保证任务、run、artifact、trace 能进入 MAGA。
@@ -429,15 +423,15 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定
 
 ## 八、推荐落地阶段
 
-### 阶段 1：MAGA 存任务、run、结果，Hermes 实现 invoke endpoint
+### 阶段 1：MAGA 存任务、run、结果，maga-worker 实现 invoke endpoint
 
 目标：验证"工作台 + Agent worker"闭环（push 模式）。
 
 做法：
 
 1. MAGA 按 §六 建表：executor_registry / content_agent_task / content_agent_run / content_agent_stage_call / content_agent_event / content_agent_artifact / content_agent_human_review。
-2. MAGA 实现 [EXECUTOR_PROTOCOL.md](./EXECUTOR_PROTOCOL.md) §7.2 的回调 endpoints（events / artifacts / human-review / complete / fail / heartbeat），以及调度器主动调 Executor `/invoke` 的 push 路径与状态机推进逻辑。
-3. Hermes `xhs-writer` 暴露 `/invoke` endpoint，按协议接收 capability 调用；本地仍读 `experts/`、`ge_writer/`、`campaigns/` 作为资产源（snapshot 由 MAGA 在 invoke 入参中传入或本地兜底）。
+2. MAGA 实现 [EXECUTOR_PROTOCOL.md](./EXECUTOR_PROTOCOL.md) §7.2 的回调 endpoints（events / artifacts / human-review），以及调度器主动调 Executor `/invoke` 的 push 路径与状态机推进逻辑。
+3. Hermes `maga-worker` 暴露 `/invoke` endpoint，按协议接收 capability 调用；其中 `xhs.*` 能力短期复用 `xhs-writer` runtime，本地仍可读 `experts/`、`ge_writer/`、`campaigns/` 作为迁移兜底（snapshot 由 MAGA 在 invoke 入参中传入）。
 4. Hermes 在阶段内回写 events/artifacts，capability 完成后调 `complete_capability`；run 终态由 MAGA 据 stage 结果决定。
 5. MAGA 前端展示任务状态、最终稿和基础 trace。
 
@@ -459,28 +453,33 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定
 
 Hermes 从 MAGA API 拉资产，本地只做缓存和临时执行。
 
-### 阶段 3：人机协作和 Prompt 闭环
+### 阶段 3：人机协作和 Prompt 外循环
 
-目标：把生成质量迭代沉淀到 MAGA。
+目标：把生成质量沉淀回 prompt 资产。
 
-能力：
+外循环数据流：
 
-- 人工审核 final/draft
-- 标记问题类型
-- 触发 rewrite task
-- 触发 prompt_optimize task
-- 采纳/拒绝/编辑 prompt patch
-- 保存新 PromptVersion
-- 用测试集对比新旧 prompt
+1. 运营在 final 上做 inline 批注（选中片段 + 写一句评论） → 落入 `content_feedback`（仅 artifact_id + quoted_text + comment）
+2. MAGA 后台按 `artifact_id` JOIN 反查到 `prompt_version_id` / `expert_code`，按 prompt_version 维度聚合 feedback
+3. 当某 prompt_version 累计 feedback 达到阈值或运营手动触发 → 开 `task_type=prompt_optimize` 任务
+4. prompt_optimize task 由 prompt_optimizer 服务消费（短期是 MAGA 内部 service，对应已有 [prompt_optimizer_service.py](../platform-server/app/services/prompt_optimizer_service.py)；长期可拆为 Hermes profile `xhs-prompt-optimizer`，capability 命名 `prompt.optimize_from_feedback`）
+5. 优化器读取 feedback → 产出 `prompt_patch` artifact
+6. 运营审 patch → 采纳保存为新 PromptVersion → 后续 run 的 capability 入参自动用新版本
 
-### 阶段 4：多 worker，但仍保持营销内容专用
+MVP 阶段刻意不做：
 
-可新增 Hermes profile：
+- 不做 feedback 自动分类（quoted_text + comment 是运营自由文本，后端聚合时也不强制分类）
+- 不做评测集自动对比（v0.2 加 `eval.*` capability 域）
+- 不做 feedback 工作流状态机（先收，再说）
 
-- `xhs-critic`
-- `xhs-rewriter`
+### 阶段 4：按需拆分 worker，但仍保持营销内容专用
+
+前期保持一个 `maga-worker`。当某组能力出现独立部署、扩缩容或权限隔离需求时，再拆出 Hermes profile，例如：
+
+- `xhs-writer`
+- `maga-asset-steward`
+- `feedback-trainer`
 - `xhs-prompt-optimizer`
-- `xhs-corpus-curator`
 
 MAGA 仍是营销内容生成工作台，不升级为通用 Agent 平台。
 
@@ -512,7 +511,7 @@ MAGA = 营销内容生成工作台
      + 内容 Agent 控制平面
      + Trace / Eval / Human Review 系统
 
-Hermes xhs-writer = 当前默认内容生成 Agent worker
+Hermes maga-worker = 当前默认统一内容 Agent worker
 ```
 
 MAGA 不追求成为所有 Agent 的统一平台。

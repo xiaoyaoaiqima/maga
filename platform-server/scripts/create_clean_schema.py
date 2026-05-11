@@ -18,6 +18,16 @@ from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 from sqlalchemy import insert
 
+from app.core.content_agent_defaults import (
+    DEFAULT_EXECUTOR_CODE,
+    LEGACY_XHS_WRITER_DISPLAY_NAME,
+    LEGACY_XHS_WRITER_EXECUTOR_CODE,
+    MAGA_WORKER_DISPLAY_NAME,
+    MAGA_WORKER_INVOKE_URL,
+    MAGA_WORKER_PROFILE_NAME,
+    MAGA_WORKER_SUPPORTED_CAPABILITY_SPECS,
+    XHS_CAPABILITY_SPECS,
+)
 from app.core.config import settings
 from app.models.content_agent import ExecutorRegistry
 from app.models.base import Base
@@ -28,32 +38,53 @@ def _selected_tables() -> list:
     return [Base.metadata.tables[name] for name in MAGA_CORE_TABLE_NAMES]
 
 
-async def seed_clean_schema(conn: AsyncConnection, *, xhs_writer_invoke_url: str = "mock://xhs-writer/invoke") -> None:
+async def seed_clean_schema(
+    conn: AsyncConnection,
+    *,
+    maga_worker_invoke_url: str = MAGA_WORKER_INVOKE_URL,
+    xhs_writer_invoke_url: str | None = None,
+) -> None:
     """Seed baseline executor registry rows for the clean schema."""
-    values = {
-        "executor_code": "hermes_xhs_writer",
-        "display_name": "Hermes xhs-writer",
-        "executor_type": "hermes_profile",
-        "protocol_version": "0.1",
-        "invoke_url": xhs_writer_invoke_url,
-        "supported_capabilities_json": [
-            {"capability": "xhs.interpret_brief", "schema_version": "1"},
-            {"capability": "xhs.run_ae_analysis", "schema_version": "1"},
-            {"capability": "xhs.generate_draft", "schema_version": "1"},
-            {"capability": "xhs.run_ae_review", "schema_version": "1"},
-            {"capability": "xhs.rewrite_draft", "schema_version": "1"},
-        ],
-        "enabled": 1,
-    }
-    if conn.dialect.name == "mysql":
-        stmt = mysql_insert(ExecutorRegistry).values(**values)
-        stmt = stmt.on_duplicate_key_update(**values)
-    else:
-        stmt = insert(ExecutorRegistry).values(**values)
-    await conn.execute(stmt)
+    legacy_invoke_url = xhs_writer_invoke_url or maga_worker_invoke_url
+    rows = [
+        {
+            "executor_code": DEFAULT_EXECUTOR_CODE,
+            "display_name": MAGA_WORKER_DISPLAY_NAME,
+            "executor_type": "hermes_profile",
+            "profile_name": MAGA_WORKER_PROFILE_NAME,
+            "protocol_version": "0.1",
+            "invoke_url": maga_worker_invoke_url,
+            "supported_capabilities_json": MAGA_WORKER_SUPPORTED_CAPABILITY_SPECS,
+            "enabled": 1,
+        },
+        {
+            "executor_code": LEGACY_XHS_WRITER_EXECUTOR_CODE,
+            "display_name": LEGACY_XHS_WRITER_DISPLAY_NAME,
+            "executor_type": "hermes_profile",
+            "profile_name": MAGA_WORKER_PROFILE_NAME,
+            "protocol_version": "0.1",
+            "invoke_url": legacy_invoke_url,
+            "supported_capabilities_json": XHS_CAPABILITY_SPECS,
+            "enabled": 1,
+        },
+    ]
+    for values in rows:
+        if conn.dialect.name == "mysql":
+            stmt = mysql_insert(ExecutorRegistry).values(**values)
+            stmt = stmt.on_duplicate_key_update(**values)
+        else:
+            stmt = insert(ExecutorRegistry).values(**values)
+        await conn.execute(stmt)
 
 
-async def create_clean_schema(engine: AsyncEngine, *, drop: bool = False, seed: bool = False, xhs_writer_invoke_url: str = "mock://xhs-writer/invoke") -> None:
+async def create_clean_schema(
+    engine: AsyncEngine,
+    *,
+    drop: bool = False,
+    seed: bool = False,
+    maga_worker_invoke_url: str = MAGA_WORKER_INVOKE_URL,
+    xhs_writer_invoke_url: str | None = None,
+) -> None:
     """Create the clean MAGA core schema using current SQLAlchemy model metadata."""
     tables = _selected_tables()
     async with engine.begin() as conn:
@@ -61,7 +92,11 @@ async def create_clean_schema(engine: AsyncEngine, *, drop: bool = False, seed: 
             await conn.run_sync(lambda sync_conn: Base.metadata.drop_all(sync_conn, tables=tables))
         await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=tables))
         if seed:
-            await seed_clean_schema(conn, xhs_writer_invoke_url=xhs_writer_invoke_url)
+            await seed_clean_schema(
+                conn,
+                maga_worker_invoke_url=maga_worker_invoke_url,
+                xhs_writer_invoke_url=xhs_writer_invoke_url,
+            )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -69,7 +104,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--database-url", default=None, help="Async SQLAlchemy database URL")
     parser.add_argument("--drop", action="store_true", help="Drop clean core tables before creating them")
     parser.add_argument("--seed", action="store_true", help="Seed baseline executor registry rows")
-    parser.add_argument("--xhs-writer-invoke-url", default="mock://xhs-writer/invoke", help="Invoke URL for hermes_xhs_writer executor seed")
+    parser.add_argument("--maga-worker-invoke-url", default=MAGA_WORKER_INVOKE_URL, help="Invoke URL for hermes_maga_worker executor seed")
+    parser.add_argument(
+        "--xhs-writer-invoke-url",
+        default=None,
+        help="Deprecated legacy alias invoke URL; defaults to --maga-worker-invoke-url",
+    )
     return parser
 
 
@@ -82,6 +122,7 @@ async def _amain(argv: Iterable[str] | None = None) -> None:
             engine,
             drop=args.drop,
             seed=args.seed,
+            maga_worker_invoke_url=args.maga_worker_invoke_url,
             xhs_writer_invoke_url=args.xhs_writer_invoke_url,
         )
     finally:

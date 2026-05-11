@@ -4,6 +4,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import Field
 
+from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
 from app.schemas.base import BaseSchema, TimestampSchema
 
 
@@ -15,7 +16,7 @@ class ContentAgentTaskCreate(BaseSchema):
     task_code: Optional[str] = Field(default=None, max_length=64)
     task_type: ContentAgentTaskType = "xhs_generate"
     priority: int = 0
-    executor_code: Optional[str] = Field(default="hermes_xhs_writer", max_length=64)
+    executor_code: Optional[str] = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     brand_id: Optional[int] = None
     product_id: Optional[int] = None
     campaign_id: Optional[int] = None
@@ -29,7 +30,7 @@ class ContentAgentStartGenerationRequest(BaseSchema):
     product_topic: str = Field(..., max_length=255)
     target_audience: Optional[str] = Field(default=None, max_length=255)
     style: Optional[str] = Field(default=None, max_length=255)
-    executor_code: str = Field(default="hermes_xhs_writer", max_length=64)
+    executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     brief_type: str = Field(default="xhs_product_seeding", max_length=128)
     priority: int = 0
     created_by: Optional[str] = Field(default=None, max_length=100)
@@ -38,11 +39,8 @@ class ContentAgentStartGenerationRequest(BaseSchema):
 class ContentAgentStartGenerationResponse(BaseSchema):
     task_id: int
     run_id: int
-    stage_call_id: str
-    capability: str
-    stage_status: str
-    invoke_mode: str
-    output: Optional[dict[str, Any]] = None
+    title: str
+    body: str
 
 
 class ContentAgentTaskResponse(TimestampSchema):
@@ -119,13 +117,11 @@ class ContentAgentStageCallCreate(BaseSchema):
 
 
 class ContentAgentStageCallCompleteRequest(BaseSchema):
-    run_token: str = Field(..., max_length=64)
     output: dict[str, Any] = Field(default_factory=dict)
     stats: Optional[dict[str, Any]] = None
 
 
 class ContentAgentStageCallFailRequest(BaseSchema):
-    run_token: str = Field(..., max_length=64)
     error_code: str = Field(..., max_length=64)
     error_message: str
     retryable: bool = False
@@ -161,12 +157,9 @@ class ContentAgentHeartbeatRequest(BaseSchema):
 
 
 class ContentAgentHumanReviewRequest(BaseSchema):
-    run_token: str = Field(..., max_length=64)
     stage_call_id: Optional[str] = Field(default=None, max_length=64)
     reason: str = Field(..., max_length=64)
     payload: Optional[dict[str, Any]] = None
-    response_schema: Optional[dict[str, Any]] = None
-    ui_hint: Optional[str] = Field(default=None, max_length=64)
 
 
 class ContentAgentHumanReviewResponse(BaseSchema):

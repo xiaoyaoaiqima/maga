@@ -9,10 +9,10 @@ export const overridesPreferences = defineOverridesPreferences({
   // overrides
   app: {
     name: import.meta.env.VITE_APP_TITLE,
-    // 启用混合模式：自动合并前端静态路由和后端动态菜单，无需手动切换模式
-    accessMode: 'backend',
+    // 侧边栏菜单/Tab 由前端路由配置控制，避免依赖后端 sys_menu 漏配导致入口消失
+    accessMode: 'frontend',
     // 默认首页
-    defaultHomePath: '/dashboard/ai-dashboard',
+    defaultHomePath: '/content-agent/workbench',
     // 默认开启水印
     watermark: true,
   },

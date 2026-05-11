@@ -13,6 +13,7 @@ from app.models.content_agent import (
     ContentAgentRun,
     ContentAgentStageCall,
     ContentAgentTask,
+    ExecutorRegistry,
 )
 from app.schemas.content_agent import (
     ContentAgentArtifactCreate,
@@ -57,6 +58,10 @@ class ContentAgentService:
         await self.db.flush()
         await self.db.refresh(task)
         return task
+
+    async def get_executor(self, executor_code: str) -> ExecutorRegistry | None:
+        result = await self.db.execute(select(ExecutorRegistry).where(ExecutorRegistry.executor_code == executor_code))
+        return result.scalar_one_or_none()
 
     async def claim_task(self, request: ContentAgentClaimRequest) -> Optional[ContentAgentClaimResponse]:
         query = (
@@ -252,10 +257,12 @@ class ContentAgentService:
         run_id: int,
         stage_call_id: str,
         request: ContentAgentStageCallCompleteRequest,
+        *,
+        validate_transition: bool = True,
     ) -> ContentAgentStageCall:
         run = await self._require_run(run_id)
-        self._validate_run_token(run, request.run_token)
-        self._validate_current_stage(run, stage_call_id)
+        if validate_transition:
+            self._validate_current_stage(run, stage_call_id)
         stage_call = await self._require_stage_call_for_run(run_id, stage_call_id)
         now = datetime.utcnow()
         stage_call.status = "succeeded"
@@ -273,10 +280,12 @@ class ContentAgentService:
         run_id: int,
         stage_call_id: str,
         request: ContentAgentStageCallFailRequest,
+        *,
+        validate_transition: bool = True,
     ) -> ContentAgentStageCall:
         run = await self._require_run(run_id)
-        self._validate_run_token(run, request.run_token)
-        self._validate_current_stage(run, stage_call_id)
+        if validate_transition:
+            self._validate_current_stage(run, stage_call_id)
         stage_call = await self._require_stage_call_for_run(run_id, stage_call_id)
         now = datetime.utcnow()
         stage_call.status = "failed"
@@ -303,20 +312,31 @@ class ContentAgentService:
         await self.db.refresh(run)
         return run
 
-    async def request_human_review(self, run_id: int, request: ContentAgentHumanReviewRequest) -> ContentAgentHumanReview:
+    async def request_human_review(
+        self,
+        run_id: int,
+        request: ContentAgentHumanReviewRequest,
+        *,
+        stage_call_id_header: str | None = None,
+        protocol_version_header: str | None = None,
+    ) -> ContentAgentHumanReview:
         run = await self._require_run(run_id)
-        self._validate_run_token(run, request.run_token)
-        if request.stage_call_id:
-            self._validate_current_stage(run, request.stage_call_id)
-            await self._require_stage_call_for_run(run_id, request.stage_call_id)
+        if protocol_version_header and protocol_version_header != "0.1":
+            raise ValueError("unsupported protocol version")
+        stage_call_id = request.stage_call_id or stage_call_id_header
+        if stage_call_id_header and request.stage_call_id and stage_call_id_header != request.stage_call_id:
+            raise ValueError("stage header does not match request stage_call_id")
+        if stage_call_id:
+            self._validate_current_stage(run, stage_call_id)
+            await self._require_stage_call_for_run(run_id, stage_call_id)
         now = datetime.utcnow()
         review = ContentAgentHumanReview(
             run_id=run_id,
-            stage_call_id=request.stage_call_id,
+            stage_call_id=stage_call_id,
             reason=request.reason,
             payload_json=request.payload,
-            response_schema_json=request.response_schema,
-            ui_hint=request.ui_hint,
+            response_schema_json=None,
+            ui_hint=None,
             status="pending",
             requested_at=now,
         )

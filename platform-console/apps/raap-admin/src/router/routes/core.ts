@@ -68,6 +68,17 @@ const coreRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'ContentAgentWorkbench',
+        path: 'content-agent/workbench',
+        component: () => import('#/views/content-agent/workbench/index.vue'),
+        meta: {
+          title: '内容生成工作台',
+          icon: 'RobotOutlined',
+          order: -99,
+          activeMenu: '/content-agent/workbench',
+        },
+      },
+      {
         name: 'DashboardRlhf',
         path: 'dashboard/rlhf',
         component: () => import('#/views/dashboard/rlhf/index.vue'),

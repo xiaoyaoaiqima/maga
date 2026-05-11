@@ -1,7 +1,7 @@
 """Content-agent execution layer models.
 
 These tables keep MAGA as the marketing content source of truth while external
-executors such as Hermes xhs-writer perform generation work through APIs.
+executors such as the Hermes MAGA worker perform capability work through APIs.
 """
 from datetime import datetime
 from typing import Optional
@@ -15,8 +15,73 @@ from app.models.base import Base
 BIGINT_PK = BigInteger().with_variant(Integer, "sqlite")
 
 
+class ContentBatchJob(Base):
+    """Batch generation planning job owned by MAGA."""
+
+    __tablename__ = "content_batch_job"
+
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
+    batch_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True, index=True, comment="批次编码")
+    asset_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True, comment="资产键")
+    product_topic: Mapped[str] = mapped_column(String(255), nullable=False, comment="产品/主题")
+    target_audience: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="目标人群")
+    style: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="风格")
+    count: Mapped[int] = mapped_column(Integer, nullable=False, comment="计划篇数")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="planned", index=True, comment="状态")
+    strategy_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, comment="策略")
+    diversity_plan_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, comment="多样性计划摘要")
+    created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="创建人")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), nullable=True)
+    update_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=True)
+
+
+class ContentBatchItem(Base):
+    """One planned or generated item inside a batch generation job."""
+
+    __tablename__ = "content_batch_item"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "item_no", name="uq_content_batch_item_batch_no"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
+    batch_id: Mapped[int] = mapped_column(BIGINT_PK, nullable=False, index=True, comment="批次ID")
+    item_no: Mapped[int] = mapped_column(Integer, nullable=False, comment="批次内序号")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="planned", index=True, comment="状态")
+    plan_json: Mapped[dict] = mapped_column(JSON, nullable=False, comment="单篇生成计划")
+    task_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True, comment="关联任务ID")
+    run_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True, comment="关联Run ID")
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="标题")
+    body: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="正文")
+    quality_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, comment="质量评分")
+    diversity_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, comment="多样性评分")
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="错误信息")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), nullable=True)
+    update_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=True)
+
+
+class ContentBatchItemVersion(Base):
+    """Operator review/version snapshot for a generated batch item."""
+
+    __tablename__ = "content_batch_item_version"
+    __table_args__ = (
+        UniqueConstraint("item_id", "version_no", name="uq_content_batch_item_version_item_no"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
+    item_id: Mapped[int] = mapped_column(BIGINT_PK, nullable=False, index=True, comment="批次文章ID")
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False, comment="版本号")
+    source_action: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="操作来源")
+    review_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="评审状态")
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="标题快照")
+    body: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="正文快照")
+    feedback_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="运营反馈")
+    created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="创建人")
+    metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, comment="扩展数据")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), nullable=True)
+
+
 class ExecutorRegistry(Base):
-    """Registered execution worker, e.g. Hermes profile xhs-writer."""
+    """Registered execution worker, e.g. Hermes profile maga-worker."""
 
     __tablename__ = "executor_registry"
 

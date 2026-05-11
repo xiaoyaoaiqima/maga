@@ -18,7 +18,7 @@ MAGA 当前 `platform-server` 是从老系统演化来的，仓库里同时存�
 - 不为了旧表继续扩展新功能。
 - 新开发优先走 clean schema。
 - 老系统模型先标记 legacy，不急于物理删除。
-- 生产边界仍是 MAGA API，不让 Hermes / xhs-writer 直连 MAGA DB。
+- 生产边界仍是 MAGA API，不让 Hermes `maga-worker` 或历史 `xhs-writer` runtime 直连 MAGA DB。
 - 本地开发库可以 drop/create；需要保留旧数据时另建库，不在同一库里混迁移。
 
 ## 建议的模型分层
@@ -32,7 +32,7 @@ MAGA 当前 `platform-server` 是从老系统演化来的，仓库里同时存�
 - ContentRun：一次执行。
 - RunEvent：执行 trace / AE instruct / score / decision。
 - Artifact：brief.yaml / draft / final / score report / trace。
-- ExecutorRegistry：Hermes xhs-writer 等执行器登记。
+- ExecutorRegistry：Hermes `maga-worker` 等执行器登记。
 
 当前已落地的近似模型：
 
@@ -158,7 +158,7 @@ MYSQL_HOST=127.0.0.1 MYSQL_DATABASE=maga_clean ../.venv/bin/python scripts/creat
 - content-agent service
 - content-agent clean models
 - snapshot adapter
-- local xhs-writer executor script
+- local `maga-worker` executor script
 
 不要依赖：
 
@@ -169,7 +169,7 @@ MYSQL_HOST=127.0.0.1 MYSQL_DATABASE=maga_clean ../.venv/bin/python scripts/creat
 - `ExpertCallTrace`
 - 老 `Agent` / `ExpertConfig` 编排表
 
-AE registry、brief type strategy、score rubric 应从 xhs-writer 文件资产逐步迁入新的 `ExpertDefinition` / `ExpertRuleSet` / `ScoreRubric`，而不是绑定旧 `ExpertConfig`。
+AE registry、brief type strategy、score rubric 应从历史 `xhs-writer` 文件资产逐步迁入新的 `ExpertDefinition` / `ExpertRuleSet` / `ScoreRubric`，并由 `maga-worker` 的 `xhs.*` 能力使用，而不是绑定旧 `ExpertConfig`。
 
 ## 下一步代码调整建议
 
@@ -182,6 +182,6 @@ AE registry、brief type strategy、score rubric 应从 xhs-writer 文件资产�
    - claim task
    - get snapshot
    - write xhs brief.yaml
-   - call xhs_runtime.run_full_flow
+   - call `maga-worker` 的 `xhs.*` runtime（迁移期可复用 `xhs_runtime.run_full_flow`）
    - write events/artifacts/complete/fail
 5. 中期再把模型命名从 `ContentAgent*` 收敛为更稳定的业务名。

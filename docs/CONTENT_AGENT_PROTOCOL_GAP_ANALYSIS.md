@@ -9,7 +9,7 @@ Scope: Compare current Phase-1 implementation / clean schema path against latest
 Latest docs confirm the new paradigm:
 
 - MAGA remains the marketing content workbench, asset center, control plane, source of truth.
-- Hermes `xhs-writer` is an executor, not business source of truth.
+- Hermes `maga-worker` is the early unified executor, not business source of truth; historical `xhs-writer` is only its `xhs.*` capability source.
 - MVP front stage is simple: product/topic, optional audience, style, one-click generation, title/body output.
 - Complexity is internal: intent normalization, strategy completion, generation, style optimization, publishability check.
 - Protocol direction is now push stage orchestration: MAGA invokes executor capabilities; executor reports events/artifacts/completion callbacks.
@@ -144,7 +144,7 @@ Current adapter writes one whole `brief.yaml` for xhs_runtime full flow.
 Conclusion:
 
 - For MVP local smoke, whole-flow adapter is fine.
-- For protocol v0.1, Hermes `xhs-writer` should expose `/invoke` and map each capability to a bounded part of xhs runtime.
+- For protocol v0.1, Hermes `maga-worker` should expose `/invoke` and map each `xhs.*` capability to a bounded part of the historical xhs runtime.
 - MAGA should orchestrate stage sequence and rewrite decision, not Hermes.
 
 ## Data model recommendation after reading docs
@@ -206,7 +206,7 @@ But mark as dev fallback.
 3. Add idempotency tests for event/artifact upload.
 4. Add complete/fail stage-call endpoints with run_token + current_stage_call validation.
 5. Add a small MAGA-side stage orchestrator for one capability at a time.
-6. Adapt local Hermes/xhs-writer integration from pull/full-flow to push/invoke skeleton.
+6. Adapt local Hermes `maga-worker` integration from pull/full-flow to push/invoke skeleton.
 
 ## Open decision
 

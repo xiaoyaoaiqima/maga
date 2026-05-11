@@ -1,4 +1,4 @@
-"""Tests for MAGA -> Executor push invocation client."""
+"""MVP-aligned protocol tests for MAGA -> Executor sync invocation."""
 
 import pytest
 
@@ -26,7 +26,7 @@ class FakeAsyncClient:
 
 
 @pytest.mark.asyncio
-async def test_build_invoke_envelope_contains_protocol_and_callback_urls():
+async def test_mvp_invoke_envelope_excludes_transition_callback_urls_and_run_token():
     envelope = build_invoke_envelope(
         run_id=10,
         task_id=20,
@@ -34,7 +34,7 @@ async def test_build_invoke_envelope_contains_protocol_and_callback_urls():
         capability="xhs.interpret_brief",
         schema_version="1",
         run_token="rt-001",
-        input_payload={"brief": {"topic": "A2 奶粉"}},
+        input_payload={"brief": {"topic": "美素佳儿源悦"}},
         callback_base_url="https://maga.example.com/api/v1/content-agent",
         deadline_at=None,
     )
@@ -44,23 +44,24 @@ async def test_build_invoke_envelope_contains_protocol_and_callback_urls():
     assert envelope["task_id"] == 20
     assert envelope["stage_call_id"] == "stage-001"
     assert envelope["capability"] == "xhs.interpret_brief"
-    assert envelope["input"] == {"brief": {"topic": "A2 奶粉"}}
-    assert envelope["callback"]["events_url"].endswith("/runs/10/events")
-    assert envelope["callback"]["complete_url"].endswith("/runs/10/stage-calls/stage-001/complete")
-    assert envelope["callback"]["fail_url"].endswith("/runs/10/stage-calls/stage-001/fail")
-    assert envelope["run_token"] == "rt-001"
+    assert envelope["input"] == {"brief": {"topic": "美素佳儿源悦"}}
+    assert set(envelope["callback"]) == {"events_url", "artifacts_url", "human_review_url"}
+    assert "complete_url" not in envelope["callback"]
+    assert "fail_url" not in envelope["callback"]
+    assert "run_token" not in envelope
+    assert envelope["executor_hints"]["timeout_seconds"] == 60
 
 
 @pytest.mark.asyncio
-async def test_invoke_sync_200_returns_output_envelope():
+async def test_mvp_invoke_sync_200_returns_succeeded_output_envelope():
     http_client = FakeAsyncClient(
         FakeResponse(
             200,
             {
                 "stage_call_id": "stage-001",
                 "status": "succeeded",
-                "output": {"structured_brief": {"topic": "A2 奶粉"}},
-                "stats": {"duration_ms": 10},
+                "output": {"structured_brief": {"topic": "美素佳儿源悦"}},
+                "stats": {"total_latency_ms": 10},
             },
         )
     )
@@ -69,22 +70,55 @@ async def test_invoke_sync_200_returns_output_envelope():
     result = await client.invoke(
         invoke_url="https://executor.example.com/invoke",
         envelope={"stage_call_id": "stage-001", "capability": "xhs.interpret_brief"},
+        executor_token="test-token",
     )
 
     assert result == InvokeResult(
         mode="sync",
         stage_call_id="stage-001",
-        output={"structured_brief": {"topic": "A2 奶粉"}},
-        stats={"duration_ms": 10},
-        ack_at=None,
+        status="succeeded",
+        output={"structured_brief": {"topic": "美素佳儿源悦"}},
+        stats={"total_latency_ms": 10},
+        error_code=None,
+        error_message=None,
     )
-    assert http_client.calls[0]["url"] == "https://executor.example.com/invoke"
-    assert http_client.calls[0]["headers"]["X-Maga-Protocol-Version"] == "0.1"
+    assert http_client.calls[0]["headers"] == {
+        "X-Maga-Protocol-Version": "0.1",
+        "Authorization": "Bearer test-token",
+    }
 
 
 @pytest.mark.asyncio
-async def test_invoke_async_202_returns_ack():
-    http_client = FakeAsyncClient(FakeResponse(202, {"stage_call_id": "stage-002", "ack_at": "2026-05-08T12:00:00Z"}))
+async def test_mvp_invoke_omits_authorization_header_when_token_is_absent():
+    http_client = FakeAsyncClient(
+        FakeResponse(
+            200,
+            {"stage_call_id": "stage-no-token", "status": "succeeded", "output": {}, "stats": {}},
+        )
+    )
+    client = ExecutorInvocationClient(http_client=http_client)
+
+    await client.invoke(
+        invoke_url="https://executor.example.com/invoke",
+        envelope={"stage_call_id": "stage-no-token", "capability": "xhs.interpret_brief"},
+    )
+
+    assert http_client.calls[0]["headers"] == {"X-Maga-Protocol-Version": "0.1"}
+
+
+@pytest.mark.asyncio
+async def test_mvp_invoke_sync_200_can_return_failed_output_envelope():
+    http_client = FakeAsyncClient(
+        FakeResponse(
+            200,
+            {
+                "stage_call_id": "stage-002",
+                "status": "failed",
+                "error_code": "model_error",
+                "error_message": "provider 5xx",
+            },
+        )
+    )
     client = ExecutorInvocationClient(http_client=http_client)
 
     result = await client.invoke(
@@ -92,10 +126,23 @@ async def test_invoke_async_202_returns_ack():
         envelope={"stage_call_id": "stage-002", "capability": "xhs.generate_draft"},
     )
 
-    assert result.mode == "async"
-    assert result.stage_call_id == "stage-002"
-    assert result.ack_at == "2026-05-08T12:00:00Z"
+    assert result.mode == "sync"
+    assert result.status == "failed"
+    assert result.error_code == "model_error"
+    assert result.error_message == "provider 5xx"
     assert result.output is None
+
+
+@pytest.mark.asyncio
+async def test_mvp_invoke_rejects_async_202_ack():
+    http_client = FakeAsyncClient(FakeResponse(202, {"stage_call_id": "stage-003", "ack_at": "2026-05-08T12:00:00Z"}))
+    client = ExecutorInvocationClient(http_client=http_client)
+
+    with pytest.raises(RuntimeError, match="MVP protocol requires sync"):
+        await client.invoke(
+            invoke_url="https://executor.example.com/invoke",
+            envelope={"stage_call_id": "stage-003", "capability": "xhs.generate_draft"},
+        )
 
 
 @pytest.mark.asyncio
@@ -106,5 +153,5 @@ async def test_invoke_raises_on_unexpected_status():
     with pytest.raises(RuntimeError, match="Executor invoke failed"):
         await client.invoke(
             invoke_url="https://executor.example.com/invoke",
-            envelope={"stage_call_id": "stage-003"},
+            envelope={"stage_call_id": "stage-004"},
         )

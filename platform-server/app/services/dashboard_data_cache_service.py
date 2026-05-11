@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text, update, delete
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logger import logger
 
@@ -77,7 +78,14 @@ class MySQLDashboardDataCacheService:
         """
         # 1. 优先检查演示模式
         if check_demo:
-            demo_data = await self._get_demo_data(cache_key)
+            try:
+                demo_data = await self._get_demo_data(cache_key)
+            except SQLAlchemyError as e:
+                await self.session.rollback()
+                logger.warning(
+                    f"Dashboard demo cache unavailable, fallback to normal cache: {e}"
+                )
+                demo_data = None
             if demo_data is not None:
                 logger.debug(f"✅ Demo data found for cache_key={cache_key}")
                 return {
@@ -112,10 +120,15 @@ class MySQLDashboardDataCacheService:
                 AND expires_at > NOW()
         """)
 
-        result = await self.session.execute(sql, {
-            "cache_key": cache_key,
-            "cache_group": cache_group,
-        })
+        try:
+            result = await self.session.execute(sql, {
+                "cache_key": cache_key,
+                "cache_group": cache_group,
+            })
+        except SQLAlchemyError as e:
+            await self.session.rollback()
+            logger.warning(f"Dashboard cache unavailable, treating as cache miss: {e}")
+            return None
         row = result.fetchone()
         # ✅ 转换 tuple 为 dict (按列顺序)
         if row:
@@ -226,7 +239,7 @@ class MySQLDashboardDataCacheService:
                 cache_key, logical_key, cache_group,
                 response_data, response_compressed, response_data_size,
                 request_params, tenant_id,
-                cache_watermark, expires_at, is_expired,
+                cache_watermark, expires_at, is_expired, hit_count,
                 ttl_seconds, auto_refresh_enabled, auto_refresh_interval,
                 next_refresh_at, refresh_status,
                 created_at, updated_at
@@ -234,7 +247,7 @@ class MySQLDashboardDataCacheService:
                 :cache_key, :logical_key, :cache_group,
                 :response_data, :response_compressed, :response_data_size,
                 :request_params, :tenant_id,
-                :cache_watermark, :expires_at, 0,
+                :cache_watermark, :expires_at, 0, :hit_count,
                 :ttl_seconds, :auto_refresh_enabled, :auto_refresh_interval,
                 :next_refresh_at, 'idle',
                 NOW(), NOW()
@@ -255,23 +268,29 @@ class MySQLDashboardDataCacheService:
                 updated_at = NOW()
         """)
 
-        await self.session.execute(sql, {
-            "cache_key": cache_key,
-            "logical_key": logical_key,
-            "cache_group": cache_group,
-            "response_data": response_data_json if not compressed_data else None,
-            "response_compressed": compressed_data,
-            "response_data_size": response_data_size,
-            "request_params": json.dumps(request_params, ensure_ascii=False) if request_params else None,  # ✅ 转换为 JSON 字符串
-            "tenant_id": tenant_id,
-            "cache_watermark": now,  # ✅ P0-4
-            "expires_at": expires_at,
-            "ttl_seconds": ttl_seconds,
-            "auto_refresh_enabled": 1 if auto_refresh_enabled else 0,
-            "auto_refresh_interval": auto_refresh_interval,
-            "next_refresh_at": next_refresh_at,
-        })
-        await self.session.commit()
+        try:
+            await self.session.execute(sql, {
+                "cache_key": cache_key,
+                "logical_key": logical_key,
+                "cache_group": cache_group,
+                "response_data": response_data_json if not compressed_data else None,
+                "response_compressed": compressed_data,
+                "response_data_size": response_data_size,
+                "request_params": json.dumps(request_params, ensure_ascii=False) if request_params else None,  # ✅ 转换为 JSON 字符串
+                "tenant_id": tenant_id,
+                "cache_watermark": now,  # ✅ P0-4
+                "expires_at": expires_at,
+                "hit_count": 0,
+                "ttl_seconds": ttl_seconds,
+                "auto_refresh_enabled": 1 if auto_refresh_enabled else 0,
+                "auto_refresh_interval": auto_refresh_interval,
+                "next_refresh_at": next_refresh_at,
+            })
+            await self.session.commit()
+        except SQLAlchemyError as e:
+            await self.session.rollback()
+            logger.warning(f"Dashboard cache write skipped because cache table is unavailable: {e}")
+            return
 
         logger.info(f"Cache set: {logical_key} (size={response_data_size}, compressed={compressed_data is not None})")
 
