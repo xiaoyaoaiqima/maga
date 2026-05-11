@@ -15,7 +15,10 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.sql import text
 
 from app.core.config import settings
+from app.core.content_agent_defaults import MAGA_WORKER_INVOKE_URL
 from app.models.base import Base
+from app.models.maga_core import MAGA_CORE_TABLE_NAMES  # noqa: F401 - registers clean MAGA models
+from app.services.content_agent_bootstrap_service import seed_default_content_agent_executors
 
 
 def _engine_options(url: str, *, analytics: bool = False) -> dict:
@@ -98,6 +101,15 @@ async def init_db() -> None:
             async with engine.begin() as conn:
                 # Create all tables
                 await conn.run_sync(Base.metadata.create_all)
+                # Ensure the default content-agent executor exists so fresh
+                # local/server databases do not fail generation with
+                # "executor not found" before an explicit seed command runs.
+                await seed_default_content_agent_executors(
+                    conn,
+                    maga_worker_invoke_url=MAGA_WORKER_INVOKE_URL,
+                    executor_token=None,
+                    overwrite=False,
+                )
             return  # Success, exit function
         except OperationalError as e:
             if attempt < max_retries - 1:

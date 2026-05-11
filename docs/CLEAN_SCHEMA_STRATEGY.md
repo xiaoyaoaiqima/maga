@@ -118,12 +118,29 @@ cd /Users/luxifa/maga/platform-server
 MYSQL_HOST=127.0.0.1 MYSQL_DATABASE=maga_clean ../.venv/bin/python scripts/create_clean_schema.py
 ```
 
+当前仓库根目录提供了统一入口：
+
+```bash
+make init-clean-schema
+```
+
+该命令会创建/补齐 MAGA clean schema，并 seed 默认执行器：
+
+- `hermes_maga_worker`：统一的 Hermes `maga-worker` 执行器。
+- `hermes_xhs_writer`：历史兼容别名，仍指向 `maga-worker`。
+
+默认 `MAGA_WORKER_INVOKE_URL` 为 `http://host.docker.internal:8765/invoke`，适合 Docker 后端调用宿主机上运行的 `maga-worker` HTTP 服务。如果只想先跑平台内置 mock，可以显式切回：
+
+```bash
+MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
+```
+
 脚本行为：
 
 1. 导入 clean model registry。
 2. `Base.metadata.drop_all()` 可选，仅限明确设置 `--drop`。
 3. `Base.metadata.create_all()`。
-4. 写入最小 seed：executor registry、默认 brief type、默认 AE registry skeleton。
+4. 写入最小 seed：executor registry。
 
 ### Alembic
 
@@ -173,15 +190,13 @@ AE registry、brief type strategy、score rubric 应从历史 `xhs-writer` 文�
 
 ## 下一步代码调整建议
 
-1. 新增 clean model registry，只包含 phase 1 需要的模型。
-2. 新增 `scripts/create_clean_schema.py`，基于最新模型创建 clean DB。
-3. 给 app 增加配置开关，例如 `MAGA_SCHEMA_MODE=clean|legacy`：
+1. 给 app 增加配置开关，例如 `MAGA_SCHEMA_MODE=clean|legacy`：
    - clean：只注册新 MAGA 路由。
    - legacy：保持当前全量 router。
-4. 新增本地 executor 脚本：
+2. 新增本地 executor 脚本：
    - claim task
    - get snapshot
    - write xhs brief.yaml
    - call `maga-worker` 的 `xhs.*` runtime（迁移期可复用 `xhs_runtime.run_full_flow`）
    - write events/artifacts/complete/fail
-5. 中期再把模型命名从 `ContentAgent*` 收敛为更稳定的业务名。
+3. 中期再把模型命名从 `ContentAgent*` 收敛为更稳定的业务名。

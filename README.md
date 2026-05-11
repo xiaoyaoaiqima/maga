@@ -18,17 +18,33 @@ make dev
 
 - Docker 容器：MySQL / Redis / MAGA Platform Server
 - 本机进程：MAGA Console 前端开发服务
+- MAGA clean schema 与默认执行器 seed
 
 访问地址：
 
 - 前端: [http://localhost:3100](http://localhost:3100)
 - 后端: [http://localhost:5100/docs](http://localhost:5100/docs)
 
+## 数据库初始化
+
+MAGA 当前第一阶段以 clean schema 为准，不依赖历史 Alembic 链初始化新库。本地和服务器准备数据库时使用同一条入口：
+
+```bash
+make init-clean-schema
+```
+
+默认会写入 `hermes_maga_worker`，并把 `invoke_url` 指向 `http://host.docker.internal:8765/invoke`。如果本地只想跑平台内置 mock：
+
+```bash
+MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
+```
+
 ## 常用命令
 
 ```bash
 make up        # 启动 mysql / redis / backend
 make dev       # 启动 Docker 后端栈和本机前端
+make init-clean-schema # 创建/补齐 MAGA clean schema，并 seed 默认执行器
 make dev-stop  # 停止 Docker 后端栈和本机前端
 make down      # 停止容器
 make build     # 构建 backend 镜像
