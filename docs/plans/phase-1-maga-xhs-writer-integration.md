@@ -248,6 +248,26 @@ MAGA 仍是 source of truth；`maga-worker` 只作为执行器，不直连 MAGA 
 
 - `maga-worker` workspace：`17 passed in 0.36s`
 
+### 2026-05-11 补充：批量生成默认执行模式
+
+批量产文会由 MAGA 根据 `asset_registry` 生成 `generation_snapshot`，再把 snapshot 传给 `maga-worker`。`maga-worker` 的 `xhs.generate_draft` 执行模式约定如下：
+
+1. 显式环境变量 `MAGA_WORKER_EXECUTION_MODE` 优先，可选值按 worker 实现解释。
+2. 兼容迁移期旧变量 `XHS_WRITER_EXECUTION_MODE`。
+3. 未显式配置且输入含 `generation_snapshot` 时，默认走 `runtime_fast`。
+4. 未显式配置且没有 snapshot 时，保留 `deterministic`，用于单篇 smoke 和无模型本地调试。
+
+测试环境可设置 `MAGA_WORKER_RUNTIME_FAST_FAKE=1`，让 worker 走 `runtime_fast` 的协议分支但不发起真实模型调用，便于 MAGA HTTP E2E 稳定验证：
+
+- `xhs.generate_draft.output.runtime_result.mode == "runtime_fast"`
+- 批量报告 `items[].runtime_mode == "runtime_fast"`
+- 批量报告 `items[].generation_duration_ms` 展示生文阶段耗时
+
+当前验证结果：
+
+- `maga-worker` workspace：`20 passed in 0.30s`
+- MAGA `platform-server`：`60 passed in 3.39s`
+
 ## MVP 输入结构补充约定（2026-05-09）
 
 用户侧不是一句话自由输入，而是选择/填写几个结构化字段。推荐内部 payload：

@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.api.v1.endpoints.content_agent import router
 from app.core.database import get_db
 from app.models.base import Base
-from app.models.content_agent import ContentAgentStageCall, ExecutorRegistry
+from app.models.content_agent import ContentAgentStageCall, ContentBatchItem, ExecutorRegistry
+from app.models.maga_assets import AssetRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 
 MAGA_WORKER_WORKSPACE = Path("/Users/luxifa/.hermes/profiles/maga-worker/workspace")
@@ -50,6 +51,7 @@ def maga_worker_server():
     port = _free_port()
     env = os.environ.copy()
     env["MAGA_WORKER_EXECUTOR_TOKEN"] = "test-token"
+    env["MAGA_WORKER_RUNTIME_FAST_FAKE"] = "1"
     process = subprocess.Popen(
         [
             str(PYTHON),
@@ -107,6 +109,7 @@ async def maga_http_e2e_client(maga_worker_server):
                 ],
             )
         )
+        session.add_all(_yuanyue_assets())
         await session.commit()
 
     app = FastAPI()
@@ -161,3 +164,90 @@ async def test_generation_start_calls_maga_worker_invoke_skeleton_over_http(maga
     assert all(stage.status == "succeeded" for stage in stages)
     assert all((stage.stats_json or {}).get("executor") == "maga-worker" for stage in stages)
     assert all((stage.stats_json or {}).get("module") == "xhs-writer" for stage in stages)
+
+
+@pytest.mark.asyncio
+async def test_batch_generation_defaults_to_maga_worker_runtime_fast_over_http(maga_http_e2e_client):
+    client, session_factory = maga_http_e2e_client
+
+    response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "count": 1,
+            "executor_code": "hermes_maga_worker",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["execution"]["generated_count"] == 1
+    item = data["report"]["items"][0]
+    assert item["runtime_mode"] == "runtime_fast"
+    assert item["generation_duration_ms"] is not None
+
+    async with session_factory() as session:
+        stage_result = await session.execute(select(ContentAgentStageCall).order_by(ContentAgentStageCall.sequence_no))
+        stages = list(stage_result.scalars())
+        item_result = await session.execute(select(ContentBatchItem))
+        batch_item = item_result.scalar_one()
+
+    generate_stage = next(stage for stage in stages if stage.capability == "xhs.generate_draft")
+    assert (generate_stage.output_snapshot or {})["runtime_result"]["mode"] == "runtime_fast"
+    assert (generate_stage.output_snapshot or {})["runtime_result"]["fake"] is True
+    assert batch_item.quality_json["executor"] == "runtime_fast"
+
+
+def _yuanyue_assets() -> list[AssetRegistry]:
+    return [
+        AssetRegistry(
+            asset_type="painpoint_model",
+            asset_key="yuanyue",
+            display_name="源悦痛点模型",
+            version_no=1,
+            status="active",
+            content_json={
+                "items": [
+                    {"painpoint": "便便不规律", "symptom": "拉臭费劲", "description": "便便状态不稳定", "selling_point": "好消化易吸收"},
+                    {"painpoint": "肚肚不舒服", "symptom": "胀气", "description": "喝奶后肚肚闹腾", "selling_point": "温和"},
+                ]
+            },
+        ),
+        AssetRegistry(
+            asset_type="product_selling_points",
+            asset_key="yuanyue",
+            display_name="源悦产品卖点",
+            version_no=1,
+            status="active",
+            content_json={
+                "items": [
+                    {"selling_point": "好消化易吸收", "advantage": "软凝乳"},
+                    {"selling_point": "温和", "advantage": "亲和宝宝肚肚"},
+                ]
+            },
+        ),
+        AssetRegistry(
+            asset_type="reference_examples",
+            asset_key="yuanyue",
+            display_name="源悦参考例文",
+            version_no=1,
+            status="active",
+            content_json={
+                "items": [
+                    {"example_id": "ex1", "title": "过来人经验", "body": "先观察宝宝便便状态", "style_tags": ["经验笔记"]},
+                    {"example_id": "ex2", "title": "场景共鸣", "body": "新手妈妈别焦虑", "style_tags": ["场景共鸣"]},
+                ]
+            },
+        ),
+        AssetRegistry(
+            asset_type="compliance_rules",
+            asset_key="yuanyue",
+            display_name="源悦审核规则",
+            version_no=1,
+            status="active",
+            content_json={"items": [{"dimension": "禁止治疗便秘", "risk_level": "high"}]},
+        ),
+    ]

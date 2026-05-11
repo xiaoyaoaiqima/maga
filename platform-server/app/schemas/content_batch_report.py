@@ -62,6 +62,7 @@ class ContentBatchReportItem(BaseSchema):
     latest_version_no: int | None = None
     human_feedback_text: str | None = None
     reject_reasons: list[ContentBatchRejectReason] = Field(default_factory=list)
+    runtime_mode: str | None = None
     generation_duration_ms: int | None = None
     total_duration_ms: int | None = None
     trace_run_id: int | None = None

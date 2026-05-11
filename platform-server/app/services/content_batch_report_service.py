@@ -178,6 +178,7 @@ class ContentBatchReportService:
             latest_version_no=latest_version.version_no if latest_version else None,
             human_feedback_text=latest_version.feedback_text if latest_version else (quality.get("human_review") or {}).get("feedback_text"),
             reject_reasons=self._reject_reasons(item, review, text),
+            runtime_mode=runtime_result.get("mode") or quality.get("executor"),
             generation_duration_ms=self._stage_duration_ms(generation_stage) if generation_stage else None,
             total_duration_ms=self._total_duration_ms(run, stage_calls),
             trace_run_id=item.run_id,

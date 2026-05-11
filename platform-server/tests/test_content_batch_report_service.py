@@ -154,6 +154,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
     assert first.rewrite_rounds == 1
     assert first.suggestion_count == 0
     assert first.replacement_count == 0
+    assert first.runtime_mode == "runtime_fast"
     assert first.generation_duration_ms == 1200
     assert first.total_duration_ms == 3200
     assert first.trace_run_id == 101
