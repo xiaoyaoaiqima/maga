@@ -1,8 +1,8 @@
-# MAGA x maga-worker 本地组合草案
+# MAGA x maga-worker 本地组合
 
 ## 当前目标
 
-创建并收敛 `maga-worker` Hermes profile，用来开发和验证：
+收敛 `maga-worker` Hermes profile，用来开发和验证：
 
 MAGA = 营销内容生成工作台 / 控制平面 / 数据资产中心
 maga-worker = 当前默认统一 Agent 执行层 / worker
@@ -37,37 +37,58 @@ MAGA 不直接调用 Hermes profile 文件系统作为业务数据库。
 5. `maga-worker` 通过 MAGA API 回写 run_event、artifact、score、final content 或 change proposal。
 6. MAGA 进入人工审核/发布/评估流程。
 
-## 第一阶段本地 adapter
+## 当前本地执行链路
 
-为了快速验证，可以先做两个本地 adapter：
+当前正式生文入口在 MAGA API，不执行本地调试脚本：
 
-### 1. task snapshot -> xhs brief
+```text
+POST /api/v1/content-agent/generation/start
+POST /api/v1/content-agent/batches/start
+```
 
-输入：MAGA ContentTask snapshot
-输出：`xhs_runtime.py` 可消费的 brief dict 或临时 brief.yaml
+MAGA 会读取 `executor_registry.hermes_maga_worker.invoke_url`：
 
-映射重点：
+- `mock://...`：使用 `platform-server` 内置 `MockExecutorInvocationClient`。
+- `http(s)://...`：使用 `ExecutorInvocationClient`，同步 POST 到 worker 的 `/invoke`。
 
-- content_task.painpoint -> brief.painpoint
-- product.selling_points -> brief.selling_points
-- brand.rules -> brand_product_guard corpus/rules
-- expert_strategy.required_aes -> brief_type.required_aes
-- generation_strategy -> narrative_strategy
-- score_rubric -> AE score rubric
+本地推荐链路：
 
-### 2. xhs trace -> MAGA events/artifacts
+```bash
+make up
+make init-clean-schema
+make worker-start
+```
 
-输入：`maga-worker` / 历史 xhs-writer notes/debug 输出
-输出：MAGA run_event/artifact payload
+然后由前端或接口调用：
 
-映射重点：
+```bash
+curl -sS -X POST http://localhost:5100/api/v1/content-agent/generation/start \
+  -H 'Content-Type: application/json' \
+  -d '{"product_topic":"宝宝便便不规律","target_audience":"新手妈妈","style":"经验老道型","executor_code":"hermes_maga_worker","created_by":"ops"}'
+```
 
-- AE instruct -> run_event(type=ae_instruct)
-- Writing Spec -> artifact(type=writing_spec)
-- GE draft -> artifact(type=draft)
-- AE score -> run_event(type=ae_score)
-- Rewrite suggestions -> run_event(type=rewrite_suggestion)
-- Final content -> artifact(type=final_content)
+`make init-clean-schema` 会把 `hermes_maga_worker` seed 到 `http://host.docker.internal:8765/invoke`，供 Docker 后端访问宿主机上的 worker。只需要平台内置 mock 时，显式执行：
+
+```bash
+MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
+```
+
+## 当前 snapshot contract
+
+MAGA 发送给 `maga-worker` 的核心输入是不可变 `generation_snapshot`：
+
+- 单篇 `/generation/start`：构造最小 snapshot，`batch_context.source=single_generation`，保持和批量生成相同 worker contract。
+- 批量 `/batches/start`：基于 `asset_registry` 生成每篇文章的 snapshot，包含痛点、卖点、参考表达、合规规则、资产引用和多样性约束。
+
+MAGA 串行调度 `xhs.*` stages：
+
+1. `xhs.interpret_brief`
+2. `xhs.run_ae_analysis`
+3. `xhs.generate_draft`
+4. `xhs.run_ae_review`
+5. `xhs.rewrite_draft`（只在审核需要改写时）
+
+worker 可以在阶段内使用历史 xhs runtime、临时文件和 debug 输出，但正式 task/run/stage_call/artifact/feedback 的 source of truth 仍然在 MAGA。
 
 ## 注意
 

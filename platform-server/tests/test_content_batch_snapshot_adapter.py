@@ -50,6 +50,7 @@ def test_build_xhs_generation_snapshot_from_batch_plan_includes_assets_and_diver
             "structure_type": "痛点-观察-建议",
             "emotion": "稳",
             "cta_type": "轻建议",
+            "narrative_focus": "先共情",
             "forbidden_overlap_group": "G07",
         },
     }
@@ -60,12 +61,14 @@ def test_build_xhs_generation_snapshot_from_batch_plan_includes_assets_and_diver
         "product_topic": "宝宝便便不规律",
         "target_audience": "新手妈妈",
         "style": "经验老道型",
+        "content_constraints": {"word_count": "150-250", "emoji": "少量"},
     }
     assert snapshot["assets"]["painpoint"]["painpoint"] == "便便不规律"
     assert snapshot["assets"]["selling_point"]["selling_point"] == "好消化易吸收"
     assert snapshot["assets"]["reference_examples"][0]["title"] == "真实经验"
     assert snapshot["assets"]["compliance_rules"][0]["dimension"] == "禁止治疗便秘"
     assert snapshot["diversity_slot"]["opening_type"] == "过来人提醒"
+    assert snapshot["diversity_slot"]["narrative_focus"] == "先共情"
     assert snapshot["batch_context"] == {"batch_id": 1, "batch_code": "batch_demo", "item_no": 7}
     assert snapshot["constraints"]["output_fields"] == ["title", "body"]
     assert snapshot["constraints"]["must_reference_example_without_copying"] is True
@@ -82,6 +85,7 @@ def test_build_xhs_generation_snapshot_from_brief_creates_minimal_single_generat
         "product_topic": "美素佳儿源悦",
         "target_audience": "新手妈妈",
         "style": "情绪共情",
+        "content_constraints": {"word_count": "150-250", "emoji": "少量"},
     }
     assert snapshot["assets"]["asset_key"] is None
     assert snapshot["assets"]["painpoint"] is None
@@ -92,3 +96,22 @@ def test_build_xhs_generation_snapshot_from_brief_creates_minimal_single_generat
     assert snapshot["constraints"]["must_use_painpoint"] is False
     assert snapshot["constraints"]["must_reference_example_without_copying"] is False
     assert snapshot["constraints"]["output_fields"] == ["title", "body"]
+
+
+def test_build_xhs_generation_snapshot_allows_maga_word_count_override():
+    snapshot = build_xhs_generation_snapshot_from_plan(
+        {
+            "item_no": 1,
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "brief_constraints": {
+                "word_count": "250-350",
+                "emoji": "中",
+                "must_reference_example_without_copying": False,
+            },
+        }
+    )
+
+    assert snapshot["brief"]["content_constraints"] == {"word_count": "250-350", "emoji": "中"}
+    assert snapshot["constraints"]["must_reference_example_without_copying"] is False

@@ -13,9 +13,10 @@
 - 单体后端 `platform-server`
 - 管理台前端 `platform-console`
 - Docker Compose 本地启动
+- 当前启动和本地真实 worker 链路优先看仓库根目录 [README](../README.md)
 - [MAGA MVP 架构](./MAGA_MVP_ARCHITECTURE.md)
 - [MAGA Agent 执行层改造方案](./AGENT_EXECUTION_LAYER_PLAN.md)
-- [MAGA x maga-worker 本地组合草案](./MAGA_XHS_WRITER_LOCAL_INTEGRATION.md)
+- [MAGA x maga-worker 本地组合](./MAGA_XHS_WRITER_LOCAL_INTEGRATION.md)
 - [提示词优化工作台 MVP](./PROMPT_OPTIMIZER_WORKBENCH_MVP.md)
 
 旧的部署与微服务材料已逐步归档，阅读时优先参考当前目录下的最新文档。

@@ -175,7 +175,7 @@ MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
 - content-agent service
 - content-agent clean models
 - snapshot adapter
-- local `maga-worker` executor script
+- `maga-worker` `/invoke` HTTP 服务
 
 不要依赖：
 
@@ -193,10 +193,13 @@ AE registry、brief type strategy、score rubric 应从历史 `xhs-writer` 文�
 1. 给 app 增加配置开关，例如 `MAGA_SCHEMA_MODE=clean|legacy`：
    - clean：只注册新 MAGA 路由。
    - legacy：保持当前全量 router。
-2. 新增本地 executor 脚本：
-   - claim task
-   - get snapshot
-   - write xhs brief.yaml
-   - call `maga-worker` 的 `xhs.*` runtime（迁移期可复用 `xhs_runtime.run_full_flow`）
-   - write events/artifacts/complete/fail
-3. 中期再把模型命名从 `ContentAgent*` 收敛为更稳定的业务名。
+2. 继续收敛 `/invoke` push 链路：
+   - `generation/start` 和 `batches/start` 都由 MAGA 构造 `generation_snapshot`。
+   - MAGA 按 `executor_registry.invoke_url` 调 `maga-worker`。
+   - `mock://...` 只作为显式 smoke/mock 模式。
+   - `http(s)://...` 作为本地和服务器推荐执行模式。
+3. 补齐资产、反馈和 Prompt 优化外循环：
+   - `asset_registry` 继续作为资料 source of truth。
+   - `content_feedback` 记录通过、要求修改、人工改写等反馈。
+   - 后续由 `maga-worker` 的 `feedback.*` / `prompt.*` capability 生成资产或 Prompt patch 提案。
+4. 中期再把模型命名从 `ContentAgent*` 收敛为更稳定的业务名。

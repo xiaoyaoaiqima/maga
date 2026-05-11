@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from typing import Any
 
+DEFAULT_XHS_WORD_COUNT = "150-250"
+DEFAULT_XHS_EMOJI = "少量"
+
 
 def build_xhs_generation_snapshot_from_brief(
     *,
@@ -22,6 +25,7 @@ def build_xhs_generation_snapshot_from_brief(
         "product_topic": product_topic,
         "target_audience": target_audience,
         "style": style,
+        "brief_constraints": _default_brief_constraints(),
         "diversity_slot": {},
     }
     snapshot = build_xhs_generation_snapshot_from_plan(plan)
@@ -46,11 +50,16 @@ def build_xhs_generation_snapshot_from_plan(
     reference_refs = plan.get("reference_example_refs") or []
     compliance_refs = plan.get("compliance_rule_refs") or []
     item_no = plan.get("item_no")
+    brief_constraints = _brief_constraints(plan)
     return {
         "brief": {
             "product_topic": plan.get("product_topic"),
             "target_audience": plan.get("target_audience"),
             "style": plan.get("style"),
+            "content_constraints": {
+                "word_count": brief_constraints.get("word_count"),
+                "emoji": brief_constraints.get("emoji"),
+            },
         },
         "assets": {
             "asset_key": plan.get("asset_key"),
@@ -72,10 +81,10 @@ def build_xhs_generation_snapshot_from_plan(
             "item_no": item_no,
         },
         "constraints": {
-            "must_use_painpoint": True,
-            "must_reference_example_without_copying": True,
+            "must_use_painpoint": brief_constraints.get("must_use_painpoint", True),
+            "must_reference_example_without_copying": brief_constraints.get("must_reference_example_without_copying", True),
             "avoid_same_opening_group": (plan.get("diversity_slot") or {}).get("forbidden_overlap_group"),
-            "output_fields": ["title", "body"],
+            "output_fields": brief_constraints.get("output_fields") or ["title", "body"],
         },
     }
 
@@ -91,3 +100,21 @@ def _without_snapshot(ref: dict[str, Any] | None) -> dict[str, Any] | None:
     if not ref:
         return None
     return {key: value for key, value in ref.items() if key != "snapshot"}
+
+
+def _default_brief_constraints() -> dict[str, Any]:
+    return {
+        "word_count": DEFAULT_XHS_WORD_COUNT,
+        "emoji": DEFAULT_XHS_EMOJI,
+        "must_use_painpoint": True,
+        "must_reference_example_without_copying": True,
+        "output_fields": ["title", "body"],
+    }
+
+
+def _brief_constraints(plan: dict[str, Any]) -> dict[str, Any]:
+    constraints = _default_brief_constraints()
+    custom = plan.get("brief_constraints")
+    if isinstance(custom, dict):
+        constraints.update({key: value for key, value in custom.items() if value is not None})
+    return constraints

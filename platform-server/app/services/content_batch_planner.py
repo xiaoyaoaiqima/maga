@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
 from app.models.content_agent import ContentBatchItem, ContentBatchJob
 from app.models.maga_assets import AssetRegistry
+from app.services.content_batch_snapshot_adapter import DEFAULT_XHS_EMOJI, DEFAULT_XHS_WORD_COUNT
 
 
 OPENING_TYPES = [
@@ -34,6 +35,16 @@ STRUCTURE_TYPES = [
 
 EMOTIONS = ["稳", "懂行", "不焦虑", "温和", "真实", "细致"]
 CTA_TYPES = ["轻建议", "经验提醒", "收藏提示", "评论互动", "选择建议"]
+NARRATIVE_FOCUSES = [
+    "先共情",
+    "先避坑",
+    "先清单",
+    "先经验记录",
+    "先反焦虑",
+    "先对比选择",
+    "先观察判断",
+    "先误区澄清",
+]
 
 
 class ContentBatchPlanner:
@@ -90,6 +101,7 @@ class ContentBatchPlanner:
                 "structure_types": STRUCTURE_TYPES,
                 "emotion_pool": EMOTIONS,
                 "cta_types": CTA_TYPES,
+                "narrative_focuses": NARRATIVE_FOCUSES,
             },
             created_by=created_by,
         )
@@ -147,6 +159,8 @@ class ContentBatchPlanner:
         structure = STRUCTURE_TYPES[(zero // len(OPENING_TYPES) + zero) % len(STRUCTURE_TYPES)]
         emotion = EMOTIONS[(zero * 2 + zero // 11) % len(EMOTIONS)]
         cta = CTA_TYPES[(zero * 3 + zero // 13) % len(CTA_TYPES)]
+        # Stagger with the opening cycle so adjacent items do not share the same narrative angle.
+        narrative_focus = NARRATIVE_FOCUSES[(zero + zero // len(OPENING_TYPES)) % len(NARRATIVE_FOCUSES)]
 
         return {
             "item_no": item_no,
@@ -167,9 +181,12 @@ class ContentBatchPlanner:
                 "structure_type": structure,
                 "emotion": emotion,
                 "cta_type": cta,
+                "narrative_focus": narrative_focus,
                 "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
             },
             "brief_constraints": {
+                "word_count": DEFAULT_XHS_WORD_COUNT,
+                "emoji": DEFAULT_XHS_EMOJI,
                 "must_use_painpoint": True,
                 "must_reference_example_without_copying": True,
                 "output_fields": ["title", "body"],

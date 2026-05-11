@@ -102,9 +102,13 @@ async def test_content_batch_planner_creates_100_diverse_yuanyue_plans():
     assert all(item.plan_json["painpoint_ref"] for item in items)
     assert all(item.plan_json["reference_example_refs"] for item in items)
     assert all(item.plan_json["compliance_rule_refs"] for item in items)
+    assert all(item.plan_json["brief_constraints"]["word_count"] == "150-250" for item in items)
+    assert all(item.plan_json["brief_constraints"]["emoji"] == "少量" for item in items)
 
     opening_types = {item.plan_json["diversity_slot"]["opening_type"] for item in items}
     structure_types = {item.plan_json["diversity_slot"]["structure_type"] for item in items}
+    narrative_focuses = {item.plan_json["diversity_slot"]["narrative_focus"] for item in items}
+    cta_types = {item.plan_json["diversity_slot"]["cta_type"] for item in items}
     plan_signatures = {
         (
             item.plan_json["painpoint_ref"]["item_index"],
@@ -112,10 +116,13 @@ async def test_content_batch_planner_creates_100_diverse_yuanyue_plans():
             item.plan_json["reference_example_refs"][0]["item_index"],
             item.plan_json["diversity_slot"]["opening_type"],
             item.plan_json["diversity_slot"]["structure_type"],
+            item.plan_json["diversity_slot"]["narrative_focus"],
         )
         for item in items
     }
 
     assert len(opening_types) >= 6
     assert len(structure_types) >= 5
+    assert len(narrative_focuses) >= 6
+    assert len(cta_types) >= 4
     assert len(plan_signatures) >= 90

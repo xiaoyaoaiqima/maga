@@ -55,17 +55,17 @@ MAGA 仍是 source of truth；`maga-worker` 只作为执行器，不直连 MAGA 
 
 - `ExecutorRegistry`、`ContentAgentTask`、`ContentAgentRun`、`ContentAgentStageCall`、`ContentAgentEvent`、`ContentAgentArtifact`、`ContentAgentHumanReview` 基础表。
 - `ExecutorInvocationClient` 能同步 POST `/invoke`，拒绝 202。
-- `ContentAgentOrchestrator.run_mvp_generation_chain` 已能以 mock executor 串行跑 stage。
+- `ContentAgentOrchestrator.run_mvp_generation_chain` 已能按 `executor_registry.invoke_url` 选择 mock 或真实 HTTP executor，并串行跑 stage。
 - `/generation/start` 已能返回 `task_id/run_id/title/body`。
-- clean schema seed 兼容历史 `hermes_xhs_writer` executor；后续收敛为 `hermes_maga_worker` / `maga-worker`，默认 `mock://maga-worker/invoke`。
+- `/generation/start` 已构造最小 `generation_snapshot`，与批量生成共用 worker contract。
+- `/batches/start` 已能基于 `asset_registry` 规划多篇内容，逐篇传带资产和多样性约束的 `generation_snapshot`。
+- clean schema seed 写入 `hermes_maga_worker`，并保留历史 `hermes_xhs_writer` 兼容别名；根目录 `make init-clean-schema` 默认指向 `http://host.docker.internal:8765/invoke`。
 
 ### MAGA 与最新协议差距
 
-- MAGA -> Executor 还未携带 `Authorization: Bearer <executor_token>`。
-- `ExecutorRegistry` 目前只有 `auth_token_secret_ref`，没有 MVP 本地可用的 token 值读取路径。
-- callback endpoint 未强制校验 Authorization / protocol version / stage currentness。
-- orchestrator 仍把 draft 直接放在 `output.draft` 中传递，未按 `draft_artifact_id -> artifact -> review input` 语义走。
-- rewrite 后尚未再跑一轮 review。
+- artifact-based draft flow 还未完全按 `draft_artifact_id -> artifact -> review input` 收敛，当前仍兼容直接从 stage output 传 draft。
+- rewrite 后的 review 闭环已具备基础条件，但仍需要继续用真实低分/硬审失败样本补测试。
+- callback endpoint 的协议校验已具备雏形，后续还要补生产级 token/secret 管理。
 
 ### maga-worker / 历史 xhs-writer 现状
 
@@ -268,6 +268,26 @@ MAGA 仍是 source of truth；`maga-worker` 只作为执行器，不直连 MAGA 
 - `maga-worker` workspace：`20 passed in 0.30s`
 - MAGA `platform-server`：`60 passed in 3.39s`
 
+### 2026-05-11 补充：本地启动与单篇真实 worker 链路
+
+已补齐本地开发命令和单篇 snapshot 链路：
+
+1. 根目录 `Makefile` 新增/收敛 worker 命令：
+   - `make worker-start`
+   - `make worker-stop`
+   - `make worker-status`
+   - `make worker-logs`
+2. `make dev` 启动 Docker 后端栈和前端，并执行 clean schema seed；`maga-worker` 仍需单独 `make worker-start`。
+3. `make init-clean-schema` 默认把 `hermes_maga_worker.invoke_url` 写成 `http://host.docker.internal:8765/invoke`，让 Docker 后端调用宿主机 worker。
+4. `/generation/start` 和 `/batches/start` 都会把 `generation_snapshot` 透传给所有 `xhs.*` stage。
+5. 本地 `make worker-start` 默认 `MAGA_WORKER_EXECUTION_MODE=runtime_fast`、`MAGA_WORKER_RUNTIME_FAST_FAKE=0`，会走真实 fast runtime；只做协议冒烟测试时可临时设置 `MAGA_WORKER_RUNTIME_FAST_FAKE=1` 后重启 worker。
+
+当前最近验证结果：
+
+- MAGA 聚焦回归：`12 passed`
+- 真实 HTTP E2E：`2 passed`
+- Docker 后端 smoke：`POST /api/v1/content-agent/generation/start` 返回 200，后端日志出现 4 次到 `host.docker.internal:8765/invoke` 的 stage 调用。
+
 ## MVP 输入结构补充约定（2026-05-09）
 
 用户侧不是一句话自由输入，而是选择/填写几个结构化字段。推荐内部 payload：
@@ -283,7 +303,7 @@ MAGA 仍是 source of truth；`maga-worker` 只作为执行器，不直连 MAGA 
 }
 ```
 
-但 `word_count` 一般不作为用户必填输入；默认字数/篇幅应由 `maga-worker` 的 `xhs.*` 生文 brief / brief type strategy / generation strategy 决定。MAGA 只有在内部策略或运营配置明确覆盖时，才把 `content_constraints.word_count` 传给 executor。前台 MVP 仍保持 3 个用户可见字段：产品/主题、目标人群、风格。
+但 `word_count` 不作为用户必填输入；默认字数/篇幅由 MAGA 的内部生成策略管理，并通过 `generation_snapshot.brief.content_constraints.word_count` 下发给 executor。当前 MVP 默认是 `150-250` 中文字，前台仍保持 3 个用户可见字段：产品/主题、目标人群、风格。
 
 ## Asset Steward / 资产管理进展（2026-05-09）
 

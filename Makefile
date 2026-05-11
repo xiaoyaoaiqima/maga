@@ -11,6 +11,8 @@ WORKER_PID := .local/pids/maga-worker.pid
 DEV_MYSQL_URL ?= mysql+aiomysql://maga:maga123456@127.0.0.1:3306/maga
 MAGA_WORKER_INVOKE_URL ?= http://host.docker.internal:8765/invoke
 MAGA_WORKER_EXECUTOR_TOKEN ?= test-token
+MAGA_WORKER_EXECUTION_MODE ?= runtime_fast
+MAGA_WORKER_RUNTIME_FAST_FAKE ?= 0
 
 .PHONY: up init-clean-schema seed-dev-executors down build logs ps dev dev-stop dev-status dev-logs frontend-start frontend-stop frontend-status frontend-logs worker-start worker-stop worker-status worker-logs local-dev local-dev-stop local-dev-status local-dev-logs
 
@@ -113,14 +115,16 @@ worker-start:
 		echo "Starting maga-worker on http://localhost:$(WORKER_PORT) ..."; \
 		( \
 			cd "$(WORKER_WORKSPACE)" && \
-			env \
+			nohup env \
 				MAGA_WORKER_EXECUTOR_TOKEN="$(MAGA_WORKER_EXECUTOR_TOKEN)" \
-				MAGA_WORKER_RUNTIME_FAST_FAKE="$${MAGA_WORKER_RUNTIME_FAST_FAKE:-1}" \
+				MAGA_WORKER_EXECUTION_MODE="$(MAGA_WORKER_EXECUTION_MODE)" \
+				MAGA_WORKER_RUNTIME_FAST_FAKE="$(MAGA_WORKER_RUNTIME_FAST_FAKE)" \
 				/Users/luxifa/maga/.venv/bin/python -m uvicorn tools.maga_executor_server:app \
 					--host 127.0.0.1 \
 					--port "$(WORKER_PORT)" \
-		) >"$(WORKER_LOG)" 2>&1 & \
-		echo $$! >"$(WORKER_PID)"; \
+				>"$(abspath $(WORKER_LOG))" 2>&1 & \
+			echo $$! >"$(abspath $(WORKER_PID))"; \
+		); \
 		echo "Worker log: $(WORKER_LOG)"; \
 	fi
 

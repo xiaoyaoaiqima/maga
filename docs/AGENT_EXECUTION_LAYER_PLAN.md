@@ -358,22 +358,29 @@ MAGA 内部需要抽象 executor，但不要把业务模型泛化掉。本节定
 
 ### 8. content_feedback
 
-**run 外异步型**人工反馈表。运营在拿到 final 之后做 inline 批注（选中片段 + 写一句评论），不阻塞任何 run，用于沉淀到 prompt 优化外循环。
+**run 外异步型**人工反馈表。运营在拿到生成结果之后做通过、要求修改、人工改写或局部批注，不阻塞任何 run，用于沉淀到训练反馈和 prompt 优化外循环。
 
-MVP 阶段刻意保持极简——所有 stage_call_id / prompt_version_id / expert_code 等聚合维度由后端通过 `artifact_id` JOIN 推导，运营前端不感知。
+MVP 阶段刻意保持极简。批量工作台先以 `batch_id/item_id/version_id` 串起反馈和人工版本；如果反馈来自具体 artifact，再补 `artifact_id`。所有 stage_call_id / prompt_version_id / expert_code 等聚合维度后续由后端通过 `run_id` / `artifact_id` JOIN 推导，运营前端不感知。
 
 | 字段 | 说明 |
 |---|---|
 | id | 主键 |
-| artifact_id | 关联 content_agent_artifact（必填，定位到具体 final/draft） |
-| quoted_text | 有问题的原文片段，如 `"明明吃得也不少"` |
-| comment | 为什么有问题 / 该怎么改，运营自由文本 |
-| submitter_user_id | 提交人 |
+| batch_id | 可选，关联批量生成批次 |
+| item_id | 关联批量文章，当前 MVP 必填 |
+| version_id | 可选，关联人工反馈/改写版本 |
+| task_id | 可选，关联 content_agent_task |
+| run_id | 可选，关联 content_agent_run |
+| artifact_id | 可选，关联 content_agent_artifact，用于定位具体 final/draft |
+| action | `approve` / `request_revision` / `manual_edit` |
+| review_status | `approved` / `needs_revision` / `manual_edited` |
+| quoted_text | 可选，有问题的原文片段，如 `"明明吃得也不少"` |
+| comment | 为什么有问题 / 该怎么改，运营自由文本；批量反馈中来自 `feedback_text` |
+| submitter | 提交人 |
+| metadata_json | 来源、item_no、是否人工改写等扩展信息 |
 | create_time | 提交时间 |
 
 未来扩展（不在 MVP 范围）：
 
-- `status` 工作流字段（已采纳/已拒绝/已触发优化）
 - `category` 自动分类（由后端 LLM 打标，运营仍不感知）
 - 反馈聚合视图：按 prompt_version_id 列出 feedback 喂给 prompt_optimizer
 
@@ -385,7 +392,7 @@ MVP 阶段刻意保持极简——所有 stage_call_id / prompt_version_id / exp
 | content_agent_stage_call | UNIQUE(run_id, sequence_no) | 顺序保证 |
 | content_agent_event | INDEX(stage_call_id, create_time) | 阶段内事件回放 |
 | content_agent_artifact | UNIQUE(artifact_code) | 对外引用 |
-| content_feedback | INDEX(artifact_id, create_time) | 按 artifact 列 feedback |
+| content_feedback | INDEX(item_id, create_time) / INDEX(run_id, create_time) / INDEX(artifact_id, create_time) | 按文章、run 或 artifact 聚合 feedback |
 | executor_registry | UNIQUE(executor_code) | 注册唯一性 |
 
 ---
@@ -459,8 +466,8 @@ Hermes 从 MAGA API 拉资产，本地只做缓存和临时执行。
 
 外循环数据流：
 
-1. 运营在 final 上做 inline 批注（选中片段 + 写一句评论） → 落入 `content_feedback`（仅 artifact_id + quoted_text + comment）
-2. MAGA 后台按 `artifact_id` JOIN 反查到 `prompt_version_id` / `expert_code`，按 prompt_version 维度聚合 feedback
+1. 运营在生成结果上通过、要求修改、人工改写或做 inline 批注 → 落入 `content_feedback`（当前批量工作台至少记录 item/version/action/review_status/comment）
+2. MAGA 后台按 `run_id` / `artifact_id` JOIN 反查到 `prompt_version_id` / `expert_code`，按 prompt_version 维度聚合 feedback
 3. 当某 prompt_version 累计 feedback 达到阈值或运营手动触发 → 开 `task_type=prompt_optimize` 任务
 4. prompt_optimize task 由 prompt_optimizer 服务消费（短期是 MAGA 内部 service，对应已有 [prompt_optimizer_service.py](../platform-server/app/services/prompt_optimizer_service.py)；长期可拆为 Hermes profile `xhs-prompt-optimizer`，capability 命名 `prompt.optimize_from_feedback`）
 5. 优化器读取 feedback → 产出 `prompt_patch` artifact
