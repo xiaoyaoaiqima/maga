@@ -143,6 +143,32 @@ export namespace ContentAgentApi {
     items: BatchListItem[];
   }
 
+  export interface TrainingFeedbackSample {
+    feedback_id: number;
+    batch_id?: null | number;
+    batch_code?: null | string;
+    item_id: number;
+    item_no: number;
+    version_id?: null | number;
+    action: string;
+    review_status: string;
+    comment?: null | string;
+    submitter?: null | string;
+    title?: null | string;
+    body_preview?: null | string;
+    product_topic?: null | string;
+    target_audience?: null | string;
+    style?: null | string;
+    asset_key?: null | string;
+    metadata?: null | Record<string, any>;
+    create_time?: null | string;
+  }
+
+  export interface TrainingFeedbackSampleListResponse {
+    total: number;
+    items: TrainingFeedbackSample[];
+  }
+
   export type BatchItemFeedbackAction =
     | 'approve'
     | 'manual_edit'
@@ -198,6 +224,17 @@ export async function getContentBatchListApi(params?: {
 export async function getContentBatchReportApi(batchId: number) {
   return requestClient.get<ContentAgentApi.BatchReport>(
     `/v1/content-agent/batches/${batchId}/report`,
+  );
+}
+
+export async function getTrainingFeedbackSamplesApi(params?: {
+  limit?: number;
+  offset?: number;
+  review_status?: string;
+}) {
+  return requestClient.get<ContentAgentApi.TrainingFeedbackSampleListResponse>(
+    '/v1/content-agent/training/feedback-samples',
+    { params },
   );
 }
 

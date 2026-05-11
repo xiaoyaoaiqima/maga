@@ -8,6 +8,7 @@ import * as Antd from 'ant-design-vue';
 import {
   getContentBatchListApi,
   getContentBatchReportApi,
+  getTrainingFeedbackSamplesApi,
   startContentBatchApi,
   startContentGenerationApi,
   submitBatchItemFeedbackApi,
@@ -56,6 +57,11 @@ const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
 const singleResult = ref<ContentAgentApi.StartGenerationResponse | null>(null);
 const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
 const batchTotal = ref(0);
+const trainingFeedbackLoading = ref(false);
+const trainingFeedbackSamples = ref<ContentAgentApi.TrainingFeedbackSample[]>(
+  [],
+);
+const trainingFeedbackTotal = ref(0);
 
 const formState = reactive({
   asset_key: 'yuanyue',
@@ -143,6 +149,13 @@ const rejectSourceLabel = (source?: string) => {
   if (source === 'forbidden_term') return '禁用词';
   if (source === 'executor_error') return '执行失败';
   return source || '审核';
+};
+
+const actionLabel = (action?: string) => {
+  if (action === 'approve') return '通过';
+  if (action === 'manual_edit') return '人工改写';
+  if (action === 'request_revision') return '要求修改';
+  return action || '-';
 };
 
 const traceLines = (item: ContentAgentApi.BatchReportItem) => [
@@ -259,6 +272,17 @@ const loadBatches = async () => {
     }
   } finally {
     batchLoading.value = false;
+  }
+};
+
+const loadTrainingFeedbackSamples = async () => {
+  trainingFeedbackLoading.value = true;
+  try {
+    const data = await getTrainingFeedbackSamplesApi({ limit: 30, offset: 0 });
+    trainingFeedbackSamples.value = data?.items || [];
+    trainingFeedbackTotal.value = data?.total || 0;
+  } finally {
+    trainingFeedbackLoading.value = false;
   }
 };
 
@@ -447,6 +471,7 @@ const openManualEdit = (item: ContentAgentApi.BatchReportItem) => {
 
 onMounted(() => {
   loadBatches();
+  loadTrainingFeedbackSamples();
 });
 </script>
 
@@ -888,6 +913,70 @@ onMounted(() => {
 
               <TabPane key="training" tab="训练反馈">
                 <div class="training-panel">
+                  <Card
+                    class="training-sample-card"
+                    :bordered="true"
+                    title="跨批次反馈样本池"
+                  >
+                    <template #extra>
+                      <Space>
+                        <span class="sample-total">
+                          共 {{ trainingFeedbackTotal }} 条
+                        </span>
+                        <Button
+                          size="small"
+                          :loading="trainingFeedbackLoading"
+                          @click="loadTrainingFeedbackSamples"
+                        >
+                          刷新
+                        </Button>
+                      </Space>
+                    </template>
+                    <Spin :spinning="trainingFeedbackLoading">
+                      <Empty
+                        v-if="trainingFeedbackSamples.length === 0"
+                        description="暂无跨批次反馈样本"
+                      />
+                      <div v-else class="training-sample-list">
+                        <div
+                          v-for="sample in trainingFeedbackSamples"
+                          :key="sample.feedback_id"
+                          class="training-sample-item"
+                        >
+                          <div class="training-sample-header">
+                            <Space wrap>
+                              <Tag :color="statusColor(sample.review_status)">
+                                {{ reviewStatusLabel(sample.review_status) }}
+                              </Tag>
+                              <Tag>{{ actionLabel(sample.action) }}</Tag>
+                              <span class="training-sample-title">
+                                {{ sample.title || '未生成标题' }}
+                              </span>
+                            </Space>
+                            <span class="sample-time">
+                              {{ sample.create_time || '-' }}
+                            </span>
+                          </div>
+                          <div class="training-sample-meta">
+                            批次 #{{ sample.batch_id || '-' }} · 第
+                            {{ sample.item_no }} 篇 ·
+                            {{ sample.product_topic || '-' }} ·
+                            {{ sample.submitter || 'unknown' }}
+                          </div>
+                          <div v-if="sample.comment" class="sample-comment">
+                            {{ sample.comment }}
+                          </div>
+                          <div
+                            v-if="sample.body_preview"
+                            class="sample-body-preview"
+                          >
+                            {{ sample.body_preview }}
+                          </div>
+                        </div>
+                      </div>
+                    </Spin>
+                  </Card>
+
                   <Row :gutter="12">
                     <Col :span="4">
                       <Statistic
@@ -1203,6 +1292,54 @@ onMounted(() => {
 
 .training-panel {
   min-height: 280px;
+}
+
+.training-sample-card {
+  margin-bottom: 16px;
+}
+
+.training-sample-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.training-sample-item {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.training-sample-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.training-sample-title {
+  font-weight: 600;
+}
+
+.training-sample-meta,
+.sample-total,
+.sample-time,
+.sample-body-preview {
+  color: #666;
+  font-size: 12px;
+}
+
+.sample-comment {
+  margin-top: 8px;
+  color: #262626;
+}
+
+.sample-body-preview {
+  margin-top: 6px;
+  line-height: 1.6;
 }
 
 .training-list {

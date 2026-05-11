@@ -242,6 +242,55 @@ async def test_batch_feedback_is_persisted_for_training(content_agent_workbench_
     assert feedback.metadata_json["source"] == "content_batch_workbench"
 
 
+@pytest.mark.asyncio
+async def test_training_feedback_samples_list_returns_cross_batch_feedback(content_agent_workbench_client):
+    client, _session_factory = content_agent_workbench_client
+    start_response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "count": 1,
+            "created_by": "ops",
+        },
+    )
+    item = start_response.json()["data"]["report"]["items"][0]
+
+    await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={
+            "action": "request_revision",
+            "feedback_text": "开头像真实妈妈一点，少一点口号。",
+            "created_by": "reviewer-a",
+        },
+    )
+    await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={"action": "approve", "feedback_text": "修改后可发布", "created_by": "reviewer-b"},
+    )
+
+    response = await client.get("/api/v1/content-agent/training/feedback-samples")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total"] == 2
+    assert data["items"][0]["review_status"] == "approved"
+    assert data["items"][0]["comment"] == "修改后可发布"
+    assert data["items"][0]["product_topic"] == "宝宝便便不规律"
+    assert data["items"][0]["body_preview"]
+
+    filtered = await client.get(
+        "/api/v1/content-agent/training/feedback-samples",
+        params={"review_status": "needs_revision"},
+    )
+    assert filtered.status_code == 200
+    filtered_data = filtered.json()["data"]
+    assert filtered_data["total"] == 1
+    assert filtered_data["items"][0]["review_status"] == "needs_revision"
+    assert filtered_data["items"][0]["comment"] == "开头像真实妈妈一点，少一点口号。"
+
+
 def _yuanyue_assets() -> list[AssetRegistry]:
     return [
         AssetRegistry(

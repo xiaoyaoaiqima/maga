@@ -13,6 +13,7 @@ from app.schemas.content_batch_report import (
     ContentBatchReportResponse,
     ContentBatchStartRequest,
     ContentBatchStartResponse,
+    ContentTrainingFeedbackSampleListResponse,
 )
 from app.schemas.content_agent import (
     ContentAgentArtifactCreate,
@@ -194,6 +195,21 @@ async def get_batch_report(
     except ValueError as exc:
         raise _map_protocol_error(exc) from exc
     return ResponseData(data=report)
+
+
+@router.get("/training/feedback-samples", response_model=ResponseData[ContentTrainingFeedbackSampleListResponse])
+async def list_training_feedback_samples(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    review_status: str | None = Query(default=None, max_length=32),
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentTrainingFeedbackSampleListResponse]:
+    samples = await ContentBatchReportService(db).list_training_feedback_samples(
+        limit=limit,
+        offset=offset,
+        review_status=review_status,
+    )
+    return ResponseData(data=samples)
 
 
 @router.post("/tasks", response_model=ResponseData[ContentAgentTaskResponse])

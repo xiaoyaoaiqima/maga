@@ -24,6 +24,8 @@ from app.schemas.content_batch_report import (
     ContentBatchSimilarityWarning,
     ContentBatchReportSummary,
     ContentBatchStageTrace,
+    ContentTrainingFeedbackSample,
+    ContentTrainingFeedbackSampleListResponse,
 )
 
 FORBIDDEN_TERMS = ["治疗便秘", "治好便秘", "改善便秘", "解决便秘", "根治", "疗效"]
@@ -102,12 +104,76 @@ class ContentBatchReportService:
             items=report_items,
         )
 
+    async def list_training_feedback_samples(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        review_status: str | None = None,
+    ) -> ContentTrainingFeedbackSampleListResponse:
+        conditions = []
+        if review_status:
+            conditions.append(ContentFeedback.review_status == review_status)
+        total_query = (
+            select(func.count())
+            .select_from(ContentFeedback)
+            .join(ContentBatchItem, ContentBatchItem.id == ContentFeedback.item_id)
+            .join(ContentBatchJob, ContentBatchJob.id == ContentBatchItem.batch_id, isouter=True)
+        )
+        query = (
+            select(ContentFeedback, ContentBatchItem, ContentBatchJob)
+            .join(ContentBatchItem, ContentBatchItem.id == ContentFeedback.item_id)
+            .join(ContentBatchJob, ContentBatchJob.id == ContentBatchItem.batch_id, isouter=True)
+            .order_by(ContentFeedback.create_time.desc(), ContentFeedback.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        if conditions:
+            total_query = total_query.where(*conditions)
+            query = query.where(*conditions)
+        total_result = await self.db.execute(total_query)
+        result = await self.db.execute(query)
+        return ContentTrainingFeedbackSampleListResponse(
+            total=int(total_result.scalar_one() or 0),
+            items=[
+                self._training_feedback_sample(feedback, item, job)
+                for feedback, item, job in result.all()
+            ],
+        )
+
     async def build_item_report(self, item: ContentBatchItem) -> ContentBatchReportItem:
         stage_calls = await self._stage_calls_for_items([item])
         latest_version = (await self._latest_versions_for_items([item])).get(item.id)
         run = (await self._runs_for_items([item])).get(item.run_id or -1)
         feedback_count = (await self._feedback_counts_for_items([item])).get(item.id, 0)
         return self._report_item(item, stage_calls, latest_version, run, feedback_count)
+
+    def _training_feedback_sample(
+        self,
+        feedback: ContentFeedback,
+        item: ContentBatchItem,
+        job: ContentBatchJob | None,
+    ) -> ContentTrainingFeedbackSample:
+        return ContentTrainingFeedbackSample(
+            feedback_id=feedback.id,
+            batch_id=feedback.batch_id,
+            batch_code=job.batch_code if job else None,
+            item_id=feedback.item_id,
+            item_no=item.item_no,
+            version_id=feedback.version_id,
+            action=feedback.action,
+            review_status=feedback.review_status,
+            comment=feedback.comment,
+            submitter=feedback.submitter,
+            title=item.title,
+            body_preview=(item.body or "")[:180] if item.body else None,
+            product_topic=job.product_topic if job else None,
+            target_audience=job.target_audience if job else None,
+            style=job.style if job else None,
+            asset_key=job.asset_key if job else None,
+            metadata=feedback.metadata_json,
+            create_time=feedback.create_time.strftime("%Y-%m-%d %H:%M:%S") if feedback.create_time else None,
+        )
 
     async def _require_job(self, batch_id: int) -> ContentBatchJob:
         result = await self.db.execute(select(ContentBatchJob).where(ContentBatchJob.id == batch_id))

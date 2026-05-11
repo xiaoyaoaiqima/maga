@@ -138,6 +138,32 @@ class ContentBatchListResponse(BaseSchema):
     items: list[ContentBatchListItem]
 
 
+class ContentTrainingFeedbackSample(BaseSchema):
+    feedback_id: int
+    batch_id: int | None = None
+    batch_code: str | None = None
+    item_id: int
+    item_no: int
+    version_id: int | None = None
+    action: str
+    review_status: str
+    comment: str | None = None
+    submitter: str | None = None
+    title: str | None = None
+    body_preview: str | None = None
+    product_topic: str | None = None
+    target_audience: str | None = None
+    style: str | None = None
+    asset_key: str | None = None
+    metadata: dict[str, Any] | None = None
+    create_time: str | None = None
+
+
+class ContentTrainingFeedbackSampleListResponse(BaseSchema):
+    total: int
+    items: list[ContentTrainingFeedbackSample]
+
+
 class ContentBatchItemFeedbackRequest(BaseSchema):
     action: Literal["approve", "request_revision", "manual_edit"]
     feedback_text: str | None = Field(default=None, max_length=4000)
