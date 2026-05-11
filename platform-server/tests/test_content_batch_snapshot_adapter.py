@@ -1,6 +1,9 @@
 """Tests for converting batch plans into executor generation snapshots."""
 
-from app.services.content_batch_snapshot_adapter import build_xhs_generation_snapshot_from_plan
+from app.services.content_batch_snapshot_adapter import (
+    build_xhs_generation_snapshot_from_brief,
+    build_xhs_generation_snapshot_from_plan,
+)
 
 
 def test_build_xhs_generation_snapshot_from_batch_plan_includes_assets_and_diversity():
@@ -66,3 +69,26 @@ def test_build_xhs_generation_snapshot_from_batch_plan_includes_assets_and_diver
     assert snapshot["batch_context"] == {"batch_id": 1, "batch_code": "batch_demo", "item_no": 7}
     assert snapshot["constraints"]["output_fields"] == ["title", "body"]
     assert snapshot["constraints"]["must_reference_example_without_copying"] is True
+
+
+def test_build_xhs_generation_snapshot_from_brief_creates_minimal_single_generation_snapshot():
+    snapshot = build_xhs_generation_snapshot_from_brief(
+        product_topic="美素佳儿源悦",
+        target_audience="新手妈妈",
+        style="情绪共情",
+    )
+
+    assert snapshot["brief"] == {
+        "product_topic": "美素佳儿源悦",
+        "target_audience": "新手妈妈",
+        "style": "情绪共情",
+    }
+    assert snapshot["assets"]["asset_key"] is None
+    assert snapshot["assets"]["painpoint"] is None
+    assert snapshot["assets"]["selling_point"] is None
+    assert snapshot["assets"]["reference_examples"] == []
+    assert snapshot["assets"]["compliance_rules"] == []
+    assert snapshot["batch_context"]["source"] == "single_generation"
+    assert snapshot["constraints"]["must_use_painpoint"] is False
+    assert snapshot["constraints"]["must_reference_example_without_copying"] is False
+    assert snapshot["constraints"]["output_fields"] == ["title", "body"]

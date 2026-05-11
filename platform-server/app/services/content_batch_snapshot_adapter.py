@@ -4,6 +4,33 @@ from __future__ import annotations
 from typing import Any
 
 
+def build_xhs_generation_snapshot_from_brief(
+    *,
+    product_topic: str,
+    target_audience: str | None = None,
+    style: str | None = None,
+) -> dict[str, Any]:
+    """Build the minimal single-item snapshot for direct generation.
+
+    Single generation should use the same executor contract as batch generation:
+    MAGA sends an immutable `generation_snapshot`, while the worker decides how
+    to render it. This minimal snapshot has no asset refs yet but keeps the
+    runtime path consistent.
+    """
+    plan = {
+        "item_no": 1,
+        "product_topic": product_topic,
+        "target_audience": target_audience,
+        "style": style,
+        "diversity_slot": {},
+    }
+    snapshot = build_xhs_generation_snapshot_from_plan(plan)
+    snapshot["constraints"]["must_use_painpoint"] = False
+    snapshot["constraints"]["must_reference_example_without_copying"] = False
+    snapshot["batch_context"]["source"] = "single_generation"
+    return snapshot
+
+
 def build_xhs_generation_snapshot_from_plan(
     plan: dict[str, Any],
     *,

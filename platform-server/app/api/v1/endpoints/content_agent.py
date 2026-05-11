@@ -38,6 +38,7 @@ from app.services.content_batch_execution_service import ContentBatchExecutionSe
 from app.services.content_batch_planner import ContentBatchPlanner
 from app.services.content_batch_report_service import ContentBatchReportService
 from app.services.content_batch_review_service import ContentBatchReviewService
+from app.services.content_batch_snapshot_adapter import build_xhs_generation_snapshot_from_brief
 from app.services.executor_invocation_service import ExecutorInvocationClient, MockExecutorInvocationClient
 
 router = APIRouter()
@@ -56,6 +57,11 @@ def _map_protocol_error(exc: ValueError) -> HTTPException:
 
 
 def _task_create_from_start_request(request: ContentAgentStartGenerationRequest) -> ContentAgentTaskCreate:
+    snapshot = build_xhs_generation_snapshot_from_brief(
+        product_topic=request.product_topic,
+        target_audience=request.target_audience,
+        style=request.style,
+    )
     return ContentAgentTaskCreate(
         task_type="xhs_generate",
         priority=request.priority,
@@ -65,7 +71,9 @@ def _task_create_from_start_request(request: ContentAgentStartGenerationRequest)
             "product_topic": request.product_topic,
             "target_audience": request.target_audience,
             "style": request.style,
+            "generation_snapshot": snapshot,
         },
+        asset_refs=snapshot.get("asset_refs") or {},
         created_by=request.created_by,
     )
 

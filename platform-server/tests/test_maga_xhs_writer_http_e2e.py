@@ -164,6 +164,10 @@ async def test_generation_start_calls_maga_worker_invoke_skeleton_over_http(maga
     assert all(stage.status == "succeeded" for stage in stages)
     assert all((stage.stats_json or {}).get("executor") == "maga-worker" for stage in stages)
     assert all((stage.stats_json or {}).get("module") == "xhs-writer" for stage in stages)
+    generate_stage = next(stage for stage in stages if stage.capability == "xhs.generate_draft")
+    assert (generate_stage.input_snapshot or {})["generation_snapshot"]["batch_context"]["source"] == "single_generation"
+    assert (generate_stage.output_snapshot or {})["runtime_result"]["mode"] == "runtime_fast"
+    assert (generate_stage.output_snapshot or {})["runtime_result"]["fake"] is True
 
 
 @pytest.mark.asyncio
