@@ -39,12 +39,28 @@ make init-clean-schema
 MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
 ```
 
+## maga-worker
+
+真实产文链路需要宿主机上有 Hermes `maga-worker` 的 `/invoke` 服务：
+
+```bash
+make worker-start
+```
+
+默认监听 `http://127.0.0.1:8765`，Docker 后端通过 `http://host.docker.internal:8765/invoke` 调用它。当前本地默认设置 `MAGA_WORKER_RUNTIME_FAST_FAKE=1`，用于跑通真实 HTTP 协议链路但不触发完整模型生成；要验证完整 runtime 时可改成：
+
+```bash
+MAGA_WORKER_RUNTIME_FAST_FAKE=0 make worker-start
+```
+
 ## 常用命令
 
 ```bash
 make up        # 启动 mysql / redis / backend
 make dev       # 启动 Docker 后端栈和本机前端
 make init-clean-schema # 创建/补齐 MAGA clean schema，并 seed 默认执行器
+make worker-start # 启动宿主机 maga-worker /invoke 服务
+make worker-stop  # 停止宿主机 maga-worker
 make dev-stop  # 停止 Docker 后端栈和本机前端
 make down      # 停止容器
 make build     # 构建 backend 镜像
