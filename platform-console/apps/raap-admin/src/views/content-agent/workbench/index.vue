@@ -59,7 +59,7 @@ const formState = reactive({
   target_audience: '新手妈妈',
   style: '经验老道型',
   count: 5,
-  executor_code: 'hermes_xhs_writer',
+  executor_code: 'hermes_maga_worker',
   created_by: 'ops',
 });
 
@@ -195,7 +195,7 @@ const openReport = async (batchId: number, showLoading = true) => {
 };
 
 const normalizeExecutorCode = (executorCode?: string) =>
-  executorCode?.trim() || 'hermes_xhs_writer';
+  executorCode?.trim() || 'hermes_maga_worker';
 
 const handleGenerate = async () => {
   if (!formState.product_topic.trim()) {
@@ -371,7 +371,7 @@ onMounted(() => {
         <Card title="新内容生成" :bordered="false">
           <Alert
             class="mb-4"
-            message="第一版工作台：运营填写 4 个字段，MAGA 调用 xhs-writer 生成并返回批次报告。"
+            message="第一版工作台：运营填写 4 个字段，MAGA 调用 maga-worker 生成并返回批次报告。"
             show-icon
             type="info"
           />
@@ -417,7 +417,7 @@ onMounted(() => {
             <FormItem label="执行器 executor_code">
               <Input
                 v-model:value="formState.executor_code"
-                placeholder="默认 hermes_xhs_writer；留空也会使用默认执行器"
+                placeholder="默认 hermes_maga_worker；留空也会使用默认执行器"
               />
             </FormItem>
             <Button
@@ -614,6 +614,9 @@ onMounted(() => {
                           {{ reviewStatusLabel(item.review_status) }} · v{{
                             item.latest_version_no || 1
                           }}
+                        </Tag>
+                        <Tag v-if="item.runtime_mode" color="cyan">
+                          {{ item.runtime_mode }}
                         </Tag>
                         <Tag v-if="item.generation_duration_ms">
                           生文 {{ formatDuration(item.generation_duration_ms) }}

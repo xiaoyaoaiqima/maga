@@ -69,6 +69,7 @@ export namespace ContentAgentApi {
       risk_level?: null | string;
       evidence: string[];
     }>;
+    runtime_mode?: null | string;
     generation_duration_ms?: null | number;
     total_duration_ms?: null | number;
     trace_run_id?: null | number;
