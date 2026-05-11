@@ -39,6 +39,7 @@ export namespace ContentAgentApi {
     feedback_count: number;
     avg_body_chars?: null | number;
     max_pairwise_jaccard_2gram: number;
+    similarity_warning_count: number;
   }
 
   export interface BatchReportItem {
@@ -70,6 +71,11 @@ export namespace ContentAgentApi {
       message: string;
       risk_level?: null | string;
       evidence: string[];
+    }>;
+    similarity_warnings: Array<{
+      item_no: number;
+      score: number;
+      reason: string;
     }>;
     runtime_mode?: null | string;
     generation_duration_ms?: null | number;

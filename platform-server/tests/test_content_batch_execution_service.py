@@ -99,6 +99,9 @@ async def test_batch_execution_generates_first_n_items_and_links_runs():
     assert items[0].quality_json["hard_pass"] is True
     assert items[0].quality_json["soft_score_avg"] == 87.0
     assert items[0].diversity_json["opening_type"] == "过来人提醒"
+    assert items[0].diversity_json["narrative_focus"] == "先共情"
+    assert items[0].diversity_json["emotion"] == "稳"
+    assert items[0].diversity_json["cta_type"] == "轻建议"
     assert len(stage_calls) == 8
 
 
@@ -258,6 +261,7 @@ def _plan(item_no: int) -> dict:
         "diversity_slot": {
             "opening_type": opening,
             "structure_type": "痛点-观察-建议",
+            "narrative_focus": "先共情",
             "emotion": "稳",
             "cta_type": "轻建议",
             "forbidden_overlap_group": f"G{item_no:02d}",

@@ -75,6 +75,7 @@ const trainingItems = computed(() =>
       item.review_status ||
       item.human_feedback_text ||
       item.feedback_count ||
+      item.similarity_warnings?.length ||
       item.reject_reasons?.length ||
       item.hard_pass === false ||
       item.rewrite_required,
@@ -96,6 +97,9 @@ const trainingSummary = computed(() => {
       (total, item) => total + (item.reject_reasons?.length || 0),
       0,
     ),
+    similarity_warning_count: items.filter(
+      (item) => item.similarity_warnings?.length,
+    ).length,
   };
 });
 
@@ -170,6 +174,18 @@ const feedbackDigestLines = computed(() => {
       `reject_reasons: ${
         item.reject_reasons?.length
           ? item.reject_reasons.map((reason) => reason.message).join('；')
+          : '-'
+      }`,
+      `similarity_warnings: ${
+        item.similarity_warnings?.length
+          ? item.similarity_warnings
+              .map(
+                (warning) =>
+                  `与第${warning.item_no}篇相似度 ${Math.round(
+                    warning.score * 100,
+                  )}%`,
+              )
+              .join('；')
           : '-'
       }`,
       `human_feedback: ${item.human_feedback_text || '-'}`,
@@ -644,10 +660,11 @@ onMounted(() => {
                 <Alert
                   v-if="
                     selectedSummary?.forbidden_hit_count ||
-                    selectedSummary?.remaining_rewrite_required_count
+                    selectedSummary?.remaining_rewrite_required_count ||
+                    selectedSummary?.similarity_warning_count
                   "
                   class="mt-4"
-                  message="这批内容仍有风险项，请优先查看标红文章。"
+                  message="这批内容仍有风险项或相似内容，请优先查看标红和标橙文章。"
                   show-icon
                   type="warning"
                 />
@@ -684,6 +701,12 @@ onMounted(() => {
                               color="red"
                             >
                               禁用词 {{ item.forbidden_hits.join('、') }}
+                            </Tag>
+                            <Tag
+                              v-if="item.similarity_warnings?.length"
+                              color="orange"
+                            >
+                              疑似趋同 {{ item.similarity_warnings.length }}
                             </Tag>
                             <Tag v-if="item.review_status" color="purple">
                               {{ reviewStatusLabel(item.review_status) }} · v{{
@@ -753,6 +776,30 @@ onMounted(() => {
                                 <span v-if="reason.evidence?.length">
                                   证据：{{ reason.evidence.join('；') }}
                                 </span>
+                              </div>
+                            </div>
+                          </template>
+                        </Alert>
+
+                        <Alert
+                          v-if="item.similarity_warnings?.length"
+                          class="mt-3"
+                          type="warning"
+                          show-icon
+                        >
+                          <template #message>
+                            <div class="similarity-warnings">
+                              <div
+                                v-for="warning in item.similarity_warnings"
+                                :key="`${item.item_id}-${warning.item_no}-${warning.score}`"
+                                class="similarity-warning-item"
+                              >
+                                <Tag color="orange">疑似趋同</Tag>
+                                <span>
+                                  与第 {{ warning.item_no }} 篇正文相似度
+                                  {{ Math.round(warning.score * 100) }}%
+                                </span>
+                                <span>{{ warning.reason }}</span>
                               </div>
                             </div>
                           </template>
@@ -873,6 +920,12 @@ onMounted(() => {
                       />
                     </Col>
                     <Col :span="4">
+                      <Statistic
+                        title="疑似趋同"
+                        :value="trainingSummary.similarity_warning_count"
+                      />
+                    </Col>
+                    <Col :span="4">
                       <Button block @click="copyFeedbackDigest">
                         复制反馈摘要
                       </Button>
@@ -908,6 +961,12 @@ onMounted(() => {
                           </Tag>
                           <Tag v-if="item.feedback_count" color="geekblue">
                             反馈 {{ item.feedback_count }}
+                          </Tag>
+                          <Tag
+                            v-if="item.similarity_warnings?.length"
+                            color="orange"
+                          >
+                            疑似趋同 {{ item.similarity_warnings.length }}
                           </Tag>
                           <Tag v-if="item.generation_duration_ms">
                             生文 {{ formatDuration(item.generation_duration_ms) }}
@@ -945,6 +1004,20 @@ onMounted(() => {
                           <span v-if="reason.evidence?.length">
                             证据：{{ reason.evidence.join('；') }}
                           </span>
+                        </div>
+                      </div>
+                      <div v-if="item.similarity_warnings?.length" class="mt-2">
+                        <div
+                          v-for="warning in item.similarity_warnings"
+                          :key="`${item.item_id}-${warning.item_no}-${warning.score}`"
+                          class="similarity-warning-item"
+                        >
+                          <Tag color="orange">疑似趋同</Tag>
+                          <span>
+                            与第 {{ warning.item_no }} 篇正文相似度
+                            {{ Math.round(warning.score * 100) }}%
+                          </span>
+                          <span>{{ warning.reason }}</span>
                         </div>
                       </div>
                       <Alert
@@ -1066,6 +1139,19 @@ onMounted(() => {
 }
 
 .reject-reason-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.similarity-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.similarity-warning-item {
   display: flex;
   flex-wrap: wrap;
   align-items: center;

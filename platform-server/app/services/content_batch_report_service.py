@@ -21,11 +21,13 @@ from app.schemas.content_batch_report import (
     ContentBatchListResponse,
     ContentBatchReportItem,
     ContentBatchReportResponse,
+    ContentBatchSimilarityWarning,
     ContentBatchReportSummary,
     ContentBatchStageTrace,
 )
 
 FORBIDDEN_TERMS = ["治疗便秘", "治好便秘", "改善便秘", "解决便秘", "根治", "疗效"]
+SIMILARITY_WARNING_THRESHOLD = 0.42
 
 
 class ContentBatchReportService:
@@ -50,6 +52,7 @@ class ContentBatchReportService:
                 self._report_item(item, [], versions_by_item.get(item.id), None, feedback_counts.get(item.id, 0))
                 for item in items
             ]
+            self._attach_similarity_warnings(report_items)
             list_items.append(
                 ContentBatchListItem(
                     batch_id=job.id,
@@ -85,6 +88,7 @@ class ContentBatchReportService:
             )
             for item in items
         ]
+        self._attach_similarity_warnings(report_items)
         return ContentBatchReportResponse(
             batch_id=job.id,
             batch_code=job.batch_code,
@@ -205,6 +209,7 @@ class ContentBatchReportService:
             human_feedback_text=latest_version.feedback_text if latest_version else (quality.get("human_review") or {}).get("feedback_text"),
             feedback_count=feedback_count,
             reject_reasons=self._reject_reasons(item, review, text),
+            similarity_warnings=[],
             runtime_mode=runtime_result.get("mode") or quality.get("executor"),
             generation_duration_ms=self._stage_duration_ms(generation_stage) if generation_stage else None,
             total_duration_ms=self._total_duration_ms(run, stage_calls),
@@ -338,6 +343,7 @@ class ContentBatchReportService:
             feedback_count=sum(item.feedback_count for item in items),
             avg_body_chars=round(sum(body_lengths) / len(body_lengths), 2) if body_lengths else None,
             max_pairwise_jaccard_2gram=self._max_pairwise_jaccard([item.body or "" for item in generated]),
+            similarity_warning_count=sum(1 for item in items if item.similarity_warnings),
         )
 
     def _forbidden_hits(self, text: str) -> list[str]:
@@ -360,3 +366,23 @@ class ContentBatchReportService:
     def _text_2grams(self, text: str) -> set[str]:
         clean = re.sub(r"\s+", "", text or "")
         return {clean[i : i + 2] for i in range(max(len(clean) - 1, 0)) if clean[i : i + 2].strip()}
+
+    def _attach_similarity_warnings(self, items: list[ContentBatchReportItem]) -> None:
+        comparable = [item for item in items if item.body]
+        for index, left in enumerate(comparable):
+            for right in comparable[index + 1 :]:
+                score = round(self._jaccard_2gram(left.body or "", right.body or ""), 4)
+                if score < SIMILARITY_WARNING_THRESHOLD:
+                    continue
+                warning_for_left = ContentBatchSimilarityWarning(
+                    item_no=right.item_no,
+                    score=score,
+                    reason="正文 2-gram 相似度偏高",
+                )
+                warning_for_right = ContentBatchSimilarityWarning(
+                    item_no=left.item_no,
+                    score=score,
+                    reason="正文 2-gram 相似度偏高",
+                )
+                left.similarity_warnings.append(warning_for_left)
+                right.similarity_warnings.append(warning_for_right)

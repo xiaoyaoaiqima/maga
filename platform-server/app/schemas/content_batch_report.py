@@ -27,6 +27,12 @@ class ContentBatchStageTrace(BaseSchema):
     stats: dict[str, Any] | None = None
 
 
+class ContentBatchSimilarityWarning(BaseSchema):
+    item_no: int
+    score: float
+    reason: str
+
+
 class ContentBatchReportSummary(BaseSchema):
     total_count: int = 0
     generated_count: int = 0
@@ -38,6 +44,7 @@ class ContentBatchReportSummary(BaseSchema):
     feedback_count: int = 0
     avg_body_chars: float | None = None
     max_pairwise_jaccard_2gram: float = 0.0
+    similarity_warning_count: int = 0
 
 
 class ContentBatchReportItem(BaseSchema):
@@ -64,6 +71,7 @@ class ContentBatchReportItem(BaseSchema):
     human_feedback_text: str | None = None
     feedback_count: int = 0
     reject_reasons: list[ContentBatchRejectReason] = Field(default_factory=list)
+    similarity_warnings: list[ContentBatchSimilarityWarning] = Field(default_factory=list)
     runtime_mode: str | None = None
     generation_duration_ms: int | None = None
     total_duration_ms: int | None = None

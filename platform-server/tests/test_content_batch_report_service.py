@@ -78,7 +78,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
                     run_id=102,
                     task_id=202,
                     title="转奶别硬来",
-                    body="转奶期别急，先看宝宝喝奶状态和肚肚感受，慢慢调整节奏。",
+                    body="新手妈妈先别急着下结论，日常观察宝宝状态、吃奶和睡眠，再慢慢判断喂养节奏。",
                     quality_json={
                         "executor": "runtime_fast",
                         "hard_pass": True,
@@ -162,6 +162,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
     assert report.summary.remaining_rewrite_required_count == 0
     assert report.summary.avg_body_chars > 0
     assert 0 <= report.summary.max_pairwise_jaccard_2gram <= 1
+    assert report.summary.similarity_warning_count == 2
 
     first = report.items[0]
     assert first.item_no == 1
@@ -177,6 +178,8 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
     assert first.total_duration_ms == 3200
     assert first.trace_run_id == 101
     assert first.feedback_count == 1
+    assert first.similarity_warnings[0].item_no == 2
+    assert first.similarity_warnings[0].score >= 0.42
     assert first.trace_stage_calls[0].stage_call_id == "stage-101-generate"
     assert first.final_path == "/tmp/runtime-fast-101/final.md"
     assert first.debug_dir == "/tmp/runtime-fast-101"

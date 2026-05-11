@@ -99,6 +99,9 @@ class ContentBatchExecutionService:
                 item.diversity_json = {
                     "opening_type": diversity_slot.get("opening_type"),
                     "structure_type": diversity_slot.get("structure_type"),
+                    "narrative_focus": diversity_slot.get("narrative_focus"),
+                    "emotion": diversity_slot.get("emotion"),
+                    "cta_type": diversity_slot.get("cta_type"),
                     "forbidden_overlap_group": diversity_slot.get("forbidden_overlap_group"),
                 }
                 item.error_message = None
