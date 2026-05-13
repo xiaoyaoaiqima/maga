@@ -132,7 +132,7 @@ const vite_config: UserConfigExport = defineConfig(async () => {
         format: 'es',
       },
       server: {
-        port: 3100,
+        port: Number(process.env.VITE_PORT || 3100),
         allowedHosts: ['raap.realshark.com', 'localhost', '.realshark.com'],
         proxy: {
           '/api': {

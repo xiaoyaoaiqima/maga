@@ -4,8 +4,13 @@ export namespace ContentAgentApi {
   export interface StartGenerationRequest {
     product_topic: string;
     target_audience?: null | string;
+    persona_target?: null | string;
     style?: null | string;
     executor_code?: string;
+    model_config?: null | {
+      ge_model?: null | string;
+      ae_model?: null | string;
+    };
     brief_type?: string;
     priority?: number;
     created_by?: null | string;
@@ -22,9 +27,14 @@ export namespace ContentAgentApi {
     asset_key?: string;
     product_topic: string;
     target_audience?: null | string;
+    persona_target?: null | string;
     style?: null | string;
     count?: number;
     executor_code?: string;
+    model_config?: null | {
+      ge_model?: null | string;
+      ae_model?: null | string;
+    };
     created_by?: null | string;
   }
 
@@ -76,6 +86,9 @@ export namespace ContentAgentApi {
       item_no: number;
       score: number;
       reason: string;
+      batch_id?: null | number;
+      batch_code?: null | string;
+      scope?: string;
     }>;
     runtime_mode?: null | string;
     generation_duration_ms?: null | number;
@@ -92,6 +105,12 @@ export namespace ContentAgentApi {
     }>;
     opening_type?: null | string;
     structure_type?: null | string;
+    content_angle?: null | string;
+    persona_lens?: null | string;
+    scene_type?: null | string;
+    evidence_type?: null | string;
+    asset_combo_key?: null | string;
+    asset_reuse_reason?: null | string;
     diversity?: null | Record<string, any>;
     quality?: null | Record<string, any>;
     error_message?: null | string;
@@ -103,6 +122,7 @@ export namespace ContentAgentApi {
     asset_key: string;
     product_topic: string;
     target_audience?: null | string;
+    persona_target?: null | string;
     style?: null | string;
     status: string;
     count: number;
@@ -130,6 +150,7 @@ export namespace ContentAgentApi {
     asset_key: string;
     product_topic: string;
     target_audience?: null | string;
+    persona_target?: null | string;
     style?: null | string;
     status: string;
     count: number;
@@ -158,6 +179,7 @@ export namespace ContentAgentApi {
     body_preview?: null | string;
     product_topic?: null | string;
     target_audience?: null | string;
+    persona_target?: null | string;
     style?: null | string;
     asset_key?: null | string;
     metadata?: null | Record<string, any>;
@@ -167,6 +189,15 @@ export namespace ContentAgentApi {
   export interface TrainingFeedbackSampleListResponse {
     total: number;
     items: TrainingFeedbackSample[];
+  }
+
+  export interface AssetGenerationOptionsResponse {
+    asset_key?: null | string;
+    asset_keys: string[];
+    product_topics: string[];
+    target_audiences: string[];
+    persona_profiles: string[];
+    styles: string[];
   }
 
   export type BatchItemFeedbackAction =
@@ -234,6 +265,15 @@ export async function getTrainingFeedbackSamplesApi(params?: {
 }) {
   return requestClient.get<ContentAgentApi.TrainingFeedbackSampleListResponse>(
     '/v1/content-agent/training/feedback-samples',
+    { params },
+  );
+}
+
+export async function getAssetGenerationOptionsApi(params?: {
+  asset_key?: string;
+}) {
+  return requestClient.get<ContentAgentApi.AssetGenerationOptionsResponse>(
+    '/v1/assets/generation-options',
     { params },
   );
 }

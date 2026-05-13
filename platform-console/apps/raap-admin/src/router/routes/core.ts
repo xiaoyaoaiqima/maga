@@ -45,6 +45,8 @@ const coreRoutes: RouteRecordRaw[] = [
           title: $t('page.auth.profile'),
         },
       },
+      // Legacy hidden routes: kept for direct debugging/backward compatibility,
+      // but intentionally excluded from the MAGA MVP sidebar.
       {
         name: 'AgentWorkbench',
         path: 'agent/workbench',
@@ -52,6 +54,7 @@ const coreRoutes: RouteRecordRaw[] = [
         meta: {
           title: 'Agent 工作台',
           icon: 'RobotOutlined',
+          hideInMenu: true,
           order: -100,
           activeMenu: '/agent/workbench',
         },
@@ -72,10 +75,20 @@ const coreRoutes: RouteRecordRaw[] = [
         path: 'content-agent/workbench',
         component: () => import('#/views/content-agent/workbench/index.vue'),
         meta: {
-          title: '内容生成工作台',
+          title: '内容生成',
           icon: 'RobotOutlined',
           order: -99,
           activeMenu: '/content-agent/workbench',
+        },
+      },
+      {
+        name: 'MagaAssetTraining',
+        path: 'assets/training',
+        component: () => import('#/views/assets/training/index.vue'),
+        meta: {
+          title: '资料训练',
+          icon: 'DatabaseOutlined',
+          activeMenu: '/assets/training',
         },
       },
       {
@@ -83,7 +96,7 @@ const coreRoutes: RouteRecordRaw[] = [
         path: 'dashboard/rlhf',
         component: () => import('#/views/dashboard/rlhf/index.vue'),
         meta: {
-          title: 'RLHF 分析',
+          title: '反馈训练',
           icon: 'LineChartOutlined',
           activeMenu: '/dashboard/rlhf',
         },
@@ -93,9 +106,19 @@ const coreRoutes: RouteRecordRaw[] = [
         path: 'expert/prompt-optimizer',
         component: () => import('#/views/expert/prompt-optimizer/index.vue'),
         meta: {
-          title: '提示词优化工作台',
+          title: '提示词优化',
           icon: 'RobotOutlined',
           activeMenu: '/expert/prompt-optimizer',
+        },
+      },
+      {
+        name: 'MagaModelManagement',
+        path: 'llm/provider',
+        component: () => import('#/views/llm/provider/index.vue'),
+        meta: {
+          title: '模型管理',
+          icon: 'RobotOutlined',
+          activeMenu: '/llm/provider',
         },
       },
       {

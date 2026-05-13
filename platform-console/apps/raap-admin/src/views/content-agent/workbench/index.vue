@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { ContentAgentApi } from '#/api/core/content-agent';
 
-import { computed, h, onMounted, reactive, ref } from 'vue';
+import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 
 import * as Antd from 'ant-design-vue';
 
 import {
+  getAssetGenerationOptionsApi,
   getContentBatchListApi,
   getContentBatchReportApi,
   getTrainingFeedbackSamplesApi,
@@ -42,7 +43,6 @@ const {
 } = Antd as any;
 const { TextArea } = Input as any;
 const { Group: RadioGroup, Button: RadioButton } = Radio as any;
-const { Option: SelectOption } = Select as any;
 const { TabPane } = Tabs as any;
 
 type GenerationMode = 'batch' | 'single';
@@ -51,6 +51,7 @@ type WorkspaceTab = 'generation' | 'training';
 const activeWorkspaceTab = ref<WorkspaceTab>('generation');
 const generationMode = ref<GenerationMode>('batch');
 const generating = ref(false);
+const advancedSettingsOpen = ref(false);
 const batchLoading = ref(false);
 const reportLoading = ref(false);
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
@@ -62,16 +63,67 @@ const trainingFeedbackSamples = ref<ContentAgentApi.TrainingFeedbackSample[]>(
   [],
 );
 const trainingFeedbackTotal = ref(0);
+const optionLoading = ref(false);
+const assetOptions = ref<string[]>(['yuanyue']);
+const productTopicOptions = ref<string[]>([]);
+const targetAudienceOptions = ref<string[]>([]);
+const personaTargetOptions = ref<string[]>([]);
+const styleOptions = ref<string[]>([]);
 
 const formState = reactive({
   asset_key: 'yuanyue',
   product_topic: '宝宝便便不规律',
   target_audience: '新手妈妈',
-  style: '经验老道型',
+  persona_target: '',
+  style: '经验复盘',
   count: 5,
   executor_code: 'hermes_maga_worker',
+  ge_model: '',
+  ae_model: '',
   created_by: 'ops',
 });
+
+const toAutocompleteOptions = (items: string[]) =>
+  items.map((value) => ({ label: value, value }));
+
+const filterSelectOption = (input: string, option: any) =>
+  String(option?.label || option?.value || '')
+    .toLowerCase()
+    .includes(input.toLowerCase());
+
+const fallbackProductTopics = [
+  '宝宝便便不规律',
+  '转奶期肚肚敏感',
+  '奶量上不去',
+  '肠胃弱/消化吸收',
+  '源悦奶粉怎么选',
+];
+
+const fallbackTargetAudiences = [
+  '新手妈妈',
+  '转奶期宝宝家长',
+  '敏感宝宝家长',
+  '奶量焦虑宝宝家长',
+];
+
+const fallbackPersonaTargets = [
+  '二胎经验妈妈',
+  '踩坑复盘型妈妈',
+  '细节控妈妈',
+  '营养师妈妈',
+  '闺蜜安利型妈妈',
+];
+
+const fallbackStyles = [
+  '经验复盘',
+  '情绪共情',
+  '口语分享',
+  '清单型',
+  '避坑提醒',
+  '专业解释',
+  '场景共鸣',
+  '轻种草',
+];
 
 const selectedItems = computed(() => selectedReport.value?.items || []);
 const selectedSummary = computed(() => selectedReport.value?.summary || null);
@@ -143,6 +195,13 @@ const formatDuration = (durationMs?: null | number) => {
   return `${(durationMs / 1000).toFixed(durationMs < 10_000 ? 2 : 1)}s`;
 };
 
+const itemFailureMessage = (item: ContentAgentApi.BatchReportItem) => {
+  const stageError = item.trace_stage_calls?.find(
+    (stage) => stage.status === 'failed' && stage.error_message,
+  )?.error_message;
+  return item.error_message || stageError || '正文尚未生成，请查看执行链路。';
+};
+
 const rejectSourceLabel = (source?: string) => {
   if (source === 'hard_review') return '硬性审核';
   if (source === 'failed_ae') return 'AE 审核';
@@ -176,6 +235,7 @@ const feedbackDigestLines = computed(() => {
     `asset_key: ${selectedReport.value.asset_key}`,
     `product_topic: ${selectedReport.value.product_topic}`,
     `target_audience: ${selectedReport.value.target_audience || '-'}`,
+    `persona_target: ${selectedReport.value.persona_target || '-'}`,
     `style: ${selectedReport.value.style || '-'}`,
     '',
     ...trainingItems.value.flatMap((item) => [
@@ -286,6 +346,54 @@ const loadTrainingFeedbackSamples = async () => {
   }
 };
 
+const mergeOptions = (primary: string[], fallback: string[]) => [
+  ...new Set([...(primary || []), ...fallback].filter(Boolean)),
+];
+
+const primaryOrFallbackOptions = (primary: string[], fallback: string[]) => {
+  const cleaned = [...new Set((primary || []).filter(Boolean))];
+  return cleaned.length ? cleaned : fallback;
+};
+
+const loadGenerationOptions = async () => {
+  optionLoading.value = true;
+  try {
+    const data = await getAssetGenerationOptionsApi({
+      asset_key: formState.asset_key,
+    });
+    assetOptions.value = mergeOptions(data?.asset_keys || [], ['yuanyue']);
+    productTopicOptions.value = primaryOrFallbackOptions(
+      data?.product_topics || [],
+      fallbackProductTopics,
+    );
+    if (
+      productTopicOptions.value.length &&
+      !productTopicOptions.value.includes(formState.product_topic)
+    ) {
+      formState.product_topic = productTopicOptions.value[0] || '';
+    }
+    targetAudienceOptions.value = mergeOptions(
+      data?.target_audiences || [],
+      fallbackTargetAudiences,
+    );
+    personaTargetOptions.value = primaryOrFallbackOptions(
+      data?.persona_profiles || [],
+      fallbackPersonaTargets,
+    );
+    styleOptions.value = primaryOrFallbackOptions(
+      data?.styles || [],
+      fallbackStyles,
+    );
+  } catch {
+    productTopicOptions.value = fallbackProductTopics;
+    targetAudienceOptions.value = fallbackTargetAudiences;
+    personaTargetOptions.value = fallbackPersonaTargets;
+    styleOptions.value = fallbackStyles;
+  } finally {
+    optionLoading.value = false;
+  }
+};
+
 const copyFeedbackDigest = async () => {
   if (!trainingItems.value.length) {
     message.warning('当前批次暂无可复制的反馈摘要');
@@ -307,9 +415,14 @@ const openReport = async (batchId: number, showLoading = true) => {
 const normalizeExecutorCode = (executorCode?: string) =>
   executorCode?.trim() || 'hermes_maga_worker';
 
+const currentModelConfig = () => ({
+  ge_model: formState.ge_model?.trim() || null,
+  ae_model: formState.ae_model?.trim() || null,
+});
+
 const handleGenerate = async () => {
   if (!formState.product_topic.trim()) {
-    message.warning('请先填写产品/主题');
+    message.warning('请先填写主题');
     return;
   }
   generating.value = true;
@@ -318,8 +431,10 @@ const handleGenerate = async () => {
       singleResult.value = await startContentGenerationApi({
         product_topic: formState.product_topic,
         target_audience: formState.target_audience,
+        persona_target: formState.persona_target || null,
         style: formState.style,
         executor_code: normalizeExecutorCode(formState.executor_code),
+        model_config: currentModelConfig(),
         created_by: formState.created_by,
       });
       selectedReport.value = null;
@@ -331,9 +446,11 @@ const handleGenerate = async () => {
       asset_key: formState.asset_key,
       product_topic: formState.product_topic,
       target_audience: formState.target_audience,
+      persona_target: formState.persona_target || null,
       style: formState.style,
       count: formState.count,
       executor_code: normalizeExecutorCode(formState.executor_code),
+      model_config: currentModelConfig(),
       created_by: formState.created_by,
     });
     selectedReport.value = result.report;
@@ -472,7 +589,15 @@ const openManualEdit = (item: ContentAgentApi.BatchReportItem) => {
 onMounted(() => {
   loadBatches();
   loadTrainingFeedbackSamples();
+  loadGenerationOptions();
 });
+
+watch(
+  () => formState.asset_key,
+  () => {
+    loadGenerationOptions();
+  },
+);
 </script>
 
 <template>
@@ -482,7 +607,7 @@ onMounted(() => {
         <Card title="新内容生成" :bordered="false">
           <Alert
             class="mb-4"
-            message="第一版工作台：运营填写 4 个字段，MAGA 调用 maga-worker 生成并返回批次报告。"
+            message="选择资料、主题、人群和风格后生成内容，并在报告中完成审核反馈。"
             show-icon
             type="info"
           />
@@ -494,30 +619,68 @@ onMounted(() => {
                 <RadioButton value="single">单篇快速生成</RadioButton>
               </RadioGroup>
             </FormItem>
-            <FormItem label="资产键 asset_key">
-              <Select v-model:value="formState.asset_key">
-                <SelectOption value="yuanyue">yuanyue / 源悦</SelectOption>
-              </Select>
+            <FormItem label="产品/品牌资料">
+              <Select
+                v-model:value="formState.asset_key"
+                :filter-option="filterSelectOption"
+                :loading="optionLoading"
+                :options="toAutocompleteOptions(assetOptions)"
+                show-search
+              />
             </FormItem>
-            <FormItem label="产品/主题 product_topic" required>
-              <Input
+            <FormItem label="主题" required>
+              <Select
                 v-model:value="formState.product_topic"
+                allow-clear
+                :filter-option="filterSelectOption"
+                :loading="optionLoading"
+                :options="toAutocompleteOptions(productTopicOptions)"
                 placeholder="例如：宝宝便便不规律"
+                show-search
+                :show-arrow="true"
+                mode="combobox"
               />
             </FormItem>
-            <FormItem label="目标人群 target_audience">
-              <Input
+            <FormItem label="目标人群">
+              <Select
                 v-model:value="formState.target_audience"
+                allow-clear
+                :filter-option="filterSelectOption"
+                :loading="optionLoading"
+                :options="toAutocompleteOptions(targetAudienceOptions)"
                 placeholder="例如：新手妈妈"
+                show-search
+                :show-arrow="true"
+                mode="combobox"
               />
             </FormItem>
-            <FormItem label="风格 style">
-              <Input
+            <FormItem label="人设">
+              <Select
+                v-model:value="formState.persona_target"
+                allow-clear
+                :filter-option="filterSelectOption"
+                :loading="optionLoading"
+                :options="toAutocompleteOptions(personaTargetOptions)"
+                placeholder="自动匹配"
+                show-search
+                :show-arrow="true"
+                mode="combobox"
+              />
+            </FormItem>
+            <FormItem label="风格">
+              <Select
                 v-model:value="formState.style"
-                placeholder="例如：经验老道型 / 情绪共情"
+                allow-clear
+                :filter-option="filterSelectOption"
+                :loading="optionLoading"
+                :options="toAutocompleteOptions(styleOptions)"
+                placeholder="例如：经验复盘 / 情绪共情"
+                show-search
+                :show-arrow="true"
+                mode="combobox"
               />
             </FormItem>
-            <FormItem v-if="generationMode === 'batch'" label="生成篇数 count">
+            <FormItem v-if="generationMode === 'batch'" label="生成篇数">
               <InputNumber
                 v-model:value="formState.count"
                 :max="20"
@@ -525,12 +688,34 @@ onMounted(() => {
                 class="w-full"
               />
             </FormItem>
-            <FormItem label="执行器 executor_code">
-              <Input
-                v-model:value="formState.executor_code"
-                placeholder="默认 hermes_maga_worker；留空也会使用默认执行器"
-              />
-            </FormItem>
+            <Button
+              block
+              class="mb-4"
+              type="link"
+              @click="advancedSettingsOpen = !advancedSettingsOpen"
+            >
+              {{ advancedSettingsOpen ? '收起高级设置' : '高级设置' }}
+            </Button>
+            <div v-if="advancedSettingsOpen">
+              <FormItem label="MAGA Worker">
+                <Input
+                  v-model:value="formState.executor_code"
+                  placeholder="默认 hermes_maga_worker；留空也会使用默认执行器"
+                />
+              </FormItem>
+              <FormItem label="生文模型">
+                <Input
+                  v-model:value="formState.ge_model"
+                  placeholder="留空使用 worker/provider 默认模型"
+                />
+              </FormItem>
+              <FormItem label="审核模型">
+                <Input
+                  v-model:value="formState.ae_model"
+                  placeholder="留空使用 worker/provider 默认模型"
+                />
+              </FormItem>
+            </div>
             <Button
               block
               type="primary"
@@ -635,10 +820,13 @@ onMounted(() => {
                   <DescriptionsItem label="人群">
                     {{ selectedReport.target_audience || '-' }}
                   </DescriptionsItem>
+                  <DescriptionsItem label="人设">
+                    {{ selectedReport.persona_target || '自动匹配' }}
+                  </DescriptionsItem>
                   <DescriptionsItem label="风格">
                     {{ selectedReport.style || '-' }}
                   </DescriptionsItem>
-                  <DescriptionsItem label="资产键">
+                  <DescriptionsItem label="资料">
                     {{ selectedReport.asset_key }}
                   </DescriptionsItem>
                 </Descriptions>
@@ -774,7 +962,7 @@ onMounted(() => {
                         </div>
                         <Alert
                           v-else
-                          :message="item.error_message || '正文尚未生成'"
+                          :message="itemFailureMessage(item)"
                           type="error"
                         />
 
@@ -821,8 +1009,15 @@ onMounted(() => {
                               >
                                 <Tag color="orange">疑似趋同</Tag>
                                 <span>
-                                  与第 {{ warning.item_no }} 篇正文相似度
+                                  与{{
+                                    warning.scope === 'history'
+                                      ? '历史批次'
+                                      : ''
+                                  }}第 {{ warning.item_no }} 篇正文相似度
                                   {{ Math.round(warning.score * 100) }}%
+                                </span>
+                                <span v-if="warning.batch_code">
+                                  批次：{{ warning.batch_code }}
                                 </span>
                                 <span>{{ warning.reason }}</span>
                               </div>
@@ -836,6 +1031,18 @@ onMounted(() => {
                           </Tag>
                           <Tag v-if="item.structure_type">
                             {{ item.structure_type }}
+                          </Tag>
+                          <Tag v-if="item.content_angle">
+                            {{ item.content_angle }}
+                          </Tag>
+                          <Tag v-if="item.scene_type">
+                            {{ item.scene_type }}
+                          </Tag>
+                          <Tag v-if="item.evidence_type">
+                            {{ item.evidence_type }}
+                          </Tag>
+                          <Tag v-if="item.asset_reuse_reason" color="orange">
+                            素材复用
                           </Tag>
                           <Tag>字数 {{ item.body_chars }}</Tag>
                           <Tag>建议 {{ item.suggestion_count }}</Tag>
@@ -961,6 +1168,7 @@ onMounted(() => {
                             批次 #{{ sample.batch_id || '-' }} · 第
                             {{ sample.item_no }} 篇 ·
                             {{ sample.product_topic || '-' }} ·
+                            {{ sample.persona_target || '自动人设' }} ·
                             {{ sample.submitter || 'unknown' }}
                           </div>
                           <div v-if="sample.comment" class="sample-comment">

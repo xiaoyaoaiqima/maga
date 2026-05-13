@@ -41,7 +41,7 @@ const modeOptions = [
 
 const form = reactive({
   mode: 'global_refactor' as PromptOptimizerApi.OptimizerMode,
-  prompt_name: '提示词优化工作台草稿',
+  prompt_name: '提示词优化草稿',
   prompt_content: '',
   problem_text: '',
   generated_title: '',
@@ -132,7 +132,7 @@ async function saveVersion() {
   try {
     const result = await applyPromptPatchesApi(runResult.value.id, {
       patch_ids: acceptedPatchIds.value,
-      change_summary: '从提示词优化工作台保存新版本',
+      change_summary: '从提示词优化保存新版本',
       save_version: true,
     });
     if (result.conflicts.length > 0) {
@@ -150,8 +150,8 @@ async function saveVersion() {
 
 <template>
   <Page
-    description="用结构化 patches 管理提示词的局部修补、全局整理和审核规则优化。"
-    title="提示词优化工作台"
+    description="内部工具：用结构化 patches 管理提示词的局部修补、全局整理和审核规则优化。"
+    title="提示词优化"
   >
     <div class="prompt-optimizer">
       <section class="panel input-panel">

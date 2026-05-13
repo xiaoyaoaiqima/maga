@@ -916,13 +916,13 @@ function updateRLHFRadarCompareChart() {
     legend: {
       show: true,
       bottom: 10,
-      data: ['模型评分', '抽检评分'],
+      data: ['模型评分', '人工评分'],
       textStyle: {
         color: getVbenColor('--foreground'),
       },
       formatter: (name: string) => {
         if (name === '模型评分') return '模型评分(虚线)';
-        if (name === '抽检评分') return '抽检评分(实线)';
+        if (name === '人工评分') return '人工评分(实线)';
         return name;
       },
     },
@@ -942,7 +942,7 @@ function updateRLHFRadarCompareChart() {
           if (!item) return value;
           const diffIcon = item.diff < 0 ? '▼' : '▲';
           const diffStyleKey = item.diff < 0 ? 'down' : 'up';
-          return `{title|${value}}\n{label|模型评分(虚线) ${item.modelScore}}\n{label|抽检评分(实线) ${item.inspectionScore}}\n{${diffStyleKey}|${diffIcon} ${Math.abs(item.diff)}%}`;
+          return `{title|${value}}\n{label|模型评分(虚线) ${item.modelScore}}\n{label|人工评分(实线) ${item.inspectionScore}}\n{${diffStyleKey}|${diffIcon} ${Math.abs(item.diff)}%}`;
         },
         rich: {
           title: {
@@ -1017,7 +1017,7 @@ function updateRLHFRadarCompareChart() {
           },
           {
             value: humanValues,
-            name: '抽检评分',
+            name: '人工评分',
             areaStyle: {
               color: 'rgba(102, 126, 234, 0.35)',
             },
@@ -1047,7 +1047,7 @@ const rlhfInspectionColumns = [
     width: 100,
   },
   {
-    title: '抽检标题',
+    title: '反馈标题',
     dataIndex: 'inspection_title',
     key: 'inspection_title',
     width: 150,
@@ -1065,14 +1065,14 @@ const rlhfInspectionColumns = [
       record.content_preview || '-',
   },
   {
-    title: '抽检结果',
+    title: '反馈结果',
     dataIndex: 'inspection_result',
     key: 'inspection_result',
     width: 100,
     align: 'center' as const,
   },
   {
-    title: '抽检人',
+    title: '反馈人',
     dataIndex: 'inspector_name',
     key: 'inspector_name',
     width: 100,
@@ -1080,7 +1080,7 @@ const rlhfInspectionColumns = [
       record.inspector_name || '-',
   },
   {
-    title: '抽检时间',
+    title: '反馈时间',
     dataIndex: 'inspection_time',
     key: 'inspection_time',
     width: 180,
@@ -1213,7 +1213,7 @@ watch(
       <div class="mb-2 flex items-center gap-3">
         <span
           class="bg-gradient-to-r from-[hsl(var(--primary))] to-[#22c55e] bg-clip-text text-xl font-bold text-transparent"
-          >全局分析</span
+          >反馈训练</span
         >
         <span class="text-xs text-muted-foreground">
           数据更新时间：{{ dataUpdateTime }}
@@ -1229,7 +1229,7 @@ watch(
         </div>
         <div class="flex shrink-0 items-center gap-2">
           <span class="whitespace-nowrap font-medium text-foreground"
-            >Agent筛选</span
+            >内容能力筛选</span
           >
           <Select
             v-model:value="filters.agentCode"
@@ -1240,7 +1240,7 @@ watch(
             allow-clear
             class="agent-filter-select"
             mode="multiple"
-            placeholder="所有 Agent"
+            placeholder="全部内容能力"
             show-search
           />
         </div>
@@ -1261,7 +1261,7 @@ watch(
       </div>
     </div>
 
-    <!-- ==================== 人工专家反馈（RLHF报告） ==================== -->
+    <!-- ==================== 人工反馈训练报告 ==================== -->
     <div class="section-container rlhf-section mt-4">
       <!-- 流光边框装饰 -->
       <div class="section-glow-border">
@@ -1293,7 +1293,7 @@ watch(
       <div class="section-scan-line"></div>
 
       <div class="section-header" @click="toggleSection('rlhf')">
-        <span class="section-title glow-title rlhf-title"> 人工专家反馈 </span>
+        <span class="section-title glow-title rlhf-title"> 人工反馈 </span>
         <span class="section-collapse-btn">
           <RightOutlined v-if="collapsedSections.rlhf" class="collapse-icon" />
           <DownOutlined v-else class="collapse-icon" />
@@ -1306,7 +1306,7 @@ watch(
           <div class="mb-4 flex gap-4">
             <div class="rlhf-big-stat-card">
               <span class="text-sm tracking-wider text-muted-foreground"
-                >人工专家总数</span
+                >反馈人员数</span
               >
               <div class="flex items-baseline gap-2">
                 <span class="big-stat-value">
@@ -1363,7 +1363,7 @@ watch(
                 />条
               </span>
               <span class="tag-percent text-xs text-muted-foreground"
-                >占总抽检 0%</span
+                >占反馈样本 0%</span
               >
             </div>
             <div class="rlhf-feedback-tag-item tag-non-compliant">
@@ -1380,7 +1380,7 @@ watch(
                 />条
               </span>
               <span class="tag-percent text-xs text-muted-foreground"
-                >占总抽检 5.0%</span
+                >占反馈样本 5.0%</span
               >
             </div>
             <div class="rlhf-feedback-tag-item tag-unreasonable">
@@ -1397,7 +1397,7 @@ watch(
                 />条
               </span>
               <span class="tag-percent text-xs text-muted-foreground"
-                >占总抽检 6.7%</span
+                >占反馈样本 6.7%</span
               >
             </div>
             <div class="rlhf-feedback-tag-item tag-off-purpose">
@@ -1414,7 +1414,7 @@ watch(
                 />条
               </span>
               <span class="tag-percent text-xs text-muted-foreground"
-                >占总抽检 10.0%</span
+                >占反馈样本 10.0%</span
               >
             </div>
           </div>
@@ -1473,7 +1473,7 @@ watch(
               <div class="rlhf-card-content">
                 <div class="rlhf-chart-title">
                   <span class="rlhf-title-indicator"></span>
-                  <span>人工专家反馈综合评分</span>
+                  <span>人工反馈综合评分</span>
                 </div>
                 <div class="relative h-[320px]">
                   <div v-if="loading" class="rlhf-loading-overlay">
@@ -1501,7 +1501,7 @@ watch(
               <div class="rlhf-card-content">
                 <div class="rlhf-chart-title">
                   <span class="rlhf-title-indicator"></span>
-                  <span>人工专家评分与AI专家对比</span>
+                  <span>人工反馈与模型评分对比</span>
                 </div>
                 <div class="relative h-[320px]">
                   <div v-if="loading" class="rlhf-loading-overlay">
@@ -1583,12 +1583,12 @@ watch(
           </div>
         </Skeleton>
 
-        <!-- 底部图表区域 - 抽检反馈 -->
+        <!-- 底部图表区域 - 反馈词分析 -->
         <Card :bordered="false" class="rlhf-chart-card mt-4">
           <div
             class="mb-2 flex items-center gap-2 pb-2 text-sm font-semibold text-foreground"
           >
-            抽检反馈
+            反馈词分析
           </div>
           <Row :gutter="24">
             <!-- 左侧：问题标签词云 -->
@@ -1684,11 +1684,11 @@ watch(
           </Row>
         </Card>
 
-        <!-- RLHF改进点摘要 -->
+        <!-- 反馈改进点摘要 -->
         <Card
           :bordered="false"
           class="rlhf-detail-card mt-4"
-          title="RLHF改进点摘要"
+          title="反馈改进点摘要"
         >
           <Skeleton :loading="loading" active :paragraph="{ rows: 6 }">
             <div v-if="rlhfImprovementList.length === 0" class="py-8">
@@ -1726,8 +1726,8 @@ watch(
           </Skeleton>
         </Card>
 
-        <!-- 抽检详情表格 -->
-        <Card :bordered="false" class="rlhf-detail-card mt-4" title="抽检详情">
+        <!-- 反馈明细表格 -->
+        <Card :bordered="false" class="rlhf-detail-card mt-4" title="反馈明细">
           <Skeleton :loading="loading" active :paragraph="{ rows: 8 }">
             <div class="relative">
               <Table
@@ -1742,7 +1742,7 @@ watch(
                 size="middle"
               >
                 <template #emptyText>
-                  <Empty description="暂无抽检数据" />
+                  <Empty description="暂无反馈明细" />
                 </template>
               </Table>
             </div>

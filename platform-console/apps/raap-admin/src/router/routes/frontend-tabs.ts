@@ -12,10 +12,21 @@ const frontendTabRoutes: RouteRecordRaw[] = [
     path: '/content-agent/workbench',
     component: () => import('#/views/content-agent/workbench/index.vue'),
     meta: {
-      title: 'xhs-writer 生文',
+      title: '内容生成',
       icon: 'lucide:pen-line',
       order: -100,
       activeMenu: '/content-agent/workbench',
+    },
+  },
+  {
+    name: 'MagaAssetTraining',
+    path: '/assets/training',
+    component: () => import('#/views/assets/training/index.vue'),
+    meta: {
+      title: '资料训练',
+      icon: 'lucide:database',
+      order: -90,
+      activeMenu: '/assets/training',
     },
   },
   {
@@ -23,21 +34,10 @@ const frontendTabRoutes: RouteRecordRaw[] = [
     path: '/dashboard/rlhf',
     component: () => import('#/views/dashboard/rlhf/index.vue'),
     meta: {
-      title: 'RLHF 分析',
+      title: '反馈训练',
       icon: 'lucide:line-chart',
       order: -80,
       activeMenu: '/dashboard/rlhf',
-    },
-  },
-  {
-    name: 'AgentWorkbench',
-    path: '/agent/workbench',
-    component: () => import('#/views/agent/workbench/index.vue'),
-    meta: {
-      title: 'Agent 工作台',
-      icon: 'lucide:bot',
-      order: -70,
-      activeMenu: '/agent/workbench',
     },
   },
   {
@@ -45,10 +45,21 @@ const frontendTabRoutes: RouteRecordRaw[] = [
     path: '/expert/prompt-optimizer',
     component: () => import('#/views/expert/prompt-optimizer/index.vue'),
     meta: {
-      title: '提示词优化工作台',
+      title: '提示词优化',
       icon: 'lucide:sparkles',
       order: -60,
       activeMenu: '/expert/prompt-optimizer',
+    },
+  },
+  {
+    name: 'MagaModelManagement',
+    path: '/llm/provider',
+    component: () => import('#/views/llm/provider/index.vue'),
+    meta: {
+      title: '模型管理',
+      icon: 'lucide:cpu',
+      order: -40,
+      activeMenu: '/llm/provider',
     },
   },
 ];
