@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -146,6 +147,44 @@ class ContentAgentOrchestrator:
         await self.db.refresh(run)
         return MvpGenerationResult(run=run, final_content=final_content, stage_calls=stage_calls)
 
+    async def run_rewrite_stage(
+        self,
+        *,
+        run_id: int,
+        executor_code: str | None,
+        input_payload: dict[str, Any],
+    ) -> MvpGenerationResult:
+        executor = await self._require_executor(executor_code)
+        if not executor.invoke_url:
+            raise ValueError("executor invoke_url is required")
+        run = await self.db.get(ContentAgentRun, run_id)
+        if not run:
+            raise ValueError("content agent run not found")
+
+        # A post-batch similarity rewrite is still part of the same run trace,
+        # so reopen the run briefly and complete it again with the rewritten final.
+        run.status = "running"
+        run.status_substate = f"running.{REWRITE_XHS_CAPABILITY}"
+        run.finished_at = None
+        await self.db.flush()
+
+        stage_request = ContentAgentStageCallCreate(
+            capability=REWRITE_XHS_CAPABILITY,
+            schema_version=FIRST_XHS_SCHEMA_VERSION,
+            invoke_mode="sync",
+            input_snapshot=input_payload,
+        )
+        stage_call = await self.service.create_stage_call(run.id, stage_request)
+        stage_call, invoke_result = await self._invoke_and_record_stage(executor, run, stage_call)
+        if invoke_result.status == "failed":
+            raise ValueError(invoke_result.error_message or f"stage failed: {REWRITE_XHS_CAPABILITY}")
+
+        final_content = self._extract_final_content(stage_call.output_snapshot or {})
+        run.rewrite_round += 1
+        await self.service.complete_run(run.id, ContentAgentRunCompleteRequest(output_summary=final_content))
+        await self.db.refresh(run)
+        return MvpGenerationResult(run=run, final_content=final_content, stage_calls=[stage_call])
+
     async def _invoke_and_record_stage(
         self,
         executor: ExecutorRegistry,
@@ -211,6 +250,18 @@ class ContentAgentOrchestrator:
         return stage_call, invoke_result
 
     def _invoke_exception_message(self, exc: Exception, capability: str) -> str:
+        if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+            return (
+                "MAGA Worker 未启动或不可访问，请先在项目根目录执行 make worker-start，"
+                f"再重试生文。当前失败阶段：{capability}"
+            )
+        if isinstance(exc, httpx.ReadTimeout):
+            return (
+                "MAGA Worker 响应超时，请确认 worker 仍在运行，或稍后重试。"
+                f"当前失败阶段：{capability}"
+            )
+        if isinstance(exc, httpx.HTTPError):
+            return f"MAGA Worker 调用失败：{exc}。当前失败阶段：{capability}"
         text = str(exc).strip()
         if text:
             return text
@@ -222,6 +273,7 @@ class ContentAgentOrchestrator:
                 "brief_type": context.get("brief_type"),
                 "product_topic": context.get("product_topic"),
                 "target_audience": context.get("target_audience"),
+                "persona_target": context.get("persona_target"),
                 "style": context.get("style"),
             }
             if context.get("generation_snapshot"):

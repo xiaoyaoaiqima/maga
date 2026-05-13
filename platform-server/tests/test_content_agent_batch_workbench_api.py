@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.api.v1.endpoints.content_agent import router
 from app.core.database import get_db
 from app.models.base import Base
-from app.models.content_agent import ContentFeedback, ExecutorRegistry
-from app.models.maga_assets import AssetRegistry
+from app.models.content_agent import ContentBatchItem, ContentFeedback, ExecutorRegistry
+from app.models.llm_provider_config import LLMProviderConfig
+from app.models.maga_assets import AssetChangeRequest, AssetRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 
 
@@ -133,6 +134,47 @@ async def test_batch_workbench_uses_default_executor_when_form_sends_blank_code(
 
 
 @pytest.mark.asyncio
+async def test_batch_workbench_uses_maga_default_provider_model(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    async with session_factory() as session:
+        session.add(
+            LLMProviderConfig(
+                id=1,
+                provider_code="aihubmix",
+                provider_name="AIHubMix",
+                provider_type="openai_compatible",
+                base_url="https://api.example.test/v1",
+                api_key="test-key",
+                default_model="deepseek-v4-flash",
+                priority=100,
+                enabled=1,
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "count": 1,
+            "created_by": "ops",
+        },
+    )
+
+    assert response.status_code == 200
+    async with session_factory() as session:
+        item = (await session.execute(select(ContentBatchItem))).scalars().first()
+
+    assert item.plan_json["model_config"] == {
+        "ge_model": "deepseek-v4-flash",
+        "ae_model": "deepseek-v4-flash",
+    }
+
+
+@pytest.mark.asyncio
 async def test_batch_workbench_can_record_operator_feedback_and_manual_edit(content_agent_workbench_client):
     client, _session_factory = content_agent_workbench_client
     start_response = await client.post(
@@ -240,6 +282,50 @@ async def test_batch_feedback_is_persisted_for_training(content_agent_workbench_
     assert feedback.comment == "开头像真实妈妈一点，少一点口号。"
     assert feedback.submitter == "reviewer-a"
     assert feedback.metadata_json["source"] == "content_batch_workbench"
+    assert feedback.metadata_json.get("asset_change_request_id") is None
+
+
+@pytest.mark.asyncio
+async def test_fact_rule_feedback_creates_asset_change_request(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    start_response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验复盘",
+            "count": 1,
+            "created_by": "ops",
+        },
+    )
+    item = start_response.json()["data"]["report"]["items"][0]
+
+    feedback_response = await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={
+            "action": "request_revision",
+            "feedback_text": "源悦和 a2 蛋白、a2 公司没有关系，是完全独立的两款奶粉。禁止提及a2 蛋白。",
+            "created_by": "ops",
+        },
+    )
+
+    assert feedback_response.status_code == 200
+    feedback_data = feedback_response.json()["data"]
+    assert feedback_data["item"]["review_status"] == "needs_revision"
+
+    async with session_factory() as session:
+        change_request = (await session.execute(select(AssetChangeRequest))).scalar_one()
+        feedback = (await session.execute(select(ContentFeedback))).scalar_one()
+
+    assert "禁止提及a2 蛋白" in change_request.source_text
+    assert change_request.status == "pending"
+    assert change_request.requester == "ops"
+    assert change_request.context_json["asset_key"] == "yuanyue"
+    assert change_request.context_json["intent"] == "fact_or_compliance_rule"
+    assert "compliance_rules" in change_request.context_json["affected_asset_types"]
+    assert feedback.metadata_json["asset_change_request_id"] == change_request.id
+    assert feedback.metadata_json["asset_change_intent"] == "fact_or_compliance_rule"
 
 
 @pytest.mark.asyncio

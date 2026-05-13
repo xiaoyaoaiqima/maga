@@ -62,6 +62,7 @@ class ContentBatchReportService:
                     asset_key=job.asset_key,
                     product_topic=job.product_topic,
                     target_audience=job.target_audience,
+                    persona_target=self._job_persona_target(job),
                     style=job.style,
                     status=job.status,
                     count=job.count,
@@ -97,6 +98,7 @@ class ContentBatchReportService:
             asset_key=job.asset_key,
             product_topic=job.product_topic,
             target_audience=job.target_audience,
+            persona_target=self._job_persona_target(job),
             style=job.style,
             status=job.status,
             count=job.count,
@@ -169,6 +171,7 @@ class ContentBatchReportService:
             body_preview=(item.body or "")[:180] if item.body else None,
             product_topic=job.product_topic if job else None,
             target_audience=job.target_audience if job else None,
+            persona_target=self._job_persona_target(job) if job else None,
             style=job.style if job else None,
             asset_key=job.asset_key if job else None,
             metadata=feedback.metadata_json,
@@ -181,6 +184,14 @@ class ContentBatchReportService:
         if job is None:
             raise ValueError("batch job not found")
         return job
+
+    @staticmethod
+    def _job_persona_target(job: ContentBatchJob | None) -> str | None:
+        if job is None:
+            return None
+        strategy = job.strategy_json or {}
+        value = strategy.get("persona_target") if isinstance(strategy, dict) else None
+        return value if isinstance(value, str) and value.strip() else None
 
     async def _batch_items(self, batch_id: int) -> list[ContentBatchItem]:
         result = await self.db.execute(
@@ -283,6 +294,12 @@ class ContentBatchReportService:
             trace_stage_calls=[self._stage_trace(stage) for stage in stage_calls],
             opening_type=diversity.get("opening_type"),
             structure_type=diversity.get("structure_type"),
+            content_angle=diversity.get("content_angle"),
+            persona_lens=diversity.get("persona_lens"),
+            scene_type=diversity.get("scene_type"),
+            evidence_type=diversity.get("evidence_type"),
+            asset_combo_key=(item.plan_json or {}).get("asset_combo_key"),
+            asset_reuse_reason=(item.plan_json or {}).get("asset_reuse_reason"),
             diversity=diversity or None,
             quality=quality or None,
             error_message=item.error_message,
@@ -444,11 +461,43 @@ class ContentBatchReportService:
                     item_no=right.item_no,
                     score=score,
                     reason="正文 2-gram 相似度偏高",
+                    scope="current_batch",
                 )
                 warning_for_right = ContentBatchSimilarityWarning(
                     item_no=left.item_no,
                     score=score,
                     reason="正文 2-gram 相似度偏高",
+                    scope="current_batch",
                 )
                 left.similarity_warnings.append(warning_for_left)
                 right.similarity_warnings.append(warning_for_right)
+        self._attach_rewrite_similarity_warnings(items)
+
+    def _attach_rewrite_similarity_warnings(self, items: list[ContentBatchReportItem]) -> None:
+        for item in items:
+            quality = item.quality or {}
+            rewrites = quality.get("similarity_rewrites") or []
+            if not isinstance(rewrites, list):
+                continue
+            for rewrite in rewrites:
+                if not isinstance(rewrite, dict):
+                    continue
+                scope = rewrite.get("scope") or "current_batch"
+                if scope != "history":
+                    continue
+                similar_item_no = rewrite.get("similar_item_no")
+                score = rewrite.get("post_rewrite_similarity_score") or rewrite.get("similarity_score")
+                if not isinstance(similar_item_no, int) or not isinstance(score, (int, float)):
+                    continue
+                if rewrite.get("similarity_rewrite_passed") is True and float(score) < SIMILARITY_WARNING_THRESHOLD:
+                    continue
+                item.similarity_warnings.append(
+                    ContentBatchSimilarityWarning(
+                        item_no=similar_item_no,
+                        score=round(float(score), 4),
+                        reason="与历史批次正文 2-gram 相似度偏高",
+                        batch_id=rewrite.get("similar_batch_id"),
+                        batch_code=rewrite.get("similar_batch_code"),
+                        scope="history",
+                    )
+                )

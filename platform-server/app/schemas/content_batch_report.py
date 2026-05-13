@@ -5,7 +5,11 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
+from app.core.content_agent_defaults import (
+    DEFAULT_EXECUTOR_CODE,
+    MAGA_WORKER_DEFAULT_AE_MODEL,
+    MAGA_WORKER_DEFAULT_GE_MODEL,
+)
 from app.schemas.base import BaseSchema, TimestampSchema
 
 
@@ -31,6 +35,9 @@ class ContentBatchSimilarityWarning(BaseSchema):
     item_no: int
     score: float
     reason: str
+    batch_id: int | None = None
+    batch_code: str | None = None
+    scope: str = "current_batch"
 
 
 class ContentBatchReportSummary(BaseSchema):
@@ -79,6 +86,12 @@ class ContentBatchReportItem(BaseSchema):
     trace_stage_calls: list[ContentBatchStageTrace] = Field(default_factory=list)
     opening_type: str | None = None
     structure_type: str | None = None
+    content_angle: str | None = None
+    persona_lens: str | None = None
+    scene_type: str | None = None
+    evidence_type: str | None = None
+    asset_combo_key: str | None = None
+    asset_reuse_reason: str | None = None
     diversity: dict[str, Any] | None = None
     quality: dict[str, Any] | None = None
     error_message: str | None = None
@@ -90,6 +103,7 @@ class ContentBatchReportResponse(BaseSchema):
     asset_key: str
     product_topic: str
     target_audience: str | None = None
+    persona_target: str | None = None
     style: str | None = None
     status: str
     count: int
@@ -97,13 +111,23 @@ class ContentBatchReportResponse(BaseSchema):
     items: list[ContentBatchReportItem]
 
 
+class ContentBatchModelConfig(BaseSchema):
+    ge_model: str | None = Field(default=MAGA_WORKER_DEFAULT_GE_MODEL, max_length=128)
+    ae_model: str | None = Field(default=MAGA_WORKER_DEFAULT_AE_MODEL, max_length=128)
+
+
 class ContentBatchStartRequest(BaseSchema):
     asset_key: str = Field(default="yuanyue", max_length=128)
     product_topic: str = Field(..., max_length=255)
     target_audience: str | None = Field(default=None, max_length=255)
+    persona_target: str | None = Field(default=None, max_length=255)
     style: str | None = Field(default=None, max_length=255)
     count: int = Field(default=5, ge=1, le=20)
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
+    generation_model_config: ContentBatchModelConfig = Field(
+        default_factory=ContentBatchModelConfig,
+        alias="model_config",
+    )
     created_by: str | None = Field(default=None, max_length=100)
 
 
@@ -127,6 +151,7 @@ class ContentBatchListItem(TimestampSchema):
     asset_key: str
     product_topic: str
     target_audience: str | None = None
+    persona_target: str | None = None
     style: str | None = None
     status: str
     count: int

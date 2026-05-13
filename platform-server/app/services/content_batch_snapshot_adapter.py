@@ -11,7 +11,9 @@ def build_xhs_generation_snapshot_from_brief(
     *,
     product_topic: str,
     target_audience: str | None = None,
+    persona_target: str | None = None,
     style: str | None = None,
+    model_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the minimal single-item snapshot for direct generation.
 
@@ -24,11 +26,12 @@ def build_xhs_generation_snapshot_from_brief(
         "item_no": 1,
         "product_topic": product_topic,
         "target_audience": target_audience,
+        "persona_target": persona_target,
         "style": style,
         "brief_constraints": _default_brief_constraints(),
         "diversity_slot": {},
     }
-    snapshot = build_xhs_generation_snapshot_from_plan(plan)
+    snapshot = build_xhs_generation_snapshot_from_plan(plan, model_config=model_config)
     snapshot["constraints"]["must_use_painpoint"] = False
     snapshot["constraints"]["must_reference_example_without_copying"] = False
     snapshot["batch_context"]["source"] = "single_generation"
@@ -40,6 +43,7 @@ def build_xhs_generation_snapshot_from_plan(
     *,
     batch_id: int | None = None,
     batch_code: str | None = None,
+    model_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the per-item executor input snapshot consumed by xhs-writer.
 
@@ -55,6 +59,7 @@ def build_xhs_generation_snapshot_from_plan(
         "brief": {
             "product_topic": plan.get("product_topic"),
             "target_audience": plan.get("target_audience"),
+            "persona_target": plan.get("persona_target"),
             "style": plan.get("style"),
             "content_constraints": {
                 "word_count": brief_constraints.get("word_count"),
@@ -73,6 +78,8 @@ def build_xhs_generation_snapshot_from_plan(
             "selling_point_ref": _without_snapshot(plan.get("selling_point_ref")),
             "reference_example_refs": [_without_snapshot(ref) for ref in reference_refs],
             "compliance_rule_refs": [_without_snapshot(ref) for ref in compliance_refs],
+            "asset_combo_key": plan.get("asset_combo_key"),
+            "asset_reuse_reason": plan.get("asset_reuse_reason"),
         },
         "diversity_slot": plan.get("diversity_slot") or {},
         "batch_context": {
@@ -86,6 +93,7 @@ def build_xhs_generation_snapshot_from_plan(
             "avoid_same_opening_group": (plan.get("diversity_slot") or {}).get("forbidden_overlap_group"),
             "output_fields": brief_constraints.get("output_fields") or ["title", "body"],
         },
+        "model_config": _model_config(model_config or plan.get("model_config")),
     }
 
 
@@ -118,3 +126,10 @@ def _brief_constraints(plan: dict[str, Any]) -> dict[str, Any]:
     if isinstance(custom, dict):
         constraints.update({key: value for key, value in custom.items() if value is not None})
     return constraints
+
+
+def _model_config(value: Any) -> dict[str, Any]:
+    """Keep model choice in MAGA-owned snapshot so workers are stateless executors."""
+    if not isinstance(value, dict):
+        return {}
+    return {key: value for key, value in value.items() if key in {"ge_model", "ae_model"} and value}

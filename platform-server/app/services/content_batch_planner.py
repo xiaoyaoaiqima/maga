@@ -46,6 +46,21 @@ NARRATIVE_FOCUSES = [
     "先误区澄清",
 ]
 
+CONTENT_ANGLES = [
+    "误区澄清",
+    "真实使用场景",
+    "便便观察清单",
+    "反焦虑安抚",
+    "产品选择对比",
+    "换奶适应记录",
+    "喂养节奏建议",
+    "边界提醒",
+]
+
+PERSONA_LENSES = ["新手妈妈", "谨慎型妈妈", "二胎妈妈", "过来人妈妈", "细节控妈妈", "容易焦虑的妈妈"]
+SCENE_TYPES = ["日常喂养", "便便观察", "夜间照护", "换季适应", "转奶过渡", "外出照护"]
+EVIDENCE_TYPES = ["经验记录", "清单建议", "对比判断", "边界提醒", "观察指标", "场景复盘"]
+
 
 class ContentBatchPlanner:
     """Create item-level generation plans from MAGA asset snapshots."""
@@ -59,8 +74,10 @@ class ContentBatchPlanner:
         asset_key: str,
         product_topic: str,
         target_audience: str | None,
+        persona_target: str | None = None,
         style: str | None,
         count: int,
+        model_config: dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> ContentBatchJob:
         if count <= 0:
@@ -71,7 +88,7 @@ class ContentBatchPlanner:
         examples_asset = await self._latest_asset("reference_examples", asset_key)
         compliance_asset = await self._latest_asset("compliance_rules", asset_key)
 
-        painpoints = self._items(painpoints_asset)
+        painpoints = self._painpoint_items(painpoints_asset)
         selling_points = self._items(selling_asset)
         examples = self._items(examples_asset)
         compliance_rules = self._items(compliance_asset)
@@ -95,6 +112,7 @@ class ContentBatchPlanner:
                 "use_reference_examples": True,
                 "diversity": "high",
                 "executor": DEFAULT_EXECUTOR_CODE,
+                "persona_target": persona_target,
             },
             diversity_plan_json={
                 "opening_types": OPENING_TYPES,
@@ -108,18 +126,23 @@ class ContentBatchPlanner:
         self.db.add(job)
         await self.db.flush()
 
+        used_asset_combo_keys: set[str] = set()
         for index in range(count):
             plan = self._build_item_plan(
                 item_no=index + 1,
                 asset_key=asset_key,
                 product_topic=product_topic,
                 target_audience=target_audience,
+                persona_target=persona_target,
                 style=style,
                 painpoints=painpoints,
                 selling_points=selling_points,
                 examples=examples,
                 compliance_rules=compliance_rules,
+                model_config=model_config,
+                used_asset_combo_keys=used_asset_combo_keys,
             )
+            used_asset_combo_keys.add(plan["asset_combo_key"])
             self.db.add(ContentBatchItem(batch_id=job.id, item_no=index + 1, status="planned", plan_json=plan))
         await self.db.flush()
         return job
@@ -131,6 +154,7 @@ class ContentBatchPlanner:
                 AssetRegistry.asset_type == asset_type,
                 AssetRegistry.asset_key == asset_key,
                 AssetRegistry.status == "active",
+                AssetRegistry.asset_stage == "production",
             )
             .order_by(AssetRegistry.version_no.desc())
             .limit(1)
@@ -144,16 +168,23 @@ class ContentBatchPlanner:
         asset_key: str,
         product_topic: str,
         target_audience: str | None,
+        persona_target: str | None = None,
         style: str | None,
         painpoints: list[dict[str, Any]],
         selling_points: list[dict[str, Any]],
         examples: list[dict[str, Any]],
         compliance_rules: list[dict[str, Any]],
+        model_config: dict[str, Any] | None = None,
+        used_asset_combo_keys: set[str] | None = None,
     ) -> dict[str, Any]:
         zero = item_no - 1
-        pain_idx = zero % len(painpoints)
-        selling_idx = (zero * 3 + zero // max(len(painpoints), 1)) % len(selling_points)
-        example_idx = (zero * 5 + zero // 7) % len(examples)
+        pain_idx, selling_idx, example_idx, asset_reuse_reason = self._asset_indices(
+            zero,
+            painpoint_count=len(painpoints),
+            selling_point_count=len(selling_points),
+            example_count=len(examples),
+            used_asset_combo_keys=used_asset_combo_keys or set(),
+        )
         compliance_idx = zero % max(len(compliance_rules), 1)
         opening = OPENING_TYPES[zero % len(OPENING_TYPES)]
         structure = STRUCTURE_TYPES[(zero // len(OPENING_TYPES) + zero) % len(STRUCTURE_TYPES)]
@@ -161,13 +192,21 @@ class ContentBatchPlanner:
         cta = CTA_TYPES[(zero * 3 + zero // 13) % len(CTA_TYPES)]
         # Stagger with the opening cycle so adjacent items do not share the same narrative angle.
         narrative_focus = NARRATIVE_FOCUSES[(zero + zero // len(OPENING_TYPES)) % len(NARRATIVE_FOCUSES)]
+        content_angle = CONTENT_ANGLES[(zero * 3 + zero // len(OPENING_TYPES)) % len(CONTENT_ANGLES)]
+        persona_lens = PERSONA_LENSES[(zero + zero // len(PERSONA_LENSES)) % len(PERSONA_LENSES)]
+        scene_type = SCENE_TYPES[(zero * 2 + zero // len(SCENE_TYPES)) % len(SCENE_TYPES)]
+        evidence_type = EVIDENCE_TYPES[(zero * 5 + zero // len(EVIDENCE_TYPES)) % len(EVIDENCE_TYPES)]
+        asset_combo_key = self._asset_combo_key(pain_idx, selling_idx, example_idx)
 
         return {
             "item_no": item_no,
             "asset_key": asset_key,
             "product_topic": product_topic,
             "target_audience": target_audience,
+            "persona_target": persona_target,
             "style": style,
+            "asset_combo_key": asset_combo_key,
+            "asset_reuse_reason": asset_reuse_reason,
             "painpoint_ref": self._ref("painpoint_model", asset_key, pain_idx, painpoints[pain_idx]),
             "selling_point_ref": self._ref("product_selling_points", asset_key, selling_idx, selling_points[selling_idx]),
             "reference_example_refs": [self._ref("reference_examples", asset_key, example_idx, examples[example_idx])],
@@ -182,6 +221,10 @@ class ContentBatchPlanner:
                 "emotion": emotion,
                 "cta_type": cta,
                 "narrative_focus": narrative_focus,
+                "content_angle": content_angle,
+                "persona_lens": persona_lens,
+                "scene_type": scene_type,
+                "evidence_type": evidence_type,
                 "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
             },
             "brief_constraints": {
@@ -191,7 +234,41 @@ class ContentBatchPlanner:
                 "must_reference_example_without_copying": True,
                 "output_fields": ["title", "body"],
             },
+            "model_config": model_config or {},
         }
+
+    def _asset_indices(
+        self,
+        zero: int,
+        *,
+        painpoint_count: int,
+        selling_point_count: int,
+        example_count: int,
+        used_asset_combo_keys: set[str],
+    ) -> tuple[int, int, int, str | None]:
+        combo_count = painpoint_count * selling_point_count * example_count
+        base = self._combo_indices(zero, painpoint_count, selling_point_count, example_count)
+        base_key = self._asset_combo_key(*base)
+        if base_key not in used_asset_combo_keys or len(used_asset_combo_keys) >= combo_count:
+            reason = "素材组合池已用完，按轮换策略复用" if base_key in used_asset_combo_keys else None
+            return (*base, reason)
+
+        for offset in range(combo_count):
+            candidate = self._combo_indices(zero + offset, painpoint_count, selling_point_count, example_count)
+            if self._asset_combo_key(*candidate) not in used_asset_combo_keys:
+                return (*candidate, None)
+        return (*base, "素材组合池已用完，按轮换策略复用")
+
+    @staticmethod
+    def _combo_indices(seed: int, painpoint_count: int, selling_point_count: int, example_count: int) -> tuple[int, int, int]:
+        pain_idx = seed % painpoint_count
+        selling_idx = (seed // painpoint_count) % selling_point_count
+        example_idx = (seed // (painpoint_count * selling_point_count)) % example_count
+        return pain_idx, selling_idx, example_idx
+
+    @staticmethod
+    def _asset_combo_key(pain_idx: int, selling_idx: int, example_idx: int) -> str:
+        return f"pain:{pain_idx}|sell:{selling_idx}|example:{example_idx}"
 
     @staticmethod
     def _items(asset: AssetRegistry | None) -> list[dict[str, Any]]:
@@ -199,6 +276,15 @@ class ContentBatchPlanner:
             return []
         items = asset.content_json.get("items", [])
         return [item for item in items if isinstance(item, dict)]
+
+    @classmethod
+    def _painpoint_items(cls, asset: AssetRegistry | None) -> list[dict[str, Any]]:
+        if asset is None or not asset.content_json:
+            return []
+        topics = asset.content_json.get("topics")
+        if isinstance(topics, list) and topics:
+            return [_topic_to_plan_item(item) for item in topics if isinstance(item, dict)]
+        return cls._items(asset)
 
     @staticmethod
     def _ref(asset_type: str, asset_key: str, index: int, item: dict[str, Any]) -> dict[str, Any]:
@@ -209,3 +295,22 @@ class ContentBatchPlanner:
             "item_id": item.get("asset_steward_id") or item.get("example_id") or f"{asset_type}_{index + 1}",
             "snapshot": item,
         }
+
+
+def _topic_to_plan_item(topic: dict[str, Any]) -> dict[str, Any]:
+    descriptions = [str(item).strip() for item in topic.get("descriptions") or [] if str(item).strip()]
+    selling_points = [
+        item
+        for item in topic.get("selling_points") or []
+        if isinstance(item, dict) and (item.get("selling_point") or item.get("name"))
+    ]
+    selling_point_names = [item.get("selling_point") or item.get("name") for item in selling_points]
+    # Keep legacy snapshot fields so xhs-writer prompts can consume the upgraded
+    # topic tree without needing a simultaneous runtime contract migration.
+    return {
+        **topic,
+        "painpoint": topic.get("painpoint") or topic.get("topic"),
+        "description": "；".join(descriptions) if descriptions else topic.get("description"),
+        "selling_point": topic.get("selling_point") or (selling_point_names[0] if selling_point_names else None),
+        "selling_points": selling_point_names,
+    }

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Global prompt optimizer from human feedback.
+Global prompt optimizer.
 
-Reads a prompt TXT and a human-opinion/problem TXT, calls an OpenAI-compatible
-chat completions API, and writes global prompt cleanup advice to stdout or JSON.
+Reads a prompt TXT and optionally a human-opinion/problem TXT, calls an
+OpenAI-compatible chat completions API, and writes global prompt cleanup advice
+to stdout or JSON.
 """
 from __future__ import annotations
 
@@ -11,7 +12,9 @@ import argparse
 import json
 import os
 import re
+import socket
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -24,7 +27,8 @@ DEFAULT_BASE_URL = "https://aihubmix.com/v1"
 DEFAULT_MODEL = "gpt-5.5"
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MAX_TOKENS = 8000
-DEFAULT_TIMEOUT_SECONDS = 90
+DEFAULT_TIMEOUT_SECONDS = 180
+DEFAULT_RETRIES = 2
 DEFAULT_OUTPUT_DIR = "prompt_optimize_results"
 
 
@@ -51,9 +55,9 @@ def load_dotenv(path: Path = Path(".env")) -> None:
 
 
 SYSTEM_PROMPT = """你是一个资深提示词架构师，擅长整理冗长、重复、矛盾的内容生成提示词。
-你需要根据“原始提示词”和“人类优化意见”，从全局视角诊断提示词结构问题，并给出可执行的整理方案。
+你需要根据“原始提示词”和可选的“人类优化意见”，从全局视角诊断提示词结构问题，并给出可执行的整理方案。
 
-这个任务不是根据某一篇生成内容做局部修补，而是根据人类意见优化整份提示词。常见背景包括：
+这个任务不是根据某一篇生成内容做局部修补，而是优化整份提示词。常见背景包括：
 - 提示词太长，规则重复，模型注意力被分散。
 - 不同章节存在同义重复、强弱不一致或互相矛盾。
 - 上层规则和局部规则边界不清，导致执行优先级混乱。
@@ -61,7 +65,8 @@ SYSTEM_PROMPT = """你是一个资深提示词架构师，擅长整理冗长、�
 - 人类希望保留核心控制力，同时降低冗余和冲突。
 
 优化原则：
-- 以人类意见为最高依据；不要引入人类意见没有要求的新创作方向、新品牌规则或新内容策略。
+- 如果提供了人类意见，以人类意见为最高依据；不要引入人类意见没有要求的新创作方向、新品牌规则或新内容策略。
+- 如果没有提供人类意见，默认目标是压缩冗余、合并同义规则、消除矛盾、明确优先级，不新增业务方向、品牌规则、内容策略或审查口径。
 - 优先做全局整理：去重、合并同义规则、消除矛盾、明确优先级、把规则放回更合适的章节。
 - 不要为了简洁删除关键红线、品牌限制、合规限制、输入变量约束和必须完成的任务目标。
 - 如果两条规则语义相同但强度不同，保留更清晰、更可执行的一条，并在 reason 中说明取舍。
@@ -69,6 +74,9 @@ SYSTEM_PROMPT = """你是一个资深提示词架构师，擅长整理冗长、�
 - patches 应服务于全局结构整理，可以包含 delete、replace、insert_after、insert_before，但每个 patch 都必须能被人工直接定位。
 - 同一处问题只输出一个 patch；不要用多个 patch 重复表达同一个整理意图。
 - 如果需要大段重组，优先输出少量“replace 整段”的 patch，而不是很多碎片化 patch。
+- 若人类意见是新增或调整某条业务规则，优先将其整理成“适用条件、必须保留的业务边界、禁止项、表达变化要求”四类信息；不要把人类意见原文机械追加到提示词末尾。
+- 若人类意见指向“同质化、模板化、固定句式复用”，优先删除或弱化原规则里的模板短语库、固定推荐句式，改成变量维度约束；不要继续追加更多同类示例句或可选短语。
+- 对结尾权益、福利、礼包类规则，必须保留触发动作边界，且要求权益触发动作、权益位置、福利感表达和句式结构中至少变化 2 处；禁止把“安排上 / 解锁 / 诚意很足 / 实用又惊喜”等促销套话写成推荐表达。
 - 如果人类意见不足以支持直接修改，只在 risk_notes 或 modify_suggestion 中提示，不要写入 patches。
 
 请只输出 JSON，不要输出 Markdown，不要解释 JSON 外的内容。
@@ -89,7 +97,7 @@ JSON 字段必须包含：
 """
 
 
-USER_PROMPT_TEMPLATE = """# 背景信息
+USER_PROMPT_WITH_FEEDBACK_TEMPLATE = """# 背景信息
 ## 原始提示词:
 {prompt}
 
@@ -101,13 +109,30 @@ USER_PROMPT_TEMPLATE = """# 背景信息
 重点检查重复、矛盾、冗长、规则散落、优先级不清、示例污染和局部规则覆盖全局规则等问题。"""
 
 
+USER_PROMPT_AUTO_CLEANUP_TEMPLATE = """# 背景信息
+## 原始提示词:
+{prompt}
+
+# 你的任务
+未提供人类优化意见。请直接从全局视角整理这份提示词，目标是让它更短、更清晰、更少冲突，同时保留原有业务控制力。
+
+重点检查并处理：
+- 重复、同义或近义规则；
+- 强弱不一致或互相矛盾的规则；
+- 散落在多个章节里的同一约束；
+- 可以合并的示例、黑名单、推荐表达；
+- 局部规则覆盖全局规则、优先级不清的问题。
+
+不要新增原提示词中没有的业务方向、品牌规则、内容策略或审查口径。"""
+
+
 def parse_args() -> argparse.Namespace:
     load_dotenv()
     parser = argparse.ArgumentParser(
-        description="Read prompt/problem TXT files and globally optimize a prompt from human feedback.",
+        description="Read a prompt TXT file and globally optimize it, optionally using human feedback.",
     )
     parser.add_argument("--prompt-file", required=True, help="TXT file containing the prompt to optimize.")
-    parser.add_argument("--problem-file", required=True, help="TXT file containing human feedback/opinion.")
+    parser.add_argument("--problem-file", help="Optional TXT file containing human feedback/opinion.")
     parser.add_argument("--output", help="Optional output JSON filename/path. If omitted, prints to stdout.")
     parser.add_argument(
         "--output-dir",
@@ -139,6 +164,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument(
+        "--retries",
+        type=int,
+        default=DEFAULT_RETRIES,
+        help=f"Retry count for timeout-like network failures. Defaults to {DEFAULT_RETRIES}.",
+    )
+    parser.add_argument(
         "--include-revised-prompt",
         action="store_true",
         help="Ask the model to output a full revised prompt. Disabled by default to avoid truncation.",
@@ -154,7 +185,10 @@ def read_required_text(path: Path, label: str) -> str:
 
 
 def build_user_prompt(prompt: str, problem: str, include_revised_prompt: bool) -> str:
-    user_prompt = USER_PROMPT_TEMPLATE.format(prompt=prompt, problem=problem)
+    if problem:
+        user_prompt = USER_PROMPT_WITH_FEEDBACK_TEMPLATE.format(prompt=prompt, problem=problem)
+    else:
+        user_prompt = USER_PROMPT_AUTO_CLEANUP_TEMPLATE.format(prompt=prompt)
     if include_revised_prompt:
         return (
             user_prompt
@@ -212,6 +246,14 @@ def read_http_error(error: urllib.error.HTTPError) -> str:
     return f"HTTP {error.code}: {error.reason}"
 
 
+def is_timeout_error(error: BaseException) -> bool:
+    if isinstance(error, (TimeoutError, socket.timeout)):
+        return True
+    if isinstance(error, urllib.error.URLError):
+        return isinstance(error.reason, (TimeoutError, socket.timeout))
+    return False
+
+
 def call_openai_compatible(
     *,
     api_key: str,
@@ -222,6 +264,7 @@ def call_openai_compatible(
     temperature: float,
     max_tokens: int,
     timeout: int,
+    retries: int,
     json_mode: bool,
 ) -> ChatCompletionResult:
     payload = build_chat_payload(
@@ -242,11 +285,25 @@ def call_openai_compatible(
             "Content-Type": "application/json",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        raise ValueError(read_http_error(e)) from e
+    raw = ""
+    retry_count = max(0, retries)
+    for attempt in range(retry_count + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read().decode("utf-8")
+            break
+        except urllib.error.HTTPError as e:
+            raise ValueError(read_http_error(e)) from e
+        except (urllib.error.URLError, TimeoutError, socket.timeout) as e:
+            if not is_timeout_error(e) or attempt >= retry_count:
+                if is_timeout_error(e):
+                    raise TimeoutError(
+                        f"请求超时，已重试 {attempt} 次。可通过 --timeout 提高单次等待秒数，"
+                        "或通过 --max-tokens 降低输出长度。"
+                    ) from e
+                raise
+            # 网络中转偶发慢响应，超时错误做少量退避重试，避免一次慢请求直接失败。
+            time.sleep(min(2 * (attempt + 1), 6))
     result = json.loads(raw)
     choices = result.get("choices") or [{}]
     choice = choices[0] if choices else {}
@@ -388,7 +445,7 @@ def write_debug_log(
         "problem": problem,
         "input_files": {
             "prompt_file": str(Path(args.prompt_file)),
-            "problem_file": str(Path(args.problem_file)),
+            "problem_file": str(Path(args.problem_file)) if args.problem_file else "",
         },
         "model_params": {
             "base_url": normalize_chat_completions_url(args.base_url),
@@ -396,6 +453,7 @@ def write_debug_log(
             "temperature": args.temperature,
             "max_tokens": args.max_tokens,
             "timeout": args.timeout,
+            "retries": args.retries,
             "json_mode": not args.no_json_mode,
         },
         "request_messages": [
@@ -433,7 +491,7 @@ def main() -> int:
             raise ValueError("未配置 API Key，请设置 OPENAI_API_KEY / AIHUBMIX_API_KEY，或传入 --api-key")
 
         prompt = read_required_text(Path(args.prompt_file), "prompt")
-        problem = read_required_text(Path(args.problem_file), "problem")
+        problem = read_required_text(Path(args.problem_file), "problem") if args.problem_file else ""
         run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         user_prompt = build_user_prompt(prompt, problem, args.include_revised_prompt)
         debug_path = write_debug_log(
@@ -452,6 +510,7 @@ def main() -> int:
             temperature=args.temperature,
             max_tokens=args.max_tokens,
             timeout=args.timeout,
+            retries=args.retries,
             json_mode=not args.no_json_mode,
         )
         append_debug_response_summary(debug_path, completion)

@@ -1,9 +1,11 @@
 """Content-agent execution-layer endpoints."""
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.content_agent_defaults import normalize_executor_code
 from app.core.database import get_db
+from app.models.llm_provider_config import LLMProviderConfig
 from app.schemas.base import ResponseData
 from app.schemas.content_batch_report import (
     ContentBatchExecutionSummary,
@@ -61,7 +63,9 @@ def _task_create_from_start_request(request: ContentAgentStartGenerationRequest)
     snapshot = build_xhs_generation_snapshot_from_brief(
         product_topic=request.product_topic,
         target_audience=request.target_audience,
+        persona_target=request.persona_target,
         style=request.style,
+        model_config=request.generation_model_config.model_dump(exclude_none=True),
     )
     return ContentAgentTaskCreate(
         task_type="xhs_generate",
@@ -71,12 +75,49 @@ def _task_create_from_start_request(request: ContentAgentStartGenerationRequest)
             "brief_type": request.brief_type,
             "product_topic": request.product_topic,
             "target_audience": request.target_audience,
+            "persona_target": request.persona_target,
             "style": request.style,
             "generation_snapshot": snapshot,
         },
         asset_refs=snapshot.get("asset_refs") or {},
         created_by=request.created_by,
     )
+
+
+async def _model_config_with_maga_defaults(
+    db: AsyncSession,
+    model_config: dict[str, str | None],
+) -> dict[str, str]:
+    config = {key: value for key, value in model_config.items() if key in {"ge_model", "ae_model"} and value}
+    if config.get("ge_model") and config.get("ae_model"):
+        return config
+
+    default_model = await _default_llm_model_code(db)
+    if not default_model:
+        return config
+
+    # MAGA owns the default GE/AE model choice. Operators can still override
+    # either field per generation request from the advanced settings.
+    return {
+        "ge_model": config.get("ge_model") or default_model,
+        "ae_model": config.get("ae_model") or default_model,
+    }
+
+
+async def _default_llm_model_code(db: AsyncSession) -> str | None:
+    result = await db.execute(
+        select(LLMProviderConfig.default_model)
+        .where(
+            LLMProviderConfig.enabled == 1,
+            LLMProviderConfig.is_deleted == 0,
+            LLMProviderConfig.default_model.is_not(None),
+            LLMProviderConfig.default_model != "",
+        )
+        .order_by(LLMProviderConfig.priority.desc(), LLMProviderConfig.id.asc())
+        .limit(1)
+    )
+    value = result.scalar_one_or_none()
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _invocation_client_for_invoke_url(invoke_url: str | None):
@@ -104,6 +145,10 @@ async def start_generation(
     )
     try:
         task_request = _task_create_from_start_request(request)
+        task_request.input_snapshot["generation_snapshot"]["model_config"] = await _model_config_with_maga_defaults(
+            db,
+            request.generation_model_config.model_dump(exclude_none=True),
+        )
         task_request.executor_code = executor_code
         result = await orchestrator.run_mvp_generation_chain(task_request)
     except ValueError as exc:
@@ -133,22 +178,31 @@ async def start_batch_generation(
             asset_key=request.asset_key,
             product_topic=request.product_topic,
             target_audience=request.target_audience,
+            persona_target=request.persona_target,
             style=request.style,
             count=request.count,
+            model_config=await _model_config_with_maga_defaults(
+                db,
+                request.generation_model_config.model_dump(exclude_none=True),
+            ),
             created_by=request.created_by,
         )
+        job_id = job.id
+        batch_code = job.batch_code
+        await db.commit()
         execution = await ContentBatchExecutionService(
             db,
             invocation_client=invocation_client,
             callback_base_url="/api/v1/content-agent",
             executor_code=executor_code,
-        ).execute_batch_items(job.id, limit=request.count, created_by=request.created_by)
-        report = await ContentBatchReportService(db).get_batch_report(job.id)
+        ).execute_batch_items(job_id, limit=request.count, created_by=request.created_by)
+        db.expire_all()
+        report = await ContentBatchReportService(db).get_batch_report(job_id)
     except ValueError as exc:
         raise _map_protocol_error(exc) from exc
     response = ContentBatchStartResponse(
-        batch_id=job.id,
-        batch_code=job.batch_code,
+        batch_id=job_id,
+        batch_code=batch_code,
         execution=ContentBatchExecutionSummary(
             requested_limit=execution.requested_limit,
             generated_count=execution.generated_count,

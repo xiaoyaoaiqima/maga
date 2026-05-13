@@ -3,12 +3,14 @@
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.v1.endpoints.content_agent import router
 from app.core.database import get_db
 from app.models.base import Base
-from app.models.content_agent import ExecutorRegistry
+from app.models.content_agent import ContentAgentTask, ExecutorRegistry
+from app.models.llm_provider_config import LLMProviderConfig
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 from fastapi import FastAPI
 
@@ -45,19 +47,25 @@ async def start_generation_client():
 
     async def override_get_db():
         async with session_factory() as session:
-            yield session
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
     app.dependency_overrides[get_db] = override_get_db
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-        yield client
+        yield client, session_factory
 
     await engine.dispose()
 
 
 @pytest.mark.asyncio
 async def test_start_generation_endpoint_returns_publishable_title_and_body(start_generation_client):
-    response = await start_generation_client.post(
+    client, _session_factory = start_generation_client
+    response = await client.post(
         "/api/v1/content-agent/generation/start",
         json={
             "product_topic": "美素佳儿源悦",
@@ -81,8 +89,66 @@ async def test_start_generation_endpoint_returns_publishable_title_and_body(star
 
 
 @pytest.mark.asyncio
+async def test_start_generation_endpoint_does_not_send_default_model_override(start_generation_client):
+    client, session_factory = start_generation_client
+    response = await client.post(
+        "/api/v1/content-agent/generation/start",
+        json={
+            "product_topic": "美素佳儿源悦",
+            "target_audience": "新手妈妈",
+            "style": "情绪共情",
+        },
+    )
+
+    assert response.status_code == 200
+    async with session_factory() as session:
+        task = (await session.execute(select(ContentAgentTask))).scalars().first()
+
+    assert task.input_snapshot["generation_snapshot"]["model_config"] == {}
+
+
+@pytest.mark.asyncio
+async def test_start_generation_endpoint_uses_maga_default_provider_model(start_generation_client):
+    client, session_factory = start_generation_client
+    async with session_factory() as session:
+        session.add(
+            LLMProviderConfig(
+                id=1,
+                provider_code="aihubmix",
+                provider_name="AIHubMix",
+                provider_type="openai_compatible",
+                base_url="https://api.example.test/v1",
+                api_key="test-key",
+                default_model="deepseek-v4-flash",
+                priority=100,
+                enabled=1,
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/content-agent/generation/start",
+        json={
+            "product_topic": "美素佳儿源悦",
+            "target_audience": "新手妈妈",
+            "style": "情绪共情",
+        },
+    )
+
+    assert response.status_code == 200
+    async with session_factory() as session:
+        task = (await session.execute(select(ContentAgentTask))).scalars().first()
+
+    assert task.input_snapshot["generation_snapshot"]["model_config"] == {
+        "ge_model": "deepseek-v4-flash",
+        "ae_model": "deepseek-v4-flash",
+    }
+
+
+@pytest.mark.asyncio
 async def test_start_generation_endpoint_uses_default_executor_when_form_sends_blank_code(start_generation_client):
-    response = await start_generation_client.post(
+    client, _session_factory = start_generation_client
+    response = await client.post(
         "/api/v1/content-agent/generation/start",
         json={"product_topic": "美素佳儿源悦", "executor_code": "  "},
     )
@@ -95,9 +161,31 @@ async def test_start_generation_endpoint_uses_default_executor_when_form_sends_b
 
 @pytest.mark.asyncio
 async def test_start_generation_endpoint_returns_404_when_executor_missing(start_generation_client):
-    response = await start_generation_client.post(
+    client, _session_factory = start_generation_client
+    response = await client.post(
         "/api/v1/content-agent/generation/start",
         json={"product_topic": "美素佳儿源悦", "executor_code": "missing_executor"},
     )
 
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_start_generation_endpoint_persists_maga_model_config(start_generation_client):
+    client, session_factory = start_generation_client
+    response = await client.post(
+        "/api/v1/content-agent/generation/start",
+        json={
+            "product_topic": "美素佳儿源悦",
+            "model_config": {"ge_model": "maga-ge", "ae_model": "maga-ae"},
+        },
+    )
+
+    assert response.status_code == 200
+    async with session_factory() as session:
+        task = (await session.execute(select(ContentAgentTask))).scalars().first()
+
+    assert task.input_snapshot["generation_snapshot"]["model_config"] == {
+        "ge_model": "maga-ge",
+        "ae_model": "maga-ae",
+    }

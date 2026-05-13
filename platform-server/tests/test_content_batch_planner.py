@@ -109,6 +109,10 @@ async def test_content_batch_planner_creates_100_diverse_yuanyue_plans():
     structure_types = {item.plan_json["diversity_slot"]["structure_type"] for item in items}
     narrative_focuses = {item.plan_json["diversity_slot"]["narrative_focus"] for item in items}
     cta_types = {item.plan_json["diversity_slot"]["cta_type"] for item in items}
+    content_angles = {item.plan_json["diversity_slot"]["content_angle"] for item in items}
+    scene_types = {item.plan_json["diversity_slot"]["scene_type"] for item in items}
+    evidence_types = {item.plan_json["diversity_slot"]["evidence_type"] for item in items}
+    asset_combo_keys = [item.plan_json["asset_combo_key"] for item in items]
     plan_signatures = {
         (
             item.plan_json["painpoint_ref"]["item_index"],
@@ -125,4 +129,76 @@ async def test_content_batch_planner_creates_100_diverse_yuanyue_plans():
     assert len(structure_types) >= 5
     assert len(narrative_focuses) >= 6
     assert len(cta_types) >= 4
+    assert len(content_angles) >= 6
+    assert len(scene_types) >= 4
+    assert len(evidence_types) >= 4
     assert len(plan_signatures) >= 90
+    assert len(set(asset_combo_keys[:27])) == 27
+    assert items[27].plan_json["asset_reuse_reason"] == "素材组合池已用完，按轮换策略复用"
+
+
+@pytest.mark.asyncio
+async def test_content_batch_planner_accepts_topic_based_painpoint_model():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[AssetRegistry.__table__, ContentBatchJob.__table__, ContentBatchItem.__table__],
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add_all(
+            [
+                AssetRegistry(
+                    asset_type="painpoint_model",
+                    asset_key="yuanyue",
+                    display_name="源悦主题/痛点模型",
+                    version_no=1,
+                    status="active",
+                    content_json={
+                        "topics": [
+                            {
+                                "topic": "便便不规律",
+                                "descriptions": ["羊屎蛋/干硬", "便便又干又硬"],
+                                "selling_points": [{"selling_point": "好消化易吸收"}],
+                            }
+                        ]
+                    },
+                ),
+                AssetRegistry(
+                    asset_type="product_selling_points",
+                    asset_key="yuanyue",
+                    display_name="源悦产品卖点",
+                    version_no=1,
+                    status="active",
+                    content_json={"items": [{"selling_point": "好消化易吸收", "advantage": "软凝乳"}]},
+                ),
+                AssetRegistry(
+                    asset_type="reference_examples",
+                    asset_key="yuanyue",
+                    display_name="源悦参考例文",
+                    version_no=1,
+                    status="active",
+                    content_json={"items": [{"example_id": "ex1", "title": "过来人经验", "body": "新手妈妈别焦虑"}]},
+                ),
+            ]
+        )
+        await session.commit()
+
+        job = await ContentBatchPlanner(session).create_batch_plan(
+            asset_key="yuanyue",
+            product_topic="便便不规律",
+            target_audience="新手妈妈",
+            style="经验老道型",
+            count=1,
+            created_by="test",
+        )
+        await session.commit()
+        item = await session.scalar(select(ContentBatchItem).where(ContentBatchItem.batch_id == job.id))
+
+    assert item is not None
+    painpoint = item.plan_json["painpoint_ref"]["snapshot"]
+    assert painpoint["painpoint"] == "便便不规律"
+    assert painpoint["description"] == "羊屎蛋/干硬；便便又干又硬"
+    assert painpoint["selling_point"] == "好消化易吸收"

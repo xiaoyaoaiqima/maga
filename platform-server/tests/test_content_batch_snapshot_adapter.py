@@ -12,6 +12,7 @@ def test_build_xhs_generation_snapshot_from_batch_plan_includes_assets_and_diver
         "asset_key": "yuanyue",
         "product_topic": "宝宝便便不规律",
         "target_audience": "新手妈妈",
+        "persona_target": None,
         "style": "经验老道型",
         "painpoint_ref": {
             "asset_type": "painpoint_model",
@@ -51,8 +52,14 @@ def test_build_xhs_generation_snapshot_from_batch_plan_includes_assets_and_diver
             "emotion": "稳",
             "cta_type": "轻建议",
             "narrative_focus": "先共情",
+            "content_angle": "误区澄清",
+            "persona_lens": "新手妈妈",
+            "scene_type": "便便观察",
+            "evidence_type": "观察指标",
             "forbidden_overlap_group": "G07",
         },
+        "asset_combo_key": "pain:0|sell:1|example:3",
+        "asset_reuse_reason": None,
     }
 
     snapshot = build_xhs_generation_snapshot_from_plan(plan, batch_id=1, batch_code="batch_demo")
@@ -60,6 +67,7 @@ def test_build_xhs_generation_snapshot_from_batch_plan_includes_assets_and_diver
     assert snapshot["brief"] == {
         "product_topic": "宝宝便便不规律",
         "target_audience": "新手妈妈",
+        "persona_target": None,
         "style": "经验老道型",
         "content_constraints": {"word_count": "150-250", "emoji": "少量"},
     }
@@ -69,9 +77,12 @@ def test_build_xhs_generation_snapshot_from_batch_plan_includes_assets_and_diver
     assert snapshot["assets"]["compliance_rules"][0]["dimension"] == "禁止治疗便秘"
     assert snapshot["diversity_slot"]["opening_type"] == "过来人提醒"
     assert snapshot["diversity_slot"]["narrative_focus"] == "先共情"
+    assert snapshot["diversity_slot"]["content_angle"] == "误区澄清"
+    assert snapshot["asset_refs"]["asset_combo_key"] == "pain:0|sell:1|example:3"
     assert snapshot["batch_context"] == {"batch_id": 1, "batch_code": "batch_demo", "item_no": 7}
     assert snapshot["constraints"]["output_fields"] == ["title", "body"]
     assert snapshot["constraints"]["must_reference_example_without_copying"] is True
+    assert snapshot["model_config"] == {}
 
 
 def test_build_xhs_generation_snapshot_from_brief_creates_minimal_single_generation_snapshot():
@@ -84,6 +95,7 @@ def test_build_xhs_generation_snapshot_from_brief_creates_minimal_single_generat
     assert snapshot["brief"] == {
         "product_topic": "美素佳儿源悦",
         "target_audience": "新手妈妈",
+        "persona_target": None,
         "style": "情绪共情",
         "content_constraints": {"word_count": "150-250", "emoji": "少量"},
     }
@@ -96,6 +108,15 @@ def test_build_xhs_generation_snapshot_from_brief_creates_minimal_single_generat
     assert snapshot["constraints"]["must_use_painpoint"] is False
     assert snapshot["constraints"]["must_reference_example_without_copying"] is False
     assert snapshot["constraints"]["output_fields"] == ["title", "body"]
+
+
+def test_build_xhs_generation_snapshot_keeps_maga_model_config_without_secrets():
+    snapshot = build_xhs_generation_snapshot_from_brief(
+        product_topic="美素佳儿源悦",
+        model_config={"ge_model": "maga-ge", "ae_model": "maga-ae", "api_key": "must-not-pass"},
+    )
+
+    assert snapshot["model_config"] == {"ge_model": "maga-ge", "ae_model": "maga-ae"}
 
 
 def test_build_xhs_generation_snapshot_allows_maga_word_count_override():

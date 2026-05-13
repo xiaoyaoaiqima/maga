@@ -4,7 +4,11 @@ from typing import Any, Literal, Optional
 
 from pydantic import Field
 
-from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
+from app.core.content_agent_defaults import (
+    DEFAULT_EXECUTOR_CODE,
+    MAGA_WORKER_DEFAULT_AE_MODEL,
+    MAGA_WORKER_DEFAULT_GE_MODEL,
+)
 from app.schemas.base import BaseSchema, TimestampSchema
 
 
@@ -26,12 +30,22 @@ class ContentAgentTaskCreate(BaseSchema):
     created_by: Optional[str] = Field(default=None, max_length=100)
 
 
+class ContentAgentModelConfig(BaseSchema):
+    ge_model: Optional[str] = Field(default=MAGA_WORKER_DEFAULT_GE_MODEL, max_length=128)
+    ae_model: Optional[str] = Field(default=MAGA_WORKER_DEFAULT_AE_MODEL, max_length=128)
+
+
 class ContentAgentStartGenerationRequest(BaseSchema):
     product_topic: str = Field(..., max_length=255)
     target_audience: Optional[str] = Field(default=None, max_length=255)
+    persona_target: Optional[str] = Field(default=None, max_length=255)
     style: Optional[str] = Field(default=None, max_length=255)
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     brief_type: str = Field(default="xhs_product_seeding", max_length=128)
+    generation_model_config: ContentAgentModelConfig = Field(
+        default_factory=ContentAgentModelConfig,
+        alias="model_config",
+    )
     priority: int = 0
     created_by: Optional[str] = Field(default=None, max_length=100)
 

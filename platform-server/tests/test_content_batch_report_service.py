@@ -52,7 +52,10 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
                     batch_id=job.id,
                     item_no=1,
                     status="generated",
-                    plan_json={"product_topic": "宝宝便便不规律"},
+                    plan_json={
+                        "product_topic": "宝宝便便不规律",
+                        "asset_combo_key": "pain:0|sell:0|example:0",
+                    },
                     run_id=101,
                     task_id=201,
                     title="宝宝便便乱？先别慌",
@@ -68,13 +71,24 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
                             "replacement_needed": [],
                         },
                     },
-                    diversity_json={"opening_type": "过来人提醒", "structure_type": "痛点-观察-建议"},
+                    diversity_json={
+                        "opening_type": "过来人提醒",
+                        "structure_type": "痛点-观察-建议",
+                        "content_angle": "误区澄清",
+                        "persona_lens": "新手妈妈",
+                        "scene_type": "便便观察",
+                        "evidence_type": "观察指标",
+                    },
                 ),
                 ContentBatchItem(
                     batch_id=job.id,
                     item_no=2,
                     status="generated",
-                    plan_json={"product_topic": "转奶期肚肚敏感"},
+                    plan_json={
+                        "product_topic": "转奶期肚肚敏感",
+                        "asset_combo_key": "pain:0|sell:0|example:0",
+                        "asset_reuse_reason": "素材组合池已用完，按轮换策略复用",
+                    },
                     run_id=102,
                     task_id=202,
                     title="转奶别硬来",
@@ -184,6 +198,12 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
     assert first.final_path == "/tmp/runtime-fast-101/final.md"
     assert first.debug_dir == "/tmp/runtime-fast-101"
     assert first.opening_type == "过来人提醒"
+    assert first.content_angle == "误区澄清"
+    assert first.persona_lens == "新手妈妈"
+    assert first.scene_type == "便便观察"
+    assert first.evidence_type == "观察指标"
+    assert first.asset_combo_key == "pain:0|sell:0|example:0"
+    assert report.items[1].asset_reuse_reason == "素材组合池已用完，按轮换策略复用"
 
     rejected = report.items[2]
     assert rejected.status == "generated"
