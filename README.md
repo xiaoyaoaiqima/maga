@@ -17,18 +17,24 @@ make dev
 这会启动：
 
 - Docker 容器：MySQL / Redis / MAGA Platform Server
-- 本机进程：MAGA Console 前端开发服务
+- 本机进程：Hermes `maga-worker` `/invoke` 服务
 - MAGA clean schema 与默认执行器 seed
 
 访问地址：
 
-- 前端: [http://localhost:3100](http://localhost:3100)
 - 后端: [http://localhost:5100/docs](http://localhost:5100/docs)
+- worker: [http://localhost:8765/health](http://localhost:8765/health)
 
-`make dev` 不会自动启动 Hermes `maga-worker`。如果要跑真实 HTTP worker 链路，先单独启动：
+前端不放 Docker，也不由 `make dev` 自动管理；需要前端时单独在本机启动：
 
 ```bash
-make worker-start
+make frontend-start
+```
+
+`make dev` 会强制重启 `maga-worker`，确保本地修改后的 worker 最新代码被加载。只想重启 MAGA 后端栈和 worker 时也可以显式运行：
+
+```bash
+make dev-restart
 ```
 
 ## 当前内容生成链路
@@ -89,13 +95,17 @@ MAGA_WORKER_RUNTIME_FAST_FAKE=1 make worker-start
 
 ```bash
 make up        # 启动 mysql / redis / backend
-make dev       # 启动 Docker 后端栈和本机前端
+make dev       # 统一启动/刷新 Docker 后端栈、maga-worker
+make dev-restart # 强制重启 maga-worker，并重新 seed schema
+make frontend-start # 单独启动本机前端 Vite
+make frontend-stop  # 单独停止本机前端
+make frontend-status # 查看本机前端状态
 make init-clean-schema # 创建/补齐 MAGA clean schema，并 seed 默认执行器
 make worker-start # 启动宿主机 maga-worker /invoke 服务
 make worker-stop  # 停止宿主机 maga-worker
 make worker-status # 查看宿主机 maga-worker 状态
 make worker-logs   # 查看宿主机 maga-worker 日志
-make dev-stop  # 停止 Docker 后端栈和本机前端
+make dev-stop  # 停止 Docker 后端栈、maga-worker
 make down      # 停止容器
 make build     # 构建 backend 镜像
 make logs      # 查看容器日志

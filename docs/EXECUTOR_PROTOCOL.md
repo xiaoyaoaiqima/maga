@@ -257,7 +257,7 @@ Capability 域可扩展。`xhs.*` 是 v0.1 唯一启用的内容生成域；未�
     "product": "@product_snapshot?",
     "campaign":"@campaign_snapshot?"
   },
-  "model_code": "doubao-seed-2-0-mini-260428",
+  "model_code": "provider-default-or-explicit-model",
   "prompt": "@prompt_snapshot"
 }
 ```

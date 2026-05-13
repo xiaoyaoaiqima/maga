@@ -8,13 +8,14 @@ WORKER_PORT ?= 8765
 WORKER_WORKSPACE ?= /Users/luxifa/.hermes/profiles/maga-worker/workspace
 WORKER_LOG := .local/logs/maga-worker.log
 WORKER_PID := .local/pids/maga-worker.pid
+WORKER_ENV_FILE ?= .env
 DEV_MYSQL_URL ?= mysql+aiomysql://maga:maga123456@127.0.0.1:3306/maga
 MAGA_WORKER_INVOKE_URL ?= http://host.docker.internal:8765/invoke
 MAGA_WORKER_EXECUTOR_TOKEN ?= test-token
 MAGA_WORKER_EXECUTION_MODE ?= runtime_fast
 MAGA_WORKER_RUNTIME_FAST_FAKE ?= 0
 
-.PHONY: up init-clean-schema seed-dev-executors down build logs ps dev dev-stop dev-status dev-logs frontend-start frontend-stop frontend-status frontend-logs worker-start worker-stop worker-status worker-logs local-dev local-dev-stop local-dev-status local-dev-logs
+.PHONY: up init-clean-schema seed-dev-executors down build logs ps dev dev-restart dev-stop dev-status dev-logs frontend-start frontend-stop frontend-status frontend-logs worker-start worker-stop worker-status worker-logs local-dev local-dev-stop local-dev-status local-dev-logs
 
 up:
 	docker compose up --build -d mysql redis backend
@@ -52,31 +53,65 @@ logs:
 ps:
 	docker compose ps
 
-dev: up frontend-start
-	@echo
-	@echo "Development services started."
-	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"
-	@echo "Backend:  http://localhost:$(BACKEND_PORT)/docs"
+dev:
+	@WORKER_PORT="$(WORKER_PORT)" \
+		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_LOG="$(abspath $(WORKER_LOG))" \
+		WORKER_PID="$(abspath $(WORKER_PID))" \
+		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
+		./scripts/maga_dev.sh restart
 
-dev-stop: frontend-stop down
+dev-restart:
+	@WORKER_PORT="$(WORKER_PORT)" \
+		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_LOG="$(abspath $(WORKER_LOG))" \
+		WORKER_PID="$(abspath $(WORKER_PID))" \
+		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
+		./scripts/maga_dev.sh restart
 
-dev-status: ps frontend-status
+dev-stop:
+	@WORKER_PORT="$(WORKER_PORT)" \
+		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_LOG="$(abspath $(WORKER_LOG))" \
+		WORKER_PID="$(abspath $(WORKER_PID))" \
+		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
+		./scripts/maga_dev.sh stop
+
+dev-status:
+	@WORKER_PORT="$(WORKER_PORT)" \
+		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_LOG="$(abspath $(WORKER_LOG))" \
+		WORKER_PID="$(abspath $(WORKER_PID))" \
+		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
+		./scripts/maga_dev.sh status
 
 dev-logs:
-	@echo "Docker logs:    make logs"
-	@echo "Frontend logs:  make frontend-logs"
-	@echo "Worker logs:    make worker-logs"
+	@./scripts/maga_dev.sh logs
 
 frontend-start:
 	@mkdir -p .local/logs .local/pids
-	@if [[ -f "$(FRONTEND_PID)" ]] && kill -0 "$$(cat "$(FRONTEND_PID)")" >/dev/null 2>&1; then \
+	@frontend_healthy=0; \
+	for i in 1 2 3 4 5; do \
+		if /usr/bin/curl -fsS "http://127.0.0.1:$(FRONTEND_PORT)/" >/dev/null 2>&1; then \
+			frontend_healthy=1; \
+			break; \
+		fi; \
+		sleep 0.2; \
+	done; \
+	if [[ "$$frontend_healthy" == "1" ]]; then \
 		echo "Frontend is already running on http://localhost:$(FRONTEND_PORT)"; \
+		if [[ -f "$(FRONTEND_PID)" ]] && ! kill -0 "$$(cat "$(FRONTEND_PID)")" >/dev/null 2>&1; then \
+			rm -f "$(FRONTEND_PID)"; \
+		fi; \
+	elif [[ -f "$(FRONTEND_PID)" ]] && kill -0 "$$(cat "$(FRONTEND_PID)")" >/dev/null 2>&1; then \
+		echo "Frontend pid exists but health check failed: $$(cat "$(FRONTEND_PID)")"; \
+		echo "Check $(FRONTEND_LOG) or run make frontend-stop first."; \
+		exit 1; \
 	else \
+		rm -f "$(FRONTEND_PID)"; \
 		echo "Starting frontend on http://localhost:$(FRONTEND_PORT) ..."; \
-		( \
-			cd platform-console && \
-			env VITE_PORT="$(FRONTEND_PORT)" VITE_PROXY_TARGET="http://localhost:$(BACKEND_PORT)" pnpm dev \
-		) >"$(FRONTEND_LOG)" 2>&1 & \
+		nohup bash -lc 'cd platform-console/apps/raap-admin && exec env VITE_PORT="$(FRONTEND_PORT)" VITE_PROXY_TARGET="http://localhost:$(BACKEND_PORT)" ../../node_modules/.bin/vite --mode development' \
+			>"$(FRONTEND_LOG)" 2>&1 & \
 		echo $$! >"$(FRONTEND_PID)"; \
 		echo "Frontend log: $(FRONTEND_LOG)"; \
 	fi
@@ -91,9 +126,25 @@ frontend-stop:
 	@rm -f "$(FRONTEND_PID)"
 
 frontend-status:
-	@if [[ -f "$(FRONTEND_PID)" ]] && kill -0 "$$(cat "$(FRONTEND_PID)")" >/dev/null 2>&1; then \
+	@frontend_healthy=0; \
+	for i in 1 2 3 4 5; do \
+		if /usr/bin/curl -fsS "http://127.0.0.1:$(FRONTEND_PORT)/" >/dev/null 2>&1; then \
+			frontend_healthy=1; \
+			break; \
+		fi; \
+		sleep 0.2; \
+	done; \
+	if [[ "$$frontend_healthy" == "1" ]]; then \
+		if [[ -f "$(FRONTEND_PID)" ]] && kill -0 "$$(cat "$(FRONTEND_PID)")" >/dev/null 2>&1; then \
+			echo "frontend: running ($$(cat "$(FRONTEND_PID)")) on http://localhost:$(FRONTEND_PORT)"; \
+		else \
+			rm -f "$(FRONTEND_PID)"; \
+			echo "frontend: running on http://localhost:$(FRONTEND_PORT) (pid not tracked)"; \
+		fi; \
+	elif [[ -f "$(FRONTEND_PID)" ]] && kill -0 "$$(cat "$(FRONTEND_PID)")" >/dev/null 2>&1; then \
 		echo "frontend: running ($$(cat "$(FRONTEND_PID)")) on http://localhost:$(FRONTEND_PORT)"; \
 	else \
+		rm -f "$(FRONTEND_PID)"; \
 		echo "frontend: stopped"; \
 	fi
 
@@ -103,52 +154,28 @@ frontend-logs:
 	tail -f "$(FRONTEND_LOG)"
 
 worker-start:
-	@mkdir -p .local/logs .local/pids
-	@if curl -fsS "http://127.0.0.1:$(WORKER_PORT)/health" >/dev/null 2>&1; then \
-		echo "maga-worker is already running on http://localhost:$(WORKER_PORT)"; \
-	elif [[ -f "$(WORKER_PID)" ]] && kill -0 "$$(cat "$(WORKER_PID)")" >/dev/null 2>&1; then \
-		echo "maga-worker pid exists but health check failed: $$(cat "$(WORKER_PID)")"; \
-		echo "Check $(WORKER_LOG) or run make worker-stop first."; \
-		exit 1; \
-	else \
-		rm -f "$(WORKER_PID)"; \
-		echo "Starting maga-worker on http://localhost:$(WORKER_PORT) ..."; \
-		( \
-			cd "$(WORKER_WORKSPACE)" && \
-			nohup env \
-				MAGA_WORKER_EXECUTOR_TOKEN="$(MAGA_WORKER_EXECUTOR_TOKEN)" \
-				MAGA_WORKER_EXECUTION_MODE="$(MAGA_WORKER_EXECUTION_MODE)" \
-				MAGA_WORKER_RUNTIME_FAST_FAKE="$(MAGA_WORKER_RUNTIME_FAST_FAKE)" \
-				/Users/luxifa/maga/.venv/bin/python -m uvicorn tools.maga_executor_server:app \
-					--host 127.0.0.1 \
-					--port "$(WORKER_PORT)" \
-				>"$(abspath $(WORKER_LOG))" 2>&1 & \
-			echo $$! >"$(abspath $(WORKER_PID))"; \
-		); \
-		echo "Worker log: $(WORKER_LOG)"; \
-	fi
+	@WORKER_PORT="$(WORKER_PORT)" \
+		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_LOG="$(abspath $(WORKER_LOG))" \
+		WORKER_PID="$(abspath $(WORKER_PID))" \
+		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
+		./scripts/restart_maga_worker.sh start
 
 worker-stop:
-	@if [[ -f "$(WORKER_PID)" ]] && kill -0 "$$(cat "$(WORKER_PID)")" >/dev/null 2>&1; then \
-		echo "Stopping maga-worker ($$(cat "$(WORKER_PID)"))..."; \
-		kill "$$(cat "$(WORKER_PID)")" >/dev/null 2>&1 || true; \
-	else \
-		echo "maga-worker pid is not running."; \
-	fi
-	@rm -f "$(WORKER_PID)"
+	@WORKER_PORT="$(WORKER_PORT)" \
+		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_LOG="$(abspath $(WORKER_LOG))" \
+		WORKER_PID="$(abspath $(WORKER_PID))" \
+		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
+		./scripts/restart_maga_worker.sh stop
 
 worker-status:
-	@if curl -fsS "http://127.0.0.1:$(WORKER_PORT)/health" >/dev/null 2>&1; then \
-		if [[ -f "$(WORKER_PID)" ]] && kill -0 "$$(cat "$(WORKER_PID)")" >/dev/null 2>&1; then \
-			echo "maga-worker: running ($$(cat "$(WORKER_PID)")) on http://localhost:$(WORKER_PORT)"; \
-		else \
-			echo "maga-worker: running on http://localhost:$(WORKER_PORT) (pid not tracked)"; \
-		fi; \
-	elif [[ -f "$(WORKER_PID)" ]] && kill -0 "$$(cat "$(WORKER_PID)")" >/dev/null 2>&1; then \
-		echo "maga-worker: running ($$(cat "$(WORKER_PID)")) on http://localhost:$(WORKER_PORT)"; \
-	else \
-		echo "maga-worker: stopped"; \
-	fi
+	@WORKER_PORT="$(WORKER_PORT)" \
+		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_LOG="$(abspath $(WORKER_LOG))" \
+		WORKER_PID="$(abspath $(WORKER_PID))" \
+		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
+		./scripts/restart_maga_worker.sh status
 
 worker-logs:
 	@mkdir -p .local/logs
