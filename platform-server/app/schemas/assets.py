@@ -14,6 +14,7 @@ class AssetRegistryResponse(BaseModel):
     display_name: str | None = None
     version_no: int
     status: str
+    asset_stage: str = "production"
     source_name: str | None = None
     source_uri: str | None = None
     source_hash: str | None = None
@@ -25,6 +26,65 @@ class AssetRegistryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AssetRegistrySummaryResponse(BaseModel):
+    id: int
+    asset_type: str
+    asset_key: str
+    display_name: str | None = None
+    version_no: int
+    status: str
+    asset_stage: str = "production"
+    source_name: str | None = None
+    source_hash: str | None = None
+    item_count: int | None = None
+    created_by: str | None = None
+    create_time: datetime | None = None
+    update_time: datetime | None = None
+
+
+class AssetImportRunResponse(BaseModel):
+    id: int
+    source_name: str
+    source_uri: str | None = None
+    source_hash: str | None = None
+    status: str
+    imported_assets: int
+    summary_json: dict[str, Any] | None = None
+    created_by: str | None = None
+    create_time: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class AssetImportResponse(BaseModel):
+    import_run_id: int | None
+    imported_assets: int
+    asset_keys: list[tuple[str, str]]
+    source_hash: str
+
+
+class AssetGenerationOptionsResponse(BaseModel):
+    asset_key: str | None = None
+    asset_keys: list[str]
+    product_topics: list[str]
+    target_audiences: list[str]
+    persona_profiles: list[str] = Field(default_factory=list)
+    styles: list[str]
+
+
+class AssetCandidateCreate(BaseModel):
+    asset_type: str = Field(..., min_length=1)
+    asset_key: str = Field(..., min_length=1)
+    display_name: str | None = None
+    source_name: str | None = None
+    source_uri: str | None = None
+    source_hash: str | None = None
+    content_json: dict[str, Any]
+    metadata_json: dict[str, Any] | None = None
+    created_by: str | None = "maga-worker"
 
 
 class AssetChangeRequestCreate(BaseModel):

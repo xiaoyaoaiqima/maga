@@ -29,6 +29,13 @@ class AssetRegistry(Base):
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="展示名称")
     version_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1, comment="版本号")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True, comment="状态")
+    asset_stage: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="production",
+        index=True,
+        comment="资产阶段：production/candidate",
+    )
     source_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="来源名称")
     source_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="来源 URI")
     source_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True, comment="来源哈希")

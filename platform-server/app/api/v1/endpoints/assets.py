@@ -1,64 +1,268 @@
 """MAGA Asset Registry and Asset Steward proposal endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.schemas.base import ResponseData
 from app.schemas.assets import (
+    AssetCandidateCreate,
     AssetChangeProposalApplyResponse,
     AssetChangeProposalCreate,
     AssetChangeProposalResponse,
     AssetChangeRequestCreate,
     AssetChangeRequestResponse,
+    AssetGenerationOptionsResponse,
+    AssetImportResponse,
+    AssetImportRunResponse,
     AssetRegistryResponse,
+    AssetRegistrySummaryResponse,
 )
-from app.services.asset_service import AssetService
+from app.services.asset_service import AssetService, normalize_asset_content
+from app.services.asset_import_service import import_yuanyue_training_rules
 
 router = APIRouter()
 
 
-@router.get("", response_model=dict)
+@router.get("", response_model=ResponseData)
 async def list_assets(
     asset_type: str | None = Query(default=None),
+    asset_key: str | None = Query(default=None),
+    asset_stage: str | None = Query(default="production"),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    assets = await service.list_assets(asset_type=asset_type, asset_key=asset_key, asset_stage=asset_stage)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=[AssetRegistryResponse.model_validate(asset).model_dump(mode="json") for asset in assets],
+    )
+
+
+@router.get("/summary", response_model=ResponseData)
+async def list_asset_summaries(
+    asset_key: str | None = Query(default=None),
+    asset_stage: str | None = Query(default="production"),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    assets = await service.list_assets(asset_key=asset_key, asset_stage=asset_stage)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=[
+            AssetRegistrySummaryResponse(
+                id=asset.id,
+                asset_type=asset.asset_type,
+                asset_key=asset.asset_key,
+                display_name=asset.display_name,
+                version_no=asset.version_no,
+                status=asset.status,
+                asset_stage=asset.asset_stage,
+                source_name=asset.source_name,
+                source_hash=asset.source_hash,
+                item_count=_asset_item_count(asset.content_json),
+                created_by=asset.created_by,
+                create_time=asset.create_time,
+                update_time=asset.update_time,
+            ).model_dump(mode="json")
+            for asset in assets
+        ],
+    )
+
+
+@router.get("/import-runs", response_model=ResponseData)
+async def list_asset_import_runs(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    runs = await service.list_import_runs(limit=limit)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=[AssetImportRunResponse.model_validate(run).model_dump(mode="json") for run in runs],
+    )
+
+
+@router.get("/change-requests", response_model=ResponseData)
+async def list_asset_change_requests(
+    limit: int = Query(default=20, ge=1, le=100),
+    status: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    requests = await service.list_change_requests(limit=limit, status=status)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=[AssetChangeRequestResponse.model_validate(request).model_dump(mode="json") for request in requests],
+    )
+
+
+@router.post("/change-requests/{request_id}/propose-compliance-rule", response_model=ResponseData)
+async def propose_compliance_rule_from_change_request(
+    request_id: int,
+    created_by: str = Query(default="maga-asset-steward"),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    proposal = await service.create_compliance_rule_proposal_from_request(request_id, created_by=created_by)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="change request not found")
+    await db.commit()
+    await db.refresh(proposal)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetChangeProposalResponse.model_validate(proposal).model_dump(mode="json"),
+    )
+
+
+@router.get("/change-proposals", response_model=ResponseData)
+async def list_asset_change_proposals(
+    limit: int = Query(default=20, ge=1, le=100),
+    status: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    proposals = await service.list_change_proposals(limit=limit, status=status)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=[AssetChangeProposalResponse.model_validate(proposal).model_dump(mode="json") for proposal in proposals],
+    )
+
+
+@router.post("/imports/yuanyue-training-rules", response_model=ResponseData)
+async def import_yuanyue_training_rules_endpoint(
+    file: UploadFile = File(...),
+    asset_key: str = Form(default="yuanyue"),
+    created_by: str = Form(default="maga-worker"),
+    executor_code: str = Form(default="hermes_maga_worker"),
+    db: AsyncSession = Depends(get_db),
+):
+    filename = file.filename or "源悦种草活动-ai训练规则.xlsx"
+    if not filename.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="only .xlsx files are supported")
+
+    workbook_content = await file.read()
+    try:
+        result = await import_yuanyue_training_rules(
+            db,
+            workbook_content,
+            source_name=filename,
+            asset_key=asset_key,
+            created_by=created_by,
+            executor_code=executor_code,
+        )
+        await db.commit()
+        return ResponseData(
+            code=200,
+            message="success",
+            data=AssetImportResponse(
+                import_run_id=result.import_run_id,
+                imported_assets=result.imported_assets,
+                asset_keys=result.asset_keys,
+                source_hash=result.source_hash,
+            ).model_dump(mode="json"),
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/generation-options", response_model=ResponseData)
+async def get_generation_options(
     asset_key: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     service = AssetService(db)
-    assets = await service.list_assets(asset_type=asset_type, asset_key=asset_key)
-    return {"data": [AssetRegistryResponse.model_validate(asset).model_dump(mode="json") for asset in assets]}
+    options = await service.generation_options(asset_key=asset_key)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetGenerationOptionsResponse.model_validate(options).model_dump(mode="json"),
+    )
 
 
-@router.get("/{asset_type}/{asset_key}", response_model=dict)
-async def get_latest_asset(asset_type: str, asset_key: str, db: AsyncSession = Depends(get_db)):
+@router.post("/candidates", response_model=ResponseData)
+async def create_candidate_asset(payload: AssetCandidateCreate, db: AsyncSession = Depends(get_db)):
     service = AssetService(db)
-    asset = await service.get_latest_asset(asset_type, asset_key)
+    asset = await service.create_candidate_asset(payload)
+    await db.commit()
+    await db.refresh(asset)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetRegistryResponse.model_validate(asset).model_dump(mode="json"),
+    )
+
+
+@router.get("/{asset_type}/{asset_key}", response_model=ResponseData)
+async def get_latest_asset(
+    asset_type: str,
+    asset_key: str,
+    asset_stage: str | None = Query(default="production"),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    asset = await service.get_latest_asset(asset_type, asset_key, asset_stage=asset_stage)
     if asset is None:
         raise HTTPException(status_code=404, detail="asset not found")
-    return {"data": AssetRegistryResponse.model_validate(asset).model_dump(mode="json")}
+    response_data = AssetRegistryResponse.model_validate(asset).model_dump(mode="json")
+    response_data["content_json"] = normalize_asset_content(asset.asset_type, asset.content_json)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=response_data,
+    )
 
 
-@router.post("/change-requests", response_model=dict)
+@router.post("/change-requests", response_model=ResponseData)
 async def create_change_request(payload: AssetChangeRequestCreate, db: AsyncSession = Depends(get_db)):
     service = AssetService(db)
     request = await service.create_change_request(payload)
     await db.commit()
-    return {"data": AssetChangeRequestResponse.model_validate(request).model_dump(mode="json")}
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetChangeRequestResponse.model_validate(request).model_dump(mode="json"),
+    )
 
 
-@router.post("/change-proposals", response_model=dict)
+@router.post("/change-proposals", response_model=ResponseData)
 async def create_change_proposal(payload: AssetChangeProposalCreate, db: AsyncSession = Depends(get_db)):
     service = AssetService(db)
     proposal = await service.create_change_proposal(payload)
     await db.commit()
-    return {"data": AssetChangeProposalResponse.model_validate(proposal).model_dump(mode="json")}
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetChangeProposalResponse.model_validate(proposal).model_dump(mode="json"),
+    )
 
 
-@router.post("/change-proposals/{proposal_id}/apply", response_model=dict)
+@router.post("/change-proposals/{proposal_id}/apply", response_model=ResponseData)
 async def apply_change_proposal(proposal_id: int, db: AsyncSession = Depends(get_db)):
     service = AssetService(db)
     proposal, created_ids = await service.apply_change_proposal(proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="proposal not found")
     await db.commit()
-    return {"data": AssetChangeProposalApplyResponse(id=proposal.id, status=proposal.status, created_asset_ids=created_ids).model_dump(mode="json")}
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetChangeProposalApplyResponse(
+            id=proposal.id,
+            status=proposal.status,
+            created_asset_ids=created_ids,
+        ).model_dump(mode="json"),
+    )
+
+
+def _asset_item_count(content: dict | None) -> int | None:
+    items = (content or {}).get("items")
+    return len(items) if isinstance(items, list) else None

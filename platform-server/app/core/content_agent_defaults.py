@@ -6,6 +6,10 @@ LEGACY_XHS_WRITER_EXECUTOR_CODE = "hermes_xhs_writer"
 MAGA_WORKER_PROFILE_NAME = "maga-worker"
 MAGA_WORKER_DISPLAY_NAME = "Hermes MAGA worker"
 MAGA_WORKER_INVOKE_URL = "mock://maga-worker/invoke"
+# MAGA only owns optional model overrides. Leave defaults empty so the worker
+# or provider can choose an available model unless the operator explicitly sets one.
+MAGA_WORKER_DEFAULT_GE_MODEL: str | None = None
+MAGA_WORKER_DEFAULT_AE_MODEL: str | None = None
 LEGACY_XHS_WRITER_DISPLAY_NAME = "Hermes xhs-writer (legacy alias)"
 MAGA_WORKER_MODULE_CAPABILITIES = ["asset-steward", "xhs-writer", "feedback-trainer"]
 
@@ -45,7 +49,10 @@ MAGA_WORKER_MANIFEST_CAPABILITY_SPECS = [
 # ExecutorRegistry.supported_capabilities_json describes the protocol calls this
 # HTTP content-agent executor can receive today. The wider three-module
 # capability map lives in the maga-worker profile manifest.
-MAGA_WORKER_SUPPORTED_CAPABILITY_SPECS = XHS_CAPABILITY_SPECS
+MAGA_WORKER_SUPPORTED_CAPABILITY_SPECS = [
+    *XHS_CAPABILITY_SPECS,
+    {"capability": "asset.import", "schema_version": "1"},
+]
 
 
 def normalize_executor_code(executor_code: str | None) -> str:

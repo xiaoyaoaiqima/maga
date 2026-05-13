@@ -2,7 +2,12 @@
 
 import pytest
 
-from app.services.executor_invocation_service import ExecutorInvocationClient, InvokeResult, build_invoke_envelope
+from app.services.executor_invocation_service import (
+    ExecutorInvocationClient,
+    InvokeResult,
+    MockExecutorInvocationClient,
+    build_invoke_envelope,
+)
 
 
 class FakeResponse:
@@ -86,6 +91,26 @@ async def test_mvp_invoke_sync_200_returns_succeeded_output_envelope():
         "X-Maga-Protocol-Version": "0.1",
         "Authorization": "Bearer test-token",
     }
+    assert http_client.calls[0]["timeout"] == 180.0
+
+
+@pytest.mark.asyncio
+async def test_executor_invoke_timeout_can_be_configured(monkeypatch):
+    monkeypatch.setenv("MAGA_EXECUTOR_INVOKE_TIMEOUT_SECONDS", "240")
+    http_client = FakeAsyncClient(
+        FakeResponse(
+            200,
+            {"stage_call_id": "stage-timeout", "status": "succeeded", "output": {}, "stats": {}},
+        )
+    )
+    client = ExecutorInvocationClient(http_client=http_client)
+
+    await client.invoke(
+        invoke_url="https://executor.example.com/invoke",
+        envelope={"stage_call_id": "stage-timeout", "capability": "xhs.generate_draft"},
+    )
+
+    assert http_client.calls[0]["timeout"] == 240.0
 
 
 @pytest.mark.asyncio
@@ -155,3 +180,26 @@ async def test_invoke_raises_on_unexpected_status():
             invoke_url="https://executor.example.com/invoke",
             envelope={"stage_call_id": "stage-004"},
         )
+
+
+@pytest.mark.asyncio
+async def test_mock_executor_supports_asset_import_for_local_asset_smoke():
+    client = MockExecutorInvocationClient()
+    result = await client.invoke(
+        invoke_url="mock://maga-worker/invoke",
+        envelope={
+            "stage_call_id": "asset-import-mock",
+            "capability": "asset.import",
+            "input": {"asset_key": "yuanyue", "source_hash": "hash-001"},
+        },
+    )
+
+    assert result.status == "succeeded"
+    assert result.output["asset_key"] == "yuanyue"
+    assert result.output["source_hash"] == "hash-001"
+    assert {asset["asset_type"] for asset in result.output["assets"]} >= {
+        "brand_profile",
+        "painpoint_model",
+        "product_selling_points",
+        "ugc_expression_corpus",
+    }

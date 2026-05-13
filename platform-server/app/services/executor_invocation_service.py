@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import os
 from typing import Any
 
 import httpx
@@ -75,6 +76,7 @@ class MockExecutorInvocationClient:
                     "brief_type": input_payload.get("brief_type"),
                     "product_topic": input_payload.get("product_topic"),
                     "target_audience": input_payload.get("target_audience") or "小红书用户",
+                    "persona_target": input_payload.get("persona_target"),
                     "style": input_payload.get("style") or "自然真实",
                     "tone_hints": [input_payload.get("style") or "自然真实"],
                 }
@@ -120,6 +122,115 @@ class MockExecutorInvocationClient:
                     "title": previous_draft.get("title") or "改写后标题",
                     "body": previous_draft.get("body") or "改写后正文",
                 }
+            }
+        elif capability == "asset.import":
+            asset_key = input_payload.get("asset_key") or "yuanyue"
+            source_hash = input_payload.get("source_hash") or "mock-source-hash"
+            output = {
+                "asset_key": asset_key,
+                "source_hash": source_hash,
+                "warnings": ["mock asset.import output; start real maga-worker for workbook parsing"],
+                "assets": [
+                    {
+                        "asset_type": "brand_profile",
+                        "asset_key": asset_key,
+                        "display_name": "源悦品牌资料",
+                        "content_json": {
+                            "brand_key": asset_key,
+                            "brand_name": "源悦",
+                            "content_focus": "好消化易吸收，对应便便好，不上火",
+                            "content_style": "高质量真实用户ugc",
+                        },
+                    },
+                    {
+                        "asset_type": "product_selling_points",
+                        "asset_key": asset_key,
+                        "display_name": "源悦产品卖点",
+                        "content_json": {
+                            "items": [
+                                {
+                                    "level": "核心卖点",
+                                    "selling_point": "好消化易吸收",
+                                    "ingredient": "软分子蛋白",
+                                    "advantage": "形成结构松散的软凝乳",
+                                    "expressions": ["喝起来温和，宝宝接受度更友好"],
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "asset_type": "painpoint_model",
+                        "asset_key": asset_key,
+                        "display_name": "源悦主题/痛点模型",
+                        "content_json": {
+                            "topics": [
+                                {
+                                    "topic": "便便不规律",
+                                    "painpoint": "便便不规律",
+                                    "descriptions": ["羊屎蛋/干硬", "便便又干又硬"],
+                                    "selling_points": [
+                                        {
+                                            "selling_point": "好消化易吸收",
+                                            "descriptions": ["软分子蛋白形成结构松散的软凝乳"],
+                                            "expressions": ["便便基本一天一次，拉起来也不费劲"],
+                                        }
+                                    ],
+                                }
+                            ],
+                            "items": [
+                                {
+                                    "painpoint": "便便不规律",
+                                    "description": "羊屎蛋/干硬；便便又干又硬",
+                                    "selling_point": "好消化易吸收",
+                                    "selling_points": ["好消化易吸收"],
+                                }
+                            ],
+                        },
+                    },
+                    {
+                        "asset_type": "reference_examples",
+                        "asset_key": asset_key,
+                        "display_name": "源悦参考例文",
+                        "content_json": {
+                            "items": [
+                                {
+                                    "example_id": "yuanyue_ref_mock_001",
+                                    "title": "真实经验！转奶终于不踩坑",
+                                    "body": "新手妈妈别急着焦虑，先看宝宝喝奶和便便状态。",
+                                    "reference_type": "用后分享",
+                                    "style_tags": ["用后分享"],
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "asset_type": "ugc_expression_corpus",
+                        "asset_key": asset_key,
+                        "display_name": "源悦 UGC 卖点表述语料",
+                        "content_json": {
+                            "items": [
+                                {
+                                    "painpoint_or_selling_point": "便便不规律",
+                                    "expression": "便便基本一天一次，拉起来也不费劲",
+                                    "owner": "mock",
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "asset_type": "compliance_rules",
+                        "asset_key": asset_key,
+                        "display_name": "源悦审核规则",
+                        "content_json": {
+                            "items": [
+                                {
+                                    "dimension": "不得宣称治疗便秘",
+                                    "feedback": "避免医疗化、绝对化表述",
+                                }
+                            ]
+                        },
+                    },
+                ],
             }
         else:
             output = {}
@@ -175,6 +286,7 @@ def _mock_xhs_draft_from_snapshot(structured_brief: dict[str, Any], generation_s
 
     topic = _clean_topic(structured_brief.get("product_topic") or "源悦")
     audience = structured_brief.get("target_audience") or "妈妈"
+    persona = structured_brief.get("persona_target") or (generation_snapshot.get("brief") or {}).get("persona_target")
     painpoint_text = painpoint.get("painpoint") or topic
     painpoint_desc = painpoint.get("description") or "宝宝状态不稳定"
     selling_text = selling_point.get("selling_point") or painpoint.get("selling_point") or "好消化易吸收"
@@ -194,7 +306,7 @@ def _mock_xhs_draft_from_snapshot(structured_brief: dict[str, Any], generation_s
         title = f"懂{audience}看到{painpoint_text}时的焦虑"
 
     body = (
-        f"过来人提醒：看到宝宝{painpoint_text}，先别急着给自己扣帽子。\n\n"
+        f"{persona or '过来人'}提醒：看到宝宝{painpoint_text}，先别急着给自己扣帽子。\n\n"
         f"我会先看几个日常信号：便便软硬、拉臭臭费不费劲、喝奶后肚肚舒不舒服。像{painpoint_desc}这种情况，"
         f"更适合用观察记录去判断，而不是一上来就下结论。\n\n"
         f"这篇参考的是「{example_title}」这类真实分享的节奏，但不照搬原句。我的选择逻辑是：奶粉要温和，宝宝愿意喝，"
@@ -208,12 +320,20 @@ def _mock_xhs_draft_from_snapshot(structured_brief: dict[str, Any], generation_s
 def _clean_topic(topic: str) -> str:
     return str(topic).split("｜", 1)[0]
 
+def _default_timeout_seconds() -> float:
+    raw = os.getenv("MAGA_EXECUTOR_INVOKE_TIMEOUT_SECONDS", "180")
+    try:
+        return float(raw)
+    except ValueError:
+        return 180.0
+
+
 class ExecutorInvocationClient:
     """HTTP client for MAGA push invocation of an executor capability."""
 
-    def __init__(self, http_client: Any | None = None, timeout_seconds: float = 30.0):
+    def __init__(self, http_client: Any | None = None, timeout_seconds: float | None = None):
         self.http_client = http_client or httpx.AsyncClient()
-        self.timeout_seconds = timeout_seconds
+        self.timeout_seconds = timeout_seconds if timeout_seconds is not None else _default_timeout_seconds()
 
     async def invoke(self, *, invoke_url: str, envelope: dict[str, Any], executor_token: str | None = None) -> InvokeResult:
         headers = {"X-Maga-Protocol-Version": PROTOCOL_VERSION}

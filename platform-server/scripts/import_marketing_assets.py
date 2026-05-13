@@ -47,7 +47,7 @@ async def _amain() -> None:
         async with session_factory() as session:
             result = await import_yuanyue_training_rules(
                 session,
-                workbook,
+                workbook.read_bytes(),
                 source_name=args.source_name or workbook.name,
                 asset_key=args.asset_key,
                 created_by=args.created_by,

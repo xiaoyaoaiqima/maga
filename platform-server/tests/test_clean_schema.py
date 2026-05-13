@@ -35,6 +35,8 @@ def test_clean_registry_contains_phase1_core_models_and_not_legacy_models():
         "ContentAgentRun",
         "ContentAgentEvent",
         "ContentAgentArtifact",
+        "LLMProviderConfig",
+        "LLMModelRoute",
     }.issubset(model_names)
     assert "Job" not in model_names
     assert "SubJob" not in model_names

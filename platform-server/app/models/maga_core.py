@@ -25,6 +25,8 @@ from app.models.content_agent import (
     ContentFeedback,
     ExecutorRegistry,
 )
+from app.models.llm_model_route import LLMModelRoute
+from app.models.llm_provider_config import LLMProviderConfig
 
 
 class ContentBrief(Base):
@@ -88,6 +90,8 @@ MAGA_CORE_MODELS = (
     AssetImportRun,
     AssetChangeRequest,
     AssetChangeProposal,
+    LLMProviderConfig,
+    LLMModelRoute,
 )
 
 MAGA_CORE_TABLE_NAMES = tuple(model.__tablename__ for model in MAGA_CORE_MODELS)

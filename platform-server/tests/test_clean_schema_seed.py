@@ -41,6 +41,7 @@ async def test_seed_clean_schema_registers_hermes_maga_worker_executor():
         "xhs.generate_draft",
         "xhs.run_ae_review",
         "xhs.rewrite_draft",
+        "asset.import",
     }
     assert "asset.query" not in capabilities
     assert "feedback.collect" not in capabilities
