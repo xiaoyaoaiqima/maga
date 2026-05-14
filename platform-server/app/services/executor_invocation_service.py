@@ -283,6 +283,7 @@ def _mock_xhs_draft_from_snapshot(structured_brief: dict[str, Any], generation_s
     painpoint = assets.get("painpoint") or {}
     selling_point = assets.get("selling_point") or {}
     examples = assets.get("reference_examples") or []
+    writing_pattern = assets.get("writing_pattern") or {}
 
     topic = _clean_topic(structured_brief.get("product_topic") or "源悦")
     audience = structured_brief.get("target_audience") or "妈妈"
@@ -292,8 +293,10 @@ def _mock_xhs_draft_from_snapshot(structured_brief: dict[str, Any], generation_s
     selling_text = selling_point.get("selling_point") or painpoint.get("selling_point") or "好消化易吸收"
     advantage = selling_point.get("advantage") or "喝起来温和、接受度比较友好"
     opening_type = diversity.get("opening_type") or "真实经历"
-    structure_type = diversity.get("structure_type") or "痛点-观察-建议"
+    structure_type = writing_pattern.get("story_arc") or diversity.get("structure_type") or "痛点-观察-建议"
     example_title = examples[0].get("title") if examples and isinstance(examples[0], dict) else "真实转奶经验"
+    proof_style = writing_pattern.get("proof_style") or "观察记录"
+    ending_pattern = writing_pattern.get("ending_pattern") or "轻建议收束"
 
     title = f"{painpoint_text}别急，源悦这样观察更稳"
     if opening_type == "真实经历":
@@ -311,7 +314,8 @@ def _mock_xhs_draft_from_snapshot(structured_brief: dict[str, Any], generation_s
         f"更适合用观察记录去判断，而不是一上来就下结论。\n\n"
         f"这篇参考的是「{example_title}」这类真实分享的节奏，但不照搬原句。我的选择逻辑是：奶粉要温和，宝宝愿意喝，"
         f"也要看{selling_text}。源悦打动我的点就是{selling_text}，{advantage}，对新手妈妈来说判断成本低一点。\n\n"
-        f"如果你家也在纠结{topic}，可以按“{structure_type}”的思路慢慢看：先观察状态，再看适应度，最后再决定要不要继续。"
+        f"如果你家也在纠结{topic}，可以按“{structure_type}”的思路慢慢看，用{proof_style}把判断说清楚，"
+        f"最后用“{ending_pattern}”收住，不用把话说满。"
         f"持续明显不舒服还是要问专业人士，日常分享不替代专业建议。"
     )
     return {"title": title, "body": body}

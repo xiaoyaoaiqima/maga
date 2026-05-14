@@ -76,6 +76,10 @@ const isPersonaProfilesAsset = computed(
   () => selectedAsset.value?.asset_type === 'persona_profiles',
 );
 
+const isWritingPatternsAsset = computed(
+  () => selectedAsset.value?.asset_type === 'reference_writing_patterns',
+);
+
 const personaProfileItems = computed(() => {
   const items = selectedAsset.value?.content_json?.items;
   if (!Array.isArray(items)) return [];
@@ -84,6 +88,17 @@ const personaProfileItems = computed(() => {
     .map((item, index) => ({
       ...item,
       row_key: item.persona_id || `${item.persona_name || 'persona'}-${index}`,
+    }));
+});
+
+const writingPatternItems = computed(() => {
+  const items = selectedAsset.value?.content_json?.items;
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((item) => item && typeof item === 'object')
+    .map((item, index) => ({
+      ...item,
+      row_key: item.pattern_id || `${item.source_example_id || 'pattern'}-${index}`,
     }));
 });
 
@@ -396,6 +411,23 @@ const personaColumns = [
     key: 'review_status',
     width: 100,
   },
+];
+
+const writingPatternColumns = [
+  { title: '来源', dataIndex: 'source_title', key: 'source_title', width: 180 },
+  {
+    title: '开头方式',
+    dataIndex: 'opening_pattern',
+    key: 'opening_pattern',
+  },
+  { title: '叙事结构', dataIndex: 'story_arc', key: 'story_arc' },
+  {
+    title: '卖点植入',
+    dataIndex: 'selling_point_placement',
+    key: 'selling_point_placement',
+  },
+  { title: '证据方式', dataIndex: 'proof_style', key: 'proof_style', width: 160 },
+  { title: '状态', dataIndex: 'review_status', key: 'review_status', width: 100 },
 ];
 
 async function loadAssets() {
@@ -799,6 +831,77 @@ onMounted(() => {
             </Table>
           </div>
 
+          <div v-else-if="isWritingPatternsAsset" class="writing-pattern-view">
+            <div class="hierarchy-summary">
+              <Tag color="blue">{{ writingPatternItems.length }} 条写法资产</Tag>
+              <Tag color="orange">
+                {{
+                  writingPatternItems.filter(
+                    (item) => item.review_status === 'pending',
+                  ).length
+                }}
+                个待审核
+              </Tag>
+              <Tag>
+                来源例文 {{ selectedAsset.content_json?.source_asset_id || '-' }}
+              </Tag>
+            </div>
+            <Table
+              :columns="writingPatternColumns"
+              :data-source="writingPatternItems"
+              :pagination="{ pageSize: 6 }"
+              row-key="row_key"
+              size="small"
+            >
+              <template #bodyCell="{ column, record, text }">
+                <template v-if="column.key === 'source_title'">
+                  <div class="persona-name">{{ formatValue(text) }}</div>
+                  <div class="persona-tone">
+                    {{ formatValue(record.source_example_id) }}
+                  </div>
+                </template>
+                <template v-else-if="column.key === 'review_status'">
+                  <Tag
+                    :color="
+                      record.review_status === 'approved'
+                        ? 'green'
+                        : 'orange'
+                    "
+                  >
+                    {{ formatValue(text) }}
+                  </Tag>
+                </template>
+                <template v-else>
+                  <span class="pattern-text">{{ formatValue(text) }}</span>
+                </template>
+              </template>
+              <template #expandedRowRender="{ record }">
+                <div class="pattern-expanded">
+                  <div>
+                    <span class="expanded-label">适配主题：</span>
+                    {{ (record.topic_fit || []).join('、') || '-' }}
+                  </div>
+                  <div>
+                    <span class="expanded-label">适配人群：</span>
+                    {{ (record.audience_fit || []).join('、') || '-' }}
+                  </div>
+                  <div>
+                    <span class="expanded-label">语气特征：</span>
+                    {{ (record.voice_traits || []).join('、') || '-' }}
+                  </div>
+                  <div>
+                    <span class="expanded-label">禁复用短语：</span>
+                    {{ (record.avoid_copy_phrases || []).join('；') || '-' }}
+                  </div>
+                  <div>
+                    <span class="expanded-label">风险提示：</span>
+                    {{ (record.risk_notes || []).join('；') || '-' }}
+                  </div>
+                </div>
+              </template>
+            </Table>
+          </div>
+
           <Table
             v-else
             class="preview-table"
@@ -1034,6 +1137,10 @@ onMounted(() => {
   margin-top: 12px;
 }
 
+.writing-pattern-view {
+  margin-top: 12px;
+}
+
 .hierarchy-summary {
   margin-bottom: 12px;
 }
@@ -1122,12 +1229,25 @@ onMounted(() => {
   line-height: 1.6;
 }
 
+.pattern-expanded {
+  color: #595959;
+  display: grid;
+  gap: 6px;
+  line-height: 1.6;
+}
+
 .expanded-label {
   color: #262626;
   font-weight: 500;
 }
 
 .expression-text {
+  white-space: normal;
+}
+
+.pattern-text {
+  display: inline-block;
+  max-width: 320px;
   white-space: normal;
 }
 

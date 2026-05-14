@@ -66,6 +66,36 @@ async def test_content_batch_planner_creates_100_diverse_yuanyue_plans():
                     },
                 ),
                 AssetRegistry(
+                    asset_type="reference_writing_patterns",
+                    asset_key="yuanyue",
+                    display_name="源悦写法资产",
+                    version_no=1,
+                    status="active",
+                    asset_stage="candidate",
+                    content_json={
+                        "items": [
+                            {
+                                "pattern_id": "wp1",
+                                "topic_fit": ["便便不规律"],
+                                "audience_fit": ["新手妈妈"],
+                                "style_fit": ["经验老道型"],
+                                "opening_pattern": "先共情便便焦虑",
+                                "story_arc": "痛点场景 -> 观察判断 -> 轻建议",
+                                "proof_style": "日常观察记录",
+                            },
+                            {
+                                "pattern_id": "wp2",
+                                "topic_fit": ["换奶适应"],
+                                "audience_fit": ["转奶期宝宝家长"],
+                                "style_fit": ["清单型"],
+                                "opening_pattern": "先列换奶清单",
+                                "story_arc": "清单 -> 对比 -> 收束",
+                                "proof_style": "清单建议",
+                            },
+                        ]
+                    },
+                ),
+                AssetRegistry(
                     asset_type="compliance_rules",
                     asset_key="yuanyue",
                     display_name="源悦审核规则",
@@ -101,6 +131,7 @@ async def test_content_batch_planner_creates_100_diverse_yuanyue_plans():
     assert all(item.plan_json["asset_key"] == "yuanyue" for item in items)
     assert all(item.plan_json["painpoint_ref"] for item in items)
     assert all(item.plan_json["reference_example_refs"] for item in items)
+    assert all(item.plan_json["writing_pattern_ref"] for item in items)
     assert all(item.plan_json["compliance_rule_refs"] for item in items)
     assert all(item.plan_json["brief_constraints"]["word_count"] == "150-250" for item in items)
     assert all(item.plan_json["brief_constraints"]["emoji"] == "少量" for item in items)
@@ -135,6 +166,7 @@ async def test_content_batch_planner_creates_100_diverse_yuanyue_plans():
     assert len(plan_signatures) >= 90
     assert len(set(asset_combo_keys[:27])) == 27
     assert items[27].plan_json["asset_reuse_reason"] == "素材组合池已用完，按轮换策略复用"
+    assert items[0].plan_json["writing_pattern_ref"]["item_id"] == "wp1"
 
 
 @pytest.mark.asyncio
@@ -182,6 +214,25 @@ async def test_content_batch_planner_accepts_topic_based_painpoint_model():
                     status="active",
                     content_json={"items": [{"example_id": "ex1", "title": "过来人经验", "body": "新手妈妈别焦虑"}]},
                 ),
+                AssetRegistry(
+                    asset_type="reference_writing_patterns",
+                    asset_key="yuanyue",
+                    display_name="源悦写法资产",
+                    version_no=1,
+                    status="active",
+                    asset_stage="candidate",
+                    content_json={
+                        "items": [
+                            {
+                                "pattern_id": "wp_topic",
+                                "topic_fit": ["便便不规律"],
+                                "audience_fit": ["新手妈妈"],
+                                "style_fit": ["经验老道型"],
+                                "opening_pattern": "先共情便便焦虑",
+                            }
+                        ]
+                    },
+                ),
             ]
         )
         await session.commit()
@@ -202,3 +253,4 @@ async def test_content_batch_planner_accepts_topic_based_painpoint_model():
     assert painpoint["painpoint"] == "便便不规律"
     assert painpoint["description"] == "羊屎蛋/干硬；便便又干又硬"
     assert painpoint["selling_point"] == "好消化易吸收"
+    assert item.plan_json["writing_pattern_ref"]["item_id"] == "wp_topic"

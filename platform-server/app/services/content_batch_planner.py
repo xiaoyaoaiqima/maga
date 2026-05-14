@@ -86,11 +86,13 @@ class ContentBatchPlanner:
         painpoints_asset = await self._latest_asset("painpoint_model", asset_key)
         selling_asset = await self._latest_asset("product_selling_points", asset_key)
         examples_asset = await self._latest_asset("reference_examples", asset_key)
+        writing_patterns_asset = await self._latest_asset("reference_writing_patterns", asset_key)
         compliance_asset = await self._latest_asset("compliance_rules", asset_key)
 
         painpoints = self._painpoint_items(painpoints_asset)
         selling_points = self._items(selling_asset)
         examples = self._items(examples_asset)
+        writing_patterns = self._items(writing_patterns_asset)
         compliance_rules = self._items(compliance_asset)
         if not painpoints:
             raise ValueError(f"missing painpoint_model items for {asset_key}")
@@ -138,6 +140,7 @@ class ContentBatchPlanner:
                 painpoints=painpoints,
                 selling_points=selling_points,
                 examples=examples,
+                writing_patterns=writing_patterns,
                 compliance_rules=compliance_rules,
                 model_config=model_config,
                 used_asset_combo_keys=used_asset_combo_keys,
@@ -148,13 +151,14 @@ class ContentBatchPlanner:
         return job
 
     async def _latest_asset(self, asset_type: str, asset_key: str) -> AssetRegistry | None:
+        asset_stage = "candidate" if asset_type == "reference_writing_patterns" else "production"
         result = await self.db.execute(
             select(AssetRegistry)
             .where(
                 AssetRegistry.asset_type == asset_type,
                 AssetRegistry.asset_key == asset_key,
                 AssetRegistry.status == "active",
-                AssetRegistry.asset_stage == "production",
+                AssetRegistry.asset_stage == asset_stage,
             )
             .order_by(AssetRegistry.version_no.desc())
             .limit(1)
@@ -173,6 +177,7 @@ class ContentBatchPlanner:
         painpoints: list[dict[str, Any]],
         selling_points: list[dict[str, Any]],
         examples: list[dict[str, Any]],
+        writing_patterns: list[dict[str, Any]],
         compliance_rules: list[dict[str, Any]],
         model_config: dict[str, Any] | None = None,
         used_asset_combo_keys: set[str] | None = None,
@@ -197,6 +202,13 @@ class ContentBatchPlanner:
         scene_type = SCENE_TYPES[(zero * 2 + zero // len(SCENE_TYPES)) % len(SCENE_TYPES)]
         evidence_type = EVIDENCE_TYPES[(zero * 5 + zero // len(EVIDENCE_TYPES)) % len(EVIDENCE_TYPES)]
         asset_combo_key = self._asset_combo_key(pain_idx, selling_idx, example_idx)
+        writing_pattern_idx = self._writing_pattern_index(
+            zero,
+            writing_patterns=writing_patterns,
+            product_topic=product_topic,
+            target_audience=target_audience,
+            style=style,
+        )
 
         return {
             "item_no": item_no,
@@ -210,6 +222,14 @@ class ContentBatchPlanner:
             "painpoint_ref": self._ref("painpoint_model", asset_key, pain_idx, painpoints[pain_idx]),
             "selling_point_ref": self._ref("product_selling_points", asset_key, selling_idx, selling_points[selling_idx]),
             "reference_example_refs": [self._ref("reference_examples", asset_key, example_idx, examples[example_idx])],
+            "writing_pattern_ref": self._ref(
+                "reference_writing_patterns",
+                asset_key,
+                writing_pattern_idx,
+                writing_patterns[writing_pattern_idx],
+            )
+            if writing_pattern_idx is not None
+            else None,
             "compliance_rule_refs": [
                 self._ref("compliance_rules", asset_key, compliance_idx, compliance_rules[compliance_idx])
             ]
@@ -271,6 +291,25 @@ class ContentBatchPlanner:
         return f"pain:{pain_idx}|sell:{selling_idx}|example:{example_idx}"
 
     @staticmethod
+    def _writing_pattern_index(
+        zero: int,
+        *,
+        writing_patterns: list[dict[str, Any]],
+        product_topic: str,
+        target_audience: str | None,
+        style: str | None,
+    ) -> int | None:
+        if not writing_patterns:
+            return None
+        scored = []
+        for index, pattern in enumerate(writing_patterns):
+            score = _pattern_match_score(pattern, product_topic=product_topic, target_audience=target_audience, style=style)
+            # The zero-based offset keeps equal-score patterns rotating across items.
+            scored.append((score, -((index - zero) % len(writing_patterns)), index))
+        scored.sort(reverse=True)
+        return scored[0][2]
+
+    @staticmethod
     def _items(asset: AssetRegistry | None) -> list[dict[str, Any]]:
         if asset is None or not asset.content_json:
             return []
@@ -292,7 +331,10 @@ class ContentBatchPlanner:
             "asset_type": asset_type,
             "asset_key": asset_key,
             "item_index": index,
-            "item_id": item.get("asset_steward_id") or item.get("example_id") or f"{asset_type}_{index + 1}",
+            "item_id": item.get("asset_steward_id")
+            or item.get("pattern_id")
+            or item.get("example_id")
+            or f"{asset_type}_{index + 1}",
             "snapshot": item,
         }
 
@@ -314,3 +356,36 @@ def _topic_to_plan_item(topic: dict[str, Any]) -> dict[str, Any]:
         "selling_point": topic.get("selling_point") or (selling_point_names[0] if selling_point_names else None),
         "selling_points": selling_point_names,
     }
+
+
+def _pattern_match_score(
+    pattern: dict[str, Any],
+    *,
+    product_topic: str,
+    target_audience: str | None,
+    style: str | None,
+) -> int:
+    score = 0
+    haystacks = {
+        "topic_fit": product_topic,
+        "audience_fit": target_audience or "",
+        "style_fit": style or "",
+    }
+    for key, needle in haystacks.items():
+        if not needle:
+            continue
+        for value in pattern.get(key) or []:
+            text = str(value).strip()
+            if text and (text in needle or needle in text):
+                score += 2
+            elif text and _has_overlap(text, needle):
+                score += 1
+    if pattern.get("review_status") == "approved":
+        score += 1
+    return score
+
+
+def _has_overlap(left: str, right: str) -> bool:
+    left_terms = {left[index : index + 2] for index in range(max(len(left) - 1, 0))}
+    right_terms = {right[index : index + 2] for index in range(max(len(right) - 1, 0))}
+    return bool(left_terms & right_terms)
