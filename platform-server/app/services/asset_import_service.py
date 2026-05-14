@@ -4,15 +4,18 @@ from __future__ import annotations
 import base64
 import hashlib
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
-from sqlalchemy import select, update
+import yaml
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE, normalize_executor_code
 from app.models.content_agent import ExecutorRegistry
 from app.models.maga_assets import AssetImportRun, AssetRegistry
+from app.models.prompt_optimizer import PromptAsset, PromptVersion
 from app.services.executor_invocation_service import (
     ExecutorInvocationClient,
     MockExecutorInvocationClient,
@@ -22,12 +25,23 @@ from app.services.executor_invocation_service import (
 
 ASSET_IMPORT_CAPABILITY = "asset.import"
 ASSET_IMPORT_SCHEMA_VERSION = "1"
+WORKER_STATIC_ASSET_SOURCE_NAME = "maga-worker-static-assets"
 
 
 @dataclass(slots=True)
 class AssetImportResult:
     import_run_id: int | None
     imported_assets: int
+    asset_keys: list[tuple[str, str]]
+    source_hash: str
+
+
+@dataclass(slots=True)
+class WorkerStaticAssetImportResult:
+    import_run_id: int | None
+    imported_prompts: int
+    imported_assets: int
+    prompt_names: list[str]
     asset_keys: list[tuple[str, str]]
     source_hash: str
 
@@ -125,6 +139,74 @@ async def import_yuanyue_training_rules(
     )
 
 
+async def import_maga_worker_static_assets(
+    db: AsyncSession,
+    workspace_path: str | Path,
+    *,
+    source_name: str = WORKER_STATIC_ASSET_SOURCE_NAME,
+    created_by: str = "maga-asset-steward",
+) -> WorkerStaticAssetImportResult:
+    """Import stable maga-worker prompt/corpus files into MAGA-managed stores.
+
+    Worker outputs and executable code are intentionally excluded. This first
+    import layer gives MAGA versioned ownership of static prompt assets while
+    the worker can keep reading local fallback files until the runtime contract
+    starts carrying prompt bundles.
+    """
+    workspace = Path(workspace_path).expanduser().resolve()
+    if not workspace.exists() or not workspace.is_dir():
+        raise ValueError(f"worker workspace not found: {workspace}")
+
+    prompt_files = _discover_worker_prompt_files(workspace)
+    registry_files = _discover_worker_registry_files(workspace)
+    source_hash = _combined_file_hash([*prompt_files, *registry_files])
+
+    prompt_names: list[str] = []
+    asset_keys: list[tuple[str, str]] = []
+    changed_prompts = 0
+    changed_assets = 0
+
+    for path in prompt_files:
+        prompt = await _upsert_prompt_file(db, workspace, path, source_name=source_name, created_by=created_by)
+        prompt_names.append(prompt.name)
+        if getattr(prompt, "_maga_import_changed", False):
+            changed_prompts += 1
+
+    for path in registry_files:
+        asset = await _upsert_registry_file(db, workspace, path, source_name=source_name, created_by=created_by)
+        asset_keys.append((asset.asset_type, asset.asset_key))
+        if getattr(asset, "_maga_import_changed", False):
+            changed_assets += 1
+
+    run = AssetImportRun(
+        source_name=source_name,
+        source_uri=f"file://{workspace}",
+        source_hash=source_hash,
+        status="succeeded",
+        imported_assets=changed_prompts + changed_assets,
+        summary_json={
+            "workspace": str(workspace),
+            "imported_prompts": changed_prompts,
+            "imported_assets": changed_assets,
+            "prompt_names": prompt_names,
+            "asset_keys": asset_keys,
+            "excluded_dirs": ["outputs", "tests", "__pycache__", ".pytest_cache"],
+        },
+        created_by=created_by,
+    )
+    db.add(run)
+    await db.flush()
+
+    return WorkerStaticAssetImportResult(
+        import_run_id=run.id,
+        imported_prompts=changed_prompts,
+        imported_assets=changed_assets,
+        prompt_names=prompt_names,
+        asset_keys=asset_keys,
+        source_hash=source_hash,
+    )
+
+
 async def _require_executor(db: AsyncSession, executor_code: str | None) -> ExecutorRegistry:
     normalized = normalize_executor_code(executor_code)
     result = await db.execute(select(ExecutorRegistry).where(ExecutorRegistry.executor_code == normalized))
@@ -138,6 +220,237 @@ def _invocation_client_for_invoke_url(invoke_url: str | None):
     if invoke_url and invoke_url.startswith("mock://"):
         return MockExecutorInvocationClient()
     return ExecutorInvocationClient()
+
+
+def _discover_worker_prompt_files(workspace: Path) -> list[Path]:
+    candidates: list[Path] = []
+    parent_soul = workspace.parent / "SOUL.md"
+    if parent_soul.exists():
+        candidates.append(parent_soul)
+    candidates.extend(sorted((workspace / "ge_writer").glob("*.md")))
+    for expert_dir in sorted((workspace / "experts").glob("*")):
+        if not expert_dir.is_dir() or expert_dir.name.startswith("_"):
+            continue
+        for file_name in ("persona.md", "score_rubric.md"):
+            path = expert_dir / file_name
+            if path.exists():
+                candidates.append(path)
+    return candidates
+
+
+def _discover_worker_registry_files(workspace: Path) -> list[Path]:
+    candidates: list[Path] = []
+    for path in [workspace / "experts" / "_registry.yaml", workspace / "experts" / "_brief_types.yaml"]:
+        if path.exists():
+            candidates.append(path)
+    for expert_dir in sorted((workspace / "experts").glob("*")):
+        if not expert_dir.is_dir() or expert_dir.name.startswith("_"):
+            continue
+        path = expert_dir / "corpus.yaml"
+        if path.exists():
+            candidates.append(path)
+    return candidates
+
+
+async def _upsert_prompt_file(
+    db: AsyncSession,
+    workspace: Path,
+    path: Path,
+    *,
+    source_name: str,
+    created_by: str,
+) -> PromptAsset:
+    rel = _relative_worker_path(workspace, path)
+    content = path.read_text(encoding="utf-8")
+    source_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    name = _prompt_name_for_path(rel)
+    prompt_type = _prompt_type_for_path(rel)
+    tags = _prompt_tags_for_path(rel)
+    description = f"Imported from maga-worker static file: {rel}"
+
+    result = await db.execute(select(PromptAsset).where(PromptAsset.name == name, PromptAsset.is_deleted == 0))
+    prompt = result.scalar_one_or_none()
+    if prompt is None:
+        prompt = PromptAsset(
+            name=name,
+            prompt_type=prompt_type,
+            description=description,
+            tags=tags,
+        )
+        db.add(prompt)
+        await db.flush()
+        version = PromptVersion(
+            prompt_id=prompt.id,
+            version_no=1,
+            content=content,
+            change_summary=f"导入 {rel}",
+            created_by=created_by,
+        )
+        db.add(version)
+        await db.flush()
+        prompt.current_version_id = version.id
+        prompt._maga_import_changed = True
+        return prompt
+
+    current = await db.get(PromptVersion, prompt.current_version_id) if prompt.current_version_id else None
+    if current is not None and hashlib.sha256(current.content.encode("utf-8")).hexdigest() == source_hash:
+        prompt._maga_import_changed = False
+        return prompt
+
+    next_version_no = await _next_prompt_version(db, prompt.id)
+    version = PromptVersion(
+        prompt_id=prompt.id,
+        version_no=next_version_no,
+        content=content,
+        parent_version_id=prompt.current_version_id,
+        change_summary=f"同步 {rel}",
+        created_by=created_by,
+    )
+    db.add(version)
+    await db.flush()
+    prompt.prompt_type = prompt_type
+    prompt.description = description
+    prompt.tags = tags
+    prompt.current_version_id = version.id
+    prompt._maga_import_changed = True
+    return prompt
+
+
+async def _upsert_registry_file(
+    db: AsyncSession,
+    workspace: Path,
+    path: Path,
+    *,
+    source_name: str,
+    created_by: str,
+) -> AssetRegistry:
+    rel = _relative_worker_path(workspace, path)
+    raw = path.read_text(encoding="utf-8")
+    source_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    asset_type, asset_key, display_name = _registry_asset_identity(rel)
+    content_json = _yaml_file_content(raw, rel)
+
+    current = await _latest_registry_asset_any_stage(db, asset_type, asset_key)
+    if current is not None and current.source_hash == source_hash and current.status == "active":
+        current._maga_import_changed = False
+        return current
+
+    await db.execute(
+        update(AssetRegistry)
+        .where(
+            AssetRegistry.asset_type == asset_type,
+            AssetRegistry.asset_key == asset_key,
+            AssetRegistry.status == "active",
+        )
+        .values(status="archived")
+    )
+    asset = AssetRegistry(
+        asset_type=asset_type,
+        asset_key=asset_key,
+        display_name=display_name,
+        version_no=await _next_version(db, asset_type, asset_key),
+        status="active",
+        asset_stage="production",
+        source_name=source_name,
+        source_uri=f"file://{path}",
+        source_hash=source_hash,
+        content_json=content_json,
+        metadata_json={
+            "importer": "worker_static_assets_v1",
+            "worker_path": rel,
+        },
+        created_by=created_by,
+    )
+    db.add(asset)
+    await db.flush()
+    asset._maga_import_changed = True
+    return asset
+
+
+async def _latest_registry_asset_any_stage(db: AsyncSession, asset_type: str, asset_key: str) -> AssetRegistry | None:
+    result = await db.execute(
+        select(AssetRegistry)
+        .where(
+            AssetRegistry.asset_type == asset_type,
+            AssetRegistry.asset_key == asset_key,
+        )
+        .order_by(AssetRegistry.version_no.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _next_prompt_version(db: AsyncSession, prompt_id: int) -> int:
+    result = await db.execute(select(func.max(PromptVersion.version_no)).where(PromptVersion.prompt_id == prompt_id))
+    return int(result.scalar_one_or_none() or 0) + 1
+
+
+def _relative_worker_path(workspace: Path, path: Path) -> str:
+    try:
+        return str(path.relative_to(workspace))
+    except ValueError:
+        return f"../{path.name}"
+
+
+def _prompt_name_for_path(rel: str) -> str:
+    parts = Path(rel).parts
+    if rel == "../SOUL.md":
+        return "xhs_writer.ge.soul"
+    if len(parts) >= 2 and parts[0] == "ge_writer":
+        return f"xhs_writer.ge.{Path(rel).stem}"
+    if len(parts) >= 3 and parts[0] == "experts":
+        return f"xhs_writer.ae.{parts[1]}.{Path(rel).stem}"
+    return f"xhs_writer.{Path(rel).stem}"
+
+
+def _prompt_type_for_path(rel: str) -> str:
+    if rel.startswith("ge_writer/") or rel == "../SOUL.md":
+        return "generation"
+    if rel.endswith("/persona.md") or rel.endswith("/score_rubric.md"):
+        return "critic"
+    return "other"
+
+
+def _prompt_tags_for_path(rel: str) -> list[str]:
+    tags = ["maga-worker", "xhs-writer"]
+    parts = Path(rel).parts
+    if rel == "../SOUL.md":
+        return [*tags, "ge", "system"]
+    if len(parts) >= 2 and parts[0] == "ge_writer":
+        return [*tags, "ge", Path(rel).stem]
+    if len(parts) >= 3 and parts[0] == "experts":
+        return [*tags, "ae", parts[1], Path(rel).stem]
+    return tags
+
+
+def _registry_asset_identity(rel: str) -> tuple[str, str, str]:
+    parts = Path(rel).parts
+    if rel == "experts/_registry.yaml":
+        return "expert_registry", "xhs_writer", "xhs-writer Expert 注册表"
+    if rel == "experts/_brief_types.yaml":
+        return "brief_type_registry", "xhs_writer", "xhs-writer Brief 类型注册表"
+    if len(parts) >= 3 and parts[0] == "experts" and parts[2] == "corpus.yaml":
+        expert_code = parts[1]
+        return "expert_corpus", expert_code, f"{expert_code} Expert 语料"
+    return "worker_static_yaml", rel.replace("/", "."), rel
+
+
+def _yaml_file_content(raw: str, rel: str) -> dict[str, Any]:
+    parsed = yaml.safe_load(raw) if raw.strip() else {}
+    return {
+        "worker_path": rel,
+        "content": parsed if isinstance(parsed, (dict, list)) else raw,
+    }
+
+
+def _combined_file_hash(paths: list[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(paths, key=lambda item: str(item)):
+        digest.update(str(path).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def _executor_token(executor: ExecutorRegistry) -> str | None:

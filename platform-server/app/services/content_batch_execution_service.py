@@ -15,6 +15,7 @@ from app.schemas.content_agent import ContentAgentTaskCreate
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.content_batch_snapshot_adapter import build_xhs_generation_snapshot_from_plan
 from app.services.executor_invocation_service import ExecutorInvocationClient
+from app.services.prompt_bundle_service import PromptBundleService
 
 SIMILARITY_REWRITE_THRESHOLD = 0.42
 HISTORY_SIMILARITY_REWRITE_THRESHOLD = 0.48
@@ -146,6 +147,7 @@ class ContentBatchExecutionService:
                 item.plan_json,
                 batch_id=job_context["id"],
                 batch_code=job_context["batch_code"],
+                prompt_bundle_snapshot=await PromptBundleService(db).build_xhs_writer_prompt_bundle_snapshot(),
             )
             task_input = self._task_input_from_snapshot(snapshot)
             task_request = ContentAgentTaskCreate(
@@ -356,7 +358,11 @@ class ContentBatchExecutionService:
                 callback_base_url=self.callback_base_url,
             )
             try:
-                input_payload = self._similarity_rewrite_input(item, similar_item)
+                input_payload = self._similarity_rewrite_input(
+                    item,
+                    similar_item,
+                    prompt_bundle_snapshot=await PromptBundleService(db).build_xhs_writer_prompt_bundle_snapshot(),
+                )
                 result = await orchestrator.run_rewrite_stage(
                     run_id=item.run_id,
                     executor_code=self.executor_code,
@@ -409,11 +415,18 @@ class ContentBatchExecutionService:
                 await db.commit()
                 return False
 
-    def _similarity_rewrite_input(self, item: ContentBatchItem, similar_item: dict[str, Any]) -> dict[str, Any]:
+    def _similarity_rewrite_input(
+        self,
+        item: ContentBatchItem,
+        similar_item: dict[str, Any],
+        *,
+        prompt_bundle_snapshot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         snapshot = build_xhs_generation_snapshot_from_plan(
             item.plan_json,
             batch_id=item.batch_id,
             batch_code=None,
+            prompt_bundle_snapshot=prompt_bundle_snapshot,
         )
         similarity_meta = self._similarity_rewrite_meta(item, similar_item)
         return {

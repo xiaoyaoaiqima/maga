@@ -43,6 +43,7 @@ from app.services.content_batch_report_service import ContentBatchReportService
 from app.services.content_batch_review_service import ContentBatchReviewService
 from app.services.content_batch_snapshot_adapter import build_xhs_generation_snapshot_from_brief
 from app.services.executor_invocation_service import ExecutorInvocationClient, MockExecutorInvocationClient
+from app.services.prompt_bundle_service import PromptBundleService
 
 router = APIRouter()
 
@@ -59,13 +60,18 @@ def _map_protocol_error(exc: ValueError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message)
 
 
-def _task_create_from_start_request(request: ContentAgentStartGenerationRequest) -> ContentAgentTaskCreate:
+def _task_create_from_start_request(
+    request: ContentAgentStartGenerationRequest,
+    *,
+    prompt_bundle_snapshot: dict | None = None,
+) -> ContentAgentTaskCreate:
     snapshot = build_xhs_generation_snapshot_from_brief(
         product_topic=request.product_topic,
         target_audience=request.target_audience,
         persona_target=request.persona_target,
         style=request.style,
         model_config=request.generation_model_config.model_dump(exclude_none=True),
+        prompt_bundle_snapshot=prompt_bundle_snapshot,
     )
     return ContentAgentTaskCreate(
         task_type="xhs_generate",
@@ -144,7 +150,8 @@ async def start_generation(
         callback_base_url="/api/v1/content-agent",
     )
     try:
-        task_request = _task_create_from_start_request(request)
+        prompt_bundle_snapshot = await PromptBundleService(db).build_xhs_writer_prompt_bundle_snapshot()
+        task_request = _task_create_from_start_request(request, prompt_bundle_snapshot=prompt_bundle_snapshot)
         task_request.input_snapshot["generation_snapshot"]["model_config"] = await _model_config_with_maga_defaults(
             db,
             request.generation_model_config.model_dump(exclude_none=True),

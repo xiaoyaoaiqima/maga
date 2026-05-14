@@ -37,6 +37,17 @@ def test_build_xhs_generation_snapshot_from_batch_plan_includes_assets_and_diver
                 "snapshot": {"title": "真实经验", "body": "先看便便状态", "painpoint": "便便偏干"},
             }
         ],
+        "writing_pattern_ref": {
+            "asset_type": "reference_writing_patterns",
+            "asset_key": "yuanyue",
+            "item_index": 4,
+            "item_id": "wp_004",
+            "snapshot": {
+                "opening_pattern": "先共情痛点",
+                "story_arc": "痛点场景 -> 观察判断 -> 轻建议",
+                "proof_style": "日常观察记录",
+            },
+        },
         "compliance_rule_refs": [
             {
                 "asset_type": "compliance_rules",
@@ -74,6 +85,8 @@ def test_build_xhs_generation_snapshot_from_batch_plan_includes_assets_and_diver
     assert snapshot["assets"]["painpoint"]["painpoint"] == "便便不规律"
     assert snapshot["assets"]["selling_point"]["selling_point"] == "好消化易吸收"
     assert snapshot["assets"]["reference_examples"][0]["title"] == "真实经验"
+    assert snapshot["assets"]["writing_pattern"]["story_arc"] == "痛点场景 -> 观察判断 -> 轻建议"
+    assert snapshot["asset_refs"]["writing_pattern_ref"]["item_id"] == "wp_004"
     assert snapshot["assets"]["compliance_rules"][0]["dimension"] == "禁止治疗便秘"
     assert snapshot["diversity_slot"]["opening_type"] == "过来人提醒"
     assert snapshot["diversity_slot"]["narrative_focus"] == "先共情"
@@ -103,6 +116,7 @@ def test_build_xhs_generation_snapshot_from_brief_creates_minimal_single_generat
     assert snapshot["assets"]["painpoint"] is None
     assert snapshot["assets"]["selling_point"] is None
     assert snapshot["assets"]["reference_examples"] == []
+    assert snapshot["assets"]["writing_pattern"] is None
     assert snapshot["assets"]["compliance_rules"] == []
     assert snapshot["batch_context"]["source"] == "single_generation"
     assert snapshot["constraints"]["must_use_painpoint"] is False
@@ -136,3 +150,17 @@ def test_build_xhs_generation_snapshot_allows_maga_word_count_override():
 
     assert snapshot["brief"]["content_constraints"] == {"word_count": "250-350", "emoji": "中"}
     assert snapshot["constraints"]["must_reference_example_without_copying"] is False
+
+
+def test_build_xhs_generation_snapshot_can_attach_prompt_bundle_snapshot():
+    prompt_bundle = {
+        "schema_version": "1",
+        "prompts": {"xhs_writer.ge.soul": {"version_id": 10, "content": "system"}},
+        "assets": {"expert_corpus:compliance_redline": {"asset_id": 20}},
+    }
+    snapshot = build_xhs_generation_snapshot_from_brief(
+        product_topic="美素佳儿源悦",
+        prompt_bundle_snapshot=prompt_bundle,
+    )
+
+    assert snapshot["prompt_bundle_snapshot"] == prompt_bundle

@@ -14,6 +14,7 @@ def build_xhs_generation_snapshot_from_brief(
     persona_target: str | None = None,
     style: str | None = None,
     model_config: dict[str, Any] | None = None,
+    prompt_bundle_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the minimal single-item snapshot for direct generation.
 
@@ -31,7 +32,11 @@ def build_xhs_generation_snapshot_from_brief(
         "brief_constraints": _default_brief_constraints(),
         "diversity_slot": {},
     }
-    snapshot = build_xhs_generation_snapshot_from_plan(plan, model_config=model_config)
+    snapshot = build_xhs_generation_snapshot_from_plan(
+        plan,
+        model_config=model_config,
+        prompt_bundle_snapshot=prompt_bundle_snapshot,
+    )
     snapshot["constraints"]["must_use_painpoint"] = False
     snapshot["constraints"]["must_reference_example_without_copying"] = False
     snapshot["batch_context"]["source"] = "single_generation"
@@ -44,6 +49,7 @@ def build_xhs_generation_snapshot_from_plan(
     batch_id: int | None = None,
     batch_code: str | None = None,
     model_config: dict[str, Any] | None = None,
+    prompt_bundle_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the per-item executor input snapshot consumed by xhs-writer.
 
@@ -52,10 +58,11 @@ def build_xhs_generation_snapshot_from_plan(
     input it needs for one content item.
     """
     reference_refs = plan.get("reference_example_refs") or []
+    writing_pattern_ref = plan.get("writing_pattern_ref")
     compliance_refs = plan.get("compliance_rule_refs") or []
     item_no = plan.get("item_no")
     brief_constraints = _brief_constraints(plan)
-    return {
+    snapshot = {
         "brief": {
             "product_topic": plan.get("product_topic"),
             "target_audience": plan.get("target_audience"),
@@ -71,12 +78,14 @@ def build_xhs_generation_snapshot_from_plan(
             "painpoint": _snapshot(plan.get("painpoint_ref")),
             "selling_point": _snapshot(plan.get("selling_point_ref")),
             "reference_examples": [_snapshot(ref) for ref in reference_refs],
+            "writing_pattern": _snapshot(writing_pattern_ref),
             "compliance_rules": [_snapshot(ref) for ref in compliance_refs],
         },
         "asset_refs": {
             "painpoint_ref": _without_snapshot(plan.get("painpoint_ref")),
             "selling_point_ref": _without_snapshot(plan.get("selling_point_ref")),
             "reference_example_refs": [_without_snapshot(ref) for ref in reference_refs],
+            "writing_pattern_ref": _without_snapshot(writing_pattern_ref),
             "compliance_rule_refs": [_without_snapshot(ref) for ref in compliance_refs],
             "asset_combo_key": plan.get("asset_combo_key"),
             "asset_reuse_reason": plan.get("asset_reuse_reason"),
@@ -95,6 +104,9 @@ def build_xhs_generation_snapshot_from_plan(
         },
         "model_config": _model_config(model_config or plan.get("model_config")),
     }
+    if prompt_bundle_snapshot:
+        snapshot["prompt_bundle_snapshot"] = prompt_bundle_snapshot
+    return snapshot
 
 
 def _snapshot(ref: dict[str, Any] | None) -> dict[str, Any] | None:

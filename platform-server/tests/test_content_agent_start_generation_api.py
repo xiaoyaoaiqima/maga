@@ -12,6 +12,9 @@ from app.models.base import Base
 from app.models.content_agent import ContentAgentTask, ExecutorRegistry
 from app.models.llm_provider_config import LLMProviderConfig
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
+from app.models.maga_assets import AssetRegistry
+from app.models.prompt_optimizer import PromptAsset, PromptVersion
+from app.services.asset_import_service import WORKER_STATIC_ASSET_SOURCE_NAME
 from fastapi import FastAPI
 
 
@@ -189,3 +192,42 @@ async def test_start_generation_endpoint_persists_maga_model_config(start_genera
         "ge_model": "maga-ge",
         "ae_model": "maga-ae",
     }
+
+
+@pytest.mark.asyncio
+async def test_start_generation_endpoint_persists_prompt_bundle_snapshot(start_generation_client):
+    client, session_factory = start_generation_client
+    async with session_factory() as session:
+        prompt = PromptAsset(name="xhs_writer.ge.soul", prompt_type="generation", tags=["ge"])
+        session.add(prompt)
+        await session.flush()
+        version = PromptVersion(prompt_id=prompt.id, version_no=1, content="你是 GE 主写手。")
+        session.add(version)
+        await session.flush()
+        prompt.current_version_id = version.id
+        session.add(
+            AssetRegistry(
+                asset_type="expert_corpus",
+                asset_key="compliance_redline",
+                version_no=1,
+                status="active",
+                source_name=WORKER_STATIC_ASSET_SOURCE_NAME,
+                source_hash="corpus-hash",
+                content_json={"content": {"expert": "compliance_redline"}},
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/content-agent/generation/start",
+        json={"product_topic": "美素佳儿源悦"},
+    )
+
+    assert response.status_code == 200
+    async with session_factory() as session:
+        task = (await session.execute(select(ContentAgentTask))).scalars().first()
+
+    bundle = task.input_snapshot["generation_snapshot"]["prompt_bundle_snapshot"]
+    assert bundle["prompts"]["xhs_writer.ge.soul"]["version_id"] == version.id
+    assert bundle["prompts"]["xhs_writer.ge.soul"]["content"] == "你是 GE 主写手。"
+    assert bundle["assets"]["expert_corpus:compliance_redline"]["source_hash"] == "corpus-hash"

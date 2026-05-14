@@ -8,6 +8,7 @@ from sqlalchemy import BigInteger, DateTime, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.content_agent import BIGINT_PK
 
 
 class PromptAsset(Base):
@@ -15,7 +16,7 @@ class PromptAsset(Base):
 
     __tablename__ = "prompt_asset"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
     tenant_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True, comment="租户编码")
     name: Mapped[str] = mapped_column(String(255), nullable=False, comment="提示词名称")
     prompt_type: Mapped[str] = mapped_column(
@@ -42,7 +43,7 @@ class PromptVersion(Base):
 
     __tablename__ = "prompt_version"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
     prompt_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True, comment="提示词资产ID")
     version_no: Mapped[int] = mapped_column(Integer, nullable=False, comment="版本号")
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="提示词内容")
@@ -58,7 +59,7 @@ class PromptIssue(Base):
 
     __tablename__ = "prompt_issue"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
     prompt_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True, comment="提示词资产ID")
     prompt_version_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True, comment="提示词版本ID")
     issue_type: Mapped[str] = mapped_column(
@@ -79,7 +80,7 @@ class PromptOptimizerRun(Base):
 
     __tablename__ = "prompt_optimizer_run"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
     prompt_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True, comment="提示词资产ID")
     prompt_version_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True, comment="提示词版本ID")
     issue_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True, comment="问题ID")
@@ -112,7 +113,7 @@ class PromptPatch(Base):
 
     __tablename__ = "prompt_patch"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
     run_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True, comment="优化任务ID")
     patch_index: Mapped[int] = mapped_column(Integer, nullable=False, comment="patch 顺序")
     operation: Mapped[str] = mapped_column(
@@ -140,7 +141,7 @@ class PromptEvaluation(Base):
 
     __tablename__ = "prompt_evaluation"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
     prompt_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True, comment="提示词资产ID")
     base_version_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True, comment="基准版本ID")
     candidate_version_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True, comment="候选版本ID")

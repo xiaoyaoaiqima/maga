@@ -16,8 +16,24 @@ from app.models.content_agent import (
     ContentBatchJob,
     ExecutorRegistry,
 )
+from app.models.maga_assets import AssetRegistry
+from app.models.prompt_optimizer import PromptAsset, PromptVersion
 from app.services.content_batch_execution_service import ContentBatchExecutionService
 from app.services.executor_invocation_service import InvokeResult, MockExecutorInvocationClient
+
+
+def _execution_tables():
+    return [
+        ContentBatchJob.__table__,
+        ContentBatchItem.__table__,
+        ExecutorRegistry.__table__,
+        ContentAgentTask.__table__,
+        ContentAgentRun.__table__,
+        ContentAgentStageCall.__table__,
+        PromptAsset.__table__,
+        PromptVersion.__table__,
+        AssetRegistry.__table__,
+    ]
 
 
 @pytest.mark.asyncio
@@ -26,14 +42,7 @@ async def test_batch_execution_generates_first_n_items_and_links_runs():
     async with engine.begin() as conn:
         await conn.run_sync(
             Base.metadata.create_all,
-            tables=[
-                ContentBatchJob.__table__,
-                ContentBatchItem.__table__,
-                ExecutorRegistry.__table__,
-                ContentAgentTask.__table__,
-                ContentAgentRun.__table__,
-                ContentAgentStageCall.__table__,
-            ],
+            tables=_execution_tables(),
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -214,14 +223,7 @@ async def test_batch_execution_runs_items_with_configured_concurrency():
     async with engine.begin() as conn:
         await conn.run_sync(
             Base.metadata.create_all,
-            tables=[
-                ContentBatchJob.__table__,
-                ContentBatchItem.__table__,
-                ExecutorRegistry.__table__,
-                ContentAgentTask.__table__,
-                ContentAgentRun.__table__,
-                ContentAgentStageCall.__table__,
-            ],
+            tables=_execution_tables(),
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -274,14 +276,7 @@ async def test_batch_execution_reports_worker_start_hint_when_executor_is_unreac
     async with engine.begin() as conn:
         await conn.run_sync(
             Base.metadata.create_all,
-            tables=[
-                ContentBatchJob.__table__,
-                ContentBatchItem.__table__,
-                ExecutorRegistry.__table__,
-                ContentAgentTask.__table__,
-                ContentAgentRun.__table__,
-                ContentAgentStageCall.__table__,
-            ],
+            tables=_execution_tables(),
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -338,14 +333,7 @@ async def test_batch_execution_rewrites_later_item_when_similarity_is_too_high()
     async with engine.begin() as conn:
         await conn.run_sync(
             Base.metadata.create_all,
-            tables=[
-                ContentBatchJob.__table__,
-                ContentBatchItem.__table__,
-                ExecutorRegistry.__table__,
-                ContentAgentTask.__table__,
-                ContentAgentRun.__table__,
-                ContentAgentStageCall.__table__,
-            ],
+            tables=_execution_tables(),
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -411,14 +399,7 @@ async def test_batch_execution_checks_recent_history_for_similarity():
     async with engine.begin() as conn:
         await conn.run_sync(
             Base.metadata.create_all,
-            tables=[
-                ContentBatchJob.__table__,
-                ContentBatchItem.__table__,
-                ExecutorRegistry.__table__,
-                ContentAgentTask.__table__,
-                ContentAgentRun.__table__,
-                ContentAgentStageCall.__table__,
-            ],
+            tables=_execution_tables(),
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -495,14 +476,7 @@ async def test_batch_execution_marks_manual_review_when_similarity_rewrite_still
     async with engine.begin() as conn:
         await conn.run_sync(
             Base.metadata.create_all,
-            tables=[
-                ContentBatchJob.__table__,
-                ContentBatchItem.__table__,
-                ExecutorRegistry.__table__,
-                ContentAgentTask.__table__,
-                ContentAgentRun.__table__,
-                ContentAgentStageCall.__table__,
-            ],
+            tables=_execution_tables(),
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -561,14 +535,7 @@ async def test_batch_execution_preserves_review_report_returned_by_generate_draf
     async with engine.begin() as conn:
         await conn.run_sync(
             Base.metadata.create_all,
-            tables=[
-                ContentBatchJob.__table__,
-                ContentBatchItem.__table__,
-                ExecutorRegistry.__table__,
-                ContentAgentTask.__table__,
-                ContentAgentRun.__table__,
-                ContentAgentStageCall.__table__,
-            ],
+            tables=_execution_tables(),
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
