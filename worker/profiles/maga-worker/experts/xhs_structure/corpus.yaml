@@ -1,0 +1,20 @@
+expert: xhs_structure
+chinese_name: 小红书结构排版AE
+output_mode: fixed
+score_type: 0-100
+groups:
+  结构规则:
+    description: 小红书短段落与标题格式
+    items:
+      - l2: 标题
+        ideal: 16字以内且包含1-2个emoji
+        examples: 场景冲突、情绪困扰、结果反差、信息差
+        rules: [保留悬念, 少用问句, 禁止多个问句]
+      - l2: 正文
+        ideal: 250-300字，3-5个短段落
+        examples: 每段1-3句话，段落之间空行
+        rules: [禁止大段说明书, 禁止全篇单句独立成段]
+      - l2: emoji
+        ideal: 正文emoji大于3个
+        examples: 自然分散在文章中
+        rules: [禁止🍼, 禁止连续emoji]

@@ -421,7 +421,7 @@ MVP 阶段刻意保持极简。批量工作台先以 `batch_id/item_id/version_i
 | `experts/*/score_rubric.md` | PromptAsset / PromptVersion，类型 `score_rubric` |
 | `ge_writer/style_templates.md` | 风格模板资产 |
 | `campaigns/_current/brief.yaml` | 内容任务 brief |
-| `tools/xhs_runtime.py` | `maga-worker` 的 `xhs.*` 执行逻辑，短期保留在 Hermes |
+| `tools/xhs_runtime.py` | `worker/maga_worker/xhs_runtime.py`，由 MAGA repo 版本管理 |
 | `notes/*-debug/` | content_agent_event / content_agent_artifact |
 
 迁移顺序不要一次性全部迁完。优先保证任务、run、artifact、trace 能进入 MAGA。
@@ -438,8 +438,8 @@ MVP 阶段刻意保持极简。批量工作台先以 `batch_id/item_id/version_i
 
 1. MAGA 按 §六 建表：executor_registry / content_agent_task / content_agent_run / content_agent_stage_call / content_agent_event / content_agent_artifact / content_agent_human_review。
 2. MAGA 实现 [EXECUTOR_PROTOCOL.md](./EXECUTOR_PROTOCOL.md) §7.2 的回调 endpoints（events / artifacts / human-review），以及调度器主动调 Executor `/invoke` 的 push 路径与状态机推进逻辑。
-3. Hermes `maga-worker` 暴露 `/invoke` endpoint，按协议接收 capability 调用；其中 `xhs.*` 能力短期复用 `xhs-writer` runtime，本地仍可读 `experts/`、`ge_writer/`、`campaigns/` 作为迁移兜底（snapshot 由 MAGA 在 invoke 入参中传入）。
-4. Hermes 在阶段内回写 events/artifacts，capability 完成后调 `complete_capability`；run 终态由 MAGA 据 stage 结果决定。
+3. repo 内 `maga-worker` 暴露 `/invoke` endpoint，按协议接收 capability 调用；其中 `xhs.*` 能力复用 repo 内 runtime，`experts/`、`ge_writer/`、`campaigns/` 作为静态兜底文件（snapshot 由 MAGA 在 invoke 入参中传入）。
+4. worker 在阶段内回写 events/artifacts，capability 完成后调 `complete_capability`；run 终态由 MAGA 据 stage 结果决定。
 5. MAGA 前端展示任务状态、最终稿和基础 trace。
 
 这个阶段不迁移所有语料和 prompt。

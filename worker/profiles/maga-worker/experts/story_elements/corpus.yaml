@@ -1,0 +1,293 @@
+expert: story_elements
+chinese_name: 故事元素Expert
+output_mode: random
+score_type: 0-100
+groups:
+  场景:
+    description: 具体的事件发生环境
+    items:
+    - l2: 旅行
+      ideal: 出行备奶
+      ideal_help: null
+      examples: 出行备奶
+      rules: null
+    - l2: null
+      ideal: 异地喂养
+      ideal_help: null
+      examples: 异地喂养
+      rules: null
+    - l2: null
+      ideal: 长途带娃
+      ideal_help: null
+      examples: 长途带娃
+      rules: null
+    - l2: null
+      ideal: 便携冲泡
+      ideal_help: null
+      examples: 便携冲泡
+      rules: null
+    - l2: null
+      ideal: 旅途囤奶
+      ideal_help: '规则：为了强调，把重点放前面
+
+        例：真的绝了这个奶粉 → 这个奶粉真的绝了'
+      examples: 旅途囤奶
+      rules: null
+    - l2: 购物
+      ideal: 囤货采购
+      ideal_help: null
+      examples: 囤货采购
+      rules: null
+    - l2: null
+      ideal: 商超选奶
+      ideal_help: null
+      examples: 商超选奶
+      rules: null
+    - l2: null
+      ideal: 母婴店咨询
+      ideal_help: null
+      examples: 母婴店咨询
+      rules: null
+    - l2: null
+      ideal: 活动凑单
+      ideal_help: null
+      examples: 活动凑单
+      rules: null
+    - l2: 遛娃
+      ideal: 公园遛娃
+      ideal_help: null
+      examples: 公园遛娃
+      rules: null
+    - l2: null
+      ideal: 周末带娃
+      ideal_help: null
+      examples: 周末带娃
+      rules: null
+    - l2: null
+      ideal: 短途外出
+      ideal_help: null
+      examples: 短途外出
+      rules: null
+    - l2: null
+      ideal: 随行备奶
+      ideal_help: null
+      examples: 随行备奶
+      rules: null
+    - l2: null
+      ideal: 户外喂养
+      ideal_help: null
+      examples: 户外喂养
+      rules: null
+    - l2: null
+      ideal: 轻松出门
+      ideal_help: null
+      examples: 轻松出门
+      rules: null
+  天气:
+    description: 环境氛围的渲染补充
+    items:
+    - l2: 晴天
+      ideal: 晴天出游
+      ideal_help: null
+      examples: 晴天
+      rules: null
+    - l2: null
+      ideal: 晒太阳遛娃
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 户外喂养
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 明亮日常
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 周末外出
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 阴天
+      ideal: 阴天宅家
+      ideal_help: null
+      examples: 阴天
+      rules: null
+    - l2: null
+      ideal: 室内陪娃
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 柔和日常
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 下雨
+      ideal: 带娃不便出门
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 雨天宅家
+      ideal_help: null
+      examples: 下雨
+      rules: null
+    - l2: null
+      ideal: 雨天备奶
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 下雪
+      ideal: 雪天出行准备
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 保暖喂养
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 冬日保暖
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 雪天宅家
+      ideal_help: null
+      examples: 下雪
+      rules: null
+  季节:
+    description: 季节的描述
+    items:
+    - l2: 春
+      ideal: 春季换季
+      ideal_help: null
+      examples: 春
+      rules: null
+    - l2: null
+      ideal: 踏青遛娃
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 春日出游
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 春季囤货
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 夏
+      ideal: 夏日出游
+      ideal_help: null
+      examples: 夏
+      rules: null
+    - l2: null
+      ideal: 高温天气
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 暑期遛娃
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 夏季囤货
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 秋
+      ideal: 秋季转凉
+      ideal_help: null
+      examples: 秋
+      rules: null
+    - l2: null
+      ideal: 秋日遛娃
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 温差适应
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 冬
+      ideal: 冬季出行
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 年末囤货
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 保暖喂养
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 冬日宅家
+      ideal_help: null
+      examples: 冬
+      rules: null
+  时事:
+    description: 结合当下热点或特定时间节点
+    items:
+    - l2: 春节返乡
+      ideal: 春节返乡
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 平台活动节点
+      ideal: 平台活动节点
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 奶粉事件
+      ideal: 奶粉事件
+      ideal_help: null
+      examples: 奶粉事件
+      rules: null
+    - l2: 换季喂养热点
+      ideal: 换季喂养热点
+      ideal_help: null
+      examples: null
+      rules: null
+  地点:
+    description: 物理空间的具象化，增加真实感
+    items:
+    - l2: 家中喂养
+      ideal: 家中喂养
+      ideal_help: null
+      examples: 家里
+      rules: null
+    - l2: 公园
+      ideal: 公园
+      ideal_help: null
+      examples: 公园
+      rules: null
+    - l2: 商场
+      ideal: 商场
+      ideal_help: null
+      examples: 超市
+      rules:
+      - xxx商城xxx楼xxx
+    - l2: 母婴店
+      ideal: 母婴店
+      ideal_help: null
+      examples: 母婴店
+      rules: null
+    - l2: 月子中心
+      ideal: 月子中心
+      ideal_help: null
+      examples: 医院
+      rules: null

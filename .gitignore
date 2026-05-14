@@ -26,3 +26,4 @@ critic_debug_log/
 prompt_optimize_results/
 critic_prompt_optimize_results/
 .local/*
+worker/profiles/*/experts/*/lessons/

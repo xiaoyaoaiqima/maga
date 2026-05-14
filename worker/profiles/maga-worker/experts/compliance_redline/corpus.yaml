@@ -1,0 +1,20 @@
+expert: compliance_redline
+chinese_name: 合规红线AE
+output_mode: fixed
+score_type: 0/1
+groups:
+  合规红线:
+    description: 法律、医疗、功效、时间逻辑红线
+    items:
+      - l2: 医疗场景
+        ideal: 禁止医疗表达
+        examples: 医生、就医、诊断、治疗
+        rules: [命中即 fail]
+      - l2: 功效承诺
+        ideal: 禁止确定性改善
+        examples: 用了就好了、明显改善、彻底解决、不再中招
+        rules: [命中即 fail]
+      - l2: 时间效果链
+        ideal: 禁止具体时间词衔接效果变化
+        examples: 几天、一周、昨天、今天、前几天、过了一阵子
+        rules: [具体时间词后禁止衔接效果变化]

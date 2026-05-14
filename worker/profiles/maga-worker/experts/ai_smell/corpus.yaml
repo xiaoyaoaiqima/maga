@@ -1,0 +1,13 @@
+expert: ai_smell
+chinese_name: AI味Expert
+output_mode: fixed
+score_type: 0-100
+groups:
+  AI味检测规则:
+    description: 检测文章中是否含有AI味的表达、措辞等
+    items:
+    - l2: 文本含AI聊天原生痕迹
+      ideal: 文本含AI聊天原生痕迹
+      ideal_help: null
+      examples: null
+      rules: null

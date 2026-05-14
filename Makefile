@@ -5,7 +5,9 @@ FRONTEND_PORT ?= 3100
 FRONTEND_LOG := .local/logs/frontend.log
 FRONTEND_PID := .local/pids/frontend.pid
 WORKER_PORT ?= 8765
-WORKER_WORKSPACE ?= /Users/luxifa/.hermes/profiles/maga-worker/workspace
+WORKER_WORKSPACE ?= $(CURDIR)/worker/profiles/maga-worker
+WORKER_CODE_PATH ?= $(CURDIR)/worker
+WORKER_OUTPUT_DIR ?= $(CURDIR)/.local/worker/outputs
 WORKER_LOG := .local/logs/maga-worker.log
 WORKER_PID := .local/pids/maga-worker.pid
 WORKER_ENV_FILE ?= .env
@@ -56,6 +58,8 @@ ps:
 dev:
 	@WORKER_PORT="$(WORKER_PORT)" \
 		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_CODE_PATH="$(WORKER_CODE_PATH)" \
+		MAGA_WORKER_OUTPUT_DIR="$(WORKER_OUTPUT_DIR)" \
 		WORKER_LOG="$(abspath $(WORKER_LOG))" \
 		WORKER_PID="$(abspath $(WORKER_PID))" \
 		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
@@ -64,6 +68,8 @@ dev:
 dev-restart:
 	@WORKER_PORT="$(WORKER_PORT)" \
 		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_CODE_PATH="$(WORKER_CODE_PATH)" \
+		MAGA_WORKER_OUTPUT_DIR="$(WORKER_OUTPUT_DIR)" \
 		WORKER_LOG="$(abspath $(WORKER_LOG))" \
 		WORKER_PID="$(abspath $(WORKER_PID))" \
 		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
@@ -72,6 +78,8 @@ dev-restart:
 dev-stop:
 	@WORKER_PORT="$(WORKER_PORT)" \
 		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_CODE_PATH="$(WORKER_CODE_PATH)" \
+		MAGA_WORKER_OUTPUT_DIR="$(WORKER_OUTPUT_DIR)" \
 		WORKER_LOG="$(abspath $(WORKER_LOG))" \
 		WORKER_PID="$(abspath $(WORKER_PID))" \
 		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
@@ -80,6 +88,8 @@ dev-stop:
 dev-status:
 	@WORKER_PORT="$(WORKER_PORT)" \
 		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_CODE_PATH="$(WORKER_CODE_PATH)" \
+		MAGA_WORKER_OUTPUT_DIR="$(WORKER_OUTPUT_DIR)" \
 		WORKER_LOG="$(abspath $(WORKER_LOG))" \
 		WORKER_PID="$(abspath $(WORKER_PID))" \
 		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
@@ -156,6 +166,8 @@ frontend-logs:
 worker-start:
 	@WORKER_PORT="$(WORKER_PORT)" \
 		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_CODE_PATH="$(WORKER_CODE_PATH)" \
+		MAGA_WORKER_OUTPUT_DIR="$(WORKER_OUTPUT_DIR)" \
 		WORKER_LOG="$(abspath $(WORKER_LOG))" \
 		WORKER_PID="$(abspath $(WORKER_PID))" \
 		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
@@ -164,6 +176,8 @@ worker-start:
 worker-stop:
 	@WORKER_PORT="$(WORKER_PORT)" \
 		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_CODE_PATH="$(WORKER_CODE_PATH)" \
+		MAGA_WORKER_OUTPUT_DIR="$(WORKER_OUTPUT_DIR)" \
 		WORKER_LOG="$(abspath $(WORKER_LOG))" \
 		WORKER_PID="$(abspath $(WORKER_PID))" \
 		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
@@ -172,6 +186,8 @@ worker-stop:
 worker-status:
 	@WORKER_PORT="$(WORKER_PORT)" \
 		WORKER_WORKSPACE="$(WORKER_WORKSPACE)" \
+		WORKER_CODE_PATH="$(WORKER_CODE_PATH)" \
+		MAGA_WORKER_OUTPUT_DIR="$(WORKER_OUTPUT_DIR)" \
 		WORKER_LOG="$(abspath $(WORKER_LOG))" \
 		WORKER_PID="$(abspath $(WORKER_PID))" \
 		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \

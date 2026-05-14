@@ -1,0 +1,20 @@
+expert: ge_main
+chinese_name: 母婴行业-小红书-文章通用Expert
+output_mode: article_output
+score_type: null
+groups:
+  生文通用信息:
+    description: 有对母婴行业的简单说明，以及对应的生文指令（比如小红书平台标题字数上限为xx字符）
+    items:
+    - l2: 行业必要信息
+      ideal: 母婴行业必要信息
+      ideal_help: null
+      examples: null
+      rules:
+      - 目标是**宣传产品、导购**。 ！
+    - l2: 平台必要信息
+      ideal: 小红书平台必要信息
+      ideal_help: 如小红书平台标题字数上限为xx字符
+      examples: null
+      rules:
+      - 必须遵循，正文中多用emoji，多分段，适合小红书风格。

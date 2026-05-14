@@ -1,0 +1,98 @@
+version: draft-0.1
+source: /Users/luxifa/Downloads/源悦种草活动-ai训练规则.xlsx
+purpose: 源悦小红书生文用；指定痛点后，映射到对应卖点，再进入标题+正文生成。
+notes:
+  - 不处理话题 tag；交付默认只有标题+正文。
+  - 痛点名称已做合规弱化：过敏相关→肚肚敏敏/转奶适应；容易生病→换季中招/日常防护。
+  - risk_level: low 可直接用；medium 需弱化表达；high 默认不做主线，除非 brief 明确要求。
+items:
+  - painpoint_id: P001
+    painpoint: 便便不规律
+    specific_issue: 拉臭费劲/嗯嗯困难
+    painpoint_description: 之前拉臭臭总是不太顺，偶尔会费劲，小脸憋得红红的，家里人看着也跟着紧张。
+    sellingpoint_id: S001
+    sellingpoint_name: 好消化易吸收
+    risk_level: low
+    expression_notes: 用“便便节奏更顺、嗯嗯没那么费劲、小肚肚更舒服”表达；避免“治便秘/改善消化”。
+  - painpoint_id: P002
+    painpoint: 便便不规律
+    specific_issue: 羊屎蛋/干硬
+    painpoint_description: 便便有时候偏干，一粒粒的，拉起来不轻松，喂养上就会特别操心。
+    sellingpoint_id: S001
+    sellingpoint_name: 好消化易吸收
+    risk_level: low
+    expression_notes: 可写“便便状态慢慢顺一点、没之前那么干硬”；不要写“喝了就不上火”。
+  - painpoint_id: P003
+    painpoint: 便便不规律
+    specific_issue: 奶瓣便/绿便
+    painpoint_description: 便便里偶尔有奶瓣，或者颜色状态不太稳定，总担心宝宝吃进去没有好好承接住。
+    sellingpoint_id: S001
+    sellingpoint_name: 好消化易吸收
+    risk_level: medium
+    expression_notes: 避免医疗化判断；不要写“营养没吸收/消化不良”，建议写“吃喝承接、肚肚适应”。
+  - painpoint_id: P004
+    painpoint: 奶量补充/喝奶接受度
+    specific_issue: 奶量少/喝奶不积极
+    painpoint_description: 每次喝奶都要哄半天，单次奶量上不去，喝奶节奏不稳，家里人也跟着焦虑。
+    sellingpoint_id: S002
+    sellingpoint_name: 自然奶香，口味清淡
+    risk_level: low
+    expression_notes: 强调“口味清淡、接受度不错、喝奶节奏慢慢顺”；不要写“治厌奶/保证爱喝”。
+  - painpoint_id: P005
+    painpoint: 奶量补充/喝奶接受度
+    specific_issue: 转奶抗拒
+    painpoint_description: 换新口粮时很容易抗拒，第一口不接受，再递过去就扭头，转奶过程特别考验人。
+    sellingpoint_id: S002
+    sellingpoint_name: 自然奶香，口味清淡
+    risk_level: low
+    expression_notes: 可写“这次过渡比较顺、没有太排斥”；不要写“无缝转奶/一口就爱上”。
+  - painpoint_id: P006
+    painpoint: 肚肚敏敏/转奶适应
+    specific_issue: 肚肚不舒服/咕噜
+    painpoint_description: 小肚肚比较娇气，换口粮时容易咕噜咕噜，状态不稳，喂养上不敢太折腾。
+    sellingpoint_id: S001
+    sellingpoint_name: 好消化易吸收
+    risk_level: medium
+    expression_notes: “肚肚敏敏”可用；慎用“过敏/体质/肠胃”。不要写医疗改善。
+  - painpoint_id: P007
+    painpoint: 肚肚敏敏/转奶适应
+    specific_issue: 肚子鼓鼓
+    painpoint_description: 喝完后小肚子偶尔鼓鼓的，整个人会有点不舒服，喂奶和陪玩都容易被打乱。
+    sellingpoint_id: S003
+    sellingpoint_name: 黄金双益，肚肚环境支持
+    risk_level: medium
+    expression_notes: “胀气”建议替换成“肚子鼓鼓/肚肚不舒服”。表达为日常支持，不要写治疗。
+  - painpoint_id: P008
+    painpoint: 光吃不长肉/生长焦虑
+    specific_issue: 吃得不少但状态没跟上
+    painpoint_description: 明明奶量和饭量看着还可以，但状态就是没太跟上，生长曲线让人有点挂心。
+    sellingpoint_id: S004
+    sellingpoint_name: 吸收承接，喂养状态更顺
+    risk_level: medium
+    expression_notes: 不承诺长肉；建议写“吃喝节奏顺、状态更扎实/更在线”。
+  - painpoint_id: P009
+    painpoint: 光吃不长肉/生长焦虑
+    specific_issue: 体重增长慢/曲线偏低
+    painpoint_description: 体重曲线一直比较慢，儿保时总会多留意，选口粮时更在意吸收和日常喂养承接。
+    sellingpoint_id: S004
+    sellingpoint_name: 吸收承接，喂养状态更顺
+    risk_level: medium
+    expression_notes: 避免“喝了就长肉/曲线追上来”；用“更关注吸收承接”。
+  - painpoint_id: P010
+    painpoint: 换季中招/日常防护
+    specific_issue: 换季状态不稳
+    painpoint_description: 一到换季就格外留意宝宝状态，日常喂养里也会更想把基础营养打好。
+    sellingpoint_id: S005
+    sellingpoint_name: 8种HMO，日常营养支持
+    risk_level: high
+    expression_notes: 高风险方向。不要写提高免疫力、少生病、预防中招；只写“日常营养支持/换季喂养更安心”。
+  - painpoint_id: P011
+    painpoint: 综合转奶焦虑
+    specific_issue: 便便+奶量+肚肚多问题叠加
+    painpoint_description: 转奶时最怕一边喝不顺，一边便便和肚肚状态也跟着乱，选口粮会反复做功课。
+    sellingpoint_id: S001
+    sellingpoint_name: 好消化易吸收
+    secondary_sellingpoint_id: S002
+    secondary_sellingpoint_name: 自然奶香，口味清淡
+    risk_level: medium
+    expression_notes: 只展开1个主卖点，最多轻带1个辅助卖点；不要连续堆叠成分。

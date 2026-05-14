@@ -1,0 +1,2 @@
+"""MAGA worker runtime package."""
+

@@ -1,0 +1,196 @@
+experts:
+  ge_main:
+    chinese_name: 小红书笔记生成官
+    type: GE
+    capability: 生文
+    must: true
+    score_type: null
+    output_mode: article_output
+    model: deepseek-v3.2
+
+  brief_interpreter:
+    chinese_name: Brief解析与任务归一AE
+    type: AE
+    capability: 生文前解析
+    must: true
+    score_type: null
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
+  painpoint_anchor:
+    chinese_name: 痛点分类与卖点锚定AE
+    type: AE
+    capability: 辅助生文/评分
+    must: true
+    score_type: 0-100
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
+  sellingpoint_logic:
+    chinese_name: 卖点展开与因果链AE
+    type: AE
+    capability: 辅助生文/评分
+    must: true
+    score_type: 0-100
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
+  narrative_strategy:
+    chinese_name: 叙事路径与扰动AE
+    type: AE
+    capability: 辅助生文/评分
+    must: true
+    score_type: 0-100
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
+  persona_pov:
+    chinese_name: 人设视角AE
+    type: AE
+    capability: 辅助生文/评分
+    must: true
+    score_type: 0-100
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
+  brand_product_guard:
+    chinese_name: 品牌与产品表达AE
+    type: AE
+    capability: 辅助生文/评分
+    must: true
+    score_type: 0/1
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
+  compliance_redline:
+    chinese_name: 合规红线AE
+    type: AE
+    capability: 辅助生文/评分
+    must: true
+    score_type: 0/1
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
+  xhs_structure:
+    chinese_name: 小红书结构排版AE
+    type: AE
+    capability: 辅助生文/评分
+    must: true
+    score_type: 0-100
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
+  naturalness_ai_smell:
+    chinese_name: 自然度与AI味AE
+    type: AE
+    capability: 辅助生文/评分
+    must: true
+    score_type: 0-100
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
+  # Legacy experts kept registered for backward compatibility with older brief_type values.
+  legal:
+    chinese_name: 法律Expert（旧版）
+    type: AE
+    capability: 辅助生文/评分
+    must: false
+    score_type: 0/1
+    output_mode: fixed
+    model: doubao-seed-1-6-flash
+  platform:
+    chinese_name: 平台Expert（旧版）
+    type: AE
+    capability: 辅助生文/评分
+    must: false
+    score_type: 0/1
+    output_mode: fixed
+    model: doubao-seed-1-6-flash
+  brand:
+    chinese_name: 品牌Expert（旧版）
+    type: AE
+    capability: 辅助生文/评分
+    must: false
+    score_type: 0/1
+    output_mode: random
+    model: doubao-seed-1-6-flash
+  painpoint_selling:
+    chinese_name: 产品痛点卖点Expert（旧版）
+    type: AE
+    capability: 辅助生文/评分
+    must: false
+    score_type: 0-100
+    output_mode: ratio_random
+    model: doubao-seed-1-6-flash
+  campaign:
+    chinese_name: 活动Expert（旧版）
+    type: AE
+    capability: 辅助生文/评分
+    must: false
+    score_type: 0-100
+    output_mode: fixed
+    model: doubao-seed-1-6-flash
+  persona:
+    chinese_name: 拟人化Expert（旧版）
+    type: AE
+    capability: 辅助生文/评分
+    must: false
+    score_type: 0-100
+    output_mode: ratio_random
+    model: doubao-seed-1-6-flash
+  story_elements:
+    chinese_name: 故事元素Expert（旧版）
+    type: AE
+    capability: 辅助生文/评分
+    must: false
+    score_type: 0-100
+    output_mode: random
+    model: doubao-seed-1-6-flash
+  content_structure:
+    chinese_name: 内容结构Expert（旧版）
+    type: AE
+    capability: 辅助生文/评分
+    must: false
+    score_type: 0-100
+    output_mode: ratio_random
+    model: doubao-seed-1-6-flash
+  common_sense:
+    chinese_name: 生活常识Expert（旧版）
+    type: AE
+    capability: 辅助生文/评分
+    must: false
+    score_type: 0-100
+    output_mode: fixed
+    model: doubao-seed-1-6-flash
+  elegance:
+    chinese_name: 文章优雅度Expert（旧版）
+    type: AE
+    capability: 辅助生文/评分
+    must: false
+    score_type: 0-100
+    output_mode: mixed
+    model: doubao-seed-1-6-flash
+  ai_smell:
+    chinese_name: AI味Expert（旧版）
+    type: AE
+    capability: 辅助生文/评分
+    must: false
+    score_type: 0-100
+    output_mode: fixed
+    model: doubao-seed-1-6-flash
+  content_richness:
+    chinese_name: 内容丰富度Expert（统计旧版）
+    type: AE
+    capability: 统计
+    must: null
+    score_type: null
+    output_mode: null
+    model: 否
+  persona_diversity:
+    chinese_name: 人群多样性Expert（统计旧版）
+    type: AE
+    capability: 统计
+    must: null
+    score_type: null
+    output_mode: null
+    model: 否

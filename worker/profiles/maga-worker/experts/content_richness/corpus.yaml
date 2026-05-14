@@ -1,0 +1,13 @@
+expert: content_richness
+chinese_name: 内容丰富度Expert
+output_mode: null
+score_type: null
+groups:
+  '-':
+    description: '-'
+    items:
+    - l2: '-'
+      ideal: null
+      ideal_help: '-'
+      examples: null
+      rules: null

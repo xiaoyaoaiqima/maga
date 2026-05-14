@@ -1,0 +1,20 @@
+expert: sellingpoint_logic
+chinese_name: 卖点展开与因果链AE
+output_mode: fixed
+score_type: 0-100
+groups:
+  因果链规则:
+    description: 痛点到卖点的允许链路与禁止链路
+    items:
+      - l2: A2 肚肚不适/便便问题
+        ideal: 痛点表现 → 肚肚舒适和脂肪结构 → 天然乳脂/OPO
+        examples: 吐奶、肚肚不舒服、臭臭节奏乱
+        rules:
+          - 核心卖点优先天然乳脂/OPO
+          - 8种HMO只能作为辅助配方信息
+          - 乳铁蛋白不能作为解决吐奶的核心原因
+      - l2: 禁止卖点堆叠
+        ideal: 主卖点充分展开，辅助卖点短句带出
+        examples: 连续罗列天然乳脂、OPO、8种HMO、乳铁蛋白
+        rules:
+          - 禁止三个及以上卖点共同承担同一痛点解决逻辑

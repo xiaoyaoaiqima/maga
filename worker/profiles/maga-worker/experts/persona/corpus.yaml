@@ -1,0 +1,193 @@
+expert: persona
+chinese_name: 拟人化Expert
+output_mode: ratio_random
+score_type: 0-100
+groups:
+  人设:
+    description: 小红书母婴奶粉常见人设
+    items:
+    - l2: 工作身份
+      ideal: 职场忙碌妈妈
+      ideal_help: null
+      examples: 职场妈妈、职场忙碌、职场忙碌妈妈、职场忙碌 / 陪伴时间少的妈妈、大忙人妈妈、普通上班族妈妈
+      rules: null
+    - l2: null
+      ideal: 职场精英妈妈
+      ideal_help: null
+      examples: 高管妈妈、创业妈妈、自由职业妈妈、海归妈妈
+      rules: null
+    - l2: null
+      ideal: 品牌忠诚职场妈妈
+      ideal_help: null
+      examples: 职场妈妈 / 品牌忠实粉
+      rules: null
+    - l2: null
+      ideal: 全职妈妈
+      ideal_help: null
+      examples: 全职妈妈
+      rules: null
+    - l2: null
+      ideal: 家庭 CEO
+      ideal_help: null
+      examples: 家庭 CEO
+      rules: null
+    - l2: 育儿经验
+      ideal: 新手妈妈
+      ideal_help: null
+      examples: 新手妈妈
+      rules: null
+    - l2: null
+      ideal: 二胎经验妈妈
+      ideal_help: null
+      examples: 二胎妈妈 / 经验型妈妈、经验丰富的二胎妈妈
+      rules: null
+    - l2: null
+      ideal: 学龄育儿妈妈
+      ideal_help: null
+      examples: 学龄妈妈
+      rules: null
+    - l2: 宝宝需求
+      ideal: 敏宝护理妈妈
+      ideal_help: null
+      examples: 换季敏感宝宝妈妈
+      rules: null
+    - l2: null
+      ideal: 体弱宝宝妈妈
+      ideal_help: null
+      examples: 易生病宝宝妈妈、宝宝偏瘦妈妈
+      rules: null
+    - l2: null
+      ideal: 转奶期妈妈
+      ideal_help: null
+      examples: 正在给宝宝转奶的妈妈
+      rules: null
+    - l2: 育儿理念
+      ideal: 高知早教妈妈
+      ideal_help: null
+      examples: 高知妈妈 / 早教重视派、高知环保主义妈妈
+      rules: null
+    - l2: null
+      ideal: 理性较真妈妈
+      ideal_help: null
+      examples: 理科生妈妈 / 较真派、数据控妈妈 / 体检重视派、成分妈妈、研究员型妈妈
+      rules: null
+    - l2: null
+      ideal: 佛系放养妈妈
+      ideal_help: null
+      examples: “佛系” 妈妈、佛系放养妈
+      rules: null
+    - l2: 生活兴趣
+      ideal: 品质生活妈妈
+      ideal_help: null
+      examples: 家庭营养师、生活美学家
+      rules: null
+    - l2: null
+      ideal: 户外探索妈妈
+      ideal_help: null
+      examples: 户外探索家
+      rules: null
+    - l2: null
+      ideal: 潮流兴趣妈妈
+      ideal_help: null
+      examples: 网络冲浪妈妈、二次元妈妈
+      rules: null
+    - l2: 特殊属性
+      ideal: 专业导购
+      ideal_help: null
+      examples: 专业导购
+      rules:
+      - 你是育儿老师/育婴专家，主要在妈妈班、品牌线下咨询场景中与宝妈沟通，提供喂养建议与选奶指导。你的身份是专业咨询者，不是活动主办方，不以个人活动、个人门店、个人组织者视角发言。
+  沟通风格:
+    description: 文本的语气语调设定
+    items:
+    - l2: 真实路人型
+      ideal: 真实路人型
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 碎碎念倾诉型
+      ideal: 碎碎念倾诉型
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 理性干货型
+      ideal: 理性干货型
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 软萌种草型
+      ideal: 软萌种草型
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 经验老道型
+      ideal: 经验老道型
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: 焦虑紧绷型
+      ideal: 焦虑紧绷型
+      ideal_help: null
+      examples: null
+      rules: null
+  品牌认知度:
+    description: 设定该人设对推广品牌的熟悉程度
+    items:
+    - l2: 品牌认知度
+      ideal: 从没听说过
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 听说过但没试过
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 体验过感觉一般
+      ideal_help: null
+      examples: null
+      rules: null
+    - l2: null
+      ideal: 品牌忠诚度很高
+      ideal_help: null
+      examples: null
+      rules: null
+  消费历史:
+    description: 过往的购买经历、踩坑经验或心智沉淀
+    items:
+    - l2: 转奶前喂养方式
+      ideal: 混合喂养
+      ideal_help: null
+      examples: 混合喂养
+      rules: null
+    - l2: null
+      ideal: 纯母乳
+      ideal_help: null
+      examples: 纯母乳
+      rules: null
+    - l2: null
+      ideal: 纯奶粉
+      ideal_help: null
+      examples: 纯奶粉
+      rules: null
+    - l2: 转奶前品牌
+      ideal: 雀巢
+      ideal_help: null
+      examples: 雀巢
+      rules: null
+    - l2: null
+      ideal: 爱他美
+      ideal_help: null
+      examples: 爱他美
+      rules: null
+    - l2: null
+      ideal: a2至初
+      ideal_help: null
+      examples: a2至初
+      rules: null
+    - l2: null
+      ideal: 皇家美素佳儿
+      ideal_help: null
+      examples: 皇家美素佳儿
+      rules: null

@@ -22,7 +22,9 @@ from app.models.content_agent import ContentAgentStageCall, ContentBatchItem, Ex
 from app.models.maga_assets import AssetRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 
-MAGA_WORKER_WORKSPACE = Path("/Users/luxifa/.hermes/profiles/maga-worker/workspace")
+MAGA_ROOT = Path("/Users/luxifa/maga")
+MAGA_WORKER_CODE_PATH = MAGA_ROOT / "worker"
+MAGA_WORKER_WORKSPACE = MAGA_ROOT / "worker" / "profiles" / "maga-worker"
 PYTHON = Path("/Users/luxifa/maga/.venv/bin/python")
 
 
@@ -52,18 +54,21 @@ def maga_worker_server():
     env = os.environ.copy()
     env["MAGA_WORKER_EXECUTOR_TOKEN"] = "test-token"
     env["MAGA_WORKER_RUNTIME_FAST_FAKE"] = "1"
+    env["PYTHONPATH"] = str(MAGA_WORKER_CODE_PATH) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    env["WORKER_WORKSPACE"] = str(MAGA_WORKER_WORKSPACE)
+    env["MAGA_WORKER_OUTPUT_DIR"] = str(MAGA_ROOT / ".local" / "worker" / "outputs-test")
     process = subprocess.Popen(
         [
             str(PYTHON),
             "-m",
             "uvicorn",
-            "tools.maga_executor_server:app",
+            "maga_worker.executor_server:app",
             "--host",
             "127.0.0.1",
             "--port",
             str(port),
         ],
-        cwd=str(MAGA_WORKER_WORKSPACE),
+        cwd=str(MAGA_ROOT),
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

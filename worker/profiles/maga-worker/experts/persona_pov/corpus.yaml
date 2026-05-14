@@ -1,0 +1,15 @@
+expert: persona_pov
+chinese_name: 人设视角AE
+output_mode: fixed
+score_type: 0-100
+groups:
+  人设视角:
+    description: 专业育婴建议视角规则
+    items:
+      - l2: 专业建议视角
+        ideal: professional_advisor
+        examples: 专业观察、选择依据、喂养建议
+        rules:
+          - 不显式说明自己是育婴老师/专家
+          - 不使用宝妈第一人称亲历
+          - 不以活动主办方或带班视角发言

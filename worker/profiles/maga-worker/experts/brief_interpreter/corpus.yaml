@@ -1,0 +1,21 @@
+expert: brief_interpreter
+chinese_name: Brief解析与任务归一AE
+output_mode: fixed
+score_type: null
+groups:
+  任务字段:
+    description: 需要从 brief 中归一出的核心字段
+    items:
+      - l2: 内容类型
+        ideal: 种草分享
+        examples: 小红书笔记、种草文、专业建议型内容
+        rules: null
+      - l2: 平台
+        ideal: xiaohongshu
+        examples: 小红书
+        rules: null
+      - l2: 输出格式
+        ideal: 标题正文格式
+        examples: "标题：[标题]
+正文：[正文]"
+        rules: null

@@ -1,0 +1,61 @@
+brief_id: maga-manual-001
+brief_type: xhs_product_seeding_professional_advisor
+brand: yuanyue
+products:
+- yuanyue
+campaign:
+  topic: 宝宝便便不规律
+  target_audience: 新手妈妈
+  style: 经验老道型
+  opening_type: 过来人提醒
+  structure_type: 痛点-观察-建议
+product_topic: 宝宝便便不规律
+target_audience: 新手妈妈
+style: 经验老道型
+key_painpoints:
+- 便便不规律
+key_sellingpoints:
+- 好消化易吸收
+reference_examples:
+- title: 源悦你给我出来 我是真的会谢！
+  body: 宝宝那阵子便便不规律，我记录了几天喂养情况再调整。
+  painpoint: 肠胃弱/奶量上不去
+must_avoid: []
+score_threshold: 85
+max_rewrites: 1
+soft_floor: 70
+maga:
+  source: maga_generation_snapshot
+  brief:
+    product_topic: 宝宝便便不规律
+    target_audience: 新手妈妈
+    style: 经验老道型
+    content_constraints:
+      word_count: 450-650
+      emoji: 少量
+  assets:
+    brand_profile:
+      name: 源悦
+    painpoint:
+      painpoint: 便便不规律
+      safe_expressions:
+      - 日常观察宝宝便便状态
+      - 肚肚舒服些
+    selling_point:
+      selling_point: 好消化易吸收
+    reference_examples:
+    - title: 源悦你给我出来 我是真的会谢！
+      body: 宝宝那阵子便便不规律，我记录了几天喂养情况再调整。
+      painpoint: 肠胃弱/奶量上不去
+    compliance_rules:
+      risk_level: high
+      forbidden_terms:
+      - 治疗便秘
+      - 治好便秘
+      - 改善便秘
+  diversity_slot:
+    opening_type: 过来人提醒
+    structure_type: 痛点-观察-建议
+  batch_context:
+    batch_id: 1
+    item_id: 1
