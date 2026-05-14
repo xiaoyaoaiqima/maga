@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.models.base import Base
 from app.models.content_agent import ExecutorRegistry
 from app.models.maga_assets import AssetImportRun, AssetRegistry
-from app.models.prompt_optimizer import PromptAsset, PromptVersion
+from app.models.prompt_optimizer import PromptAsset, PromptEvaluation, PromptIssue, PromptOptimizerRun, PromptVersion
 from app.services.asset_import_service import import_maga_worker_static_assets, import_yuanyue_training_rules
 from app.services.executor_invocation_service import InvokeResult
 
@@ -163,7 +163,7 @@ async def test_import_maga_worker_static_assets_versions_prompts_and_registry_as
     (workspace / "experts" / "compliance_redline").mkdir(parents=True)
     (workspace / "outputs" / "runtime_fast_1").mkdir(parents=True)
     (workspace / "tools").mkdir(parents=True)
-    (profile / "SOUL.md").write_text("你是 GE 主写手。", encoding="utf-8")
+    (workspace / "system.md").write_text("你是 GE 主写手。", encoding="utf-8")
     (workspace / "ge_writer" / "style_templates.md").write_text("## 风格模板\n自然真实", encoding="utf-8")
     (workspace / "experts" / "_registry.yaml").write_text(
         "experts:\n  compliance_redline:\n    score_type: hard\n",
@@ -173,7 +173,7 @@ async def test_import_maga_worker_static_assets_versions_prompts_and_registry_as
         "brief_types:\n  xhs_product_seeding_professional_advisor:\n    required_aes: [compliance_redline]\n",
         encoding="utf-8",
     )
-    (workspace / "experts" / "compliance_redline" / "persona.md").write_text(
+    (workspace / "experts" / "compliance_redline" / "system.md").write_text(
         "你是合规红线专家。",
         encoding="utf-8",
     )
@@ -195,18 +195,42 @@ async def test_import_maga_worker_static_assets_versions_prompts_and_registry_as
     async with engine.begin() as conn:
         await conn.run_sync(
             Base.metadata.create_all,
-            tables=[PromptAsset.__table__, PromptVersion.__table__, AssetRegistry.__table__, AssetImportRun.__table__],
+            tables=[
+                PromptAsset.__table__,
+                PromptVersion.__table__,
+                PromptIssue.__table__,
+                PromptOptimizerRun.__table__,
+                PromptEvaluation.__table__,
+                AssetRegistry.__table__,
+                AssetImportRun.__table__,
+            ],
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async with session_factory() as session:
+        legacy_ge = PromptAsset(name="xhs_writer.ge.soul", prompt_type="generation", tags=["ge"], is_deleted=0)
+        legacy_ae = PromptAsset(
+            name="xhs_writer.ae.compliance_redline.persona",
+            prompt_type="critic",
+            tags=["ae", "persona"],
+            is_deleted=0,
+        )
+        session.add_all([legacy_ge, legacy_ae])
+        await session.flush()
+        session.add_all(
+            [
+                PromptVersion(prompt_id=legacy_ge.id, version_no=1, content="old ge"),
+                PromptVersion(prompt_id=legacy_ae.id, version_no=1, content="old ae"),
+            ]
+        )
+        await session.flush()
         result = await import_maga_worker_static_assets(session, workspace)
         await session.commit()
 
     assert result.imported_prompts == 4
     assert result.imported_assets == 3
-    assert "xhs_writer.ge.soul" in result.prompt_names
-    assert "xhs_writer.ae.compliance_redline.persona" in result.prompt_names
+    assert "xhs_writer.ge.system" in result.prompt_names
+    assert "xhs_writer.ae.compliance_redline.system" in result.prompt_names
     assert ("expert_corpus", "compliance_redline") in result.asset_keys
 
     async with session_factory() as session:
@@ -216,10 +240,12 @@ async def test_import_maga_worker_static_assets_versions_prompts_and_registry_as
         runs = (await session.execute(AssetImportRun.__table__.select())).mappings().all()
 
     prompt_names = {row["name"] for row in prompts}
-    assert "xhs_writer.ge.soul" in prompt_names
+    assert "xhs_writer.ge.system" in prompt_names
     assert "xhs_writer.ge.style_templates" in prompt_names
-    assert "xhs_writer.ae.compliance_redline.persona" in prompt_names
+    assert "xhs_writer.ae.compliance_redline.system" in prompt_names
     assert "xhs_writer.ae.compliance_redline.score_rubric" in prompt_names
+    assert "xhs_writer.ge.soul" not in prompt_names
+    assert "xhs_writer.ae.compliance_redline.persona" not in prompt_names
     assert "ge-runtime_fast.prompt.md" not in prompt_names
     assert len(versions) == 4
     by_asset = {(row["asset_type"], row["asset_key"]): row for row in assets}

@@ -9,13 +9,13 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 import yaml
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE, normalize_executor_code
 from app.models.content_agent import ExecutorRegistry
 from app.models.maga_assets import AssetImportRun, AssetRegistry
-from app.models.prompt_optimizer import PromptAsset, PromptVersion
+from app.models.prompt_optimizer import PromptAsset, PromptEvaluation, PromptIssue, PromptOptimizerRun, PromptVersion
 from app.services.executor_invocation_service import (
     ExecutorInvocationClient,
     MockExecutorInvocationClient,
@@ -166,6 +166,8 @@ async def import_maga_worker_static_assets(
     changed_prompts = 0
     changed_assets = 0
 
+    await _purge_legacy_worker_prompt_assets(db)
+
     for path in prompt_files:
         prompt = await _upsert_prompt_file(db, workspace, path, source_name=source_name, created_by=created_by)
         prompt_names.append(prompt.name)
@@ -224,14 +226,14 @@ def _invocation_client_for_invoke_url(invoke_url: str | None):
 
 def _discover_worker_prompt_files(workspace: Path) -> list[Path]:
     candidates: list[Path] = []
-    parent_soul = workspace.parent / "SOUL.md"
-    if parent_soul.exists():
-        candidates.append(parent_soul)
+    system_prompt = workspace / "system.md"
+    if system_prompt.exists():
+        candidates.append(system_prompt)
     candidates.extend(sorted((workspace / "ge_writer").glob("*.md")))
     for expert_dir in sorted((workspace / "experts").glob("*")):
         if not expert_dir.is_dir() or expert_dir.name.startswith("_"):
             continue
-        for file_name in ("persona.md", "score_rubric.md"):
+        for file_name in ("system.md", "score_rubric.md"):
             path = expert_dir / file_name
             if path.exists():
                 candidates.append(path)
@@ -316,6 +318,23 @@ async def _upsert_prompt_file(
     return prompt
 
 
+async def _purge_legacy_worker_prompt_assets(db: AsyncSession) -> None:
+    """Remove prompt names that were replaced by the system.md scheme."""
+    result = await db.execute(
+        select(PromptAsset).where(
+            (PromptAsset.name == "xhs_writer.ge.soul") | (PromptAsset.name.like("xhs_writer.ae.%.persona")),
+        )
+    )
+    legacy_prompt_ids = [prompt.id for prompt in result.scalars().all()]
+    if not legacy_prompt_ids:
+        return
+    await db.execute(delete(PromptEvaluation).where(PromptEvaluation.prompt_id.in_(legacy_prompt_ids)))
+    await db.execute(delete(PromptOptimizerRun).where(PromptOptimizerRun.prompt_id.in_(legacy_prompt_ids)))
+    await db.execute(delete(PromptIssue).where(PromptIssue.prompt_id.in_(legacy_prompt_ids)))
+    await db.execute(delete(PromptVersion).where(PromptVersion.prompt_id.in_(legacy_prompt_ids)))
+    await db.execute(delete(PromptAsset).where(PromptAsset.id.in_(legacy_prompt_ids)))
+
+
 async def _upsert_registry_file(
     db: AsyncSession,
     workspace: Path,
@@ -394,8 +413,8 @@ def _relative_worker_path(workspace: Path, path: Path) -> str:
 
 def _prompt_name_for_path(rel: str) -> str:
     parts = Path(rel).parts
-    if rel == "../SOUL.md":
-        return "xhs_writer.ge.soul"
+    if rel == "system.md":
+        return "xhs_writer.ge.system"
     if len(parts) >= 2 and parts[0] == "ge_writer":
         return f"xhs_writer.ge.{Path(rel).stem}"
     if len(parts) >= 3 and parts[0] == "experts":
@@ -404,9 +423,9 @@ def _prompt_name_for_path(rel: str) -> str:
 
 
 def _prompt_type_for_path(rel: str) -> str:
-    if rel.startswith("ge_writer/") or rel == "../SOUL.md":
+    if rel.startswith("ge_writer/") or rel == "system.md":
         return "generation"
-    if rel.endswith("/persona.md") or rel.endswith("/score_rubric.md"):
+    if rel.endswith("/system.md") or rel.endswith("/score_rubric.md"):
         return "critic"
     return "other"
 
@@ -414,7 +433,7 @@ def _prompt_type_for_path(rel: str) -> str:
 def _prompt_tags_for_path(rel: str) -> list[str]:
     tags = ["maga-worker", "xhs-writer"]
     parts = Path(rel).parts
-    if rel == "../SOUL.md":
+    if rel == "system.md":
         return [*tags, "ge", "system"]
     if len(parts) >= 2 and parts[0] == "ge_writer":
         return [*tags, "ge", Path(rel).stem]

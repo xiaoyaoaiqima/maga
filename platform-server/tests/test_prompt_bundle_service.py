@@ -21,7 +21,7 @@ async def test_prompt_bundle_service_builds_current_prompt_and_static_asset_snap
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async with session_factory() as session:
-        prompt = PromptAsset(name="xhs_writer.ge.soul", prompt_type="generation", tags=["ge"])
+        prompt = PromptAsset(name="xhs_writer.ge.system", prompt_type="generation", tags=["ge"])
         ignored_prompt = PromptAsset(name="other.prompt", prompt_type="generation")
         session.add_all([prompt, ignored_prompt])
         await session.flush()
@@ -58,8 +58,8 @@ async def test_prompt_bundle_service_builds_current_prompt_and_static_asset_snap
         bundle = await PromptBundleService(session).build_xhs_writer_prompt_bundle_snapshot()
 
     assert bundle["schema_version"] == "1"
-    assert set(bundle["prompts"]) == {"xhs_writer.ge.soul"}
-    assert bundle["prompts"]["xhs_writer.ge.soul"]["content"] == "你是 GE 主写手。"
+    assert set(bundle["prompts"]) == {"xhs_writer.ge.system"}
+    assert bundle["prompts"]["xhs_writer.ge.system"]["content"] == "你是 GE 主写手。"
     assert set(bundle["assets"]) == {"expert_corpus:compliance_redline"}
     assert bundle["assets"]["expert_corpus:compliance_redline"]["source_hash"] == "corpus-hash"
     assert bundle["summary"]["prompt_count"] == 1

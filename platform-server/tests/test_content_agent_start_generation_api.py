@@ -198,7 +198,7 @@ async def test_start_generation_endpoint_persists_maga_model_config(start_genera
 async def test_start_generation_endpoint_persists_prompt_bundle_snapshot(start_generation_client):
     client, session_factory = start_generation_client
     async with session_factory() as session:
-        prompt = PromptAsset(name="xhs_writer.ge.soul", prompt_type="generation", tags=["ge"])
+        prompt = PromptAsset(name="xhs_writer.ge.system", prompt_type="generation", tags=["ge"])
         session.add(prompt)
         await session.flush()
         version = PromptVersion(prompt_id=prompt.id, version_no=1, content="你是 GE 主写手。")
@@ -228,6 +228,6 @@ async def test_start_generation_endpoint_persists_prompt_bundle_snapshot(start_g
         task = (await session.execute(select(ContentAgentTask))).scalars().first()
 
     bundle = task.input_snapshot["generation_snapshot"]["prompt_bundle_snapshot"]
-    assert bundle["prompts"]["xhs_writer.ge.soul"]["version_id"] == version.id
-    assert bundle["prompts"]["xhs_writer.ge.soul"]["content"] == "你是 GE 主写手。"
+    assert bundle["prompts"]["xhs_writer.ge.system"]["version_id"] == version.id
+    assert bundle["prompts"]["xhs_writer.ge.system"]["content"] == "你是 GE 主写手。"
     assert bundle["assets"]["expert_corpus:compliance_redline"]["source_hash"] == "corpus-hash"

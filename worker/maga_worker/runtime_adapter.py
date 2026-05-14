@@ -121,8 +121,8 @@ def invoke_runtime_fast_generate_draft(
 
     spec_md = _fast_writing_spec(brief)
     with _runtime_env(generation_snapshot):
-        soul, style, voice = ge_prompt_parts()
-        draft_text = call_ge_func(brief, spec_md, soul, style, voice, debug_dir=base, tag="runtime_fast")
+        system, style, voice = ge_prompt_parts()
+        draft_text = call_ge_func(brief, spec_md, system, style, voice, debug_dir=base, tag="runtime_fast")
         review = call_ae_func("compliance_redline", "score", brief, draft_text, debug_dir=base, tag="runtime_fast")
         review_history: list[dict[str, Any]] = []
         rewrite_rounds = 0
@@ -138,7 +138,7 @@ def invoke_runtime_fast_generate_draft(
             draft_text = call_ge_func(
                 brief,
                 spec_md,
-                soul,
+                system,
                 style,
                 voice,
                 feedback=feedback,

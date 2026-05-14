@@ -55,10 +55,10 @@ def _prompt_bundle() -> dict:
     return {
         "schema_version": "1",
         "prompts": {
-            "xhs_writer.ge.soul": {"version_id": 1, "content": "BUNDLE_SOUL"},
+            "xhs_writer.ge.system": {"version_id": 1, "content": "BUNDLE_SYSTEM"},
             "xhs_writer.ge.style_templates": {"version_id": 2, "content": "BUNDLE_STYLE"},
             "xhs_writer.ge.voice_dictionary": {"version_id": 3, "content": "BUNDLE_VOICE"},
-            "xhs_writer.ae.compliance_redline.persona": {"version_id": 4, "content": "BUNDLE_AE_PERSONA"},
+            "xhs_writer.ae.compliance_redline.system": {"version_id": 4, "content": "BUNDLE_AE_SYSTEM"},
             "xhs_writer.ae.compliance_redline.score_rubric": {"version_id": 5, "content": "BUNDLE_RUBRIC"},
         },
         "assets": {
@@ -148,8 +148,8 @@ def test_invoke_runtime_generate_draft_uses_model_config_from_maga_snapshot(monk
 
 
 def test_invoke_runtime_fast_generate_draft_returns_draft_and_review_report(tmp_path):
-    def fake_call_ge(brief, spec_md, soul, style, voice, debug_dir=None, tag=""):
-        assert soul
+    def fake_call_ge(brief, spec_md, system, style, voice, debug_dir=None, tag=""):
+        assert system
         assert style is not None
         assert voice is not None
         assert brief["brief_type"] == "xhs_product_seeding_professional_advisor"
@@ -188,8 +188,8 @@ def test_invoke_runtime_fast_prefers_prompt_bundle_for_ge_prompt_parts(tmp_path)
     snapshot = _snapshot()
     snapshot["prompt_bundle_snapshot"] = _prompt_bundle()
 
-    def fake_call_ge(brief, spec_md, soul, style, voice, debug_dir=None, tag="", **kwargs):
-        assert soul == "BUNDLE_SOUL"
+    def fake_call_ge(brief, spec_md, system, style, voice, debug_dir=None, tag="", **kwargs):
+        assert system == "BUNDLE_SYSTEM"
         assert style == "BUNDLE_STYLE"
         assert voice == "BUNDLE_VOICE"
         return "源悦观察便便状态别着急\n\n先看便便软硬和肚肚舒不舒服。"
@@ -207,7 +207,7 @@ def test_invoke_runtime_fast_prefers_prompt_bundle_for_ge_prompt_parts(tmp_path)
     assert result["draft"]["title"] == "源悦观察便便状态别着急"
 
 
-def test_call_ae_prefers_prompt_bundle_for_persona_corpus_and_rubric(monkeypatch, tmp_path):
+def test_call_ae_prefers_prompt_bundle_for_system_corpus_and_rubric(monkeypatch, tmp_path):
     snapshot = _snapshot()
     prompt_bundle = _prompt_bundle()
     captured = {}
@@ -223,7 +223,7 @@ def test_call_ae_prefers_prompt_bundle_for_persona_corpus_and_rubric(monkeypatch
     result = call_ae("compliance_redline", "score", build_runtime_brief_from_snapshot(snapshot), "草稿", debug_dir=tmp_path)
 
     assert result["score"] == 1
-    assert captured["system"] == "BUNDLE_AE_PERSONA"
+    assert captured["system"] == "BUNDLE_AE_SYSTEM"
     assert "BUNDLE_CORPUS_ITEM" in captured["user"]
     assert "BUNDLE_RUBRIC" in captured["user"]
 
@@ -235,7 +235,7 @@ def test_invoke_runtime_fast_uses_model_config_from_maga_snapshot(monkeypatch, t
     snapshot = _snapshot()
     snapshot["model_config"] = {"ge_model": "maga-ge", "ae_model": "maga-ae"}
 
-    def fake_call_ge(brief, spec_md, soul, style, voice, debug_dir=None, tag="", **kwargs):
+    def fake_call_ge(brief, spec_md, system, style, voice, debug_dir=None, tag="", **kwargs):
         import os
 
         seen["ge_model"] = os.environ.get("XHS_RUNTIME_MODEL_GE")
@@ -267,7 +267,7 @@ def test_invoke_runtime_fast_rewrites_and_rescores_when_review_has_soft_suggesti
     ge_calls = []
     ae_calls = []
 
-    def fake_call_ge(brief, spec_md, soul, style, voice, feedback=None, prev_draft=None, debug_dir=None, tag=""):
+    def fake_call_ge(brief, spec_md, system, style, voice, feedback=None, prev_draft=None, debug_dir=None, tag=""):
         ge_calls.append({"feedback": feedback, "prev_draft": prev_draft, "tag": tag})
         if feedback:
             assert "拿不准时问问靠谱渠道" in feedback
@@ -308,7 +308,7 @@ def test_invoke_runtime_fast_allows_second_rewrite_when_first_recheck_still_has_
     ge_calls = []
     ae_calls = []
 
-    def fake_call_ge(brief, spec_md, soul, style, voice, feedback=None, prev_draft=None, debug_dir=None, tag=""):
+    def fake_call_ge(brief, spec_md, system, style, voice, feedback=None, prev_draft=None, debug_dir=None, tag=""):
         ge_calls.append({"feedback": feedback, "prev_draft": prev_draft, "tag": tag})
         if len(ge_calls) == 1:
             return "源悦观察便便状态别着急\n\n必要时问专业人士，也可以观察几天。"
@@ -361,7 +361,7 @@ def test_invoke_runtime_fast_rewrites_and_rescores_when_compliance_fails(tmp_pat
     ge_calls = []
     ae_calls = []
 
-    def fake_call_ge(brief, spec_md, soul, style, voice, feedback=None, prev_draft=None, debug_dir=None, tag=""):
+    def fake_call_ge(brief, spec_md, system, style, voice, feedback=None, prev_draft=None, debug_dir=None, tag=""):
         ge_calls.append({"feedback": feedback, "prev_draft": prev_draft, "tag": tag})
         if feedback:
             assert "治疗便秘" in feedback

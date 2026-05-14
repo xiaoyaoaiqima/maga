@@ -114,14 +114,14 @@ def bundle_asset_content(asset_type: str, asset_key: str) -> Any:
 
 
 def ge_prompt_parts() -> tuple[str, str, str]:
-    soul = bundle_prompt("xhs_writer.ge.soul") or (PROFILE / "SOUL.md").read_text(encoding="utf-8")
+    system = bundle_prompt("xhs_writer.ge.system") or (PROFILE / "system.md").read_text(encoding="utf-8")
     style = bundle_prompt("xhs_writer.ge.style_templates")
     if not style and (GE_DIR / "style_templates.md").exists():
         style = (GE_DIR / "style_templates.md").read_text(encoding="utf-8")
     voice = bundle_prompt("xhs_writer.ge.voice_dictionary")
     if not voice and (GE_DIR / "voice_dictionary.md").exists():
         voice = (GE_DIR / "voice_dictionary.md").read_text(encoding="utf-8")
-    return soul, style, voice
+    return system, style, voice
 
 
 # ─────────────────── 模型调用 ───────────────────
@@ -207,16 +207,16 @@ def call_ae(ae: str, mode: str, brief: dict, draft: str | None = None,
 
     若提供 debug_dir，会落盘 prompt + raw_response + parsed yaml 三件套。
     """
-    persona_path = EXPERTS / ae / "persona.md"
+    system_path = EXPERTS / ae / "system.md"
     corpus_path  = EXPERTS / ae / "corpus.yaml"
     rubric_path  = EXPERTS / ae / "score_rubric.md"
 
-    persona = bundle_prompt(f"xhs_writer.ae.{ae}.persona")
-    if not persona and not persona_path.exists():
-        return {"_skipped": True, "reason": f"{ae}/persona.md missing"}
+    system = bundle_prompt(f"xhs_writer.ae.{ae}.system")
+    if not system and not system_path.exists():
+        return {"_skipped": True, "reason": f"{ae}/system.md missing"}
 
-    if not persona:
-        persona = persona_path.read_text(encoding="utf-8")
+    if not system:
+        system = system_path.read_text(encoding="utf-8")
     corpus_from_bundle = bundle_asset_content("expert_corpus", ae)
     corpus = corpus_from_bundle if isinstance(corpus_from_bundle, dict) else None
     if corpus is None:
@@ -235,17 +235,17 @@ def call_ae(ae: str, mode: str, brief: dict, draft: str | None = None,
         if rubric:
             user_parts.append(f"## 评分规则\n{rubric}")
         user_parts.append(
-            "请严格按 persona.md 中【输出契约 - 生文后(评分模式)】的 yaml 结构输出。"
+            "请严格按 system.md 中【输出契约 - 生文后(评分模式)】的 yaml 结构输出。"
             "**只输出 yaml 内容本身，不要 markdown 代码块标记，不要任何前后说明文字。**"
         )
     else:
         user_parts.append(
-            "请严格按 persona.md 中【输出契约 - 生文前(指令模式)】的 yaml 结构输出。"
+            "请严格按 system.md 中【输出契约 - 生文前(指令模式)】的 yaml 结构输出。"
             "**只输出 yaml 内容本身，不要 markdown 代码块标记，不要任何前后说明文字。**"
         )
     user_text = "\n\n".join(user_parts)
 
-    text = call_model(model_ae(), system=persona, user=user_text,
+    text = call_model(model_ae(), system=system, user=user_text,
                       temperature=0.3 if mode == "score" else 0.5)
     parsed = parse_yaml_loose(text)
     result = parsed if isinstance(parsed, dict) else {"_raw": text}
@@ -257,7 +257,7 @@ def call_ae(ae: str, mode: str, brief: dict, draft: str | None = None,
         out_path    = debug_dir / f"ae-{ae}-{mode}{suffix}.parsed.yaml"
         prompt_path.write_text(
             f"# AE: {ae} | mode: {mode}{(' | tag: '+tag) if tag else ''}\n\n"
-            f"## SYSTEM (persona.md)\n\n{persona}\n\n"
+            f"## SYSTEM (system.md)\n\n{system}\n\n"
             f"---\n\n## USER\n\n{user_text}\n",
             encoding="utf-8")
         raw_path.write_text(text, encoding="utf-8")
@@ -391,10 +391,10 @@ def build_writing_spec(brief: dict, ae_outputs: dict[str, dict], hard_block: lis
 
 
 # ─────────────────── GE 生文 ───────────────────
-def call_ge(brief: dict, spec_md: str, soul: str, style: str, voice: str,
+def call_ge(brief: dict, spec_md: str, system: str, style: str, voice: str,
             feedback: str | None = None, prev_draft: str | None = None,
             debug_dir: Path | None = None, tag: str = "") -> str:
-    sys_prompt = f"""{soul}
+    sys_prompt = f"""{system}
 
 ## 风格模板（参考库）
 {style}
@@ -743,9 +743,9 @@ def run_full_flow(brief_path: str | None = None, verbose: bool = True, work_dir:
     log(f"[5/10] spec → {spec_path}")
 
     # Step 6
-    soul, style, voice = ge_prompt_parts()
+    system, style, voice = ge_prompt_parts()
     log(f"[6/10] GE 生文中...")
-    draft = call_ge(brief, spec_md, soul, style, voice, debug_dir=DEBUG, tag="v0")
+    draft = call_ge(brief, spec_md, system, style, voice, debug_dir=DEBUG, tag="v0")
     rewrite_count = 0
     (notes_dir / f"{bid}-draft-v0.md").write_text(draft, encoding="utf-8")
 
@@ -807,7 +807,7 @@ def run_full_flow(brief_path: str | None = None, verbose: bool = True, work_dir:
         rewrite_count += 1
         feedback = "\n".join(agg["suggestions"][:8])
         log(f"[8/10] 重写 v{rewrite_count}...")
-        draft = call_ge(brief, spec_md, soul, style, voice,
+        draft = call_ge(brief, spec_md, system, style, voice,
                         feedback=feedback, prev_draft=draft,
                         debug_dir=DEBUG, tag=f"v{rewrite_count}")
         (notes_dir / f"{bid}-draft-v{rewrite_count}.md").write_text(draft, encoding="utf-8")

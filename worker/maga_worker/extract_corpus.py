@@ -10,7 +10,7 @@ Reads sheet '最新梳理完成版本' which has 14 cols:
 Forward-fills merged cells (Expert metadata stays the same across rows).
 Emits:
   workspace/experts/_registry.yaml         - global expert index
-  workspace/experts/<slug>/persona.md      - auto-stub from simplified 简介
+  workspace/experts/<slug>/system.md       - auto-stub from simplified 简介
   workspace/experts/<slug>/corpus.yaml     - L1 → L2 → ideal_corpus tree
 """
 from __future__ import annotations
@@ -176,8 +176,8 @@ def build_experts(rows, kw_corpus: dict | None = None):
     return experts
 
 
-def write_persona(out_dir: Path, e: dict):
-    persona = f"""# {e['chinese_name']} ({e['slug']})
+def write_system_prompt(out_dir: Path, e: dict):
+    system = f"""# {e['chinese_name']} ({e['slug']})
 
 **类型**: {e['type']} | **能力**: {e['capability']}
 
@@ -198,7 +198,7 @@ def write_persona(out_dir: Path, e: dict):
 
 `{e.get('model') or '(未指定)'}`
 """
-    (out_dir / "persona.md").write_text(persona, encoding="utf-8")
+    (out_dir / "system.md").write_text(system, encoding="utf-8")
 
 
 def write_corpus(out_dir: Path, e: dict):
@@ -264,7 +264,7 @@ def main():
         out_dir = out_root / slug
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "lessons").mkdir(exist_ok=True)
-        write_persona(out_dir, e)
+        write_system_prompt(out_dir, e)
         write_corpus(out_dir, e)
         n_groups = len(e["l1_groups"])
         n_items = sum(len(g["items"]) for g in e["l1_groups"].values())

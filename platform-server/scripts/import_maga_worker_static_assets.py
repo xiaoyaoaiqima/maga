@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.config import settings
 from app.models.base import Base
 from app.models.maga_assets import AssetImportRun, AssetRegistry
-from app.models.prompt_optimizer import PromptAsset, PromptVersion
+from app.models.prompt_optimizer import PromptAsset, PromptEvaluation, PromptIssue, PromptOptimizerRun, PromptVersion
 from app.services.asset_import_service import (
     WORKER_STATIC_ASSET_SOURCE_NAME,
     import_maga_worker_static_assets,
@@ -30,6 +30,9 @@ DEFAULT_WORKER_WORKSPACE = str(Path(__file__).resolve().parents[2] / "worker" / 
 STATIC_ASSET_TABLES = [
     PromptAsset.__table__,
     PromptVersion.__table__,
+    PromptIssue.__table__,
+    PromptOptimizerRun.__table__,
+    PromptEvaluation.__table__,
     AssetRegistry.__table__,
     AssetImportRun.__table__,
 ]

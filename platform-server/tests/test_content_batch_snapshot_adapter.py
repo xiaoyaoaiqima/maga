@@ -155,7 +155,7 @@ def test_build_xhs_generation_snapshot_allows_maga_word_count_override():
 def test_build_xhs_generation_snapshot_can_attach_prompt_bundle_snapshot():
     prompt_bundle = {
         "schema_version": "1",
-        "prompts": {"xhs_writer.ge.soul": {"version_id": 10, "content": "system"}},
+        "prompts": {"xhs_writer.ge.system": {"version_id": 10, "content": "system"}},
         "assets": {"expert_corpus:compliance_redline": {"asset_id": 20}},
     }
     snapshot = build_xhs_generation_snapshot_from_brief(

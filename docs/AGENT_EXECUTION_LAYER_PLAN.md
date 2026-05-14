@@ -416,7 +416,7 @@ MVP 阶段刻意保持极简。批量工作台先以 `batch_id/item_id/version_i
 |---|---|
 | `experts/_registry.yaml` | Expert 配置 / executor 可读的 expert registry |
 | `experts/_brief_types.yaml` | brief_type 到 AE 集合的业务规则 |
-| `experts/*/persona.md` | PromptAsset / PromptVersion，类型 `expert_persona` |
+| `experts/*/system.md` | PromptAsset / PromptVersion，类型 `expert_system` |
 | `experts/*/corpus.yaml` | CorpusTemplate / 语料系统 |
 | `experts/*/score_rubric.md` | PromptAsset / PromptVersion，类型 `score_rubric` |
 | `ge_writer/style_templates.md` | 风格模板资产 |
