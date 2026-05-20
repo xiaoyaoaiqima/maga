@@ -13,13 +13,19 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from maga_worker.asset_importer import import_asset_package
-from maga_worker.runtime_adapter import invoke_runtime_fast_generate_draft, invoke_runtime_generate_draft
+from maga_worker.runtime_adapter import (
+    build_runtime_brief_from_snapshot,
+    invoke_runtime_fast_generate_draft,
+    invoke_runtime_fast_review_and_rewrite,
+    invoke_runtime_generate_draft,
+)
 
 PROTOCOL_VERSION = "0.1"
 SUPPORTED_CAPABILITIES = {
     "xhs.interpret_brief",
     "xhs.run_ae_analysis",
     "xhs.generate_draft",
+    "xhs.review_and_rewrite",
     "xhs.run_ae_review",
     "xhs.rewrite_draft",
     "asset.import",
@@ -84,13 +90,16 @@ def _execution_mode(input_payload: dict[str, Any]) -> str:
 
 def _structured_brief(input_payload: dict[str, Any]) -> dict[str, Any]:
     brief = input_payload.get("brief") if isinstance(input_payload.get("brief"), dict) else {}
-    topic = input_payload.get("product_topic") or brief.get("product_topic") or brief.get("topic") or "产品/主题"
-    target = input_payload.get("target_audience") or brief.get("target_audience") or "小红书用户"
-    style = input_payload.get("style") or brief.get("style") or "自然真实"
+    generation_snapshot = input_payload.get("generation_snapshot") if isinstance(input_payload.get("generation_snapshot"), dict) else {}
+    snapshot_brief = generation_snapshot.get("brief") if isinstance(generation_snapshot.get("brief"), dict) else {}
+    topic = input_payload.get("product_topic") or brief.get("product_topic") or snapshot_brief.get("product_topic") or brief.get("topic") or "产品/主题"
+    target = input_payload.get("target_audience") or brief.get("target_audience") or snapshot_brief.get("target_audience") or "小红书用户"
+    style = input_payload.get("style") or brief.get("style") or snapshot_brief.get("style") or "自然真实"
     return {
-        "brief_type": input_payload.get("brief_type") or brief.get("brief_type") or "xhs_product_seeding_professional_advisor",
+        "brief_type": input_payload.get("brief_type") or brief.get("brief_type") or snapshot_brief.get("brief_type") or "xhs_product_seeding_professional_advisor",
         "product_topic": topic,
         "target_audience": target,
+        "persona_target": input_payload.get("persona_target") or brief.get("persona_target") or snapshot_brief.get("persona_target"),
         "key_painpoints": brief.get("key_painpoints") or [],
         "key_sellingpoints": brief.get("key_sellingpoints") or [],
         "tone_hints": [style],
@@ -147,10 +156,30 @@ def _review_report(input_payload: dict[str, Any]) -> dict[str, Any]:
             "feedback": "未发现治疗、改善便秘、解决肠胃问题等明显合规红线",
             "evidence": [],
         },
+        {
+            "ae_code": "expression_writing",
+            "pass": True,
+            "risk_level": "low",
+            "feedback": "未发现明显表达写作规则问题",
+            "evidence": [],
+        },
+        {
+            "ae_code": "time_logic",
+            "pass": True,
+            "risk_level": "low",
+            "feedback": "未发现明显时间逻辑冲突",
+            "evidence": [],
+        },
+        {
+            "ae_code": "legal_tencent",
+            "pass": True,
+            "risk_level": "low",
+            "feedback": "腾讯云法律审核通过",
+            "evidence": [],
+        },
     ]
     soft_scores = [
-        {"ae_code": "xhs_structure", "score": 88, "feedback": "标题和正文结构符合小红书笔记 MVP 要求"},
-        {"ae_code": "naturalness_ai_smell", "score": 86, "feedback": "表达自然，可继续优化真实细节"},
+        {"ae_code": "business_logic", "score": 88, "feedback": "痛点、卖点因果链、结构和真人感符合 MVP 要求"},
     ]
     return {
         "risk_level": risk_level,
@@ -165,16 +194,25 @@ def _handle_capability(capability: str, input_payload: dict[str, Any]) -> dict[s
     if capability == "asset.import":
         return import_asset_package(input_payload)
     if capability == "xhs.interpret_brief":
-        return {"structured_brief": _structured_brief(input_payload), "interpreter_notes": "parsed by maga-worker xhs module"}
+        generation_snapshot = input_payload.get("generation_snapshot") or {}
+        output: dict[str, Any] = {
+            "structured_brief": _structured_brief(input_payload),
+            "brief_warnings": [],
+            "interpreter_notes": "compiled by maga-worker xhs brief compiler",
+        }
+        if generation_snapshot:
+            output["runtime_brief"] = build_runtime_brief_from_snapshot(generation_snapshot)
+        return output
     if capability == "xhs.run_ae_analysis":
         structured = input_payload.get("structured_brief") or {}
         topic = structured.get("product_topic") or "产品/主题"
         audience = structured.get("target_audience") or "目标人群"
         return {
             "analyses": {
-                "painpoint_anchor": {"analysis": f"围绕{audience}的选择顾虑建立共情入口", "extracted": {}},
-                "sellingpoint_logic": {"analysis": f"围绕{topic}给出清晰、克制、可验证的理由", "extracted": {}},
-                "narrative_strategy": {"analysis": "先共情，再给判断方法，最后给行动建议", "extracted": {}},
+                "business_logic": {
+                    "analysis": f"围绕{audience}对{topic}的真实关注，建立痛点、卖点因果链和真人感表达",
+                    "extracted": {},
+                },
             },
             "failed_aes": [],
         }
@@ -184,7 +222,7 @@ def _handle_capability(capability: str, input_payload: dict[str, Any]) -> dict[s
             generation_snapshot = input_payload.get("generation_snapshot") or {}
             if not generation_snapshot:
                 raise ValueError("generation_snapshot is required for runtime mode")
-            return invoke_runtime_generate_draft(generation_snapshot)
+            return invoke_runtime_generate_draft(generation_snapshot, runtime_brief=input_payload.get("runtime_brief"))
         if mode == "runtime_fast":
             generation_snapshot = input_payload.get("generation_snapshot") or {}
             if not generation_snapshot:
@@ -199,11 +237,53 @@ def _handle_capability(capability: str, input_payload: dict[str, Any]) -> dict[s
                         "fake": True,
                         "reason": "MAGA_WORKER_RUNTIME_FAST_FAKE",
                     },
-                    "review_report": _review_report({"generation_snapshot": generation_snapshot, "draft": draft}),
                 }
-            return invoke_runtime_fast_generate_draft(generation_snapshot)
+            return invoke_runtime_fast_generate_draft(generation_snapshot, runtime_brief=input_payload.get("runtime_brief"))
         structured = input_payload.get("structured_brief") or {}
         return {"draft": _draft_from_structured_brief(structured)}
+    if capability == "xhs.review_and_rewrite":
+        generation_snapshot = input_payload.get("generation_snapshot") or {}
+        draft = input_payload.get("draft") or input_payload.get("previous_draft") or {}
+        if generation_snapshot:
+            if not draft:
+                raise ValueError("draft is required for review_and_rewrite")
+            if os.environ.get("MAGA_WORKER_RUNTIME_FAST_FAKE") == "1":
+                report = _review_report({"generation_snapshot": generation_snapshot, "draft": draft})
+                return {
+                    "final": draft,
+                    "draft": draft,
+                    "runtime_result": {
+                        "mode": "runtime_fast",
+                        "phase": "review_and_rewrite",
+                        "fake": True,
+                        "reason": "MAGA_WORKER_RUNTIME_FAST_FAKE",
+                    },
+                    "review_report": report,
+                    "hard_results": report["hard_results"],
+                    "soft_scores": report["soft_scores"],
+                    "failed_aes": report["failed_aes"],
+                }
+            result = invoke_runtime_fast_review_and_rewrite(
+                generation_snapshot,
+                draft,
+                runtime_brief=input_payload.get("runtime_brief"),
+            )
+            report = result.get("review_report") or {}
+            return {
+                **result,
+                "hard_results": report.get("hard_results") or [],
+                "soft_scores": report.get("soft_scores") or [],
+                "failed_aes": report.get("failed_aes") or [],
+            }
+        report = _review_report(input_payload)
+        return {
+            "final": draft,
+            "draft": draft,
+            "review_report": report,
+            "hard_results": report["hard_results"],
+            "soft_scores": report["soft_scores"],
+            "failed_aes": report["failed_aes"],
+        }
     if capability == "xhs.run_ae_review":
         report = _review_report(input_payload)
         return {

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,10 +13,11 @@ from maga_worker.runtime_adapter import (
     build_runtime_brief_from_snapshot,
     default_output_dir,
     invoke_runtime_fast_generate_draft,
+    invoke_runtime_fast_review_and_rewrite,
     invoke_runtime_generate_draft,
 )
 from maga_worker import xhs_runtime
-from maga_worker.xhs_runtime import call_ae
+from maga_worker.xhs_runtime import call_ae, call_legal_review
 
 
 def _snapshot() -> dict:
@@ -93,6 +95,10 @@ def _prompt_bundle() -> dict:
     }
 
 
+def _legal_pass(brief, draft, debug_dir=None, tag=""):
+    return {"score": 1, "verdict": "pass", "hard_hits": [], "suggestions": []}
+
+
 def test_build_runtime_brief_from_snapshot_contains_required_xhs_runtime_fields():
     brief = build_runtime_brief_from_snapshot(_snapshot())
 
@@ -147,7 +153,7 @@ def test_invoke_runtime_generate_draft_uses_model_config_from_maga_snapshot(monk
     assert os.environ["XHS_RUNTIME_MODEL_AE"] == "existing-ae"
 
 
-def test_invoke_runtime_fast_generate_draft_returns_draft_and_review_report(tmp_path):
+def test_invoke_runtime_fast_generate_draft_returns_initial_draft_only(tmp_path):
     def fake_call_ge(brief, spec_md, system, style, voice, debug_dir=None, tag=""):
         assert system
         assert style is not None
@@ -163,25 +169,40 @@ def test_invoke_runtime_fast_generate_draft_returns_draft_and_review_report(tmp_
         assert "来源例文：源悦你给我出来 我是真的会谢！" in spec_md
         return "源悦观察便便状态别着急\n\n先看便便软硬和肚肚舒不舒服。"
 
-    def fake_call_ae(ae, mode, brief, draft, debug_dir=None, tag=""):
-        assert ae == "compliance_redline"
-        assert mode == "score"
-        assert "源悦观察" in draft
-        return {"score": 1, "verdict": "pass", "suggestions": []}
-
     result = invoke_runtime_fast_generate_draft(
         _snapshot(),
         call_ge_func=fake_call_ge,
-        call_ae_func=fake_call_ae,
         work_dir=tmp_path,
     )
 
     assert result["draft"] == {"title": "源悦观察便便状态别着急", "body": "先看便便软硬和肚肚舒不舒服。"}
     assert result["runtime_result"]["mode"] == "runtime_fast"
-    assert Path(result["runtime_result"]["final_path"]).exists()
-    assert result["review_report"]["hard_results"][0]["ae_code"] == "compliance_redline"
-    assert result["review_report"]["hard_results"][0]["pass"] is True
-    assert result["review_report"]["rewrite_required"] is False
+    assert result["runtime_result"]["phase"] == "generate_draft"
+    assert Path(result["runtime_result"]["draft_path"]).exists()
+    assert "review_report" not in result
+
+
+def test_runtime_fast_generate_draft_uses_compiled_runtime_brief(tmp_path):
+    compiled_brief = build_runtime_brief_from_snapshot(_snapshot())
+    compiled_brief["brief_id"] = "compiled-brief-001"
+    compiled_brief["product_topic"] = "编译后的主题"
+    compiled_brief["campaign"]["topic"] = "编译后的主题"
+
+    def fake_call_ge(brief, spec_md, system, style, voice, debug_dir=None, tag=""):
+        assert brief["brief_id"] == "compiled-brief-001"
+        assert brief["product_topic"] == "编译后的主题"
+        assert "编译后的主题" in spec_md
+        return "编译后的标题\n\n编译后的正文"
+
+    result = invoke_runtime_fast_generate_draft(
+        _snapshot(),
+        runtime_brief=compiled_brief,
+        call_ge_func=fake_call_ge,
+        work_dir=tmp_path,
+    )
+
+    assert result["draft"]["title"] == "编译后的标题"
+    assert Path(result["runtime_result"]["brief_path"]).name == "compiled-brief-001.brief.yaml"
 
 
 def test_invoke_runtime_fast_prefers_prompt_bundle_for_ge_prompt_parts(tmp_path):
@@ -194,13 +215,9 @@ def test_invoke_runtime_fast_prefers_prompt_bundle_for_ge_prompt_parts(tmp_path)
         assert voice == "BUNDLE_VOICE"
         return "源悦观察便便状态别着急\n\n先看便便软硬和肚肚舒不舒服。"
 
-    def fake_call_ae(ae, mode, brief, draft, debug_dir=None, tag=""):
-        return {"score": 1, "verdict": "pass", "suggestions": []}
-
     result = invoke_runtime_fast_generate_draft(
         snapshot,
         call_ge_func=fake_call_ge,
-        call_ae_func=fake_call_ae,
         work_dir=tmp_path,
     )
 
@@ -228,6 +245,107 @@ def test_call_ae_prefers_prompt_bundle_for_system_corpus_and_rubric(monkeypatch,
     assert "BUNDLE_RUBRIC" in captured["user"]
 
 
+def test_call_legal_review_checks_title_and_body_with_tencent_semantics(monkeypatch, tmp_path):
+    seen_texts = []
+
+    def fake_verify_text_content(text, biztype=None):
+        seen_texts.append((text, biztype))
+        if "治疗便秘" in text:
+            return {
+                "suggestion": "Block",
+                "raw": {"Suggestion": "Block", "Label": "Illegal", "Keywords": ["治疗便秘"]},
+                "mock": False,
+            }
+        return {"suggestion": "Pass", "raw": {"Suggestion": "Pass"}, "mock": False}
+
+    monkeypatch.setattr(xhs_runtime, "_load_tencent_text_verifier", lambda: fake_verify_text_content)
+    monkeypatch.setenv("TENCENT_TEXT_BIZTYPE", "article_review")
+
+    result = call_legal_review(
+        build_runtime_brief_from_snapshot(_snapshot()),
+        "标题：源悦观察便便状态别着急\n正文：不要用奶粉治疗便秘。",
+        debug_dir=tmp_path,
+        tag="unit",
+    )
+
+    assert seen_texts == [
+        ("源悦观察便便状态别着急", "article_review"),
+        ("不要用奶粉治疗便秘。", "article_review"),
+    ]
+    assert result["score"] == 0
+    assert result["verdict"] == "fail"
+    assert "治疗便秘" in result["hard_hits"][0]
+    assert (tmp_path / "legal-tencent_review-unit.json").exists()
+
+
+def test_runtime_fast_reviews_run_with_timeout_and_fixed_output_order(monkeypatch, tmp_path):
+    monkeypatch.setenv("XHS_RUNTIME_REVIEW_TIMEOUT_SECONDS", "0.01")
+    monkeypatch.setenv("XHS_RUNTIME_LEGAL_REVIEW_TIMEOUT_SECONDS", "0.01")
+
+    def fake_call_ge(brief, spec_md, system, style, voice, debug_dir=None, tag="", **kwargs):
+        return "源悦观察便便状态别着急\n\n先看便便软硬和肚肚舒不舒服。"
+
+    def fake_call_ae(ae, mode, brief, draft, debug_dir=None, tag=""):
+        if ae == "expression_writing":
+            time.sleep(0.05)
+        return {"score": 1, "verdict": "pass", "hard_hits": [], "suggestions": []}
+
+    def slow_legal_review(brief, draft, debug_dir=None, tag=""):
+        time.sleep(0.05)
+        return {"score": 0, "verdict": "fail", "hard_hits": ["should be fail-open"], "suggestions": []}
+
+    result = invoke_runtime_fast_review_and_rewrite(
+        _snapshot(),
+        {"title": "源悦观察便便状态别着急", "body": "先看便便软硬和肚肚舒不舒服。"},
+        call_ge_func=fake_call_ge,
+        call_ae_func=fake_call_ae,
+        call_legal_review_func=slow_legal_review,
+        work_dir=tmp_path,
+    )
+
+    hard_results = result["review_report"]["hard_results"]
+    assert [item["ae_code"] for item in hard_results] == [
+        "compliance_redline",
+        "expression_writing",
+        "time_logic",
+        "legal_tencent",
+    ]
+    assert hard_results[1]["pass"] is False
+    assert "timeout after 0.01s" in hard_results[1]["evidence"][0]
+    assert hard_results[3]["pass"] is True
+    assert result["review_report"]["rewrite_required"] is True
+
+
+def test_runtime_fast_review_and_rewrite_uses_compiled_runtime_brief(tmp_path):
+    compiled_brief = build_runtime_brief_from_snapshot(_snapshot())
+    compiled_brief["brief_id"] = "compiled-review-001"
+    seen = {}
+
+    def fake_call_ge(brief, spec_md, system, style, voice, debug_dir=None, tag="", **kwargs):
+        seen["ge_brief_id"] = brief["brief_id"]
+        return "源悦观察便便状态别着急\n\n改写后的正文。"
+
+    def fake_call_ae(ae, mode, brief, draft, debug_dir=None, tag=""):
+        seen.setdefault("ae_brief_ids", set()).add(brief["brief_id"])
+        if ae == "compliance_redline" and "需要改写" in draft:
+            return {"score": 1, "verdict": "pass", "hard_hits": [], "suggestions": ["改写一下"]}
+        return {"score": 1, "verdict": "pass", "hard_hits": [], "suggestions": []}
+
+    result = invoke_runtime_fast_review_and_rewrite(
+        _snapshot(),
+        {"title": "源悦观察便便状态别着急", "body": "需要改写。"},
+        runtime_brief=compiled_brief,
+        call_ge_func=fake_call_ge,
+        call_ae_func=fake_call_ae,
+        call_legal_review_func=_legal_pass,
+        work_dir=tmp_path,
+    )
+
+    assert result["final"]["body"] == "改写后的正文。"
+    assert seen["ge_brief_id"] == "compiled-review-001"
+    assert seen["ae_brief_ids"] == {"compiled-review-001"}
+
+
 def test_invoke_runtime_fast_uses_model_config_from_maga_snapshot(monkeypatch, tmp_path):
     monkeypatch.setenv("XHS_RUNTIME_MODEL_GE", "existing-ge")
     monkeypatch.delenv("XHS_RUNTIME_MODEL_AE", raising=False)
@@ -245,12 +363,16 @@ def test_invoke_runtime_fast_uses_model_config_from_maga_snapshot(monkeypatch, t
         import os
 
         seen["ae_model"] = os.environ.get("XHS_RUNTIME_MODEL_AE")
+        if ae == "compliance_redline":
+            return {"score": 1, "verdict": "pass", "suggestions": ["轻微修订"]}
         return {"score": 1, "verdict": "pass", "suggestions": []}
 
-    invoke_runtime_fast_generate_draft(
+    invoke_runtime_fast_review_and_rewrite(
         snapshot,
+        {"title": "源悦观察便便状态别着急", "body": "先看便便软硬和肚肚舒不舒服。"},
         call_ge_func=fake_call_ge,
         call_ae_func=fake_call_ae,
+        call_legal_review_func=_legal_pass,
         work_dir=tmp_path,
     )
 
@@ -277,6 +399,8 @@ def test_invoke_runtime_fast_rewrites_and_rescores_when_review_has_soft_suggesti
 
     def fake_call_ae(ae, mode, brief, draft, debug_dir=None, tag=""):
         ae_calls.append({"draft": draft, "tag": tag})
+        if ae != "compliance_redline":
+            return {"score": 1, "verdict": "pass", "hard_hits": [], "suggestions": [], "replacement_needed": []}
         if "必要时问专业人士" in draft:
             return {
                 "score": 1,
@@ -287,16 +411,18 @@ def test_invoke_runtime_fast_rewrites_and_rescores_when_review_has_soft_suggesti
             }
         return {"score": 1, "verdict": "pass", "hard_hits": [], "suggestions": [], "replacement_needed": []}
 
-    result = invoke_runtime_fast_generate_draft(
+    result = invoke_runtime_fast_review_and_rewrite(
         _snapshot(),
+        {"title": "源悦观察便便状态别着急", "body": "必要时问专业人士，日常观察肚肚舒不舒服。"},
         call_ge_func=fake_call_ge,
         call_ae_func=fake_call_ae,
+        call_legal_review_func=_legal_pass,
         work_dir=tmp_path,
     )
 
-    assert len(ge_calls) == 2
-    assert len(ae_calls) == 2
-    assert result["draft"]["body"] == "拿不准时问问靠谱渠道，日常观察肚肚舒不舒服。"
+    assert len(ge_calls) == 1
+    assert len(ae_calls) == 6
+    assert result["final"]["body"] == "拿不准时问问靠谱渠道，日常观察肚肚舒不舒服。"
     assert result["review_report"]["hard_results"][0]["pass"] is True
     assert result["review_report"]["rewrite_required"] is False
     assert result["review_report"]["rewrite_rounds"] == 1
@@ -311,8 +437,6 @@ def test_invoke_runtime_fast_allows_second_rewrite_when_first_recheck_still_has_
     def fake_call_ge(brief, spec_md, system, style, voice, feedback=None, prev_draft=None, debug_dir=None, tag=""):
         ge_calls.append({"feedback": feedback, "prev_draft": prev_draft, "tag": tag})
         if len(ge_calls) == 1:
-            return "源悦观察便便状态别着急\n\n必要时问专业人士，也可以观察几天。"
-        if len(ge_calls) == 2:
             assert tag == "runtime_fast_rewrite_1"
             assert "必要时问专业人士" in feedback
             return "源悦观察便便状态别着急\n\n拿不准时问问靠谱渠道，也可以观察几天。"
@@ -322,6 +446,8 @@ def test_invoke_runtime_fast_allows_second_rewrite_when_first_recheck_still_has_
 
     def fake_call_ae(ae, mode, brief, draft, debug_dir=None, tag=""):
         ae_calls.append({"draft": draft, "tag": tag})
+        if ae != "compliance_redline":
+            return {"score": 1, "verdict": "pass", "hard_hits": [], "suggestions": [], "replacement_needed": []}
         if "必要时问专业人士" in draft:
             return {
                 "score": 1,
@@ -340,16 +466,18 @@ def test_invoke_runtime_fast_allows_second_rewrite_when_first_recheck_still_has_
             }
         return {"score": 1, "verdict": "pass", "hard_hits": [], "suggestions": [], "replacement_needed": []}
 
-    result = invoke_runtime_fast_generate_draft(
+    result = invoke_runtime_fast_review_and_rewrite(
         _snapshot(),
+        {"title": "源悦观察便便状态别着急", "body": "必要时问专业人士，也可以观察几天。"},
         call_ge_func=fake_call_ge,
         call_ae_func=fake_call_ae,
+        call_legal_review_func=_legal_pass,
         work_dir=tmp_path,
     )
 
-    assert len(ge_calls) == 3
-    assert len(ae_calls) == 3
-    assert result["draft"]["body"] == "拿不准时问问靠谱渠道，也可以持续观察几次。"
+    assert len(ge_calls) == 2
+    assert len(ae_calls) == 9
+    assert result["final"]["body"] == "拿不准时问问靠谱渠道，也可以持续观察几次。"
     assert result["review_report"]["rewrite_required"] is False
     assert result["review_report"]["rewrite_rounds"] == 2
     assert result["review_report"]["rewrite_reason"] == "soft_suggestions"
@@ -371,20 +499,24 @@ def test_invoke_runtime_fast_rewrites_and_rescores_when_compliance_fails(tmp_pat
 
     def fake_call_ae(ae, mode, brief, draft, debug_dir=None, tag=""):
         ae_calls.append({"draft": draft, "tag": tag})
+        if ae != "compliance_redline":
+            return {"score": 1, "verdict": "pass", "hard_hits": [], "suggestions": []}
         if "治疗便秘" in draft:
             return {"score": 0, "verdict": "fail", "hard_hits": ["治疗便秘"], "suggestions": ["删除治疗便秘"]}
         return {"score": 1, "verdict": "pass", "hard_hits": [], "suggestions": []}
 
-    result = invoke_runtime_fast_generate_draft(
+    result = invoke_runtime_fast_review_and_rewrite(
         _snapshot(),
+        {"title": "源悦观察便便状态别着急", "body": "不要用奶粉治疗便秘，先观察。"},
         call_ge_func=fake_call_ge,
         call_ae_func=fake_call_ae,
+        call_legal_review_func=_legal_pass,
         work_dir=tmp_path,
     )
 
-    assert len(ge_calls) == 2
-    assert len(ae_calls) == 2
-    assert result["draft"]["body"] == "先持续记录便便状态，日常观察肚肚舒不舒服。"
+    assert len(ge_calls) == 1
+    assert len(ae_calls) == 6
+    assert result["final"]["body"] == "先持续记录便便状态，日常观察肚肚舒不舒服。"
     assert result["review_report"]["hard_results"][0]["pass"] is True
     assert result["review_report"]["rewrite_required"] is False
     assert result["review_report"]["rewrite_rounds"] == 1

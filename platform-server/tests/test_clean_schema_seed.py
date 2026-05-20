@@ -39,6 +39,7 @@ async def test_seed_clean_schema_registers_hermes_maga_worker_executor():
         "xhs.interpret_brief",
         "xhs.run_ae_analysis",
         "xhs.generate_draft",
+        "xhs.review_and_rewrite",
         "xhs.run_ae_review",
         "xhs.rewrite_draft",
         "asset.import",

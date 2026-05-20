@@ -18,7 +18,7 @@ class CapabilityAwareFakeInvocationClient:
         self.calls = []
         self.review_output = review_output or {
             "hard_results": [{"ae_code": "compliance_redline", "pass": True}],
-            "soft_scores": [{"ae_code": "naturalness_ai_smell", "score": 88}],
+            "soft_scores": [{"ae_code": "business_logic", "score": 88}],
             "failed_aes": [],
         }
         self.rewrite_output = rewrite_output or {
@@ -33,13 +33,23 @@ class CapabilityAwareFakeInvocationClient:
             return InvokeResult(
                 mode="sync",
                 stage_call_id=stage_call_id,
-                output={"structured_brief": {"product_topic": envelope["input"]["product_topic"], "style": envelope["input"].get("style")}},
+                output={
+                    "structured_brief": {
+                        "product_topic": envelope["input"]["product_topic"],
+                        "style": envelope["input"].get("style"),
+                    },
+                    "runtime_brief": {
+                        "brief_id": "compiled-test-001",
+                        "product_topic": envelope["input"]["product_topic"],
+                    },
+                    "brief_warnings": [],
+                },
             )
         if capability == "xhs.run_ae_analysis":
             return InvokeResult(
                 mode="sync",
                 stage_call_id=stage_call_id,
-                output={"analyses": {"painpoint_anchor": {"analysis": "新手妈妈怕选错奶粉"}}, "failed_aes": []},
+                output={"analyses": {"business_logic": {"analysis": "新手妈妈怕选错奶粉"}}, "failed_aes": []},
             )
         if capability == "xhs.generate_draft":
             return InvokeResult(
@@ -52,6 +62,35 @@ class CapabilityAwareFakeInvocationClient:
                 mode="sync",
                 stage_call_id=stage_call_id,
                 output=self.review_output,
+            )
+        if capability == "xhs.review_and_rewrite":
+            draft = envelope["input"].get("draft") or {}
+            if self.review_output.get("rewrite_required") or any(
+                item.get("pass") is False for item in self.review_output.get("hard_results", [])
+            ):
+                return InvokeResult(
+                    mode="sync",
+                    stage_call_id=stage_call_id,
+                    output={
+                        "final": self.rewrite_output["final"],
+                        "draft": self.rewrite_output["final"],
+                        "review_report": self.review_output,
+                        "hard_results": self.review_output["hard_results"],
+                        "soft_scores": self.review_output["soft_scores"],
+                        "failed_aes": self.review_output["failed_aes"],
+                    },
+                )
+            return InvokeResult(
+                mode="sync",
+                stage_call_id=stage_call_id,
+                output={
+                    "final": {"title": draft.get("title"), "body": draft.get("body")},
+                    "draft": {"title": draft.get("title"), "body": draft.get("body")},
+                    "review_report": self.review_output,
+                    "hard_results": self.review_output["hard_results"],
+                    "soft_scores": self.review_output["soft_scores"],
+                    "failed_aes": self.review_output["failed_aes"],
+                },
             )
         if capability == "xhs.rewrite_draft":
             return InvokeResult(
@@ -85,6 +124,7 @@ async def test_run_mvp_generation_chain_returns_title_body_only_when_review_pass
                 {"capability": "xhs.interpret_brief", "schema_version": "1"},
                 {"capability": "xhs.run_ae_analysis", "schema_version": "1"},
                 {"capability": "xhs.generate_draft", "schema_version": "1"},
+                {"capability": "xhs.review_and_rewrite", "schema_version": "1"},
                 {"capability": "xhs.run_ae_review", "schema_version": "1"},
                 {"capability": "xhs.rewrite_draft", "schema_version": "1"},
             ],
@@ -113,8 +153,10 @@ async def test_run_mvp_generation_chain_returns_title_body_only_when_review_pass
         "xhs.interpret_brief",
         "xhs.run_ae_analysis",
         "xhs.generate_draft",
-        "xhs.run_ae_review",
+        "xhs.review_and_rewrite",
     ]
+    assert invocation_client.calls[2]["envelope"]["input"]["runtime_brief"]["brief_id"] == "compiled-test-001"
+    assert invocation_client.calls[3]["envelope"]["input"]["runtime_brief"]["brief_id"] == "compiled-test-001"
     stage_rows = (await db_session.execute(select(ContentAgentStageCall).order_by(ContentAgentStageCall.sequence_no))).scalars().all()
     assert [stage.sequence_no for stage in stage_rows] == [1, 2, 3, 4]
     assert all(stage.status == "succeeded" for stage in stage_rows)
@@ -134,6 +176,7 @@ async def test_run_mvp_generation_chain_rewrites_once_when_hard_review_fails(db_
                 {"capability": "xhs.interpret_brief", "schema_version": "1"},
                 {"capability": "xhs.run_ae_analysis", "schema_version": "1"},
                 {"capability": "xhs.generate_draft", "schema_version": "1"},
+                {"capability": "xhs.review_and_rewrite", "schema_version": "1"},
                 {"capability": "xhs.run_ae_review", "schema_version": "1"},
                 {"capability": "xhs.rewrite_draft", "schema_version": "1"},
             ],
@@ -143,7 +186,7 @@ async def test_run_mvp_generation_chain_rewrites_once_when_hard_review_fails(db_
     invocation_client = CapabilityAwareFakeInvocationClient(
         review_output={
             "hard_results": [{"ae_code": "compliance_redline", "pass": False, "feedback": "标题有绝对化表达"}],
-            "soft_scores": [{"ae_code": "naturalness_ai_smell", "score": 82}],
+            "soft_scores": [{"ae_code": "business_logic", "score": 82}],
             "failed_aes": ["compliance_redline"],
         },
         rewrite_output={"final": {"title": "美素佳儿源悦安心看", "body": "把适合度讲清楚，比堆卖点更重要。", "hashtags": ["母婴"]}},
@@ -164,17 +207,16 @@ async def test_run_mvp_generation_chain_rewrites_once_when_hard_review_fails(db_
 
     assert result.final_content == {"title": "美素佳儿源悦安心看", "body": "把适合度讲清楚，比堆卖点更重要。"}
     assert "hashtags" not in result.final_content
-    assert result.run.rewrite_round == 1
+    assert result.run.rewrite_round == 0
     assert [call["envelope"]["capability"] for call in invocation_client.calls] == [
         "xhs.interpret_brief",
         "xhs.run_ae_analysis",
         "xhs.generate_draft",
-        "xhs.run_ae_review",
-        "xhs.rewrite_draft",
+        "xhs.review_and_rewrite",
     ]
-    rewrite_input = invocation_client.calls[-1]["envelope"]["input"]
-    assert rewrite_input["previous_draft"]["title"] == "美素佳儿源悦怎么选"
-    assert rewrite_input["review_report"]["failed_aes"] == ["compliance_redline"]
+    review_input = invocation_client.calls[-1]["envelope"]["input"]
+    assert review_input["draft"]["title"] == "美素佳儿源悦怎么选"
+    assert review_input["runtime_brief"]["brief_id"] == "compiled-test-001"
     stage_rows = (await db_session.execute(select(ContentAgentStageCall).order_by(ContentAgentStageCall.sequence_no))).scalars().all()
-    assert [stage.sequence_no for stage in stage_rows] == [1, 2, 3, 4, 5]
-    assert stage_rows[-1].capability == "xhs.rewrite_draft"
+    assert [stage.sequence_no for stage in stage_rows] == [1, 2, 3, 4]
+    assert stage_rows[-1].capability == "xhs.review_and_rewrite"

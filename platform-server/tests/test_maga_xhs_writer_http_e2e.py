@@ -109,6 +109,7 @@ async def maga_http_e2e_client(maga_worker_server):
                     {"capability": "xhs.interpret_brief", "schema_version": "1"},
                     {"capability": "xhs.run_ae_analysis", "schema_version": "1"},
                     {"capability": "xhs.generate_draft", "schema_version": "1"},
+                    {"capability": "xhs.review_and_rewrite", "schema_version": "1"},
                     {"capability": "xhs.run_ae_review", "schema_version": "1"},
                     {"capability": "xhs.rewrite_draft", "schema_version": "1"},
                 ],
@@ -164,7 +165,7 @@ async def test_generation_start_calls_maga_worker_invoke_skeleton_over_http(maga
         "xhs.interpret_brief",
         "xhs.run_ae_analysis",
         "xhs.generate_draft",
-        "xhs.run_ae_review",
+        "xhs.review_and_rewrite",
     ]
     assert all(stage.status == "succeeded" for stage in stages)
     assert all((stage.stats_json or {}).get("executor") == "maga-worker" for stage in stages)
@@ -173,6 +174,8 @@ async def test_generation_start_calls_maga_worker_invoke_skeleton_over_http(maga
     assert (generate_stage.input_snapshot or {})["generation_snapshot"]["batch_context"]["source"] == "single_generation"
     assert (generate_stage.output_snapshot or {})["runtime_result"]["mode"] == "runtime_fast"
     assert (generate_stage.output_snapshot or {})["runtime_result"]["fake"] is True
+    review_stage = next(stage for stage in stages if stage.capability == "xhs.review_and_rewrite")
+    assert (review_stage.output_snapshot or {})["runtime_result"]["phase"] == "review_and_rewrite"
 
 
 @pytest.mark.asyncio
@@ -207,6 +210,8 @@ async def test_batch_generation_defaults_to_maga_worker_runtime_fast_over_http(m
     generate_stage = next(stage for stage in stages if stage.capability == "xhs.generate_draft")
     assert (generate_stage.output_snapshot or {})["runtime_result"]["mode"] == "runtime_fast"
     assert (generate_stage.output_snapshot or {})["runtime_result"]["fake"] is True
+    review_stage = next(stage for stage in stages if stage.capability == "xhs.review_and_rewrite")
+    assert (review_stage.output_snapshot or {})["runtime_result"]["phase"] == "review_and_rewrite"
     assert batch_item.quality_json["executor"] == "runtime_fast"
 
 

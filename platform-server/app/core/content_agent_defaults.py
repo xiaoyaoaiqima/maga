@@ -17,6 +17,7 @@ XHS_CAPABILITY_SPECS = [
     {"capability": "xhs.interpret_brief", "schema_version": "1"},
     {"capability": "xhs.run_ae_analysis", "schema_version": "1"},
     {"capability": "xhs.generate_draft", "schema_version": "1"},
+    {"capability": "xhs.review_and_rewrite", "schema_version": "1"},
     {"capability": "xhs.run_ae_review", "schema_version": "1"},
     {"capability": "xhs.rewrite_draft", "schema_version": "1"},
 ]

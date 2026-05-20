@@ -206,13 +206,17 @@ class ContentBatchExecutionService:
         return item
 
     def _review_report_from_stage_calls(self, stage_calls: list[Any]) -> dict[str, Any]:
-        runtime_fast_report = self._review_report_for_capability(stage_calls, "xhs.generate_draft", require_runtime_fast=True)
-        if runtime_fast_report:
-            return runtime_fast_report
+        review_rewrite_report = self._review_report_for_capability(stage_calls, "xhs.review_and_rewrite")
+        if review_rewrite_report:
+            return review_rewrite_report
 
         ae_review_report = self._review_report_for_capability(stage_calls, "xhs.run_ae_review")
         if ae_review_report:
             return ae_review_report
+
+        runtime_fast_report = self._review_report_for_capability(stage_calls, "xhs.generate_draft", require_runtime_fast=True)
+        if runtime_fast_report:
+            return runtime_fast_report
 
         draft_report = self._review_report_for_capability(stage_calls, "xhs.generate_draft")
         if draft_report:

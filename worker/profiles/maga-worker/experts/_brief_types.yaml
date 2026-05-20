@@ -1,7 +1,7 @@
 # brief_type → 启用 AE 集合 的固定映射
 #
-# 新版 xhs_product_seeding_professional_advisor 基于线上生文提示词拆分：
-# brief 归一 → 痛点分类 → 卖点因果 → 叙事路径 → 人设视角 → 品牌产品 → 合规红线 → 小红书结构 → 自然度/AI味。
+# 新版 xhs_product_seeding_professional_advisor 收敛为硬审核 + 业务逻辑总审：
+# 红线审核 → 表达写作审核 → 时间逻辑审核 → 品牌审核 → 业务逻辑总审。
 #
 # 旧版 brief_type 保留，便于回滚和对比。
 
@@ -9,32 +9,20 @@ brief_types:
   xhs_product_seeding_professional_advisor:
     description: 小红书母婴奶粉种草，专业育婴建议视角，痛点卖点链路强约束
     required_aes:
-      - brief_interpreter
-      - painpoint_anchor
-      - sellingpoint_logic
-      - narrative_strategy
-      - persona_pov
-      - brand_product_guard
       - compliance_redline
-      - xhs_structure
-      - naturalness_ai_smell
+      - expression_writing
+      - time_logic
+      - brand_product_guard
+      - business_logic
     hard_aes:
-      - brand_product_guard
       - compliance_redline
+      - expression_writing
+      - time_logic
+      - brand_product_guard
     soft_aes:
-      - painpoint_anchor
-      - sellingpoint_logic
-      - narrative_strategy
-      - persona_pov
-      - xhs_structure
-      - naturalness_ai_smell
+      - business_logic
     default_soft_weights:
-      painpoint_anchor: 2
-      sellingpoint_logic: 2
-      xhs_structure: 1.5
-      naturalness_ai_smell: 1.5
-      persona_pov: 1
-      narrative_strategy: 1
+      business_logic: 1
     score_threshold: 85
     max_rewrites: 2
     optional_aes: []

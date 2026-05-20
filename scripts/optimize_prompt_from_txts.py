@@ -25,6 +25,16 @@ DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MAX_TOKENS = 3000
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_OUTPUT_DIR = "prompt_optimize_results"
+DEFAULT_NEW_PROMPT_OUTPUT = "local_data/new_prompt.txt"
+DEFAULT_NEW_CONTENT_OUTPUT = "local_data/new_content.txt"
+DEFAULT_GENERATION_MODEL = "deepseek-chat"
+DEFAULT_GENERATION_BASE_URL = "https://api.deepseek.com"
+DEFAULT_GENERATION_TEMPERATURE = 0.7
+DEFAULT_GENERATION_MAX_TOKENS = 3000
+
+
+GENERATION_SYSTEM_PROMPT = """你是一个专业的小红书内容创作者。
+请严格按照用户提供的生文提示词执行，只输出生成正文，不要解释过程。"""
 
 
 def load_dotenv(path: Path = Path(".env")) -> None:
@@ -133,6 +143,42 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Ask the model to output a full revised prompt. Disabled by default to avoid truncation.",
     )
+    parser.add_argument(
+        "--new-prompt-output",
+        default=DEFAULT_NEW_PROMPT_OUTPUT,
+        help=f"Path for the patch-applied prompt TXT. Defaults to {DEFAULT_NEW_PROMPT_OUTPUT}.",
+    )
+    parser.add_argument(
+        "--new-content-output",
+        default=DEFAULT_NEW_CONTENT_OUTPUT,
+        help=f"Path for one generated content sample using the new prompt. Defaults to {DEFAULT_NEW_CONTENT_OUTPUT}.",
+    )
+    parser.add_argument(
+        "--skip-generate-new-content",
+        action="store_true",
+        help="Only write the optimized prompt, do not call a model to generate new content.",
+    )
+    parser.add_argument(
+        "--generation-model",
+        default=os.getenv("DEEPSEEK_MODEL", DEFAULT_GENERATION_MODEL),
+        help=f"Model used to generate new content. Defaults to {DEFAULT_GENERATION_MODEL}.",
+    )
+    parser.add_argument(
+        "--generation-base-url",
+        default=(
+            os.getenv("DEEPSEEK_API_BASE")
+            or os.getenv("DEEPSEEK_BASE_URL")
+            or DEFAULT_GENERATION_BASE_URL
+        ),
+        help=f"OpenAI-compatible base URL for new content generation. Defaults to {DEFAULT_GENERATION_BASE_URL}.",
+    )
+    parser.add_argument(
+        "--generation-api-key",
+        default=os.getenv("DEEPSEEK_API_KEY"),
+        help="API key for new content generation. Defaults to DEEPSEEK_API_KEY; falls back to --api-key.",
+    )
+    parser.add_argument("--generation-temperature", type=float, default=DEFAULT_GENERATION_TEMPERATURE)
+    parser.add_argument("--generation-max-tokens", type=int, default=DEFAULT_GENERATION_MAX_TOKENS)
     return parser.parse_args()
 
 
@@ -173,7 +219,7 @@ def normalize_chat_completions_url(url: str) -> str:
         return value
     if value.endswith("/v1"):
         return f"{value}/chat/completions"
-    return value
+    return f"{value}/v1/chat/completions"
 
 
 def build_chat_payload(
@@ -274,6 +320,78 @@ def normalize_result(parsed: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(patches, list):
         parsed["patches"] = []
     return parsed
+
+
+def apply_patch_operation(prompt: str, patch: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    operation = str(patch.get("operation", "")).strip()
+    old_text = str(patch.get("old_text", ""))
+    new_text = str(patch.get("new_text", ""))
+    summary = {
+        "operation": operation,
+        "old_text": old_text,
+        "applied": False,
+        "error": "",
+    }
+    if operation not in {"replace", "delete", "insert_after", "insert_before"}:
+        summary["error"] = f"不支持的 operation: {operation}"
+        return prompt, summary
+    if not old_text:
+        summary["error"] = "old_text 为空，无法定位"
+        return prompt, summary
+    if old_text not in prompt:
+        summary["error"] = "old_text 未在原提示词中找到"
+        return prompt, summary
+
+    # 只改第一个精确命中的锚点，避免同一段文本重复出现时误伤后续规则。
+    if operation == "replace":
+        updated = prompt.replace(old_text, new_text, 1)
+    elif operation == "delete":
+        updated = prompt.replace(old_text, "", 1)
+    elif operation == "insert_after":
+        updated = prompt.replace(old_text, f"{old_text}\n{new_text}", 1)
+    else:
+        updated = prompt.replace(old_text, f"{new_text}\n{old_text}", 1)
+    summary["applied"] = True
+    return updated, summary
+
+
+def build_revised_prompt(prompt: str, parsed: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+    revised_prompt = str(parsed.get("revised_prompt") or "").strip()
+    if revised_prompt:
+        return revised_prompt, [
+            {
+                "operation": "revised_prompt",
+                "old_text": "",
+                "applied": True,
+                "error": "",
+            }
+        ]
+
+    updated = prompt
+    summaries: list[dict[str, Any]] = []
+    patches = parsed.get("patches")
+    if not isinstance(patches, list):
+        return updated, summaries
+    for patch in patches:
+        if not isinstance(patch, dict):
+            summaries.append(
+                {
+                    "operation": "",
+                    "old_text": "",
+                    "applied": False,
+                    "error": "patch 不是 JSON object",
+                }
+            )
+            continue
+        updated, summary = apply_patch_operation(updated, patch)
+        summaries.append(summary)
+    return updated.strip(), summaries
+
+
+def write_text_output(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text.rstrip() + "\n", encoding="utf-8")
+    return path
 
 
 def format_multiline_value(value: Any, indent: str = "  ") -> list[str]:
@@ -419,6 +537,35 @@ def main() -> int:
                 "raw_output": raw_output,
                 "parse_error": f"{type(e).__name__}: {e}",
             }
+        new_prompt, patch_apply_results = build_revised_prompt(prompt, parsed)
+        new_prompt_path = write_text_output(Path(args.new_prompt_output), new_prompt)
+        parsed["new_prompt_path"] = str(new_prompt_path)
+        parsed["patch_apply_results"] = patch_apply_results
+
+        if not args.skip_generate_new_content:
+            generation_api_key = args.generation_api_key or args.api_key
+            if not generation_api_key:
+                raise ValueError("未配置 DeepSeek API Key，请设置 DEEPSEEK_API_KEY，或传入 --generation-api-key")
+            new_content = call_openai_compatible(
+                api_key=generation_api_key,
+                base_url=args.generation_base_url,
+                model=args.generation_model,
+                system_prompt=GENERATION_SYSTEM_PROMPT,
+                user_prompt=new_prompt,
+                temperature=args.generation_temperature,
+                max_tokens=args.generation_max_tokens,
+                timeout=args.timeout,
+                json_mode=False,
+            )
+            new_content_path = write_text_output(Path(args.new_content_output), new_content)
+            parsed["new_content_path"] = str(new_content_path)
+            parsed["generation_model_params"] = {
+                "base_url": normalize_chat_completions_url(args.generation_base_url),
+                "model": args.generation_model,
+                "temperature": args.generation_temperature,
+                "max_tokens": args.generation_max_tokens,
+                "timeout": args.timeout,
+            }
         output = json.dumps(parsed, ensure_ascii=False, indent=2)
 
         if args.output:
@@ -427,8 +574,14 @@ def main() -> int:
             output_path.write_text(output + "\n", encoding="utf-8")
             print(f"output written: {output_path}")
             print(f"debug log written: {debug_path}")
+            print(f"new prompt written: {new_prompt_path}")
+            if parsed.get("new_content_path"):
+                print(f"new content written: {parsed['new_content_path']}")
         else:
             print(format_result_for_console(parsed))
+            print(f"new_prompt_path: {new_prompt_path}")
+            if parsed.get("new_content_path"):
+                print(f"new_content_path: {parsed['new_content_path']}")
             print(f"debug log written: {debug_path}", file=sys.stderr)
         return 0
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError) as e:

@@ -157,8 +157,9 @@ async def import_maga_worker_static_assets(
     if not workspace.exists() or not workspace.is_dir():
         raise ValueError(f"worker workspace not found: {workspace}")
 
-    prompt_files = _discover_worker_prompt_files(workspace)
-    registry_files = _discover_worker_registry_files(workspace)
+    active_expert_codes = _active_worker_expert_codes(workspace)
+    prompt_files = _discover_worker_prompt_files(workspace, active_expert_codes)
+    registry_files = _discover_worker_registry_files(workspace, active_expert_codes)
     source_hash = _combined_file_hash([*prompt_files, *registry_files])
 
     prompt_names: list[str] = []
@@ -167,6 +168,7 @@ async def import_maga_worker_static_assets(
     changed_assets = 0
 
     await _purge_legacy_worker_prompt_assets(db)
+    await _archive_inactive_worker_expert_assets(db, active_expert_codes)
 
     for path in prompt_files:
         prompt = await _upsert_prompt_file(db, workspace, path, source_name=source_name, created_by=created_by)
@@ -224,14 +226,32 @@ def _invocation_client_for_invoke_url(invoke_url: str | None):
     return ExecutorInvocationClient()
 
 
-def _discover_worker_prompt_files(workspace: Path) -> list[Path]:
+def _active_worker_expert_codes(workspace: Path) -> set[str]:
+    registry_path = workspace / "experts" / "_registry.yaml"
+    if not registry_path.exists():
+        return set()
+    data = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+    experts = data.get("experts") if isinstance(data, dict) else {}
+    if not isinstance(experts, dict):
+        return set()
+    return {
+        code
+        for code, item in experts.items()
+        if isinstance(code, str) and isinstance(item, dict) and item.get("type") == "AE" and item.get("must") is True
+    }
+
+
+def _discover_worker_prompt_files(workspace: Path, active_expert_codes: set[str] | None = None) -> list[Path]:
     candidates: list[Path] = []
+    active_expert_codes = active_expert_codes or set()
     system_prompt = workspace / "system.md"
     if system_prompt.exists():
         candidates.append(system_prompt)
     candidates.extend(sorted((workspace / "ge_writer").glob("*.md")))
     for expert_dir in sorted((workspace / "experts").glob("*")):
         if not expert_dir.is_dir() or expert_dir.name.startswith("_"):
+            continue
+        if active_expert_codes and expert_dir.name not in active_expert_codes:
             continue
         for file_name in ("system.md", "score_rubric.md"):
             path = expert_dir / file_name
@@ -240,13 +260,16 @@ def _discover_worker_prompt_files(workspace: Path) -> list[Path]:
     return candidates
 
 
-def _discover_worker_registry_files(workspace: Path) -> list[Path]:
+def _discover_worker_registry_files(workspace: Path, active_expert_codes: set[str] | None = None) -> list[Path]:
     candidates: list[Path] = []
+    active_expert_codes = active_expert_codes or set()
     for path in [workspace / "experts" / "_registry.yaml", workspace / "experts" / "_brief_types.yaml"]:
         if path.exists():
             candidates.append(path)
     for expert_dir in sorted((workspace / "experts").glob("*")):
         if not expert_dir.is_dir() or expert_dir.name.startswith("_"):
+            continue
+        if active_expert_codes and expert_dir.name not in active_expert_codes:
             continue
         path = expert_dir / "corpus.yaml"
         if path.exists():
@@ -333,6 +356,39 @@ async def _purge_legacy_worker_prompt_assets(db: AsyncSession) -> None:
     await db.execute(delete(PromptIssue).where(PromptIssue.prompt_id.in_(legacy_prompt_ids)))
     await db.execute(delete(PromptVersion).where(PromptVersion.prompt_id.in_(legacy_prompt_ids)))
     await db.execute(delete(PromptAsset).where(PromptAsset.id.in_(legacy_prompt_ids)))
+
+
+async def _archive_inactive_worker_expert_assets(db: AsyncSession, active_expert_codes: set[str]) -> None:
+    """Retire worker AE prompt/corpus assets that are not in the active AE set."""
+    result = await db.execute(select(PromptAsset).where(PromptAsset.name.like("xhs_writer.ae.%")))
+    inactive_prompts = [
+        prompt
+        for prompt in result.scalars().all()
+        if _expert_code_from_prompt_name(prompt.name) not in active_expert_codes
+    ]
+    prompt_ids = [prompt.id for prompt in inactive_prompts]
+    if prompt_ids:
+        await db.execute(delete(PromptEvaluation).where(PromptEvaluation.prompt_id.in_(prompt_ids)))
+        await db.execute(delete(PromptOptimizerRun).where(PromptOptimizerRun.prompt_id.in_(prompt_ids)))
+        await db.execute(delete(PromptIssue).where(PromptIssue.prompt_id.in_(prompt_ids)))
+        await db.execute(delete(PromptVersion).where(PromptVersion.prompt_id.in_(prompt_ids)))
+        await db.execute(delete(PromptAsset).where(PromptAsset.id.in_(prompt_ids)))
+
+    result = await db.execute(
+        select(AssetRegistry).where(AssetRegistry.asset_type == "expert_corpus", AssetRegistry.status == "active")
+    )
+    inactive_asset_ids = [
+        asset.id for asset in result.scalars().all() if asset.asset_key not in active_expert_codes
+    ]
+    if inactive_asset_ids:
+        await db.execute(update(AssetRegistry).where(AssetRegistry.id.in_(inactive_asset_ids)).values(status="archived"))
+
+
+def _expert_code_from_prompt_name(name: str) -> str | None:
+    parts = name.split(".")
+    if len(parts) < 4 or parts[:2] != ["xhs_writer", "ae"]:
+        return None
+    return parts[2]
 
 
 async def _upsert_registry_file(

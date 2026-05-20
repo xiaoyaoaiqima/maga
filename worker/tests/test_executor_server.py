@@ -65,6 +65,15 @@ def test_interpret_brief_returns_protocol_succeeded_envelope(monkeypatch):
                 "product_topic": "美素佳儿源悦",
                 "target_audience": "新手妈妈",
                 "style": "情绪共情",
+                "generation_snapshot": {
+                    "brief": {
+                        "product_topic": "宝宝便便不规律",
+                        "target_audience": "新手妈妈",
+                        "style": "经验老道型",
+                    },
+                    "assets": {"painpoint": {"painpoint": "便便不规律"}},
+                    "batch_context": {"batch_code": "unit", "item_no": 2},
+                },
             },
         ),
         headers=_headers(),
@@ -76,6 +85,9 @@ def test_interpret_brief_returns_protocol_succeeded_envelope(monkeypatch):
     assert data["status"] == "succeeded"
     assert data["output"]["structured_brief"]["product_topic"] == "美素佳儿源悦"
     assert data["output"]["structured_brief"]["target_audience"] == "新手妈妈"
+    assert data["output"]["runtime_brief"]["brief_id"] == "maga-unit-002"
+    assert data["output"]["runtime_brief"]["key_painpoints"] == ["便便不规律"]
+    assert data["output"]["brief_warnings"] == []
     assert data["stats"]["executor"] == "maga-worker"
     assert data["stats"]["module"] == "xhs-writer"
 
@@ -177,8 +189,9 @@ def test_asset_import_returns_structured_asset_package(monkeypatch):
 def test_generate_draft_runtime_mode_uses_runtime_adapter(monkeypatch):
     calls = {}
 
-    def fake_invoke_runtime_generate_draft(generation_snapshot):
+    def fake_invoke_runtime_generate_draft(generation_snapshot, runtime_brief=None):
         calls["snapshot"] = generation_snapshot
+        calls["runtime_brief"] = runtime_brief
         return {
             "draft": {"title": "源悦真实 runtime 标题", "body": "runtime 正文"},
             "runtime_result": {"verdict": "pass", "soft_score": 90},
@@ -200,6 +213,7 @@ def test_generate_draft_runtime_mode_uses_runtime_adapter(monkeypatch):
             {
                 "structured_brief": {"product_topic": "宝宝便便不规律"},
                 "generation_snapshot": snapshot,
+                "runtime_brief": {"brief_id": "compiled-runtime", "product_topic": "宝宝便便不规律"},
             },
             stage_call_id="stage-runtime",
         ),
@@ -211,21 +225,18 @@ def test_generate_draft_runtime_mode_uses_runtime_adapter(monkeypatch):
     assert data["output"]["draft"]["title"] == "源悦真实 runtime 标题"
     assert data["output"]["runtime_result"]["soft_score"] == 90
     assert calls["snapshot"] == snapshot
+    assert calls["runtime_brief"]["brief_id"] == "compiled-runtime"
 
 
 def test_generate_draft_runtime_fast_mode_uses_fast_runtime_adapter(monkeypatch):
     calls = {}
 
-    def fake_invoke_runtime_fast_generate_draft(generation_snapshot):
+    def fake_invoke_runtime_fast_generate_draft(generation_snapshot, runtime_brief=None):
         calls["snapshot"] = generation_snapshot
+        calls["runtime_brief"] = runtime_brief
         return {
             "draft": {"title": "源悦 runtime fast 标题", "body": "runtime fast 正文"},
             "runtime_result": {"mode": "runtime_fast", "final_path": "/tmp/final.md"},
-            "review_report": {
-                "hard_results": [{"ae_code": "compliance_redline", "pass": True}],
-                "soft_scores": [],
-                "rewrite_required": False,
-            },
         }
 
     monkeypatch.setenv("XHS_WRITER_EXECUTION_MODE", "runtime_fast")
@@ -240,7 +251,7 @@ def test_generate_draft_runtime_fast_mode_uses_fast_runtime_adapter(monkeypatch)
         "/invoke",
         json=_envelope(
             "xhs.generate_draft",
-            {"generation_snapshot": snapshot},
+            {"generation_snapshot": snapshot, "runtime_brief": {"brief_id": "compiled-fast"}},
             stage_call_id="stage-runtime-fast",
         ),
         headers=_headers(),
@@ -250,19 +261,65 @@ def test_generate_draft_runtime_fast_mode_uses_fast_runtime_adapter(monkeypatch)
     data = response.json()
     assert data["output"]["draft"]["title"] == "源悦 runtime fast 标题"
     assert data["output"]["runtime_result"]["mode"] == "runtime_fast"
-    assert data["output"]["review_report"]["hard_results"][0]["ae_code"] == "compliance_redline"
+    assert "review_report" not in data["output"]
     assert calls["snapshot"] == snapshot
+    assert calls["runtime_brief"]["brief_id"] == "compiled-fast"
+
+
+def test_review_and_rewrite_runtime_fast_uses_fast_runtime_adapter(monkeypatch):
+    calls = {}
+
+    def fake_invoke_runtime_fast_review_and_rewrite(generation_snapshot, draft, runtime_brief=None):
+        calls["snapshot"] = generation_snapshot
+        calls["draft"] = draft
+        calls["runtime_brief"] = runtime_brief
+        return {
+            "final": {"title": "审核后标题", "body": "审核后正文"},
+            "draft": {"title": "审核后标题", "body": "审核后正文"},
+            "runtime_result": {"mode": "runtime_fast", "phase": "review_and_rewrite", "final_path": "/tmp/final.md"},
+            "review_report": {
+                "hard_results": [{"ae_code": "compliance_redline", "pass": True}],
+                "soft_scores": [],
+                "rewrite_required": False,
+            },
+        }
+
+    monkeypatch.setattr(
+        executor_server,
+        "invoke_runtime_fast_review_and_rewrite",
+        fake_invoke_runtime_fast_review_and_rewrite,
+    )
+    client = _client(monkeypatch)
+    snapshot = {"brief": {"product_topic": "宝宝便便不规律"}, "assets": {}}
+    draft = {"title": "初稿标题", "body": "初稿正文"}
+
+    response = client.post(
+        "/invoke",
+        json=_envelope(
+            "xhs.review_and_rewrite",
+            {"generation_snapshot": snapshot, "draft": draft, "runtime_brief": {"brief_id": "compiled-review"}},
+            stage_call_id="stage-review-rewrite",
+        ),
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["output"]["final"]["title"] == "审核后标题"
+    assert data["output"]["runtime_result"]["phase"] == "review_and_rewrite"
+    assert data["output"]["hard_results"][0]["ae_code"] == "compliance_redline"
+    assert calls == {"snapshot": snapshot, "draft": draft, "runtime_brief": {"brief_id": "compiled-review"}}
 
 
 def test_generate_draft_maga_worker_execution_mode_env_overrides_legacy_env(monkeypatch):
     calls = {}
 
-    def fake_invoke_runtime_fast_generate_draft(generation_snapshot):
+    def fake_invoke_runtime_fast_generate_draft(generation_snapshot, runtime_brief=None):
         calls["snapshot"] = generation_snapshot
+        calls["runtime_brief"] = runtime_brief
         return {
             "draft": {"title": "MAGA worker runtime fast 标题", "body": "MAGA worker runtime fast 正文"},
             "runtime_result": {"mode": "runtime_fast", "final_path": "/tmp/maga-worker-runtime-fast/final.md"},
-            "review_report": {"hard_results": [], "soft_scores": [], "rewrite_required": False},
         }
 
     monkeypatch.setenv("MAGA_WORKER_EXECUTION_MODE", "runtime_fast")
@@ -289,17 +346,18 @@ def test_generate_draft_maga_worker_execution_mode_env_overrides_legacy_env(monk
     assert data["output"]["draft"]["title"] == "MAGA worker runtime fast 标题"
     assert data["output"]["runtime_result"]["mode"] == "runtime_fast"
     assert calls["snapshot"] == snapshot
+    assert calls["runtime_brief"] is None
 
 
 def test_generate_draft_with_generation_snapshot_defaults_to_runtime_fast(monkeypatch):
     calls = {}
 
-    def fake_invoke_runtime_fast_generate_draft(generation_snapshot):
+    def fake_invoke_runtime_fast_generate_draft(generation_snapshot, runtime_brief=None):
         calls["snapshot"] = generation_snapshot
+        calls["runtime_brief"] = runtime_brief
         return {
             "draft": {"title": "自动 runtime fast 标题", "body": "自动 runtime fast 正文"},
             "runtime_result": {"mode": "runtime_fast", "final_path": "/tmp/auto-runtime-fast/final.md"},
-            "review_report": {"hard_results": [], "soft_scores": [], "rewrite_required": False},
         }
 
     monkeypatch.delenv("MAGA_WORKER_EXECUTION_MODE", raising=False)
@@ -326,6 +384,7 @@ def test_generate_draft_with_generation_snapshot_defaults_to_runtime_fast(monkey
     assert data["output"]["draft"]["title"] == "自动 runtime fast 标题"
     assert data["output"]["runtime_result"]["mode"] == "runtime_fast"
     assert calls["snapshot"] == snapshot
+    assert calls["runtime_brief"] is None
 
 
 def test_generate_draft_runtime_fast_fake_mode_keeps_protocol_smoke_model_free(monkeypatch):
@@ -362,7 +421,7 @@ def test_generate_draft_runtime_fast_fake_mode_keeps_protocol_smoke_model_free(m
         "fake": True,
         "reason": "MAGA_WORKER_RUNTIME_FAST_FAKE",
     }
-    assert data["output"]["review_report"]["hard_results"][0]["ae_code"] == "brand_product_guard"
+    assert "review_report" not in data["output"]
 
 
 def test_run_ae_review_returns_structured_review_report(monkeypatch):
@@ -390,8 +449,14 @@ def test_run_ae_review_returns_structured_review_report(monkeypatch):
     assert report["rewrite_required"] is False
     assert report["risk_level"] == "high"
     assert data["output"]["hard_results"] == report["hard_results"]
-    assert [item["ae_code"] for item in report["hard_results"]] == ["brand_product_guard", "compliance_redline"]
-    assert {item["ae_code"] for item in report["soft_scores"]} == {"xhs_structure", "naturalness_ai_smell"}
+    assert [item["ae_code"] for item in report["hard_results"]] == [
+        "brand_product_guard",
+        "compliance_redline",
+        "expression_writing",
+        "time_logic",
+        "legal_tencent",
+    ]
+    assert {item["ae_code"] for item in report["soft_scores"]} == {"business_logic"}
 
 
 def test_unknown_capability_returns_protocol_failed_envelope(monkeypatch):

@@ -161,16 +161,30 @@ async def test_import_maga_worker_static_assets_versions_prompts_and_registry_as
     profile = tmp_path
     (workspace / "ge_writer").mkdir(parents=True)
     (workspace / "experts" / "compliance_redline").mkdir(parents=True)
+    (workspace / "experts" / "business_logic").mkdir(parents=True)
+    (workspace / "experts" / "painpoint_anchor").mkdir(parents=True)
     (workspace / "outputs" / "runtime_fast_1").mkdir(parents=True)
     (workspace / "tools").mkdir(parents=True)
     (workspace / "system.md").write_text("你是 GE 主写手。", encoding="utf-8")
     (workspace / "ge_writer" / "style_templates.md").write_text("## 风格模板\n自然真实", encoding="utf-8")
     (workspace / "experts" / "_registry.yaml").write_text(
-        "experts:\n  compliance_redline:\n    score_type: hard\n",
+        "experts:\n"
+        "  compliance_redline:\n"
+        "    type: AE\n"
+        "    must: true\n"
+        "    score_type: 0/1\n"
+        "  business_logic:\n"
+        "    type: AE\n"
+        "    must: true\n"
+        "    score_type: 0-100\n"
+        "  painpoint_anchor:\n"
+        "    type: AE\n"
+        "    must: false\n"
+        "    score_type: 0-100\n",
         encoding="utf-8",
     )
     (workspace / "experts" / "_brief_types.yaml").write_text(
-        "brief_types:\n  xhs_product_seeding_professional_advisor:\n    required_aes: [compliance_redline]\n",
+        "brief_types:\n  xhs_product_seeding_professional_advisor:\n    required_aes: [compliance_redline, business_logic]\n",
         encoding="utf-8",
     )
     (workspace / "experts" / "compliance_redline" / "system.md").write_text(
@@ -183,6 +197,26 @@ async def test_import_maga_worker_static_assets_versions_prompts_and_registry_as
     )
     (workspace / "experts" / "compliance_redline" / "corpus.yaml").write_text(
         "expert: compliance_redline\noutput_mode: fixed\ngroups:\n  红线:\n    items:\n      - text: 禁止医疗化\n",
+        encoding="utf-8",
+    )
+    (workspace / "experts" / "business_logic" / "system.md").write_text(
+        "你是业务逻辑总审。",
+        encoding="utf-8",
+    )
+    (workspace / "experts" / "business_logic" / "score_rubric.md").write_text(
+        "score: 100",
+        encoding="utf-8",
+    )
+    (workspace / "experts" / "business_logic" / "corpus.yaml").write_text(
+        "expert: business_logic\noutput_mode: fixed\ngroups: {}\n",
+        encoding="utf-8",
+    )
+    (workspace / "experts" / "painpoint_anchor" / "system.md").write_text(
+        "旧拆分 AE 不能继续导入",
+        encoding="utf-8",
+    )
+    (workspace / "experts" / "painpoint_anchor" / "corpus.yaml").write_text(
+        "expert: painpoint_anchor\noutput_mode: fixed\ngroups: {}\n",
         encoding="utf-8",
     )
     (workspace / "outputs" / "runtime_fast_1" / "ge-runtime_fast.prompt.md").write_text(
@@ -215,23 +249,42 @@ async def test_import_maga_worker_static_assets_versions_prompts_and_registry_as
             tags=["ae", "persona"],
             is_deleted=0,
         )
-        session.add_all([legacy_ge, legacy_ae])
+        legacy_split_ae = PromptAsset(
+            name="xhs_writer.ae.painpoint_anchor.system",
+            prompt_type="critic",
+            tags=["ae", "painpoint_anchor"],
+            is_deleted=0,
+        )
+        session.add_all([legacy_ge, legacy_ae, legacy_split_ae])
         await session.flush()
         session.add_all(
             [
                 PromptVersion(prompt_id=legacy_ge.id, version_no=1, content="old ge"),
                 PromptVersion(prompt_id=legacy_ae.id, version_no=1, content="old ae"),
+                PromptVersion(prompt_id=legacy_split_ae.id, version_no=1, content="old split ae"),
+                AssetRegistry(
+                    asset_type="expert_corpus",
+                    asset_key="painpoint_anchor",
+                    display_name="旧拆分 AE 语料",
+                    version_no=1,
+                    status="active",
+                    source_name="old",
+                    source_hash="old",
+                    content_json={"content": {"expert": "painpoint_anchor"}},
+                ),
             ]
         )
         await session.flush()
         result = await import_maga_worker_static_assets(session, workspace)
         await session.commit()
 
-    assert result.imported_prompts == 4
-    assert result.imported_assets == 3
+    assert result.imported_prompts == 6
+    assert result.imported_assets == 4
     assert "xhs_writer.ge.system" in result.prompt_names
     assert "xhs_writer.ae.compliance_redline.system" in result.prompt_names
+    assert "xhs_writer.ae.business_logic.system" in result.prompt_names
     assert ("expert_corpus", "compliance_redline") in result.asset_keys
+    assert ("expert_corpus", "business_logic") in result.asset_keys
 
     async with session_factory() as session:
         prompts = (await session.execute(PromptAsset.__table__.select())).mappings().all()
@@ -244,14 +297,19 @@ async def test_import_maga_worker_static_assets_versions_prompts_and_registry_as
     assert "xhs_writer.ge.style_templates" in prompt_names
     assert "xhs_writer.ae.compliance_redline.system" in prompt_names
     assert "xhs_writer.ae.compliance_redline.score_rubric" in prompt_names
+    assert "xhs_writer.ae.business_logic.system" in prompt_names
+    assert "xhs_writer.ae.business_logic.score_rubric" in prompt_names
     assert "xhs_writer.ge.soul" not in prompt_names
     assert "xhs_writer.ae.compliance_redline.persona" not in prompt_names
+    assert "xhs_writer.ae.painpoint_anchor.system" not in prompt_names
     assert "ge-runtime_fast.prompt.md" not in prompt_names
-    assert len(versions) == 4
+    assert len(versions) == 6
     by_asset = {(row["asset_type"], row["asset_key"]): row for row in assets}
-    assert by_asset[("expert_registry", "xhs_writer")]["content_json"]["content"]["experts"]["compliance_redline"]["score_type"] == "hard"
+    assert by_asset[("expert_registry", "xhs_writer")]["content_json"]["content"]["experts"]["compliance_redline"]["score_type"] == "0/1"
     assert by_asset[("brief_type_registry", "xhs_writer")]["content_json"]["content"]["brief_types"]
     assert by_asset[("expert_corpus", "compliance_redline")]["content_json"]["content"]["expert"] == "compliance_redline"
+    assert by_asset[("expert_corpus", "business_logic")]["content_json"]["content"]["expert"] == "business_logic"
+    assert by_asset[("expert_corpus", "painpoint_anchor")]["status"] == "archived"
     assert runs[0]["summary_json"]["excluded_dirs"] == ["outputs", "tests", "__pycache__", ".pytest_cache"]
 
     async with session_factory() as session:
@@ -266,6 +324,6 @@ async def test_import_maga_worker_static_assets_versions_prompts_and_registry_as
         version_count = len((await session.execute(PromptVersion.__table__.select())).mappings().all())
         asset_count = len((await session.execute(AssetRegistry.__table__.select())).mappings().all())
 
-    assert prompt_count == 4
-    assert version_count == 4
-    assert asset_count == 3
+    assert prompt_count == 6
+    assert version_count == 6
+    assert asset_count == 5

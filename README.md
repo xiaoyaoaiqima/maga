@@ -54,12 +54,13 @@ MAGA 前端/接口
      xhs.interpret_brief
      xhs.run_ae_analysis
      xhs.generate_draft
-     xhs.run_ae_review
-     xhs.rewrite_draft（仅审核未通过时）
+     xhs.review_and_rewrite
   -> 返回 title/body，并在批量报告中展示审核原因、耗时和 stage trace
 ```
 
 `/generation/start` 会构造最小 `generation_snapshot`，`batch_context.source=single_generation`。`/batches/start` 会先基于 `asset_registry` 生成批次计划，再为每篇文章构造带资产引用和多样性约束的 `generation_snapshot`。
+
+详细流程、stage 职责、AE 口径、trace 和本地 worker 输出位置见 [MAGA x maga-worker 本地组合](/Users/luxifa/maga/docs/MAGA_XHS_WRITER_LOCAL_INTEGRATION.md)。
 
 ## 数据库初始化
 

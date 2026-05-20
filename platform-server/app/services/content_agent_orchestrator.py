@@ -27,10 +27,9 @@ MVP_XHS_CAPABILITIES = [
     "xhs.interpret_brief",
     "xhs.run_ae_analysis",
     "xhs.generate_draft",
-    "xhs.run_ae_review",
+    "xhs.review_and_rewrite",
 ]
 REWRITE_XHS_CAPABILITY = "xhs.rewrite_draft"
-MAX_MVP_REWRITE_ROUNDS = 1
 
 
 class ContentAgentInvokeError(RuntimeError):
@@ -127,21 +126,6 @@ class ContentAgentOrchestrator:
 
         if run is None:
             raise ValueError("run was not created")
-        if self._review_requires_rewrite(context) and run.rewrite_round < MAX_MVP_REWRITE_ROUNDS:
-            stage_request = ContentAgentStageCallCreate(
-                capability=REWRITE_XHS_CAPABILITY,
-                schema_version=FIRST_XHS_SCHEMA_VERSION,
-                invoke_mode="sync",
-                input_snapshot=self._input_for_capability(REWRITE_XHS_CAPABILITY, context),
-            )
-            stage_call = await self.service.create_stage_call(run.id, stage_request)
-            stage_call, invoke_result = await self._invoke_and_record_stage(executor, run, stage_call)
-            stage_calls.append(stage_call)
-            if invoke_result.status == "failed":
-                raise ValueError(invoke_result.error_message or f"stage failed: {REWRITE_XHS_CAPABILITY}")
-            context.update(stage_call.output_snapshot or {})
-            run.rewrite_round += 1
-            await self.db.flush()
         final_content = self._extract_final_content(context)
         await self.service.complete_run(run.id, ContentAgentRunCompleteRequest(output_summary=final_content))
         await self.db.refresh(run)
@@ -280,13 +264,28 @@ class ContentAgentOrchestrator:
                 payload["generation_snapshot"] = context.get("generation_snapshot")
             return payload
         if capability == "xhs.run_ae_analysis":
-            payload = {"structured_brief": context.get("structured_brief", {})}
+            payload = {
+                "structured_brief": context.get("structured_brief", {}),
+                "runtime_brief": context.get("runtime_brief"),
+                "brief_warnings": context.get("brief_warnings", []),
+            }
             if context.get("generation_snapshot"):
                 payload["generation_snapshot"] = context.get("generation_snapshot")
             return payload
         if capability == "xhs.generate_draft":
             payload = {
                 "structured_brief": context.get("structured_brief", {}),
+                "runtime_brief": context.get("runtime_brief"),
+                "analyses": context.get("analyses", {}),
+            }
+            if context.get("generation_snapshot"):
+                payload["generation_snapshot"] = context.get("generation_snapshot")
+            return payload
+        if capability == "xhs.review_and_rewrite":
+            payload = {
+                "draft": context.get("draft", {}),
+                "structured_brief": context.get("structured_brief", {}),
+                "runtime_brief": context.get("runtime_brief"),
                 "analyses": context.get("analyses", {}),
             }
             if context.get("generation_snapshot"):
@@ -296,6 +295,7 @@ class ContentAgentOrchestrator:
             payload = {
                 "draft": context.get("draft", {}),
                 "structured_brief": context.get("structured_brief", {}),
+                "runtime_brief": context.get("runtime_brief"),
             }
             if context.get("generation_snapshot"):
                 payload["generation_snapshot"] = context.get("generation_snapshot")
@@ -304,6 +304,7 @@ class ContentAgentOrchestrator:
             payload = {
                 "previous_draft": context.get("draft", {}),
                 "structured_brief": context.get("structured_brief", {}),
+                "runtime_brief": context.get("runtime_brief"),
                 "analyses": context.get("analyses", {}),
                 "review_report": {
                     "hard_results": context.get("hard_results", []),
@@ -316,12 +317,6 @@ class ContentAgentOrchestrator:
                 payload["generation_snapshot"] = context.get("generation_snapshot")
             return payload
         return dict(context)
-
-    def _review_requires_rewrite(self, context: dict[str, Any]) -> bool:
-        hard_results = context.get("hard_results") or []
-        if any(result.get("pass") is False for result in hard_results if isinstance(result, dict)):
-            return True
-        return bool(context.get("failed_aes"))
 
     def _extract_final_content(self, context: dict[str, Any]) -> dict[str, str]:
         draft = context.get("final") or context.get("draft") or {}

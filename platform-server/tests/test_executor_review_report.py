@@ -29,4 +29,4 @@ async def test_mock_executor_review_returns_structured_review_report():
     assert report["rewrite_required"] is False
     assert report["risk_level"] == "high"
     assert [item["ae_code"] for item in report["hard_results"]] == ["brand_product_guard", "compliance_redline"]
-    assert {item["ae_code"] for item in report["soft_scores"]} == {"xhs_structure", "naturalness_ai_smell"}
+    assert {item["ae_code"] for item in report["soft_scores"]} == {"business_logic"}

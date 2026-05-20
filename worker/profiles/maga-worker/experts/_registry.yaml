@@ -12,7 +12,7 @@ experts:
     chinese_name: Brief解析与任务归一AE
     type: AE
     capability: 生文前解析
-    must: true
+    must: false
     score_type: null
     output_mode: fixed
     model: doubao-seed-2-0-mini
@@ -21,7 +21,7 @@ experts:
     chinese_name: 痛点分类与卖点锚定AE
     type: AE
     capability: 辅助生文/评分
-    must: true
+    must: false
     score_type: 0-100
     output_mode: fixed
     model: doubao-seed-2-0-mini
@@ -30,7 +30,7 @@ experts:
     chinese_name: 卖点展开与因果链AE
     type: AE
     capability: 辅助生文/评分
-    must: true
+    must: false
     score_type: 0-100
     output_mode: fixed
     model: doubao-seed-2-0-mini
@@ -39,7 +39,7 @@ experts:
     chinese_name: 叙事路径与扰动AE
     type: AE
     capability: 辅助生文/评分
-    must: true
+    must: false
     score_type: 0-100
     output_mode: fixed
     model: doubao-seed-2-0-mini
@@ -48,7 +48,7 @@ experts:
     chinese_name: 人设视角AE
     type: AE
     capability: 辅助生文/评分
-    must: true
+    must: false
     score_type: 0-100
     output_mode: fixed
     model: doubao-seed-2-0-mini
@@ -62,8 +62,35 @@ experts:
     output_mode: fixed
     model: doubao-seed-2-0-mini
 
+  business_logic:
+    chinese_name: 业务逻辑总审AE
+    type: AE
+    capability: 辅助生文/评分
+    must: true
+    score_type: 0-100
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
   compliance_redline:
     chinese_name: 合规红线AE
+    type: AE
+    capability: 辅助生文/评分
+    must: true
+    score_type: 0/1
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
+  expression_writing:
+    chinese_name: 表达写作规则AE
+    type: AE
+    capability: 辅助生文/评分
+    must: true
+    score_type: 0/1
+    output_mode: fixed
+    model: doubao-seed-2-0-mini
+
+  time_logic:
+    chinese_name: 时间逻辑规则AE
     type: AE
     capability: 辅助生文/评分
     must: true
@@ -75,7 +102,7 @@ experts:
     chinese_name: 小红书结构排版AE
     type: AE
     capability: 辅助生文/评分
-    must: true
+    must: false
     score_type: 0-100
     output_mode: fixed
     model: doubao-seed-2-0-mini
@@ -84,7 +111,7 @@ experts:
     chinese_name: 自然度与AI味AE
     type: AE
     capability: 辅助生文/评分
-    must: true
+    must: false
     score_type: 0-100
     output_mode: fixed
     model: doubao-seed-2-0-mini

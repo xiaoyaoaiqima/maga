@@ -109,7 +109,7 @@ async def test_batch_execution_generates_first_n_items_and_links_runs():
     assert review_report["hard_results"][0]["ae_code"] == "brand_product_guard"
     assert review_report["hard_results"][0]["pass"] is True
     assert items[0].quality_json["hard_pass"] is True
-    assert items[0].quality_json["soft_score_avg"] == 87.0
+    assert items[0].quality_json["soft_score_avg"] == 88.0
     assert items[0].diversity_json["opening_type"] == "过来人提醒"
     assert items[0].diversity_json["narrative_focus"] == "先共情"
     assert items[0].diversity_json["emotion"] == "稳"
@@ -136,7 +136,19 @@ class RuntimeFastDraftReviewClient:
         elif capability == "xhs.generate_draft":
             output = {
                 "draft": {"title": "runtime fast 标题", "body": "runtime fast 正文"},
-                "runtime_result": {"mode": "runtime_fast", "final_path": "/tmp/runtime-fast/final.md"},
+                "runtime_result": {"mode": "runtime_fast", "phase": "generate_draft", "draft_path": "/tmp/runtime-fast/draft.md"},
+            }
+        elif capability == "xhs.review_and_rewrite":
+            input_payload = envelope.get("input") or {}
+            draft = input_payload.get("draft") or {"title": "runtime fast 标题", "body": "runtime fast 正文"}
+            output = {
+                "final": draft,
+                "draft": draft,
+                "runtime_result": {
+                    "mode": "runtime_fast",
+                    "phase": "review_and_rewrite",
+                    "final_path": "/tmp/runtime-fast/final.md",
+                },
                 "review_report": {
                     "hard_results": [
                         {
@@ -189,6 +201,14 @@ class SimilarDraftRewriteClient(RuntimeFastDraftReviewClient):
             output = {
                 "draft": {"title": "相似标题", "body": "第一段相同。第二段也相同。第三段继续相同。"},
                 "runtime_result": {"mode": "runtime_fast"},
+            }
+            return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
+        if capability == "xhs.review_and_rewrite":
+            input_payload = envelope.get("input") or {}
+            draft = input_payload.get("draft") or {"title": "相似标题", "body": "第一段相同。第二段也相同。第三段继续相同。"}
+            output = {
+                "final": draft,
+                "draft": draft,
                 "review_report": {
                     "hard_results": [{"ae_code": "compliance_redline", "pass": True}],
                     "soft_scores": [],
@@ -530,7 +550,7 @@ async def test_batch_execution_marks_manual_review_when_similarity_rewrite_still
 
 
 @pytest.mark.asyncio
-async def test_batch_execution_preserves_review_report_returned_by_generate_draft_runtime_fast():
+async def test_batch_execution_preserves_review_report_returned_by_review_and_rewrite_runtime_fast():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(
@@ -587,7 +607,7 @@ async def test_batch_execution_preserves_review_report_returned_by_generate_draf
     assert item.quality_json["hard_pass"] is True
     assert item.quality_json["executor"] == "runtime_fast"
     assert item.quality_json["soft_score_avg"] is None
-    assert {stage.capability for stage in stage_calls} >= {"xhs.generate_draft", "xhs.run_ae_review"}
+    assert {stage.capability for stage in stage_calls} >= {"xhs.generate_draft", "xhs.review_and_rewrite"}
 
 
 def _plan(item_no: int) -> dict:

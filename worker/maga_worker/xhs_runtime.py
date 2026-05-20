@@ -7,6 +7,7 @@ The worker code is versioned in the MAGA repo. Profile files under
 from __future__ import annotations
 
 import datetime
+import importlib.util
 import json
 import os
 import random
@@ -268,6 +269,161 @@ def call_ae(ae: str, mode: str, brief: dict, draft: str | None = None,
     return result
 
 
+def call_legal_review(brief: dict, draft: str, debug_dir: Path | None = None, tag: str = "") -> dict[str, Any]:
+    """Run Tencent text moderation as the runtime_fast legal hard review.
+
+    Old RAAP treated Tencent TMS as a custom legal/risk-control node: title and
+    body are checked separately, Pass passes, Block blocks, and Review only
+    blocks when strict mode is explicitly enabled.
+    """
+    verify_text_content = _load_tencent_text_verifier()
+    if verify_text_content is None:
+        result = {
+            "score": 1,
+            "verdict": "pass",
+            "hard_hits": [],
+            "suggestions": [],
+            "mock": True,
+            "reason": "tencent verifier unavailable",
+            "raw": {},
+        }
+        _write_legal_review_debug(result, debug_dir, tag)
+        return result
+
+    title, body = _split_draft_title_body(draft)
+    checks: list[dict[str, Any]] = []
+    if title:
+        checks.append(_run_tencent_text_check(verify_text_content, "title", title))
+    if body:
+        checks.append(_run_tencent_text_check(verify_text_content, "content", body))
+
+    strict_mode = os.environ.get("XHS_RUNTIME_LEGAL_REVIEW_STRICT", "0") == "1"
+    hard_hits: list[str] = []
+    for item in checks:
+        suggestion = item.get("suggestion")
+        blocked = suggestion == "Block" or (strict_mode and suggestion == "Review")
+        if blocked:
+            part = "标题" if item.get("part") == "title" else "正文"
+            detail = item.get("label") or item.get("sub_label") or suggestion
+            keywords = item.get("keywords") or []
+            keyword_text = f"，关键词：{'、'.join(map(str, keywords))}" if keywords else ""
+            hard_hits.append(f"{part}腾讯云审核不通过：{detail}{keyword_text}")
+
+    result = {
+        "score": 0 if hard_hits else 1,
+        "verdict": "fail" if hard_hits else "pass",
+        "hard_hits": hard_hits,
+        "suggestions": hard_hits,
+        "replacement_needed": [],
+        "strict_mode": strict_mode,
+        "raw": {"checks": checks},
+    }
+    _write_legal_review_debug(result, debug_dir, tag)
+    return result
+
+
+def _load_tencent_text_verifier():
+    module_path = REPO_ROOT / "platform-server" / "app" / "utils" / "tencent_verify.py"
+    if not module_path.exists():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("maga_runtime_tencent_verify", module_path)
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return getattr(module, "verify_text_content", None)
+    except Exception:
+        return None
+
+
+def _run_tencent_text_check(verify_text_content, part: str, text: str) -> dict[str, Any]:
+    try:
+        raw_result = verify_text_content(text, biztype=os.environ.get("TENCENT_TEXT_BIZTYPE") or None)
+    except TypeError:
+        raw_result = verify_text_content(text)
+    normalized = _normalize_tencent_text_result(raw_result)
+    normalized["part"] = part
+    normalized["length"] = len(text)
+    return normalized
+
+
+def _normalize_tencent_text_result(result: Any) -> dict[str, Any]:
+    if isinstance(result, dict):
+        raw = result.get("raw") if isinstance(result.get("raw"), dict) else result
+        suggestion = result.get("suggestion") or result.get("Suggestion") or raw.get("Suggestion") or "Pass"
+        label = result.get("label") or result.get("Label") or raw.get("Label")
+        sub_label = result.get("sub_label") or result.get("SubLabel") or raw.get("SubLabel")
+        keywords = result.get("keywords") or result.get("Keywords") or raw.get("Keywords") or []
+        request_id = result.get("request_id") or result.get("RequestId") or raw.get("RequestId")
+        detail_results = raw.get("DetailResults") or []
+        if not keywords and isinstance(detail_results, list):
+            keywords = _keywords_from_tencent_details(detail_results)
+        return {
+            "suggestion": str(suggestion),
+            "label": label,
+            "sub_label": sub_label,
+            "keywords": keywords if isinstance(keywords, list) else [keywords],
+            "hit_details": detail_results if isinstance(detail_results, list) else [],
+            "request_id": request_id,
+            "mock": bool(result.get("mock")),
+            "raw": raw,
+        }
+    suggestion = getattr(result, "Suggestion", "Pass")
+    return {
+        "suggestion": str(suggestion),
+        "label": getattr(result, "Label", None),
+        "sub_label": getattr(result, "SubLabel", None),
+        "keywords": getattr(result, "Keywords", []) or [],
+        "hit_details": getattr(result, "DetailResults", []) or [],
+        "request_id": getattr(result, "RequestId", None),
+        "mock": False,
+        "raw": result,
+    }
+
+
+def _keywords_from_tencent_details(detail_results: list[Any]) -> list[str]:
+    keywords: list[str] = []
+    for item in detail_results:
+        if not isinstance(item, dict):
+            continue
+        value = item.get("Keywords") or item.get("Keyword")
+        if isinstance(value, list):
+            keywords.extend(str(keyword) for keyword in value if str(keyword).strip())
+        elif value:
+            keywords.append(str(value))
+    return keywords
+
+
+def _split_draft_title_body(draft: str) -> tuple[str, str]:
+    title = ""
+    body_lines: list[str] = []
+    for raw in str(draft or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("标题：") or line.startswith("标题:"):
+            title = line.split("：", 1)[-1] if "：" in line else line.split(":", 1)[-1]
+            title = title.strip()
+        elif line.startswith("正文：") or line.startswith("正文:"):
+            value = line.split("：", 1)[-1] if "：" in line else line.split(":", 1)[-1]
+            body_lines.append(value.strip())
+        elif not title:
+            title = line.lstrip("# ").strip()
+        else:
+            body_lines.append(line)
+    body = "\n".join(body_lines).strip()
+    return title, body
+
+
+def _write_legal_review_debug(result: dict[str, Any], debug_dir: Path | None, tag: str) -> None:
+    if debug_dir is None:
+        return
+    suffix = f"-{tag}" if tag else ""
+    path = debug_dir / f"legal-tencent_review{suffix}.json"
+    path.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+
+
 # ─────────────────── 冲突检测 + 收敛 spec ───────────────────
 def collect_hard_blocklist(ae_outputs: dict[str, dict]) -> list[str]:
     """从 legal/platform/brand 三个必选 AE 收集所有红线词。"""
@@ -300,49 +456,25 @@ def build_writing_spec(brief: dict, ae_outputs: dict[str, dict], hard_block: lis
     brand   = ae_outputs.get("brand") or {}
     camp    = brief.get("campaign") or {}
 
-    # New online-prompt-derived AE set.
-    brief_i = ae_outputs.get("brief_interpreter") or {}
-    p_anchor = ae_outputs.get("painpoint_anchor") or {}
-    sp_logic = ae_outputs.get("sellingpoint_logic") or {}
-    narrative = ae_outputs.get("narrative_strategy") or {}
-    pov = ae_outputs.get("persona_pov") or {}
+    # Current MAGA AE set: redline, brand/product, and business logic.
+    business_logic = ae_outputs.get("business_logic") or {}
     brand_guard = ae_outputs.get("brand_product_guard") or {}
     compliance = ae_outputs.get("compliance_redline") or {}
-    xhs = ae_outputs.get("xhs_structure") or {}
-    natural = ae_outputs.get("naturalness_ai_smell") or {}
 
     def _yaml(x):
         return yaml.dump(x, allow_unicode=True, default_flow_style=False).strip() if x else "(空)"
 
-    if any([brief_i, p_anchor, sp_logic, narrative, pov, brand_guard, compliance, xhs, natural]):
+    if any([business_logic, brand_guard, compliance]):
         return f"""# Writing Spec — {brief.get('brief_id')}
 
-## 任务归一
-{_yaml(brief_i)}
-
-## 痛点分类与首个卖点锚点
-{_yaml(p_anchor)}
-
-## 卖点展开与因果链
-{_yaml(sp_logic)}
-
-## 叙事路径与扰动
-{_yaml(narrative)}
-
-## 人设视角
-{_yaml(pov)}
+## 业务逻辑总审
+{_yaml(business_logic)}
 
 ## 品牌与产品表达硬规则
 {_yaml(brand_guard)}
 
 ## 合规红线
 {_yaml(compliance)}
-
-## 小红书结构 / 标题 / emoji / 输出格式
-{_yaml(xhs)}
-
-## 自然度与 AI 味控制
-{_yaml(natural)}
 
 ## brief 原始输入（不可扩写，不可自行新增卖点/功效）
 {_yaml(brief)}

@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 
 BACKEND_PORT ?= 5100
-FRONTEND_PORT ?= 3100
+FRONTEND_PORT ?= 3102
 FRONTEND_LOG := .local/logs/frontend.log
 FRONTEND_PID := .local/pids/frontend.pid
 WORKER_PORT ?= 8765

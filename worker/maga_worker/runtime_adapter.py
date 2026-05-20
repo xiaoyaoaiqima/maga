@@ -4,11 +4,16 @@ from __future__ import annotations
 import time
 import os
 import json
+import concurrent.futures
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable
 
 import yaml
+
+RUNTIME_FAST_AE_REVIEW_CODES = ("compliance_redline", "expression_writing", "time_logic")
+RUNTIME_FAST_LEGAL_REVIEW_CODE = "legal_tencent"
+RUNTIME_FAST_REVIEW_CODES = (*RUNTIME_FAST_AE_REVIEW_CODES, RUNTIME_FAST_LEGAL_REVIEW_CODE)
 
 
 def build_runtime_brief_from_snapshot(generation_snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -72,13 +77,14 @@ def build_runtime_brief_from_snapshot(generation_snapshot: dict[str, Any]) -> di
 def invoke_runtime_generate_draft(
     generation_snapshot: dict[str, Any],
     *,
+    runtime_brief: dict[str, Any] | None = None,
     run_full_flow_func: Callable[..., dict[str, Any]] | None = None,
     work_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     if run_full_flow_func is None:
         from maga_worker.xhs_runtime import run_full_flow as run_full_flow_func
 
-    brief = build_runtime_brief_from_snapshot(generation_snapshot)
+    brief = _resolve_runtime_brief(generation_snapshot, runtime_brief)
     if work_dir is None:
         base = default_output_dir() / f"runtime_{brief['brief_id']}_{int(time.time())}"
     else:
@@ -96,24 +102,22 @@ def invoke_runtime_generate_draft(
 def invoke_runtime_fast_generate_draft(
     generation_snapshot: dict[str, Any],
     *,
+    runtime_brief: dict[str, Any] | None = None,
     call_ge_func: Callable[..., str] | None = None,
-    call_ae_func: Callable[..., dict[str, Any]] | None = None,
     work_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Fast runtime path for MAGA /invoke.
 
-    This validates the real GE + compliance_redline model path without running
-    the full AE committee/rewrite loop. It is intended as the first production
-    integration step from MAGA into xhs-writer.
+    This stage only generates the first draft. Review, rewrite, and recheck are
+    handled by invoke_runtime_fast_review_and_rewrite so platform traces can
+    explain generation time separately from review/rewrite time.
     """
-    from maga_worker.xhs_runtime import call_ae as runtime_call_ae
     from maga_worker.xhs_runtime import call_ge as runtime_call_ge
     from maga_worker.xhs_runtime import ge_prompt_parts
 
     call_ge_func = call_ge_func or runtime_call_ge
-    call_ae_func = call_ae_func or runtime_call_ae
 
-    brief = build_runtime_brief_from_snapshot(generation_snapshot)
+    brief = _resolve_runtime_brief(generation_snapshot, runtime_brief)
     base = Path(work_dir) if work_dir is not None else default_output_dir() / f"runtime_fast_{int(time.time())}"
     base.mkdir(parents=True, exist_ok=True)
     brief_path = base / f"{brief['brief_id']}.brief.yaml"
@@ -123,18 +127,70 @@ def invoke_runtime_fast_generate_draft(
     with _runtime_env(generation_snapshot):
         system, style, voice = ge_prompt_parts()
         draft_text = call_ge_func(brief, spec_md, system, style, voice, debug_dir=base, tag="runtime_fast")
-        review = call_ae_func("compliance_redline", "score", brief, draft_text, debug_dir=base, tag="runtime_fast")
+    draft = _title_body_from_text(draft_text)
+    draft_path = base / "draft.md"
+    draft_path.write_text(draft_text, encoding="utf-8")
+    return {
+        "draft": draft,
+        "runtime_result": {
+            "mode": "runtime_fast",
+            "phase": "generate_draft",
+            "draft_path": str(draft_path),
+            "brief_path": str(brief_path),
+            "debug_dir": str(base),
+        },
+        "brief_path": str(brief_path),
+    }
+
+
+def invoke_runtime_fast_review_and_rewrite(
+    generation_snapshot: dict[str, Any],
+    draft: dict[str, Any] | str,
+    *,
+    runtime_brief: dict[str, Any] | None = None,
+    call_ge_func: Callable[..., str] | None = None,
+    call_ae_func: Callable[..., dict[str, Any]] | None = None,
+    call_legal_review_func: Callable[..., dict[str, Any]] | None = None,
+    work_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Review a draft, rewrite when needed, and recheck with runtime_fast reviewers."""
+    from maga_worker.xhs_runtime import call_ae as runtime_call_ae
+    from maga_worker.xhs_runtime import call_ge as runtime_call_ge
+    from maga_worker.xhs_runtime import call_legal_review as runtime_call_legal_review
+    from maga_worker.xhs_runtime import ge_prompt_parts
+
+    call_ge_func = call_ge_func or runtime_call_ge
+    call_ae_func = call_ae_func or runtime_call_ae
+    call_legal_review_func = call_legal_review_func or runtime_call_legal_review
+
+    brief = _resolve_runtime_brief(generation_snapshot, runtime_brief)
+    base = Path(work_dir) if work_dir is not None else default_output_dir() / f"runtime_fast_review_{int(time.time())}"
+    base.mkdir(parents=True, exist_ok=True)
+    brief_path = base / f"{brief['brief_id']}.brief.yaml"
+    brief_path.write_text(yaml.dump(brief, allow_unicode=True, sort_keys=False, default_flow_style=False), encoding="utf-8")
+
+    spec_md = _fast_writing_spec(brief)
+    draft_text = _draft_text(draft)
+    with _runtime_env(generation_snapshot):
+        system, style, voice = ge_prompt_parts()
+        review_report = _run_runtime_fast_reviews(
+            brief,
+            draft_text,
+            call_ae_func=call_ae_func,
+            call_legal_review_func=call_legal_review_func,
+            debug_dir=base,
+            tag="runtime_fast",
+        )
         review_history: list[dict[str, Any]] = []
         rewrite_rounds = 0
         max_rewrite_rounds = 2
         while rewrite_rounds < max_rewrite_rounds:
-            rewrite_reason = _fast_review_rewrite_reason(review)
+            rewrite_reason = _fast_review_rewrite_reason(review_report)
             if rewrite_reason is None:
                 break
             next_round = rewrite_rounds + 1
-            previous_report = _review_report_from_fast_review(review)
-            review_history.append({"round": next_round, "rewrite_reason": rewrite_reason, "review": previous_report})
-            feedback = _feedback_from_fast_review(previous_report)
+            review_history.append({"round": next_round, "rewrite_reason": rewrite_reason, "review": review_report})
+            feedback = _feedback_from_fast_review(review_report)
             draft_text = call_ge_func(
                 brief,
                 spec_md,
@@ -147,15 +203,14 @@ def invoke_runtime_fast_generate_draft(
                 tag=f"runtime_fast_rewrite_{next_round}",
             )
             rewrite_rounds = next_round
-            review = call_ae_func(
-                "compliance_redline",
-                "score",
+            review_report = _run_runtime_fast_reviews(
                 brief,
                 draft_text,
+                call_ae_func=call_ae_func,
+                call_legal_review_func=call_legal_review_func,
                 debug_dir=base,
                 tag=f"runtime_fast_recheck_{next_round}",
             )
-    review_report = _review_report_from_fast_review(review)
     if review_history:
         review_report["previous_review"] = review_history[0]["review"]
         review_report["rewrite_rounds"] = rewrite_rounds
@@ -163,10 +218,13 @@ def invoke_runtime_fast_generate_draft(
         review_report["review_history"] = review_history
     final_path = base / "final.md"
     final_path.write_text(draft_text, encoding="utf-8")
+    final = _title_body_from_text(draft_text)
     return {
-        "draft": _title_body_from_text(draft_text),
+        "final": final,
+        "draft": final,
         "runtime_result": {
             "mode": "runtime_fast",
+            "phase": "review_and_rewrite",
             "final_path": str(final_path),
             "brief_path": str(brief_path),
             "debug_dir": str(base),
@@ -174,6 +232,136 @@ def invoke_runtime_fast_generate_draft(
         "review_report": review_report,
         "brief_path": str(brief_path),
     }
+
+
+def _draft_text(draft: dict[str, Any] | str) -> str:
+    if isinstance(draft, str):
+        return draft
+    title = str(draft.get("title") or "小红书笔记").strip()
+    body = str(draft.get("body") or "").strip()
+    return f"标题：{title}\n正文：{body}".strip()
+
+
+def _resolve_runtime_brief(
+    generation_snapshot: dict[str, Any],
+    runtime_brief: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Use the compiled brief from interpret_brief, with snapshot fallback for old callers."""
+    if isinstance(runtime_brief, dict) and runtime_brief.get("brief_id"):
+        return runtime_brief
+    return build_runtime_brief_from_snapshot(generation_snapshot)
+
+
+def _run_runtime_fast_reviews(
+    brief: dict[str, Any],
+    draft_text: str,
+    *,
+    call_ae_func: Callable[..., dict[str, Any]],
+    call_legal_review_func: Callable[..., dict[str, Any]],
+    debug_dir: Path,
+    tag: str,
+) -> dict[str, Any]:
+    review_timeout = _runtime_fast_review_timeout()
+    legal_timeout = _runtime_fast_legal_review_timeout()
+    review_deadline = time.monotonic() + review_timeout
+    legal_deadline = time.monotonic() + legal_timeout
+    max_workers = len(RUNTIME_FAST_REVIEW_CODES)
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="runtime-fast-review")
+    futures: dict[str, concurrent.futures.Future] = {}
+    try:
+        for ae_code in RUNTIME_FAST_AE_REVIEW_CODES:
+            futures[ae_code] = executor.submit(
+                call_ae_func,
+                ae_code,
+                "score",
+                brief,
+                draft_text,
+                debug_dir=debug_dir,
+                tag=tag,
+            )
+        futures[RUNTIME_FAST_LEGAL_REVIEW_CODE] = executor.submit(
+            call_legal_review_func,
+            brief,
+            draft_text,
+            debug_dir=debug_dir,
+            tag=tag,
+        )
+
+        ae_reviews = {
+            ae_code: _review_result_or_error(
+                ae_code,
+                futures[ae_code],
+                max(0.0, review_deadline - time.monotonic()),
+                timeout_label=review_timeout,
+            )
+            for ae_code in RUNTIME_FAST_AE_REVIEW_CODES
+        }
+        legal_review = _review_result_or_error(
+            RUNTIME_FAST_LEGAL_REVIEW_CODE,
+            futures[RUNTIME_FAST_LEGAL_REVIEW_CODE],
+            max(0.0, legal_deadline - time.monotonic()),
+            timeout_label=legal_timeout,
+            fail_open=_legal_review_fail_open(),
+        )
+    finally:
+        for future in futures.values():
+            future.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
+    return _review_report_from_fast_reviews(ae_reviews, legal_review)
+
+
+def _review_result_or_error(
+    review_code: str,
+    future: concurrent.futures.Future,
+    timeout_seconds: float,
+    *,
+    timeout_label: float,
+    fail_open: bool = False,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    try:
+        result = future.result(timeout=timeout_seconds)
+        if not isinstance(result, dict):
+            raise TypeError(f"{review_code} returned non-dict result")
+        result.setdefault("duration_ms", int((time.monotonic() - started) * 1000))
+        return result
+    except concurrent.futures.TimeoutError:
+        return _review_error_result(review_code, f"timeout after {timeout_label:g}s", fail_open=fail_open)
+    except Exception as exc:  # noqa: BLE001 - review failures must be reported as structured review output
+        return _review_error_result(review_code, str(exc), fail_open=fail_open)
+
+
+def _review_error_result(review_code: str, reason: str, *, fail_open: bool) -> dict[str, Any]:
+    verdict = "pass" if fail_open else "fail"
+    return {
+        "score": 1 if fail_open else 0,
+        "verdict": verdict,
+        "hard_hits": [] if fail_open else [f"{review_code} 审核异常：{reason}"],
+        "suggestions": [] if fail_open else [f"请人工确认 {review_code} 审核异常：{reason}"],
+        "replacement_needed": [],
+        "error": reason,
+        "fail_open": fail_open,
+    }
+
+
+def _runtime_fast_review_timeout() -> float:
+    return _float_env("XHS_RUNTIME_REVIEW_TIMEOUT_SECONDS", 90.0)
+
+
+def _runtime_fast_legal_review_timeout() -> float:
+    return _float_env("XHS_RUNTIME_LEGAL_REVIEW_TIMEOUT_SECONDS", 15.0)
+
+
+def _legal_review_fail_open() -> bool:
+    return os.environ.get("XHS_RUNTIME_LEGAL_REVIEW_FAIL_OPEN", "1") != "0"
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 def default_output_dir() -> Path:
@@ -305,7 +493,10 @@ def _forbidden_terms(compliance_rules: Any) -> list[str]:
 
 
 def _fast_review_passed(review: dict[str, Any]) -> bool:
-    return review.get("score") == 1 or review.get("verdict") == "pass"
+    hard_results = review.get("hard_results")
+    if isinstance(hard_results, list):
+        return all(bool(item.get("pass")) for item in hard_results if isinstance(item, dict))
+    return review.get("score") == 1 or review.get("verdict") in {"pass", "approved"} or review.get("passed") is True
 
 
 def _fast_review_rewrite_reason(review: dict[str, Any]) -> str | None:
@@ -324,18 +515,38 @@ def _feedback_from_fast_review(review_report: dict[str, Any]) -> str:
     hard_results = review_report.get("hard_results") or []
     suggestions = review_report.get("suggestions") or []
     replacement_needed = review_report.get("replacement_needed") or []
-    evidence = []
+    failed_lines: list[str] = []
+    passed_with_evidence_lines: list[str] = []
     for item in hard_results:
-        if isinstance(item, dict):
-            evidence.extend(str(hit) for hit in item.get("evidence") or [])
-    lines = ["请按以下 compliance_redline 反馈做精准修订，只修改问题位置："]
-    if evidence:
-        lines.append("命中证据：" + "、".join(evidence))
+        if not isinstance(item, dict):
+            continue
+        ae_code = item.get("ae_code") or "review"
+        evidence = "、".join(str(hit) for hit in item.get("evidence") or [])
+        feedback = item.get("feedback") or ""
+        line = f"- {ae_code}: {feedback}"
+        if evidence:
+            line = f"{line}；证据：{evidence}"
+        if item.get("pass") is False:
+            failed_lines.append(line)
+        elif evidence:
+            passed_with_evidence_lines.append(line)
+    lines = ["请按以下审核反馈做精准修订，只修改问题位置，不要整体重写："]
+    if failed_lines:
+        lines.append("\n## 硬失败")
+        lines.extend(failed_lines)
+    if passed_with_evidence_lines:
+        lines.append("\n## 已通过但需关注的证据")
+        lines.extend(passed_with_evidence_lines)
     if replacement_needed:
-        lines.append("替换建议：" + "；".join(_format_replacement(item) for item in replacement_needed))
+        lines.append("\n## 替换建议")
+        lines.extend(f"- {_format_replacement(item)}" for item in replacement_needed)
     if suggestions:
-        lines.append("修订建议：" + "；".join(map(str, suggestions)))
-    lines.append("禁止新增治疗、改善、治好、解决疾病等医疗化表达。")
+        lines.append("\n## 修订建议")
+        lines.extend(f"- {item}" for item in suggestions)
+    lines.append("\n## 改写边界")
+    lines.append("- 禁止新增治疗、改善、治好、解决疾病等医疗化表达。")
+    lines.append("- 禁止新增新的时间效果链、专业术语、奶粉成分或未提供的产品事实。")
+    lines.append("- 保留原主题、目标人群和已有安全表达，只修正被审核命中的位置。")
     return "\n".join(lines)
 
 
@@ -346,6 +557,61 @@ def _format_replacement(item: Any) -> str:
         if source and target:
             return f"{source} -> {target}"
     return str(item)
+
+
+def _review_report_from_fast_reviews(
+    ae_reviews: dict[str, dict[str, Any]],
+    legal_review: dict[str, Any],
+) -> dict[str, Any]:
+    hard_results = [
+        _hard_result_from_fast_review(ae_code, review)
+        for ae_code, review in ae_reviews.items()
+    ]
+    hard_results.append(_hard_result_from_fast_review(RUNTIME_FAST_LEGAL_REVIEW_CODE, legal_review))
+
+    suggestions: list[Any] = []
+    replacement_needed: list[Any] = []
+    for ae_code, review in [*ae_reviews.items(), (RUNTIME_FAST_LEGAL_REVIEW_CODE, legal_review)]:
+        suggestions.extend(_tagged_items(ae_code, review.get("suggestions") or []))
+        replacement_needed.extend(_tagged_items(ae_code, review.get("replacement_needed") or []))
+
+    passed = all(item["pass"] for item in hard_results)
+    return {
+        "hard_results": hard_results,
+        "soft_scores": [],
+        "rewrite_required": bool(not passed or suggestions or replacement_needed),
+        "suggestions": suggestions,
+        "replacement_needed": replacement_needed,
+        "raw": {
+            "ae_reviews": ae_reviews,
+            RUNTIME_FAST_LEGAL_REVIEW_CODE: legal_review,
+        },
+    }
+
+
+def _hard_result_from_fast_review(ae_code: str, review: dict[str, Any]) -> dict[str, Any]:
+    passed = _fast_review_passed(review)
+    return {
+        "ae_code": ae_code,
+        "pass": bool(passed),
+        "risk_level": "low" if passed else "high",
+        "feedback": review.get("verdict") or review.get("reason") or ("pass" if passed else "fail"),
+        "evidence": review.get("hard_hits")
+        or review.get("conditional_hits")
+        or review.get("keywords")
+        or review.get("hit_details")
+        or [],
+    }
+
+
+def _tagged_items(ae_code: str, items: list[Any]) -> list[Any]:
+    tagged: list[Any] = []
+    for item in items:
+        if isinstance(item, dict):
+            tagged.append({"ae_code": ae_code, **item})
+        else:
+            tagged.append(f"{ae_code}: {item}")
+    return tagged
 
 
 def _review_report_from_fast_review(review: dict[str, Any]) -> dict[str, Any]:

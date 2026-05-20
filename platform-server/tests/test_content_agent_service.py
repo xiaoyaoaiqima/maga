@@ -149,7 +149,7 @@ async def test_event_artifact_and_complete_update_run_and_task(db_session):
         ContentAgentEventCreate(
             step="ae_score",
             event_type="llm_call",
-            expert_code="naturalness_ai_smell",
+            expert_code="business_logic",
             output_snapshot={"score": 88},
             message="AI 味评分完成",
         ),

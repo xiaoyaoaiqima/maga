@@ -83,12 +83,18 @@ class MockExecutorInvocationClient:
             }
             if generation_snapshot:
                 output["generation_snapshot"] = generation_snapshot
+                output["runtime_brief"] = _mock_runtime_brief_from_snapshot(generation_snapshot)
+            output["brief_warnings"] = []
         elif capability == "xhs.run_ae_analysis":
             structured_brief = input_payload.get("structured_brief") or {}
             output = {
                 "analyses": {
-                    "painpoint_anchor": {"analysis": f"{structured_brief.get('target_audience', '用户')}需要降低选择成本"},
-                    "sellingpoint_logic": {"analysis": f"围绕{structured_brief.get('product_topic', '产品/主题')}给出清晰理由"},
+                    "business_logic": {
+                        "analysis": (
+                            f"围绕{structured_brief.get('target_audience', '用户')}对"
+                            f"{structured_brief.get('product_topic', '产品/主题')}的关注，建立痛点、卖点因果链和真人感表达"
+                        )
+                    },
                 },
                 "failed_aes": [],
             }
@@ -110,6 +116,23 @@ class MockExecutorInvocationClient:
         elif capability == "xhs.run_ae_review":
             report = _mock_review_report(input_payload)
             output = {
+                "review_report": report,
+                "hard_results": report["hard_results"],
+                "soft_scores": report["soft_scores"],
+                "failed_aes": report["failed_aes"],
+            }
+        elif capability == "xhs.review_and_rewrite":
+            draft = input_payload.get("draft") or {}
+            report = _mock_review_report(input_payload)
+            output = {
+                "final": {
+                    "title": draft.get("title") or "审核后标题",
+                    "body": draft.get("body") or "审核后正文",
+                },
+                "draft": {
+                    "title": draft.get("title") or "审核后标题",
+                    "body": draft.get("body") or "审核后正文",
+                },
                 "review_report": report,
                 "hard_results": report["hard_results"],
                 "soft_scores": report["soft_scores"],
@@ -265,8 +288,7 @@ def _mock_review_report(input_payload: dict[str, Any]) -> dict[str, Any]:
         },
     ]
     soft_scores = [
-        {"ae_code": "xhs_structure", "score": 88, "feedback": "标题和正文结构符合小红书笔记 MVP 要求"},
-        {"ae_code": "naturalness_ai_smell", "score": 86, "feedback": "表达自然，可继续补真实细节"},
+        {"ae_code": "business_logic", "score": 88, "feedback": "痛点、卖点因果链、结构和真人感符合 MVP 要求"},
     ]
     return {
         "risk_level": risk_level,
@@ -319,6 +341,32 @@ def _mock_xhs_draft_from_snapshot(structured_brief: dict[str, Any], generation_s
         f"持续明显不舒服还是要问专业人士，日常分享不替代专业建议。"
     )
     return {"title": title, "body": body}
+
+
+def _mock_runtime_brief_from_snapshot(generation_snapshot: dict[str, Any]) -> dict[str, Any]:
+    brief = generation_snapshot.get("brief") or {}
+    assets = generation_snapshot.get("assets") or {}
+    diversity = generation_snapshot.get("diversity_slot") or {}
+    batch = generation_snapshot.get("batch_context") or {}
+    painpoint = assets.get("painpoint") or {}
+    selling_point = assets.get("selling_point") or {}
+    item_no = int(batch.get("item_no") or 1)
+    return {
+        "brief_id": f"maga-{batch.get('batch_code') or 'manual'}-{item_no:03d}",
+        "brief_type": "xhs_product_seeding_professional_advisor",
+        "product_topic": brief.get("product_topic") or "源悦",
+        "target_audience": brief.get("target_audience") or "小红书用户",
+        "style": brief.get("style") or "自然真实",
+        "key_painpoints": [painpoint.get("painpoint") or brief.get("product_topic") or "源悦"],
+        "key_sellingpoints": [selling_point.get("selling_point") or painpoint.get("selling_point") or "好消化易吸收"],
+        "maga": {
+            "source": "maga_generation_snapshot",
+            "brief": brief,
+            "assets": assets,
+            "diversity_slot": diversity,
+            "batch_context": batch,
+        },
+    }
 
 
 def _clean_topic(topic: str) -> str:
