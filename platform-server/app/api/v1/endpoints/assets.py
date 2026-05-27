@@ -18,9 +18,12 @@ from app.schemas.assets import (
     AssetImportRunResponse,
     AssetRegistryResponse,
     AssetRegistrySummaryResponse,
+    ReferenceElementExtractRequest,
+    ReferenceElementExtractResponse,
 )
 from app.services.asset_service import AssetService, normalize_asset_content
 from app.services.asset_import_service import import_yuanyue_training_rules
+from app.services.reference_element_extraction_service import ReferenceElementExtractionService
 
 router = APIRouter()
 
@@ -167,6 +170,38 @@ async def import_yuanyue_training_rules_endpoint(
                 imported_assets=result.imported_assets,
                 asset_keys=result.asset_keys,
                 source_hash=result.source_hash,
+            ).model_dump(mode="json"),
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/reference-elements/extract", response_model=ResponseData)
+async def extract_reference_elements(payload: ReferenceElementExtractRequest, db: AsyncSession = Depends(get_db)):
+    service = ReferenceElementExtractionService(db)
+    try:
+        result = await service.extract_from_latest_asset(
+            asset_key=payload.asset_key,
+            limit=payload.limit,
+            persist=payload.persist,
+            created_by=payload.created_by or "reference-element-extractor",
+        )
+        if payload.persist:
+            await db.commit()
+            if result.asset is not None:
+                await db.refresh(result.asset)
+        return ResponseData(
+            code=200,
+            message="success",
+            data=ReferenceElementExtractResponse(
+                source_asset_id=result.source_asset_id,
+                source_asset_version=result.source_asset_version,
+                source_item_count=result.source_item_count,
+                extracted_count=len(result.items),
+                persisted_asset_id=result.asset.id if result.asset else None,
+                persisted_asset_version=result.asset.version_no if result.asset else None,
+                items=result.items,
             ).model_dump(mode="json"),
         )
     except ValueError as exc:

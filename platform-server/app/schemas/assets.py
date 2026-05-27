@@ -143,3 +143,20 @@ class AssetChangeProposalApplyResponse(BaseModel):
     id: int
     status: str
     created_asset_ids: list[int]
+
+
+class ReferenceElementExtractRequest(BaseModel):
+    asset_key: str = Field(..., min_length=1)
+    limit: int | None = Field(default=20, ge=1, le=200)
+    persist: bool = False
+    created_by: str | None = "reference-element-extractor"
+
+
+class ReferenceElementExtractResponse(BaseModel):
+    source_asset_id: int
+    source_asset_version: int
+    source_item_count: int
+    extracted_count: int
+    persisted_asset_id: int | None = None
+    persisted_asset_version: int | None = None
+    items: list[dict[str, Any]]

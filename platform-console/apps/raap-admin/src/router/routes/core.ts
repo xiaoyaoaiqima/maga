@@ -92,6 +92,27 @@ const coreRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'ReferenceElementExtractor',
+        path: 'assets/reference-elements',
+        component: () => import('#/views/assets/reference-elements/index.vue'),
+        meta: {
+          title: '例文抽取',
+          icon: 'DatabaseOutlined',
+          activeMenu: '/assets/reference-elements',
+        },
+      },
+      {
+        name: 'TemplateVariableCorpus',
+        path: 'keyword-corpus/template-variable-corpus',
+        component: () =>
+          import('#/views/keyword_corpus/template-variable-corpus/index.vue'),
+        meta: {
+          title: '关键词语料',
+          icon: 'DatabaseOutlined',
+          activeMenu: '/keyword-corpus/template-variable-corpus',
+        },
+      },
+      {
         name: 'DashboardRlhf',
         path: 'dashboard/rlhf',
         component: () => import('#/views/dashboard/rlhf/index.vue'),

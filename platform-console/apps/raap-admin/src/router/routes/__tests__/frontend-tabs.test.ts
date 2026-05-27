@@ -24,13 +24,15 @@ function collectPaths(routes: typeof frontendTabRoutes): string[] {
 }
 
 describe('frontend controlled sidebar tabs', () => {
-  it('keeps the MVP sidebar to content, assets, feedback, prompt optimization, and model management', () => {
+  it('keeps the MVP sidebar to content, assets, reference extraction, keyword corpus, feedback, prompt optimization, and model management', () => {
     const paths = collectPaths(frontendTabRoutes);
     const titles = frontendTabRoutes.map((route) => route.meta?.title);
 
     expect(paths).toEqual([
       '/content-agent/workbench',
       '/assets/training',
+      '/assets/reference-elements',
+      '/keyword-corpus/template-variable-corpus',
       '/dashboard/rlhf',
       '/expert/prompt-optimizer',
       '/llm/provider',
@@ -38,6 +40,8 @@ describe('frontend controlled sidebar tabs', () => {
     expect(titles).toEqual([
       '内容生成',
       '资料训练',
+      '例文抽取',
+      '关键词语料',
       '反馈训练',
       '提示词优化',
       '模型管理',

@@ -87,6 +87,16 @@ export namespace AssetsApi {
     status: string;
     created_asset_ids: number[];
   }
+
+  export interface ReferenceElementExtractResult {
+    source_asset_id: number;
+    source_asset_version: number;
+    source_item_count: number;
+    extracted_count: number;
+    persisted_asset_id?: null | number;
+    persisted_asset_version?: null | number;
+    items: Array<Record<string, any>>;
+  }
 }
 
 export async function getAssetSummariesApi(params?: {
@@ -166,5 +176,18 @@ export async function importYuanyueTrainingRulesApi(data: {
       },
       timeout: 180_000,
     },
+  );
+}
+
+export async function extractReferenceElementsApi(data: {
+  asset_key: string;
+  created_by?: string;
+  limit?: number;
+  persist?: boolean;
+}) {
+  return requestClient.post<AssetsApi.ReferenceElementExtractResult>(
+    '/v1/assets/reference-elements/extract',
+    data,
+    { timeout: 180_000 },
   );
 }

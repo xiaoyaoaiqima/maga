@@ -27,3 +27,5 @@ prompt_optimize_results/
 critic_prompt_optimize_results/
 .local/*
 worker/profiles/*/experts/*/lessons/
+批量生成/*
+*.csv

@@ -11,6 +11,7 @@ from app.modules.keyword_corpus.endpoints import (
     node_pending_audits,
     nodes,
     stats,
+    template_variable_corpus,
     visualization,
 )
 
@@ -23,6 +24,7 @@ external_router.include_router(metadata.router)
 external_router.include_router(node_pending_audits.router)
 external_router.include_router(nodes.router)
 external_router.include_router(stats.router)
+external_router.include_router(template_variable_corpus.router)
 external_router.include_router(visualization.router)
 
 knowledge_router = APIRouter()
@@ -38,6 +40,7 @@ internal_router.include_router(metadata.router)
 internal_router.include_router(node_pending_audits.router)
 internal_router.include_router(nodes.router)
 internal_router.include_router(stats.router)
+internal_router.include_router(template_variable_corpus.router)
 internal_router.include_router(visualization.router)
 internal_router.include_router(knowledge_bases.router)
 internal_router.include_router(knowledge_base_files.router)

@@ -1,66 +1,63 @@
 #!/usr/bin/env python3
 """
-Single critic prompt optimizer MVP.
+Missed issue critic prompt optimizer.
 
-Reads content/prompt/problem from three TXT files,
-calls an OpenAI-compatible chat completions API, and writes critic prompt
-optimization advice to stdout or a timestamped JSON file.
+Reads content/prompt/problem from three TXT files:
+- content: original article body that passed or was not flagged correctly
+- prompt: critic prompt to optimize
+- problem: human-described issue that should have been caught
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
-import re
 import sys
 import urllib.error
-import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+
+from optimize_critic_prompt_from_txts import (
+    DEFAULT_BASE_URL,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_MODEL,
+    DEFAULT_TEMPERATURE,
+    DEFAULT_TIMEOUT_SECONDS,
+    call_openai_compatible,
+    extract_json_object,
+    load_dotenv,
+    normalize_chat_completions_url,
+    normalize_result,
+    read_required_text,
+    resolve_output_path,
+)
 
 
-DEFAULT_BASE_URL = "https://aihubmix.com/v1"
-DEFAULT_MODEL = "gpt-5.5"
-DEFAULT_TEMPERATURE = 0.2
-DEFAULT_MAX_TOKENS = 3000
-DEFAULT_TIMEOUT_SECONDS = 60
-DEFAULT_OUTPUT_DIR = "critic_prompt_optimize_results"
-DEFAULT_DEBUG_DIR = "critic_debug_log"
-
-
-def load_dotenv(path: Path = Path(".env")) -> None:
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
+DEFAULT_OUTPUT_DIR = "critic_missed_issue_optimize_results"
+DEFAULT_DEBUG_DIR = "critic_missed_issue_debug_log"
 
 
 SYSTEM_PROMPT = """你是一个资深内容审核规则与提示词优化专家。
-你需要根据错误审核结果证据、原始审核规则提示词和人类问题反馈，反推出审核提示词的问题，并给出可直接执行的修改方案。
+你需要根据正文、原始审核提示词和人类指出的漏审问题，反推出审核提示词为什么没有把问题审核出来，并给出可直接执行的修改方案。
 
 输入约定：
-- content 是完整证据块，必须同时包含被审核内容和模型给出的错误审核结果。
+- content 是正文原文，不包含模型审核结果。
 - prompt 是原始审核提示词。
-- problem 是人类对这次错误审核结果的问题反馈。
+- problem 是人类指出“应该审核出来但没有审核出来”的问题。
 
-重点判断：
-- 审核规则是否缺失、过宽、过窄或互相冲突
-- content 中的模型审核结果为什么与 problem 中的人类反馈不一致
-- 应该在审核提示词中新增、删除、替换哪些规则
-- 如何让审核结论更稳定、更可复现
+优化原则：
+- 这是漏审修复，不是误判修复；重点补充必要判定条件、证据要求、problem_context_list 定位要求和可验证触发条件。
+- 只提出能被“正文 + 漏审问题”直接支持的最小必要修改，不要把单个 badcase 扩展成更宽的禁令。
+- 如果原审核提示词已有相近规则，优先 replace 那条规则，让它更清晰、更可执行；不要重复新增同义规则。
+- 如果原审核提示词缺少对应规则，优先在最相近章节补充一条具体规则，并写清楚：触发条件、必须命中的原文证据、违规原因表达方式。
+- 对单篇 badcase 的局部漏审，优先把“正文原文 + 人类指出的问题”写成审核提示词中的违规示例/漏审示例，不要改写成抽象泛化规则。
+- patch 必须服务于提高召回，不能为了召回而放宽证据要求到语义联想或模糊相似。
+- 默认只输出 1 个最小 patch；只有漏审问题明确包含多个彼此独立根因，才输出多个 patches。
 
 请只输出 JSON，不要输出 Markdown，不要解释 JSON 外的内容。
 所有字段值都必须是合法 JSON 字符串；如果包含换行，请使用 \\n 转义，不要输出未转义的真实换行。
 JSON 字段必须包含：
-- prompt_issue: 原审核提示词的问题在哪里
+- prompt_issue: 原审核提示词为什么漏审
 - modify_suggestion: 应该怎么修改，要求具体可执行
 - added_content: 建议新增到原审核提示词里的内容，只写新增片段；如果没有新增则返回空字符串
 - removed_content: 建议从原审核提示词中删除或弱化的内容，只写删除片段；如果没有删除则返回空字符串
@@ -68,46 +65,34 @@ JSON 字段必须包含：
   - operation 只能是 replace、delete、insert_after、insert_before 之一。
   - old_text 必须是原审核提示词中可以直接搜索定位的连续原文片段；如果是新增，请填写插入位置附近的原文锚点。
   - new_text 是替换后或新增后的内容；如果是删除则返回空字符串。
-  - reason 用一句话说明为什么这样改。
+  - reason 用一句话说明为什么这样改能修复漏审，并说明它为什么不是重复规则或冲突规则。
 - revised_prompt: 默认返回空字符串，不要输出完整修改后审核提示词，避免超长截断
 - confidence: 0 到 1 之间的小数，表示你对诊断的置信度
 """
 
 
 USER_PROMPT_TEMPLATE = """# 背景信息
-## 错误审核结果证据（被审核内容 + 模型审核结果）:
+## 正文原文:
 {content}
 
-## 原始审核规则提示词:
+## 原始审核提示词:
 {prompt}
 
-## 人类问题反馈:
+## 人类指出的漏审问题:
 {problem}
 
 # 你的任务
-输出审核规则提示词的问题在哪里，怎么修改。"""
+输出审核提示词为什么没有审核出这个问题，以及应该怎么修改审核提示词。"""
 
 
 def parse_args() -> argparse.Namespace:
     load_dotenv()
     parser = argparse.ArgumentParser(
-        description="Read content/prompt/problem TXT files and optimize the critic prompt for wrong critic results.",
+        description="Read content/prompt/problem TXT files and optimize a critic prompt for missed issues.",
     )
-    parser.add_argument(
-        "--content-file",
-        required=True,
-        help="TXT file containing audited content and the wrong model critic result.",
-    )
-    parser.add_argument(
-        "--prompt-file",
-        required=True,
-        help="TXT file containing the critic prompt.",
-    )
-    parser.add_argument(
-        "--problem-file",
-        required=True,
-        help="TXT file containing human feedback / problem description.",
-    )
+    parser.add_argument("--content-file", required=True, help="TXT file containing the original article body.")
+    parser.add_argument("--prompt-file", required=True, help="TXT file containing the critic prompt.")
+    parser.add_argument("--problem-file", required=True, help="TXT file containing the missed issue description.")
     parser.add_argument("--output", help="Optional output JSON filename/path. If omitted, prints to stdout.")
     parser.add_argument(
         "--output-dir",
@@ -146,24 +131,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def read_required_text(path: Path, label: str) -> str:
-    text = path.read_text(encoding="utf-8-sig").strip()
-    if not text:
-        raise ValueError(f"{label} 文件为空: {path}")
-    return text
-
-
-def build_user_prompt(
-    content: str,
-    prompt: str,
-    problem: str,
-    include_revised_prompt: bool,
-) -> str:
-    user_prompt = USER_PROMPT_TEMPLATE.format(
-        content=content,
-        prompt=prompt,
-        problem=problem,
-    )
+def build_user_prompt(content: str, prompt: str, problem: str, include_revised_prompt: bool) -> str:
+    user_prompt = USER_PROMPT_TEMPLATE.format(content=content, prompt=prompt, problem=problem)
     if include_revised_prompt:
         return (
             user_prompt
@@ -177,127 +146,8 @@ def build_user_prompt(
         + "不要输出完整 revised_prompt，请将 revised_prompt 返回为空字符串。"
         + "请重点输出 patches 数组，便于人工按 old_text 搜索定位并替换。"
         + "如果不能找到可直接搜索的原文片段，不要编造 old_text，请选择最接近的原文锚点并使用 insert_after 或 insert_before。"
+        + "输出 patches 前按顺序自检：是否已有同义规则可改、是否能修复漏审、是否会造成过度召回。"
     )
-
-
-def normalize_chat_completions_url(url: str) -> str:
-    value = (url or "").strip().rstrip("/")
-    if value.endswith("/chat/completions"):
-        return value
-    if value.endswith("/v1"):
-        return f"{value}/chat/completions"
-    return value
-
-
-def build_chat_payload(
-    *,
-    model: str,
-    system_prompt: str,
-    user_prompt: str,
-    temperature: float,
-    max_tokens: int,
-    json_mode: bool,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": temperature,
-    }
-    token_param = "max_completion_tokens" if model.lower().startswith("gpt-5") else "max_tokens"
-    payload[token_param] = max_tokens
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
-    return payload
-
-
-def read_http_error(error: urllib.error.HTTPError) -> str:
-    body = error.read().decode("utf-8", errors="replace").strip()
-    if body:
-        return f"HTTP {error.code}: {body}"
-    return f"HTTP {error.code}: {error.reason}"
-
-
-def call_openai_compatible(
-    *,
-    api_key: str,
-    base_url: str,
-    model: str,
-    system_prompt: str,
-    user_prompt: str,
-    temperature: float,
-    max_tokens: int,
-    timeout: int,
-    json_mode: bool,
-) -> str:
-    payload = build_chat_payload(
-        model=model,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        json_mode=json_mode,
-    )
-
-    req = urllib.request.Request(
-        normalize_chat_completions_url(base_url),
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        raise ValueError(read_http_error(e)) from e
-    result = json.loads(raw)
-    return (((result.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
-
-
-def extract_json_object(text: str) -> dict[str, Any]:
-    cleaned = (text or "").strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-    try:
-        value = json.loads(cleaned)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", cleaned, flags=re.S)
-        if not match:
-            raise
-        value = json.loads(match.group(0))
-    if not isinstance(value, dict):
-        raise ValueError("模型输出不是 JSON object")
-    return value
-
-
-def normalize_result(parsed: dict[str, Any]) -> dict[str, Any]:
-    parsed.setdefault("prompt_issue", "")
-    parsed.setdefault("modify_suggestion", "")
-    parsed.setdefault("added_content", "")
-    parsed.setdefault("removed_content", "")
-    parsed.setdefault("revised_prompt", "")
-    parsed.setdefault("confidence", "")
-    patches = parsed.get("patches")
-    if not isinstance(patches, list):
-        parsed["patches"] = []
-    return parsed
-
-
-def with_timestamp_suffix(path: Path, run_id: str) -> Path:
-    return path.with_name(f"{path.stem}_{run_id}{path.suffix}")
-
-
-def resolve_output_path(output: str, output_dir: str, run_id: str) -> Path:
-    raw_path = Path(output)
-    if raw_path.parent == Path(".") or raw_path.parts[:1] == ("local_data",):
-        raw_path = Path(output_dir) / raw_path.name
-    return with_timestamp_suffix(raw_path, run_id)
 
 
 def write_debug_log(
@@ -309,7 +159,7 @@ def write_debug_log(
     user_prompt: str,
 ) -> Path:
     debug_dir.mkdir(parents=True, exist_ok=True)
-    debug_path = debug_dir / f"critic_prompt_optimize_debug_{run_id}.json"
+    debug_path = debug_dir / f"critic_missed_issue_optimize_debug_{run_id}.json"
     payload = {
         "run_id": run_id,
         "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -332,10 +182,7 @@ def write_debug_log(
             {"role": "user", "content": user_prompt},
         ],
     }
-    debug_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    debug_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return debug_path
 
 
@@ -349,12 +196,7 @@ def main() -> int:
         prompt = read_required_text(Path(args.prompt_file), "prompt")
         problem = read_required_text(Path(args.problem_file), "problem")
         run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        user_prompt = build_user_prompt(
-            content,
-            prompt,
-            problem,
-            args.include_revised_prompt,
-        )
+        user_prompt = build_user_prompt(content, prompt, problem, args.include_revised_prompt)
         debug_path = write_debug_log(
             debug_dir=Path(args.debug_dir),
             run_id=run_id,

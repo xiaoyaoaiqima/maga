@@ -189,6 +189,49 @@ async def asset_client():
 
 
 @pytest.mark.asyncio
+async def test_extract_reference_elements_preview(asset_client):
+    response = await asset_client.post(
+        "/api/v1/assets/reference-elements/extract",
+        json={"asset_key": "yuanyue", "limit": 1, "persist": False},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["source_item_count"] == 1
+    assert data["extracted_count"] == 1
+    assert data["persisted_asset_id"] is None
+    item = data["items"][0]
+    assert item["source_example_id"] == "reference_example_1"
+    assert item["title_hook"]["hook_type"] in {"生活经验", "情绪困扰", "场景冲突"}
+    assert "奶量" in item["content_atoms"]["painpoint_signals"] or "便便" in item["content_atoms"]["painpoint_signals"]
+    assert item["writing_strategy"]["proof_style"]
+    assert item["safety"]["avoid_copy_phrases"]
+
+
+@pytest.mark.asyncio
+async def test_extract_reference_elements_persist_candidate_asset(asset_client):
+    response = await asset_client.post(
+        "/api/v1/assets/reference-elements/extract",
+        json={"asset_key": "yuanyue", "limit": 1, "persist": True, "created_by": "tester"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["persisted_asset_id"] is not None
+    assert data["persisted_asset_version"] == 1
+
+    detail_response = await asset_client.get(
+        "/api/v1/assets/reference_content_elements/yuanyue",
+        params={"asset_stage": "candidate"},
+    )
+    assert detail_response.status_code == 200
+    asset = detail_response.json()["data"]
+    assert asset["asset_stage"] == "candidate"
+    assert asset["asset_type"] == "reference_content_elements"
+    assert asset["content_json"]["items"][0]["element_source"] == "rules_v1"
+
+
+@pytest.mark.asyncio
 async def test_list_assets_and_get_latest_asset(asset_client):
     list_response = await asset_client.get("/api/v1/assets", params={"asset_key": "yuanyue"})
     assert list_response.status_code == 200
