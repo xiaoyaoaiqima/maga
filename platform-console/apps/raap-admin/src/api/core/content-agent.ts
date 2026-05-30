@@ -38,6 +38,12 @@ export namespace ContentAgentApi {
     created_by?: null | string;
   }
 
+  export interface CommentBatchStartRequest {
+    asset_key?: string;
+    executor_code?: string;
+    created_by?: null | string;
+  }
+
   export interface BatchReportSummary {
     total_count: number;
     generated_count: number;
@@ -237,6 +243,16 @@ export async function startContentBatchApi(
 ) {
   return requestClient.post<ContentAgentApi.BatchStartResponse>(
     '/v1/content-agent/batches/start',
+    data,
+    { timeout: 300_000 },
+  );
+}
+
+export async function startCommentBatchApi(
+  data: ContentAgentApi.CommentBatchStartRequest,
+) {
+  return requestClient.post<ContentAgentApi.BatchStartResponse>(
+    '/v1/content-agent/comment-batches/start',
     data,
     { timeout: 300_000 },
   );

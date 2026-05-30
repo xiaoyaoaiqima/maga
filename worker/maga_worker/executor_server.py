@@ -6,6 +6,7 @@ service only executes a requested capability from the input snapshot.
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import Any
 
@@ -29,6 +30,7 @@ SUPPORTED_CAPABILITIES = {
     "xhs.run_ae_review",
     "xhs.rewrite_draft",
     "asset.import",
+    "comment.generate",
 }
 
 app = FastAPI(title="Hermes MAGA worker executor", version="0.1.0")
@@ -70,6 +72,8 @@ def _stats(started: float) -> dict[str, Any]:
 def _module_for_capability(capability: str) -> str:
     if capability.startswith("asset."):
         return "asset-steward"
+    if capability.startswith("comment."):
+        return "comment-generator"
     return "xhs-writer"
 
 
@@ -137,6 +141,84 @@ def _draft_from_structured_brief(structured_brief: dict[str, Any]) -> dict[str, 
     }
 
 
+def _comment_examples(input_payload: dict[str, Any]) -> list[str]:
+    return [
+        str(value).strip()
+        for value in [
+            *(input_payload.get("examples") or []),
+            *(input_payload.get("supplements") or []),
+        ]
+        if str(value).strip()
+    ]
+
+
+def _stable_comment_from_rule(input_payload: dict[str, Any]) -> str:
+    examples = _comment_examples(input_payload)
+    if examples:
+        try:
+            item_no = int(input_payload.get("item_no") or 1)
+        except (TypeError, ValueError):
+            item_no = 1
+        return examples[(item_no - 1) % len(examples)]
+
+    comment_angle = str(input_payload.get("comment_angle") or "这个角度").strip()
+    return f"{comment_angle}这个点还挺想听听大家真实感受的，我家也在观望源悦。"
+
+
+def _normalize_comment_text(text: str) -> str:
+    value = str(text or "").strip()
+    value = re.sub(r"^```(?:text|markdown)?\s*", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*```$", "", value).strip()
+    lines = [line.strip() for line in value.splitlines() if line.strip()]
+    if lines:
+        value = lines[0]
+    value = re.sub(r"^(?:[-*•]\s*|\d+[、.．]\s*)", "", value).strip()
+    value = re.sub(r"^(评论正文|评论|输出)[:：]\s*", "", value).strip()
+    return value.strip("“”\"' ")
+
+
+def _handle_comment_generate(input_payload: dict[str, Any]) -> dict[str, Any]:
+    if os.environ.get("MAGA_WORKER_RUNTIME_FAST_FAKE") == "1":
+        return {
+            "comment": _stable_comment_from_rule(input_payload),
+            "runtime_result": {
+                "mode": "comment_fake",
+                "fake": True,
+                "reason": "MAGA_WORKER_RUNTIME_FAST_FAKE",
+            },
+        }
+
+    from maga_worker.xhs_runtime import call_model, model_ge
+
+    examples = _comment_examples(input_payload)
+    user_parts = [
+        f"评论切角：{input_payload.get('comment_angle') or ''}",
+        f"规则语料：\n{input_payload.get('corpus') or ''}",
+    ]
+    if examples:
+        user_parts.append("参考示例（只学语义和语气，不要照搬）：\n" + "\n".join(f"- {item}" for item in examples[:8]))
+    user_parts.append(
+        "生成要求：只输出一条自然评论正文；像真实评论区，不要标题、编号、解释；"
+        "不要承诺解决所有问题，不要医疗化诊断，不要照搬示例原句。"
+    )
+    raw_comment = call_model(
+        os.environ.get("MAGA_WORKER_COMMENT_MODEL") or model_ge(),
+        system="你生成中文小红书评论，只输出一条自然评论正文。",
+        user="\n\n".join(user_parts),
+        temperature=0.85,
+    )
+    comment = _normalize_comment_text(raw_comment)
+    if not comment:
+        raise ValueError("comment.generate produced empty comment")
+    return {
+        "comment": comment,
+        "runtime_result": {
+            "mode": "comment_runtime",
+            "fake": False,
+        },
+    }
+
+
 def _review_report(input_payload: dict[str, Any]) -> dict[str, Any]:
     generation_snapshot = input_payload.get("generation_snapshot") or {}
     compliance_rules = ((generation_snapshot.get("assets") or {}).get("compliance_rules") or [])
@@ -193,6 +275,8 @@ def _review_report(input_payload: dict[str, Any]) -> dict[str, Any]:
 def _handle_capability(capability: str, input_payload: dict[str, Any]) -> dict[str, Any]:
     if capability == "asset.import":
         return import_asset_package(input_payload)
+    if capability == "comment.generate":
+        return _handle_comment_generate(input_payload)
     if capability == "xhs.interpret_brief":
         generation_snapshot = input_payload.get("generation_snapshot") or {}
         output: dict[str, Any] = {

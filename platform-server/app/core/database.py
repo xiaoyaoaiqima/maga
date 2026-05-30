@@ -1,7 +1,6 @@
 """
 Database connection and session management
 """
-import asyncio
 from contextlib import asynccontextmanager
 from typing import Annotated, AsyncGenerator
 
@@ -27,12 +26,16 @@ def _engine_options(url: str, *, analytics: bool = False) -> dict:
             "echo": settings.MYSQL_ECHO,
             "pool_pre_ping": True,
         }
+    # sqlalchemy==2.0.25 与 aiomysql==0.2.0 的异步适配层在
+    # pool_pre_ping 调用 ping() 时存在 reconnect 参数签名不兼容，
+    # 会导致登录等首个查询随机 500；MySQL 连接依靠 pool_recycle 回收。
+    pool_pre_ping = not url.startswith("mysql+aiomysql")
     if analytics:
         return {
             "echo": settings.MYSQL_ECHO,
             "pool_size": settings.MYSQL_ANALYTICS_POOL_SIZE,
             "max_overflow": settings.MYSQL_ANALYTICS_MAX_OVERFLOW,
-            "pool_pre_ping": True,
+            "pool_pre_ping": pool_pre_ping,
             "pool_recycle": 1800,
             "pool_timeout": 30,
             "connect_args": {
@@ -44,7 +47,7 @@ def _engine_options(url: str, *, analytics: bool = False) -> dict:
         "echo": settings.MYSQL_ECHO,
         "pool_size": settings.MYSQL_POOL_SIZE,
         "max_overflow": settings.MYSQL_MAX_OVERFLOW,
-        "pool_pre_ping": True,
+        "pool_pre_ping": pool_pre_ping,
         "pool_recycle": 1800,
         "pool_timeout": 30,
         "connect_args": {
@@ -56,7 +59,7 @@ def _engine_options(url: str, *, analytics: bool = False) -> dict:
 
 # Create async engine
 # 注意：aiomysql 连接不是线程安全的，每个线程/事件循环应该使用独立的连接
-# pool_pre_ping=True 确保连接在使用前被检查，无效连接会被替换
+# MySQL 下暂不启用 pool_pre_ping，原因见 _engine_options 中的版本兼容说明
 engine: AsyncEngine = create_async_engine(
     settings.MYSQL_DATABASE_URL,
     **_engine_options(settings.MYSQL_DATABASE_URL),

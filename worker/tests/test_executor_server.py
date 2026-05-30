@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from io import BytesIO
 import base64
@@ -8,7 +7,7 @@ from openpyxl import Workbook
 
 ROOT = Path(__file__).resolve().parents[1]
 
-from maga_worker import executor_server
+from maga_worker import executor_server  # noqa: E402
 from maga_worker.executor_server import app  # noqa: E402
 
 
@@ -422,6 +421,39 @@ def test_generate_draft_runtime_fast_fake_mode_keeps_protocol_smoke_model_free(m
         "reason": "MAGA_WORKER_RUNTIME_FAST_FAKE",
     }
     assert "review_report" not in data["output"]
+
+
+def test_comment_generate_fake_mode_returns_stable_comment(monkeypatch):
+    monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/invoke",
+        json=_envelope(
+            "comment.generate",
+            {
+                "item_no": 1,
+                "comment_angle": "整体适应",
+                "corpus": "整体适应：\n像妈妈在评论区聊刚开始喝源悦的观察。",
+                "examples": ["我家刚开始也在看源悦，想蹲蹲真实反馈"],
+                "supplements": ["有同月龄宝宝喝过吗，想看看大家怎么说"],
+            },
+            stage_call_id="stage-comment-fake",
+        ),
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["stage_call_id"] == "stage-comment-fake"
+    assert data["status"] == "succeeded"
+    assert data["stats"]["module"] == "comment-generator"
+    assert data["output"]["comment"] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
+    assert data["output"]["runtime_result"] == {
+        "mode": "comment_fake",
+        "fake": True,
+        "reason": "MAGA_WORKER_RUNTIME_FAST_FAKE",
+    }
 
 
 def test_run_ae_review_returns_structured_review_report(monkeypatch):

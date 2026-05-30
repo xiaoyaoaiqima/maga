@@ -11,7 +11,7 @@ MAGA_WORKER_INVOKE_URL = "mock://maga-worker/invoke"
 MAGA_WORKER_DEFAULT_GE_MODEL: str | None = None
 MAGA_WORKER_DEFAULT_AE_MODEL: str | None = None
 LEGACY_XHS_WRITER_DISPLAY_NAME = "Hermes xhs-writer (legacy alias)"
-MAGA_WORKER_MODULE_CAPABILITIES = ["asset-steward", "xhs-writer", "feedback-trainer"]
+MAGA_WORKER_MODULE_CAPABILITIES = ["asset-steward", "xhs-writer", "comment-generator", "feedback-trainer"]
 
 XHS_CAPABILITY_SPECS = [
     {"capability": "xhs.interpret_brief", "schema_version": "1"},
@@ -41,10 +41,15 @@ FEEDBACK_CAPABILITY_SPECS = [
     {"capability": "feedback.trigger_smoke_generation", "schema_version": "1"},
 ]
 
+COMMENT_CAPABILITY_SPECS = [
+    {"capability": "comment.generate", "schema_version": "1"},
+]
+
 MAGA_WORKER_MANIFEST_CAPABILITY_SPECS = [
     *XHS_CAPABILITY_SPECS,
     *ASSET_CAPABILITY_SPECS,
     *FEEDBACK_CAPABILITY_SPECS,
+    *COMMENT_CAPABILITY_SPECS,
 ]
 
 # ExecutorRegistry.supported_capabilities_json describes the protocol calls this
@@ -53,6 +58,7 @@ MAGA_WORKER_MANIFEST_CAPABILITY_SPECS = [
 MAGA_WORKER_SUPPORTED_CAPABILITY_SPECS = [
     *XHS_CAPABILITY_SPECS,
     {"capability": "asset.import", "schema_version": "1"},
+    *COMMENT_CAPABILITY_SPECS,
 ]
 
 

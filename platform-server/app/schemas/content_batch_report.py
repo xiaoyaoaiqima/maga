@@ -131,6 +131,12 @@ class ContentBatchStartRequest(BaseSchema):
     created_by: str | None = Field(default=None, max_length=100)
 
 
+class ContentCommentBatchStartRequest(BaseSchema):
+    asset_key: str = Field(default="yuanyue_comment_activity", max_length=128)
+    executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
+    created_by: str | None = Field(default=None, max_length=100)
+
+
 class ContentBatchExecutionSummary(BaseSchema):
     requested_limit: int
     generated_count: int

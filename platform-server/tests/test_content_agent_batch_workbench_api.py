@@ -39,6 +39,7 @@ async def content_agent_workbench_client():
                     {"capability": "xhs.review_and_rewrite", "schema_version": "1"},
                     {"capability": "xhs.run_ae_review", "schema_version": "1"},
                     {"capability": "xhs.rewrite_draft", "schema_version": "1"},
+                    {"capability": "comment.generate", "schema_version": "1"},
                 ],
                 enabled=1,
             )
@@ -132,6 +133,41 @@ async def test_batch_workbench_uses_default_executor_when_form_sends_blank_code(
     data = response.json()["data"]
     assert data["execution"]["generated_count"] == 1
     assert data["report"]["items"][0]["status"] == "generated"
+
+
+@pytest.mark.asyncio
+async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    response = await client.post(
+        "/api/v1/content-agent/comment-batches/start",
+        json={"asset_key": "yuanyue_comment_activity", "created_by": "ops"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["execution"]["requested_limit"] == 3
+    assert data["execution"]["generated_count"] == 3
+    assert data["execution"]["failed_count"] == 0
+    report = data["report"]
+    assert report["asset_key"] == "yuanyue_comment_activity"
+    assert report["product_topic"] == "美素佳儿源悦活动评论"
+    assert report["items"][0]["title"] == "整体适应"
+    assert report["items"][0]["body"] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
+    assert report["items"][0]["quality"]["rule_type"] == "comment_angle"
+
+    async with session_factory() as session:
+        item = (
+            await session.execute(
+                select(ContentBatchItem)
+                .where(ContentBatchItem.batch_id == data["batch_id"])
+                .order_by(ContentBatchItem.item_no)
+            )
+        ).scalars().first()
+
+    assert item.plan_json["rule_type"] == "comment_angle"
+    assert item.plan_json["comment_angle"] == "整体适应"
+    assert "像妈妈在评论区聊刚开始喝源悦" in item.plan_json["corpus"]
+    assert item.plan_json["examples"] == ["我家刚开始也在看源悦，想蹲蹲真实反馈"]
 
 
 @pytest.mark.asyncio
@@ -426,5 +462,49 @@ def _yuanyue_assets() -> list[AssetRegistry]:
             version_no=1,
             status="active",
             content_json={"items": [{"dimension": "禁止治疗便秘", "risk_level": "high"}]},
+        ),
+        AssetRegistry(
+            asset_type="comment_angle_rule_set",
+            asset_key="yuanyue_comment_activity",
+            display_name="源悦活动评论切角规则",
+            version_no=1,
+            status="active",
+            content_json={
+                "rule_type": "comment_angle",
+                "activity_name": "美素佳儿源悦活动评论",
+                "default_generation_count": 10,
+                "items": [
+                    {
+                        "rule_id": "comment_angle_001",
+                        "comment_angle": "整体适应",
+                        "corpus": "整体适应：\n像妈妈在评论区聊刚开始喝源悦的观察，语气自然一点。",
+                        "examples": ["我家刚开始也在看源悦，想蹲蹲真实反馈"],
+                        "supplements": [],
+                        "source_row_no": 1,
+                    },
+                    {
+                        "rule_id": "comment_angle_002",
+                        "comment_angle": "成分讨论",
+                        "corpus": "成分讨论：\n像在确认信息，别写成科普长文。",
+                        "examples": ["软分子蛋白这个点我也想了解下"],
+                        "supplements": [],
+                        "source_row_no": 2,
+                    },
+                    {
+                        "rule_id": "comment_angle_003",
+                        "comment_angle": "同款求反馈",
+                        "corpus": "同款求反馈：\n像同阶段妈妈顺手问一句。",
+                        "examples": ["有同月龄宝宝喝过吗，想看看大家怎么说"],
+                        "supplements": [],
+                        "source_row_no": 3,
+                    },
+                ],
+            },
+            metadata_json={
+                "rule_type": "comment_angle",
+                "default_generation_count": 10,
+                "rule_count": 3,
+                "example_count": 3,
+            },
         ),
     ]

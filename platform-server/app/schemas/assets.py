@@ -64,6 +64,7 @@ class AssetImportResponse(BaseModel):
     imported_assets: int
     asset_keys: list[tuple[str, str]]
     source_hash: str
+    summary_json: dict[str, Any] | None = None
 
 
 class AssetGenerationOptionsResponse(BaseModel):

@@ -12,7 +12,7 @@ from app.core.content_agent_defaults import (
 from app.schemas.base import BaseSchema, TimestampSchema
 
 
-ContentAgentTaskType = Literal["xhs_generate", "xhs_rewrite", "prompt_optimize"]
+ContentAgentTaskType = Literal["xhs_generate", "xhs_rewrite", "comment_generate", "prompt_optimize"]
 ContentAgentStatus = Literal["pending", "running", "succeeded", "failed", "needs_review", "cancelled"]
 
 

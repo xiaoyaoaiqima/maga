@@ -18,5 +18,6 @@
 - [MAGA Agent 执行层改造方案](./AGENT_EXECUTION_LAYER_PLAN.md)
 - [MAGA x maga-worker 本地组合](./MAGA_XHS_WRITER_LOCAL_INTEGRATION.md)
 - [提示词优化工作台 MVP](./PROMPT_OPTIMIZER_WORKBENCH_MVP.md)
+- [AI 生文流水线协作流程](./AI_CONTENT_GENERATION_WORKFLOW.md)
 
 旧的部署与微服务材料已逐步归档，阅读时优先参考当前目录下的最新文档。

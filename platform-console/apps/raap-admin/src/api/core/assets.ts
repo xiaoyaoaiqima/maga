@@ -52,6 +52,7 @@ export namespace AssetsApi {
     imported_assets: number;
     asset_keys: Array<[string, string]>;
     source_hash: string;
+    summary_json?: null | Record<string, any>;
   }
 
   export interface AssetChangeRequest {
@@ -102,6 +103,7 @@ export namespace AssetsApi {
 export async function getAssetSummariesApi(params?: {
   asset_key?: string;
   asset_stage?: string;
+  asset_type?: string;
 }) {
   return requestClient.get<AssetsApi.AssetSummary[]>('/v1/assets/summary', {
     params,
@@ -169,6 +171,56 @@ export async function importYuanyueTrainingRulesApi(data: {
   formData.append('created_by', data.created_by || 'maga-operator');
   return requestClient.post<AssetsApi.AssetImportResult>(
     '/v1/assets/imports/yuanyue-training-rules',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 180_000,
+    },
+  );
+}
+
+export async function importCommentAngleRuleSetApi(data: {
+  asset_key: string;
+  created_by?: string;
+  display_name?: string;
+  file: File;
+}) {
+  const formData = new FormData();
+  formData.append('file', data.file);
+  formData.append('asset_key', data.asset_key);
+  if (data.display_name) {
+    formData.append('display_name', data.display_name);
+  }
+  formData.append('created_by', data.created_by || 'maga-operator');
+  return requestClient.post<AssetsApi.AssetImportResult>(
+    '/v1/assets/imports/comment-angle-rule-set',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 180_000,
+    },
+  );
+}
+
+export async function importProductExperienceRuleSetApi(data: {
+  asset_key: string;
+  created_by?: string;
+  display_name?: string;
+  file: File;
+}) {
+  const formData = new FormData();
+  formData.append('file', data.file);
+  formData.append('asset_key', data.asset_key);
+  if (data.display_name) {
+    formData.append('display_name', data.display_name);
+  }
+  formData.append('created_by', data.created_by || 'maga-operator');
+  return requestClient.post<AssetsApi.AssetImportResult>(
+    '/v1/assets/imports/product-experience-rule-set',
     formData,
     {
       headers: {

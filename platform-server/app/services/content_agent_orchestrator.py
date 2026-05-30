@@ -55,6 +55,13 @@ class MvpGenerationResult:
     stage_calls: list[ContentAgentStageCall]
 
 
+@dataclass(frozen=True)
+class SingleCapabilityResult:
+    run: ContentAgentRun
+    output: dict[str, Any]
+    stage_calls: list[ContentAgentStageCall]
+
+
 class ContentAgentOrchestrator:
     """Creates MAGA tasks/runs/stages and pushes sync capabilities to an executor."""
 
@@ -130,6 +137,37 @@ class ContentAgentOrchestrator:
         await self.service.complete_run(run.id, ContentAgentRunCompleteRequest(output_summary=final_content))
         await self.db.refresh(run)
         return MvpGenerationResult(run=run, final_content=final_content, stage_calls=stage_calls)
+
+    async def run_single_capability(
+        self,
+        request: ContentAgentTaskCreate,
+        *,
+        capability: str,
+        schema_version: str = FIRST_XHS_SCHEMA_VERSION,
+    ) -> SingleCapabilityResult:
+        task = await self.service.create_task(request)
+        executor = await self._require_executor(request.executor_code)
+        if not executor.invoke_url:
+            raise ValueError("executor invoke_url is required")
+
+        run, stage_call = await self.service.start_run_with_stage(
+            task.id,
+            executor_code=executor.executor_code,
+            executor_type=executor.executor_type,
+            stage=ContentAgentStageCallCreate(
+                capability=capability,
+                schema_version=schema_version,
+                invoke_mode="sync",
+                input_snapshot=request.input_snapshot,
+            ),
+        )
+        stage_call, invoke_result = await self._invoke_and_record_stage(executor, run, stage_call)
+        if invoke_result.status == "failed":
+            raise ValueError(invoke_result.error_message or f"stage failed: {capability}")
+        output = stage_call.output_snapshot or {}
+        await self.service.complete_run(run.id, ContentAgentRunCompleteRequest(output_summary=output))
+        await self.db.refresh(run)
+        return SingleCapabilityResult(run=run, output=output, stage_calls=[stage_call])
 
     async def run_rewrite_stage(
         self,

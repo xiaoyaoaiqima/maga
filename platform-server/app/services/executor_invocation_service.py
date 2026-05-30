@@ -255,6 +255,15 @@ class MockExecutorInvocationClient:
                     },
                 ],
             }
+        elif capability == "comment.generate":
+            output = {
+                "comment": _mock_comment_from_rule(input_payload),
+                "runtime_result": {
+                    "mode": "comment_fake",
+                    "fake": True,
+                    "reason": "mock_executor",
+                },
+            }
         else:
             output = {}
         return InvokeResult(
@@ -263,6 +272,26 @@ class MockExecutorInvocationClient:
             output=output,
             stats={"mock": True},
         )
+
+
+def _mock_comment_from_rule(input_payload: dict[str, Any]) -> str:
+    examples = [
+        str(value).strip()
+        for value in [
+            *(input_payload.get("examples") or []),
+            *(input_payload.get("supplements") or []),
+        ]
+        if str(value).strip()
+    ]
+    if examples:
+        try:
+            item_no = int(input_payload.get("item_no") or 1)
+        except (TypeError, ValueError):
+            item_no = 1
+        return examples[(item_no - 1) % len(examples)]
+
+    comment_angle = str(input_payload.get("comment_angle") or "这个角度").strip()
+    return f"这个{comment_angle}我还挺有共鸣的，想看看其他妈妈怎么说。"
 
 
 

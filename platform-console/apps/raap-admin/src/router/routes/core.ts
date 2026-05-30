@@ -92,6 +92,16 @@ const coreRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'BusinessRuleManagement',
+        path: 'business-rules',
+        component: () => import('#/views/business-rules/index.vue'),
+        meta: {
+          title: '业务规则',
+          icon: 'DatabaseOutlined',
+          activeMenu: '/business-rules',
+        },
+      },
+      {
         name: 'ReferenceElementExtractor',
         path: 'assets/reference-elements',
         component: () => import('#/views/assets/reference-elements/index.vue'),

@@ -554,3 +554,114 @@ async def test_upload_yuanyue_training_rules_imports_assets(asset_client, tmp_pa
     data = payload["data"]
     assert data["imported_assets"] >= 5
     assert ["ugc_expression_corpus", "yuanyue"] in data["asset_keys"]
+
+
+@pytest.mark.asyncio
+async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
+    csv_content = "\n".join(
+        [
+            "# 运营本地说明行会被导入器忽略",
+            "评论切角,语料",
+            '"整体适应","整体适应：',
+            '像妈妈在评论区聊刚开始喝源悦的观察，语气自然一点。',
+            '',
+            '示例：',
+            '- 我家刚开始也在看源悦，想蹲蹲真实反馈',
+            '- 有同款宝宝吗，喝着接受度咋样"',
+            '"成分讨论","成分讨论：',
+            '像在确认信息，别写成科普长文。',
+            '',
+            '示例：',
+            '- 软分子蛋白这个点我也想了解下"',
+            "",
+        ]
+    )
+
+    response = await asset_client.post(
+        "/api/v1/assets/imports/comment-angle-rule-set",
+        data={"created_by": "ops"},
+        files={"file": ("评论切角_子关键词导出.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["code"] == 200
+    data = payload["data"]
+    assert data["imported_assets"] == 1
+    assert ["comment_angle_rule_set", "yuanyue_comment_activity"] in data["asset_keys"]
+    assert data["summary_json"]["rule_count"] == 2
+    assert data["summary_json"]["example_count"] == 3
+    assert data["summary_json"]["default_generation_count"] == 10
+
+    detail_response = await asset_client.get(
+        "/api/v1/assets/comment_angle_rule_set/yuanyue_comment_activity"
+    )
+    assert detail_response.status_code == 200
+    asset = detail_response.json()["data"]
+    assert asset["asset_type"] == "comment_angle_rule_set"
+    assert asset["content_json"]["rule_type"] == "comment_angle"
+    assert asset["content_json"]["items"][0]["comment_angle"] == "整体适应"
+    assert asset["content_json"]["items"][0]["examples"][0] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
+
+
+@pytest.mark.asyncio
+async def test_upload_product_experience_rule_set_imports_rule_asset(asset_client):
+    csv_content = "\n".join(
+        [
+            "# 运营本地说明行会被导入器忽略",
+            "产品使用体验,语料",
+            '"0-6个月，3个月内，奶量补充","## 产品使用体验',
+            "",
+            "你宝宝的月龄：0-6个月。",
+            "喝源悦时间：3个月内。",
+            "本文围绕奶量补充相关体验来写。",
+            "",
+            "提示：",
+            "- 像在聊0-6个月宝宝的喝奶变化。",
+            "",
+            "可参考素材：",
+            "- 刚换源悦那阵子，喂奶没之前那么拉扯。",
+            "- 有时候不用追着喂，家里人也松口气。",
+            "",
+            '注意：参考素材只提供语义方向，生成时换一种自然说法。"',
+            '"7-12个月，3-6个月，消化吸收","## 产品使用体验',
+            "",
+            "你宝宝的月龄：7-12个月。",
+            "喝源悦时间：3-6个月。",
+            "本文围绕消化吸收相关体验来写。",
+            "",
+            "可参考素材：",
+            "- 主要看喝完后的肚肚状态和便便节奏。",
+            "",
+            '注意：参考素材只提供语义方向，生成时换一种自然说法。"',
+            "",
+        ]
+    )
+
+    response = await asset_client.post(
+        "/api/v1/assets/imports/product-experience-rule-set",
+        data={"created_by": "ops", "display_name": "源悦-生文"},
+        files={"file": ("产品使用体验_子关键词导出.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["code"] == 200
+    data = payload["data"]
+    assert data["imported_assets"] == 1
+    assert ["product_experience_rule_set", "yuanyue_product_experience"] in data["asset_keys"]
+    assert data["summary_json"]["rule_count"] == 2
+    assert data["summary_json"]["example_count"] == 3
+
+    detail_response = await asset_client.get(
+        "/api/v1/assets/product_experience_rule_set/yuanyue_product_experience"
+    )
+    assert detail_response.status_code == 200
+    asset = detail_response.json()["data"]
+    assert asset["asset_type"] == "product_experience_rule_set"
+    assert asset["display_name"] == "源悦-生文"
+    assert asset["content_json"]["rule_type"] == "product_experience"
+    assert asset["content_json"]["items"][0]["product_experience"] == "0-6个月，3个月内，奶量补充"
+    assert asset["content_json"]["items"][0]["baby_stage"] == "0-6个月"
+    assert asset["content_json"]["items"][0]["use_duration"] == "3个月内"
+    assert asset["content_json"]["items"][0]["topic"] == "奶量补充"

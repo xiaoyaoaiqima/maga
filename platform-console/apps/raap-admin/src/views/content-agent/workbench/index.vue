@@ -6,10 +6,14 @@ import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import * as Antd from 'ant-design-vue';
 
 import {
+  importCommentAngleRuleSetApi,
+} from '#/api/core/assets';
+import {
   getAssetGenerationOptionsApi,
   getContentBatchListApi,
   getContentBatchReportApi,
   getTrainingFeedbackSamplesApi,
+  startCommentBatchApi,
   startContentBatchApi,
   startContentGenerationApi,
   submitBatchItemFeedbackApi,
@@ -40,6 +44,7 @@ const {
   Statistic,
   Tag,
   Tabs,
+  Upload,
 } = Antd as any;
 const { TextArea } = Input as any;
 const { Group: RadioGroup, Button: RadioButton } = Radio as any;
@@ -69,6 +74,10 @@ const productTopicOptions = ref<string[]>([]);
 const targetAudienceOptions = ref<string[]>([]);
 const personaTargetOptions = ref<string[]>([]);
 const styleOptions = ref<string[]>([]);
+const commentRuleAssetKey = ref('yuanyue_comment_activity');
+const commentRuleImporting = ref(false);
+const commentRuleGenerating = ref(false);
+const commentImportSummary = ref<Record<string, any> | null>(null);
 
 const formState = reactive({
   asset_key: 'yuanyue',
@@ -464,6 +473,45 @@ const handleGenerate = async () => {
   }
 };
 
+const handleCommentRuleUpload = async (file: File) => {
+  commentRuleImporting.value = true;
+  try {
+    const result = await importCommentAngleRuleSetApi({
+      asset_key: commentRuleAssetKey.value,
+      created_by: formState.created_by,
+      file,
+    });
+    commentImportSummary.value = result.summary_json || null;
+    const ruleCount = commentImportSummary.value?.rule_count || 0;
+    message.success(`评论切角规则包已导入：${ruleCount} 条`);
+  } catch {
+    message.error('评论切角规则包导入失败');
+  } finally {
+    commentRuleImporting.value = false;
+  }
+  return false;
+};
+
+const handleCommentBatchGenerate = async () => {
+  commentRuleGenerating.value = true;
+  try {
+    const result = await startCommentBatchApi({
+      asset_key: commentRuleAssetKey.value,
+      executor_code: normalizeExecutorCode(formState.executor_code),
+      created_by: formState.created_by,
+    });
+    selectedReport.value = result.report;
+    singleResult.value = null;
+    activeWorkspaceTab.value = 'generation';
+    message.success(
+      `评论生成完成：${result.execution.generated_count}/${result.execution.requested_limit} 条`,
+    );
+    await loadBatches();
+  } finally {
+    commentRuleGenerating.value = false;
+  }
+};
+
 const copyText = async (text?: null | string) => {
   if (!text) return;
   await navigator.clipboard.writeText(text);
@@ -604,7 +652,47 @@ watch(
   <div class="content-agent-workbench p-4">
     <Row :gutter="16">
       <Col :lg="8" :xs="24">
-        <Card title="新内容生成" :bordered="false">
+        <Card title="源悦评论切角" :bordered="false">
+          <Space direction="vertical" class="comment-rule-panel">
+            <Upload
+              accept=".csv,.xlsx"
+              :before-upload="handleCommentRuleUpload"
+              :disabled="commentRuleImporting"
+              :show-upload-list="false"
+            >
+              <Button block :loading="commentRuleImporting">
+                上传评论切角规则包
+              </Button>
+            </Upload>
+            <Button
+              block
+              type="primary"
+              :loading="commentRuleGenerating"
+              @click="handleCommentBatchGenerate"
+            >
+              按评论切角生成评论
+            </Button>
+            <div v-if="commentImportSummary" class="comment-rule-summary">
+              <Tag color="blue">
+                规则 {{ commentImportSummary.rule_count || 0 }}
+              </Tag>
+              <Tag color="green">
+                示例 {{ commentImportSummary.example_count || 0 }}
+              </Tag>
+              <Tag v-if="commentImportSummary.default_generation_count">
+                默认生成 {{ commentImportSummary.default_generation_count }}
+              </Tag>
+              <div
+                v-if="commentImportSummary.warnings?.length"
+                class="comment-rule-warnings"
+              >
+                {{ commentImportSummary.warnings.join('；') }}
+              </div>
+            </div>
+          </Space>
+        </Card>
+
+        <Card class="mt-4" title="新内容生成" :bordered="false">
           <Alert
             class="mb-4"
             message="选择资料、主题、人群和风格后生成内容，并在报告中完成审核反馈。"
@@ -1373,6 +1461,25 @@ watch(
 <style scoped>
 .content-agent-workbench {
   min-height: 100%;
+}
+
+.comment-rule-panel {
+  width: 100%;
+}
+
+.comment-rule-panel :deep(.ant-upload) {
+  width: 100%;
+}
+
+.comment-rule-summary {
+  color: #666;
+  font-size: 12px;
+}
+
+.comment-rule-warnings {
+  margin-top: 8px;
+  color: #ad6800;
+  line-height: 1.6;
 }
 
 .batch-list {

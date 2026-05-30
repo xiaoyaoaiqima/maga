@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.models.llm_provider_config import LLMProviderConfig
 from app.schemas.base import ResponseData
 from app.schemas.content_batch_report import (
+    ContentCommentBatchStartRequest,
     ContentBatchExecutionSummary,
     ContentBatchItemFeedbackRequest,
     ContentBatchItemFeedbackResponse,
@@ -42,6 +43,7 @@ from app.services.content_batch_planner import ContentBatchPlanner
 from app.services.content_batch_report_service import ContentBatchReportService
 from app.services.content_batch_review_service import ContentBatchReviewService
 from app.services.content_batch_snapshot_adapter import build_xhs_generation_snapshot_from_brief
+from app.services.content_comment_batch_service import ContentCommentBatchService
 from app.services.executor_invocation_service import ExecutorInvocationClient, MockExecutorInvocationClient
 from app.services.prompt_bundle_service import PromptBundleService
 
@@ -219,6 +221,45 @@ async def start_batch_generation(
         report=report,
     )
     return ResponseData(message="Batch generation completed", data=response)
+
+
+@router.post("/comment-batches/start", response_model=ResponseData[ContentBatchStartResponse])
+async def start_comment_batch_generation(
+    request: ContentCommentBatchStartRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchStartResponse]:
+    service = ContentAgentService(db)
+    executor_code = _normalized_executor_code(request.executor_code)
+    executor = await service.get_executor(executor_code)
+    if not executor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="executor not found")
+    invocation_client = _invocation_client_for_invoke_url(executor.invoke_url)
+    try:
+        execution = await ContentCommentBatchService(
+            db,
+            invocation_client=invocation_client,
+            callback_base_url="/api/v1/content-agent",
+            executor_code=executor_code,
+        ).create_and_execute_batch(
+            asset_key=request.asset_key,
+            created_by=request.created_by,
+        )
+        db.expire_all()
+        report = await ContentBatchReportService(db).get_batch_report(execution.batch_id)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    response = ContentBatchStartResponse(
+        batch_id=execution.batch_id,
+        batch_code=report.batch_code,
+        execution=ContentBatchExecutionSummary(
+            requested_limit=execution.requested_limit,
+            generated_count=execution.generated_count,
+            failed_count=execution.failed_count,
+            item_ids=execution.item_ids,
+        ),
+        report=report,
+    )
+    return ResponseData(message="Comment batch generation completed", data=response)
 
 
 @router.get("/batches", response_model=ResponseData[ContentBatchListResponse])

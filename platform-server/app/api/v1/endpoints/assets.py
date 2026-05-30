@@ -23,6 +23,18 @@ from app.schemas.assets import (
 )
 from app.services.asset_service import AssetService, normalize_asset_content
 from app.services.asset_import_service import import_yuanyue_training_rules
+from app.services.comment_angle_rule_service import (
+    COMMENT_ANGLE_RULE_ASSET_TYPE,
+    DEFAULT_COMMENT_ANGLE_ASSET_KEY,
+    comment_angle_import_summary,
+    import_comment_angle_rule_set,
+)
+from app.services.product_experience_rule_service import (
+    DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY,
+    PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
+    import_product_experience_rule_set,
+    product_experience_import_summary,
+)
 from app.services.reference_element_extraction_service import ReferenceElementExtractionService
 
 router = APIRouter()
@@ -46,12 +58,13 @@ async def list_assets(
 
 @router.get("/summary", response_model=ResponseData)
 async def list_asset_summaries(
+    asset_type: str | None = Query(default=None),
     asset_key: str | None = Query(default=None),
     asset_stage: str | None = Query(default="production"),
     db: AsyncSession = Depends(get_db),
 ):
     service = AssetService(db)
-    assets = await service.list_assets(asset_key=asset_key, asset_stage=asset_stage)
+    assets = await service.list_assets(asset_type=asset_type, asset_key=asset_key, asset_stage=asset_stage)
     return ResponseData(
         code=200,
         message="success",
@@ -170,6 +183,84 @@ async def import_yuanyue_training_rules_endpoint(
                 imported_assets=result.imported_assets,
                 asset_keys=result.asset_keys,
                 source_hash=result.source_hash,
+            ).model_dump(mode="json"),
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/imports/comment-angle-rule-set", response_model=ResponseData)
+async def import_comment_angle_rule_set_endpoint(
+    file: UploadFile = File(...),
+    asset_key: str = Form(default=DEFAULT_COMMENT_ANGLE_ASSET_KEY),
+    display_name: str | None = Form(default=None),
+    created_by: str = Form(default="maga-operator"),
+    db: AsyncSession = Depends(get_db),
+):
+    filename = file.filename or "评论切角_子关键词导出.csv"
+    if not filename.lower().endswith((".csv", ".xlsx")):
+        raise HTTPException(status_code=400, detail="only .csv and .xlsx files are supported")
+
+    file_content = await file.read()
+    try:
+        result = await import_comment_angle_rule_set(
+            db,
+            file_content,
+            source_name=filename,
+            asset_key=asset_key,
+            display_name=display_name,
+            created_by=created_by,
+        )
+        await db.commit()
+        return ResponseData(
+            code=200,
+            message="success",
+            data=AssetImportResponse(
+                import_run_id=result.import_run_id,
+                imported_assets=1,
+                asset_keys=[(COMMENT_ANGLE_RULE_ASSET_TYPE, result.asset_key)],
+                source_hash=result.source_hash,
+                summary_json=comment_angle_import_summary(result),
+            ).model_dump(mode="json"),
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/imports/product-experience-rule-set", response_model=ResponseData)
+async def import_product_experience_rule_set_endpoint(
+    file: UploadFile = File(...),
+    asset_key: str = Form(default=DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY),
+    display_name: str | None = Form(default=None),
+    created_by: str = Form(default="maga-operator"),
+    db: AsyncSession = Depends(get_db),
+):
+    filename = file.filename or "产品使用体验_子关键词导出.csv"
+    if not filename.lower().endswith((".csv", ".xlsx")):
+        raise HTTPException(status_code=400, detail="only .csv and .xlsx files are supported")
+
+    file_content = await file.read()
+    try:
+        result = await import_product_experience_rule_set(
+            db,
+            file_content,
+            source_name=filename,
+            asset_key=asset_key,
+            display_name=display_name,
+            created_by=created_by,
+        )
+        await db.commit()
+        return ResponseData(
+            code=200,
+            message="success",
+            data=AssetImportResponse(
+                import_run_id=result.import_run_id,
+                imported_assets=1,
+                asset_keys=[(PRODUCT_EXPERIENCE_RULE_ASSET_TYPE, result.asset_key)],
+                source_hash=result.source_hash,
+                summary_json=product_experience_import_summary(result),
             ).model_dump(mode="json"),
         )
     except ValueError as exc:
