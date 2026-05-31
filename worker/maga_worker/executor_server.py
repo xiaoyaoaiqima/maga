@@ -267,7 +267,13 @@ def _handle_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
     forbidden_hits = _rewrite_forbidden_hits(input_payload)
 
     if os.environ.get("MAGA_WORKER_RUNTIME_FAST_FAKE") == "1":
-        output = _stable_rewrite_from_previous(previous, forbidden_hits, content_type=content_type, output_fields=output_fields)
+        output = _stable_rewrite_from_previous(
+            previous,
+            forbidden_hits,
+            content_type=content_type,
+            output_fields=output_fields,
+            input_payload=input_payload,
+        )
         output["runtime_result"] = {
             "mode": "content_rewrite_fake",
             "fake": True,
@@ -337,12 +343,18 @@ def _stable_rewrite_from_previous(
     *,
     content_type: str,
     output_fields: list[Any],
+    input_payload: dict[str, Any],
 ) -> dict[str, str]:
     if content_type == "comment" or output_fields == ["comment"]:
         comment = _remove_terms_from_text(previous.get("comment") or previous.get("body") or "", forbidden_hits)
         comment = _normalize_comment_text(comment) or "这个点我也在关注，想看看大家真实反馈。"
         return {"comment": comment}
 
+    similarity = (input_payload.get("review_report") or {}).get("similarity")
+    if isinstance(similarity, dict):
+        reason = str((input_payload.get("review_report") or {}).get("rewrite_reason") or similarity.get("reason") or "")
+        body = f"换一个开头和结构来写。触发原因：{reason}"
+        return {"title": "降重后的标题", "body": body, "final": {"title": "降重后的标题", "body": body}}
     title = _remove_terms_from_text(previous.get("title") or "", forbidden_hits) or "真实体验分享"
     body = _remove_terms_from_text(previous.get("body") or "", forbidden_hits) or "围绕真实使用感受自然表达，保持克制，不夸大。"
     return {"title": title, "body": body, "final": {"title": title, "body": body}}
@@ -429,11 +441,12 @@ def _stable_content_from_unified_input(input_payload: dict[str, Any]) -> dict[st
     business_rule = input_payload.get("business_rule") or {}
     selected_keywords = input_payload.get("selected_keywords") or []
     topic = business_rule.get("product_topic") or business_rule.get("product_experience") or "源悦体验"
+    target = business_rule.get("target_audience") or business_rule.get("baby_stage") or "妈妈"
     persona = _selected_keyword_name(selected_keywords, "persona") or "真实妈妈"
     method = _selected_keyword_name(selected_keywords, "writing_method") or "自然写法"
     return {
-        "title": f"{topic}，这样写更像真实分享",
-        "body": f"围绕{topic}，用{persona}的口吻承接业务规则，再用{method}把具体感受讲清楚。整体表达保持自然克制，不夸大、不照搬示例。",
+        "title": f"{topic}，{persona}的真实分享",
+        "body": f"围绕{topic}，写给{target}，用{persona}的口吻承接业务规则，再用{method}把具体感受讲清楚。整体表达保持自然克制，不夸大、不照搬示例。",
     }
 
 

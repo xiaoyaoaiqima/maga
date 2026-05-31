@@ -11,6 +11,10 @@ from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
 from app.models.content_agent import ContentBatchItem, ContentBatchJob
 from app.models.maga_assets import AssetRegistry
 from app.services.content_batch_snapshot_adapter import DEFAULT_XHS_EMOJI, DEFAULT_XHS_WORD_COUNT
+from app.services.product_experience_rule_service import (
+    DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME,
+    PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
+)
 
 
 OPENING_TYPES = [
@@ -72,7 +76,7 @@ class ContentBatchPlanner:
         self,
         *,
         asset_key: str,
-        product_topic: str,
+        product_topic: str | None,
         target_audience: str | None,
         persona_target: str | None = None,
         style: str | None,
@@ -82,6 +86,17 @@ class ContentBatchPlanner:
     ) -> ContentBatchJob:
         if count <= 0:
             raise ValueError("count must be positive")
+
+        rule_asset = await self._latest_product_experience_rule_asset(asset_key)
+        if rule_asset is not None:
+            return await self._create_product_experience_rule_plan(
+                rule_asset,
+                requested_count=count,
+                model_config=model_config,
+                created_by=created_by,
+            )
+        if not product_topic:
+            raise ValueError(f"missing product_experience_rule_set for {asset_key}")
 
         painpoints_asset = await self._latest_asset("painpoint_model", asset_key)
         selling_asset = await self._latest_asset("product_selling_points", asset_key)
@@ -147,6 +162,77 @@ class ContentBatchPlanner:
             )
             used_asset_combo_keys.add(plan["asset_combo_key"])
             self.db.add(ContentBatchItem(batch_id=job.id, item_no=index + 1, status="planned", plan_json=plan))
+        await self.db.flush()
+        return job
+
+    async def _latest_product_experience_rule_asset(self, asset_key: str) -> AssetRegistry | None:
+        result = await self.db.execute(
+            select(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type == PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
+                AssetRegistry.asset_key == asset_key,
+                AssetRegistry.status == "active",
+                AssetRegistry.asset_stage == "production",
+            )
+            .order_by(AssetRegistry.version_no.desc(), AssetRegistry.id.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def _create_product_experience_rule_plan(
+        self,
+        asset: AssetRegistry,
+        *,
+        requested_count: int,
+        model_config: dict[str, Any] | None,
+        created_by: str | None,
+    ) -> ContentBatchJob:
+        rules = self._product_experience_rule_items(asset)
+        if not rules:
+            raise ValueError(f"product_experience_rule_set is empty for {asset.asset_key}")
+        limit = self._product_experience_generation_limit(asset, rules, requested_count=requested_count)
+        product_topic = (asset.content_json or {}).get("activity_name") or DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME
+        job = ContentBatchJob(
+            batch_code=f"batch_{uuid.uuid4().hex[:12]}",
+            asset_key=asset.asset_key,
+            product_topic=product_topic,
+            target_audience=None,
+            style=None,
+            count=limit,
+            status="planned",
+            strategy_json={
+                "source": PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
+                "rule_asset_id": asset.id,
+                "rule_asset_version": asset.version_no,
+                "executor": DEFAULT_EXECUTOR_CODE,
+                "generation_mode": "unified_content_generate",
+            },
+            diversity_plan_json={
+                "opening_types": OPENING_TYPES,
+                "structure_types": STRUCTURE_TYPES,
+                "emotion_pool": EMOTIONS,
+                "cta_types": CTA_TYPES,
+                "narrative_focuses": NARRATIVE_FOCUSES,
+            },
+            created_by=created_by,
+        )
+        self.db.add(job)
+        await self.db.flush()
+
+        for index, rule in enumerate(rules[:limit]):
+            self.db.add(
+                ContentBatchItem(
+                    batch_id=job.id,
+                    item_no=index + 1,
+                    status="planned",
+                    plan_json=self._product_experience_plan_from_rule(
+                        rule,
+                        asset=asset,
+                        item_no=index + 1,
+                        model_config=model_config,
+                    ),
+                )
+            )
         await self.db.flush()
         return job
 
@@ -252,6 +338,74 @@ class ContentBatchPlanner:
                 "emoji": DEFAULT_XHS_EMOJI,
                 "must_use_painpoint": True,
                 "must_reference_example_without_copying": True,
+                "output_fields": ["title", "body"],
+            },
+            "model_config": model_config or {},
+        }
+
+    def _product_experience_rule_items(self, asset: AssetRegistry) -> list[dict[str, Any]]:
+        items = (asset.content_json or {}).get("items")
+        return [
+            item
+            for item in items or []
+            if isinstance(item, dict) and item.get("product_experience") and item.get("corpus")
+        ]
+
+    def _product_experience_generation_limit(
+        self,
+        asset: AssetRegistry,
+        rules: list[dict[str, Any]],
+        *,
+        requested_count: int,
+    ) -> int:
+        metadata_limit = (asset.metadata_json or {}).get("default_generation_count")
+        content_limit = (asset.content_json or {}).get("default_generation_count")
+        value = metadata_limit or content_limit or requested_count
+        try:
+            limit = int(value)
+        except (TypeError, ValueError):
+            limit = requested_count
+        return max(1, min(limit, len(rules)))
+
+    def _product_experience_plan_from_rule(
+        self,
+        rule: dict[str, Any],
+        *,
+        asset: AssetRegistry,
+        item_no: int,
+        model_config: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        zero = item_no - 1
+        return {
+            "rule_type": "product_experience",
+            "item_no": item_no,
+            "asset_key": asset.asset_key,
+            "rule_asset_id": asset.id,
+            "rule_asset_version": asset.version_no,
+            "rule_id": rule.get("rule_id"),
+            "product_experience": rule.get("product_experience"),
+            "baby_stage": rule.get("baby_stage"),
+            "use_duration": rule.get("use_duration"),
+            "topic": rule.get("topic"),
+            "corpus": rule.get("corpus"),
+            "examples": rule.get("examples") or [],
+            "source_row_no": rule.get("source_row_no"),
+            "output_fields": ["title", "body"],
+            "diversity_slot": {
+                "opening_type": OPENING_TYPES[zero % len(OPENING_TYPES)],
+                "structure_type": STRUCTURE_TYPES[(zero // len(OPENING_TYPES) + zero) % len(STRUCTURE_TYPES)],
+                "emotion": EMOTIONS[(zero * 2 + zero // 11) % len(EMOTIONS)],
+                "cta_type": CTA_TYPES[(zero * 3 + zero // 13) % len(CTA_TYPES)],
+                "narrative_focus": NARRATIVE_FOCUSES[(zero + zero // len(OPENING_TYPES)) % len(NARRATIVE_FOCUSES)],
+                "content_angle": CONTENT_ANGLES[(zero * 3 + zero // len(OPENING_TYPES)) % len(CONTENT_ANGLES)],
+                "persona_lens": PERSONA_LENSES[(zero + zero // len(PERSONA_LENSES)) % len(PERSONA_LENSES)],
+                "scene_type": SCENE_TYPES[(zero * 2 + zero // len(SCENE_TYPES)) % len(SCENE_TYPES)],
+                "evidence_type": EVIDENCE_TYPES[(zero * 5 + zero // len(EVIDENCE_TYPES)) % len(EVIDENCE_TYPES)],
+                "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
+            },
+            "brief_constraints": {
+                "word_count": DEFAULT_XHS_WORD_COUNT,
+                "emoji": DEFAULT_XHS_EMOJI,
                 "output_fields": ["title", "body"],
             },
             "model_config": model_config or {},

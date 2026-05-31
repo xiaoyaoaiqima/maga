@@ -132,6 +132,8 @@ MAGA 平台默认 executor code：`hermes_maga_worker`；`hermes_xhs_writer` 只
 
 能力名建议：
 
+- `content.generate`
+- `content.rewrite`
 - `xhs.interpret_brief`
 - `xhs.run_ae_analysis`
 - `xhs.generate_draft`
@@ -171,7 +173,9 @@ MAGA execution-layer / executor 回调相关入口：
 - 不默认输出小红书话题 tag，除非用户要求。
 - 风格是小红书真实宝妈口语化，卖点藏在真实经历里，不说明书式堆成分。
 
-当用户只说“生一篇/按这个 brief 出文”时，默认走 xhs-writer 模块；如果是正式数据或批量任务，优先通过 MAGA content-agent API 触发，而不是直接在 profile workspace 写文件当结果库。
+正式文章和评论主生成链路统一走 `content.generate`；违禁词和相似度改写统一走 `content.rewrite`。`xhs.*` 能力保留为历史兼容，不作为业务规则包驱动生成的主链路。
+
+当用户只说“生一篇/按这个 brief 出文”时，也优先通过 MAGA content-agent API 触发，而不是直接在 profile workspace 写文件当结果库。
 
 ---
 

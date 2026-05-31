@@ -25,9 +25,6 @@ from app.services.unified_content_generation_service import (
     UnifiedContentGenerationService,
 )
 
-COMMENT_GENERATE_CAPABILITY = CONTENT_GENERATE_CAPABILITY
-
-
 @dataclass(frozen=True)
 class CommentBatchExecutionResult:
     batch_id: int
@@ -212,7 +209,7 @@ class ContentCommentBatchService:
             item.plan_json = {
                 **(item.plan_json or {}),
                 "unified_generation": {
-                    "capability": COMMENT_GENERATE_CAPABILITY,
+                    "capability": CONTENT_GENERATE_CAPABILITY,
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                     "keyword_asset": unified.input_snapshot.get("keyword_asset") or {},
                     "expert": unified.input_snapshot.get("expert") or {},
@@ -235,7 +232,7 @@ class ContentCommentBatchService:
                 created_by=created_by,
             )
             try:
-                result = await orchestrator.run_single_capability(task_request, capability=COMMENT_GENERATE_CAPABILITY)
+                result = await orchestrator.run_single_capability(task_request, capability=CONTENT_GENERATE_CAPABILITY)
                 comment = str((result.output or {}).get("comment") or "").strip()
                 if not comment:
                     raise ValueError("content.generate returned empty comment")
@@ -290,4 +287,4 @@ class ContentCommentBatchService:
             runtime_mode = (output.get("runtime_result") or {}).get("mode")
             if runtime_mode:
                 return str(runtime_mode)
-        return "comment_generate"
+        return "content_generate"

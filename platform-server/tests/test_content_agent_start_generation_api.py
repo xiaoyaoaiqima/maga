@@ -12,9 +12,6 @@ from app.models.base import Base
 from app.models.content_agent import ContentAgentTask, ExecutorRegistry
 from app.models.llm_provider_config import LLMProviderConfig
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
-from app.models.maga_assets import AssetRegistry
-from app.models.prompt_optimizer import PromptAsset, PromptVersion
-from app.services.asset_import_service import WORKER_STATIC_ASSET_SOURCE_NAME
 from fastapi import FastAPI
 
 
@@ -41,6 +38,7 @@ async def start_generation_client():
                     {"capability": "xhs.review_and_rewrite", "schema_version": "1"},
                     {"capability": "xhs.run_ae_review", "schema_version": "1"},
                     {"capability": "xhs.rewrite_draft", "schema_version": "1"},
+                    {"capability": "content.generate", "schema_version": "1"},
                 ],
             )
         )
@@ -108,7 +106,9 @@ async def test_start_generation_endpoint_does_not_send_default_model_override(st
     async with session_factory() as session:
         task = (await session.execute(select(ContentAgentTask))).scalars().first()
 
-    assert task.input_snapshot["generation_snapshot"]["model_config"] == {}
+    assert task.task_type == "content_generate"
+    assert task.input_snapshot["capability"] == "content.generate"
+    assert task.input_snapshot["model_config"] == {}
 
 
 @pytest.mark.asyncio
@@ -143,7 +143,7 @@ async def test_start_generation_endpoint_uses_maga_default_provider_model(start_
     async with session_factory() as session:
         task = (await session.execute(select(ContentAgentTask))).scalars().first()
 
-    assert task.input_snapshot["generation_snapshot"]["model_config"] == {
+    assert task.input_snapshot["model_config"] == {
         "ge_model": "deepseek-v4-flash",
         "ae_model": "deepseek-v4-flash",
     }
@@ -189,46 +189,25 @@ async def test_start_generation_endpoint_persists_maga_model_config(start_genera
     async with session_factory() as session:
         task = (await session.execute(select(ContentAgentTask))).scalars().first()
 
-    assert task.input_snapshot["generation_snapshot"]["model_config"] == {
+    assert task.input_snapshot["model_config"] == {
         "ge_model": "maga-ge",
         "ae_model": "maga-ae",
     }
 
 
 @pytest.mark.asyncio
-async def test_start_generation_endpoint_persists_prompt_bundle_snapshot(start_generation_client):
+async def test_start_generation_endpoint_persists_unified_prompt_snapshot(start_generation_client):
     client, session_factory = start_generation_client
-    async with session_factory() as session:
-        prompt = PromptAsset(name="xhs_writer.ge.system", prompt_type="generation", tags=["ge"])
-        session.add(prompt)
-        await session.flush()
-        version = PromptVersion(prompt_id=prompt.id, version_no=1, content="你是 GE 主写手。")
-        session.add(version)
-        await session.flush()
-        prompt.current_version_id = version.id
-        session.add(
-            AssetRegistry(
-                asset_type="expert_corpus",
-                asset_key="compliance_redline",
-                version_no=1,
-                status="active",
-                source_name=WORKER_STATIC_ASSET_SOURCE_NAME,
-                source_hash="corpus-hash",
-                content_json={"content": {"expert": "compliance_redline"}},
-            )
-        )
-        await session.commit()
-
     response = await client.post(
         "/api/v1/content-agent/generation/start",
-        json={"product_topic": "美素佳儿源悦"},
+        json={"product_topic": "美素佳儿源悦", "target_audience": "新手妈妈"},
     )
 
     assert response.status_code == 200
     async with session_factory() as session:
         task = (await session.execute(select(ContentAgentTask))).scalars().first()
 
-    bundle = task.input_snapshot["generation_snapshot"]["prompt_bundle_snapshot"]
-    assert bundle["prompts"]["xhs_writer.ge.system"]["version_id"] == version.id
-    assert bundle["prompts"]["xhs_writer.ge.system"]["content"] == "你是 GE 主写手。"
-    assert bundle["assets"]["expert_corpus:compliance_redline"]["source_hash"] == "corpus-hash"
+    assert task.input_snapshot["expert"]["expert_config_code"] == "article_generator_v1"
+    assert "美素佳儿源悦" in task.input_snapshot["rendered_prompt"]
+    assert "新手妈妈" in task.input_snapshot["rendered_prompt"]
+    assert task.input_snapshot["selected_keywords"]

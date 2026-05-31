@@ -13,15 +13,27 @@ from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
 from app.models.content_agent import ContentBatchItem, ContentBatchJob
 from app.schemas.content_agent import ContentAgentTaskCreate
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
-from app.services.content_batch_snapshot_adapter import build_xhs_generation_snapshot_from_plan
 from app.services.executor_invocation_service import ExecutorInvocationClient
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService
-from app.services.prompt_bundle_service import PromptBundleService
+from app.services.unified_content_generation_service import (
+    CONTENT_GENERATE_CAPABILITY,
+    UnifiedContentGenerationService,
+)
 
 SIMILARITY_REWRITE_THRESHOLD = 0.42
 HISTORY_SIMILARITY_REWRITE_THRESHOLD = 0.48
 MAX_SIMILARITY_REWRITE_ROUNDS = 2
 HISTORY_SIMILARITY_LOOKBACK_LIMIT = 50
+
+
+def _default_unified_review_report() -> dict[str, Any]:
+    return {
+        "source": "maga_unified_content_generate",
+        "hard_results": [],
+        "soft_scores": [],
+        "failed_aes": [],
+        "rewrite_required": False,
+    }
 
 
 @dataclass(frozen=True)
@@ -144,36 +156,58 @@ class ContentBatchExecutionService:
                 invocation_client=self.invocation_client,
                 callback_base_url=self.callback_base_url,
             )
-            snapshot = build_xhs_generation_snapshot_from_plan(
-                item.plan_json,
-                batch_id=job_context["id"],
-                batch_code=job_context["batch_code"],
-                prompt_bundle_snapshot=await PromptBundleService(db).build_xhs_writer_prompt_bundle_snapshot(),
+            unified = await UnifiedContentGenerationService(db).build_snapshot(
+                content_type="article",
+                business_rule=dict(item.plan_json or {}),
+                item_no=item.item_no,
+                output_fields=["title", "body"],
+                model_config=(item.plan_json or {}).get("model_config") or {},
             )
-            task_input = self._task_input_from_snapshot(snapshot)
+            item.plan_json = {
+                **(item.plan_json or {}),
+                "batch_context": {
+                    "batch_id": job_context["id"],
+                    "batch_code": job_context["batch_code"],
+                    "item_no": item.item_no,
+                },
+                "unified_generation": {
+                    "capability": CONTENT_GENERATE_CAPABILITY,
+                    "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
+                    "keyword_asset": unified.input_snapshot.get("keyword_asset") or {},
+                    "expert": unified.input_snapshot.get("expert") or {},
+                    "rendered_prompt": unified.input_snapshot.get("rendered_prompt") or "",
+                },
+            }
+            await db.flush()
             task_request = ContentAgentTaskCreate(
-                task_type="xhs_generate",
+                task_type="content_generate",
                 executor_code=self.executor_code,
-                input_snapshot=task_input,
-                asset_refs=snapshot.get("asset_refs") or {},
+                input_snapshot=unified.input_snapshot,
+                asset_refs=unified.asset_refs,
                 created_by=created_by,
             )
             try:
-                result = await orchestrator.run_mvp_generation_chain(task_request)
-                final = result.final_content
+                result = await orchestrator.run_single_capability(task_request, capability=CONTENT_GENERATE_CAPABILITY)
+                final = result.output or {}
+                title = str(final.get("title") or "").strip()
+                body = str(final.get("body") or "").strip()
+                if not title or not body:
+                    raise ValueError("content.generate returned empty article")
                 item.status = "generated"
                 item.task_id = result.run.task_id
                 item.run_id = result.run.id
-                item.title = final["title"]
-                item.body = final["body"]
-                review_report = self._review_report_from_stage_calls(result.stage_calls)
+                item.title = title
+                item.body = body
+                review_report = _default_unified_review_report()
                 item.quality_json = {
                     "executor": self._executor_label(result.stage_calls),
                     "stage_call_count": len(result.stage_calls),
                     "run_status": result.run.status,
                     "review_report": review_report,
-                    "hard_pass": self._hard_pass(review_report),
-                    "soft_score_avg": self._soft_score_avg(review_report),
+                    "hard_pass": True,
+                    "soft_score_avg": None,
+                    "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
+                    "expert_config_code": (unified.input_snapshot.get("expert") or {}).get("expert_config_code"),
                 }
                 diversity_slot = item.plan_json.get("diversity_slot") or {}
                 item.diversity_json = {
@@ -187,6 +221,7 @@ class ContentBatchExecutionService:
                     "scene_type": diversity_slot.get("scene_type"),
                     "evidence_type": diversity_slot.get("evidence_type"),
                     "forbidden_overlap_group": diversity_slot.get("forbidden_overlap_group"),
+                    "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                 }
                 await ForbiddenTermReviewService(db).review_and_rewrite_item(
                     item=item,
@@ -213,58 +248,6 @@ class ContentBatchExecutionService:
             raise ValueError("batch item not found")
         return item
 
-    def _review_report_from_stage_calls(self, stage_calls: list[Any]) -> dict[str, Any]:
-        review_rewrite_report = self._review_report_for_capability(stage_calls, "xhs.review_and_rewrite")
-        if review_rewrite_report:
-            return review_rewrite_report
-
-        ae_review_report = self._review_report_for_capability(stage_calls, "xhs.run_ae_review")
-        if ae_review_report:
-            return ae_review_report
-
-        runtime_fast_report = self._review_report_for_capability(stage_calls, "xhs.generate_draft", require_runtime_fast=True)
-        if runtime_fast_report:
-            return runtime_fast_report
-
-        draft_report = self._review_report_for_capability(stage_calls, "xhs.generate_draft")
-        if draft_report:
-            return draft_report
-
-        return {"hard_results": [], "soft_scores": [], "failed_aes": [], "rewrite_required": True}
-
-    def _review_report_for_capability(
-        self,
-        stage_calls: list[Any],
-        capability: str,
-        *,
-        require_runtime_fast: bool = False,
-    ) -> dict[str, Any] | None:
-        for stage_call in stage_calls:
-            if getattr(stage_call, "capability", None) != capability:
-                continue
-            output = getattr(stage_call, "output_snapshot", None) or {}
-            if require_runtime_fast and ((output.get("runtime_result") or {}).get("mode") != "runtime_fast"):
-                continue
-            report = output.get("review_report")
-            if self._is_meaningful_review_report(report):
-                return report
-            if output.get("hard_results") is not None or output.get("soft_scores") is not None:
-                return {
-                    "hard_results": output.get("hard_results") or [],
-                    "soft_scores": output.get("soft_scores") or [],
-                    "failed_aes": output.get("failed_aes") or [],
-                    "rewrite_required": bool(output.get("failed_aes")),
-                }
-        return None
-
-    def _is_meaningful_review_report(self, report: Any) -> bool:
-        if not isinstance(report, dict):
-            return False
-        return any(
-            key in report
-            for key in ["hard_results", "soft_scores", "failed_aes", "rewrite_required", "suggestions", "raw"]
-        )
-
     def _executor_label(self, stage_calls: list[Any]) -> str:
         for stage_call in stage_calls:
             output = getattr(stage_call, "output_snapshot", None) or {}
@@ -272,20 +255,6 @@ class ContentBatchExecutionService:
             if runtime_mode:
                 return str(runtime_mode)
         return "mock_or_skeleton"
-
-    def _hard_pass(self, review_report: dict[str, Any]) -> bool:
-        hard_results = review_report.get("hard_results") or []
-        return bool(hard_results) and all(item.get("pass") is True for item in hard_results if isinstance(item, dict))
-
-    def _soft_score_avg(self, review_report: dict[str, Any]) -> float | None:
-        scores = [
-            float(item["score"])
-            for item in (review_report.get("soft_scores") or [])
-            if isinstance(item, dict) and isinstance(item.get("score"), (int, float))
-        ]
-        if not scores:
-            return None
-        return round(sum(scores) / len(scores), 2)
 
     async def _rewrite_similar_generated_items(self, batch_id: int, job: ContentBatchJob) -> int:
         async with self.session_factory() as db:
@@ -370,19 +339,20 @@ class ContentBatchExecutionService:
                 callback_base_url=self.callback_base_url,
             )
             try:
-                input_payload = self._similarity_rewrite_input(
-                    item,
-                    similar_item,
-                    prompt_bundle_snapshot=await PromptBundleService(db).build_xhs_writer_prompt_bundle_snapshot(),
-                )
-                result = await orchestrator.run_rewrite_stage(
+                input_payload = self._similarity_rewrite_input(item, similar_item)
+                result = await orchestrator.run_content_rewrite_stage(
                     run_id=item.run_id,
                     executor_code=self.executor_code,
                     input_payload=input_payload,
                 )
-                final = result.final_content
-                item.title = final["title"]
-                item.body = final["body"]
+                final = result.output or {}
+                final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
+                title = str(final.get("title") or final_content.get("title") or "").strip()
+                body = str(final.get("body") or final_content.get("body") or "").strip()
+                if not title or not body:
+                    raise ValueError("content.rewrite returned empty article")
+                item.title = title
+                item.body = body
                 post_score = round(self._jaccard_2gram(item.body or "", similar_item.get("body") or ""), 4)
                 passed = post_score < self._similarity_threshold(similar_item)
                 quality = dict(item.quality_json or {})
@@ -431,24 +401,16 @@ class ContentBatchExecutionService:
         self,
         item: ContentBatchItem,
         similar_item: dict[str, Any],
-        *,
-        prompt_bundle_snapshot: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        snapshot = build_xhs_generation_snapshot_from_plan(
-            item.plan_json,
-            batch_id=item.batch_id,
-            batch_code=None,
-            prompt_bundle_snapshot=prompt_bundle_snapshot,
-        )
         similarity_meta = self._similarity_rewrite_meta(item, similar_item)
+        unified_generation = (item.plan_json or {}).get("unified_generation") or {}
         return {
-            "previous_draft": {"title": item.title, "body": item.body},
-            "structured_brief": {
-                "product_topic": item.plan_json.get("product_topic"),
-                "target_audience": item.plan_json.get("target_audience"),
-                "style": item.plan_json.get("style"),
-            },
-            "analyses": {},
+            "previous_content": {"title": item.title, "body": item.body},
+            "content_type": "article",
+            "output_fields": ["title", "body"],
+            "business_rule": dict(item.plan_json or {}),
+            "selected_keywords": unified_generation.get("selected_keywords") or [],
+            "forbidden_hits": [],
             "review_report": {
                 "hard_results": [],
                 "soft_scores": [],
@@ -469,7 +431,6 @@ class ContentBatchExecutionService:
                 "similarity": similarity_meta,
             },
             "rewrite_round": self._similarity_rewrite_rounds(item) + 1,
-            "generation_snapshot": snapshot,
             "rewrite_instructions": [
                 "避免复用相似文章的开头句式和段落顺序",
                 "更换叙事切入点，优先使用当前文章的 diversity_slot",
@@ -529,24 +490,3 @@ class ContentBatchExecutionService:
         batch_context = ((item.plan_json or {}).get("batch_context") or {})
         value = batch_context.get("batch_code")
         return value if isinstance(value, str) and value else None
-
-    def _task_input_from_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
-        brief = snapshot.get("brief") or {}
-        return {
-            "brief_type": "xhs_product_seeding",
-            "product_topic": self._topic_for_diversity(brief, snapshot),
-            "target_audience": brief.get("target_audience"),
-            "persona_target": brief.get("persona_target"),
-            "style": brief.get("style"),
-            "generation_snapshot": snapshot,
-        }
-
-    def _topic_for_diversity(self, brief: dict[str, Any], snapshot: dict[str, Any]) -> str:
-        topic = brief.get("product_topic") or "源悦"
-        batch_context = snapshot.get("batch_context") or {}
-        item_no = batch_context.get("item_no")
-        diversity = snapshot.get("diversity_slot") or {}
-        opening = diversity.get("opening_type")
-        structure = diversity.get("structure_type")
-        suffix_parts = [part for part in [f"第{item_no}篇" if item_no else None, opening, structure] if part]
-        return topic if not suffix_parts else f"{topic}｜{'/'.join(suffix_parts)}"

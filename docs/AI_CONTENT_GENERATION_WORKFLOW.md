@@ -128,6 +128,7 @@ POST /api/v1/assets/imports/product-experience-rule-set
 
 - 规则条数
 - 示例数量
+- 默认生成量
 - 风险提示
 
 ### 启动评论批量生成
@@ -148,15 +149,25 @@ POST /api/v1/content-agent/comment-batches/start
 
 `asset_key`、`created_by`、`executor_code` 都是可选字段。接口不接收运营手填的 `product_topic`、`target_audience`、`style`、`count`。
 
-### 生文链路
+### 启动文章批量生成
 
-现有接口继续保留：
+文章批量生成接口：
 
 ```http
 POST /api/v1/content-agent/batches/start
 ```
 
-它仍服务产品使用体验、妈妈班等长文或笔记生成入口。后续实现上会逐步收敛到同一套 `业务规则包 -> 系统提示词关键词 -> expert -> content.generate` 的执行模型。
+请求只需要：
+
+```json
+{
+  "asset_key": "yuanyue_product_experience",
+  "created_by": "ops",
+  "executor_code": "hermes_maga_worker"
+}
+```
+
+`asset_key`、`created_by`、`executor_code` 都是可选字段；`count` 也可选，默认按规则包元数据生成。接口兼容旧字段，但主流程不再依赖运营手填 `product_topic / target_audience / style`。文章和评论都会走同一套 `业务规则包 -> 系统提示词关键词 -> expert -> content.generate` 执行模型。
 
 ### 系统提示词关键词
 
@@ -186,12 +197,13 @@ Prompt 预览用于在保存前查看“业务规则 + 当前页面关键词配�
 
 ## 数据承载
 
-评论 Demo 先复用现有批量任务表：
+文章和评论 Demo 先复用现有批量任务表：
 
 - `ContentBatchJob.product_topic`：`美素佳儿源悦活动评论`
-- `ContentBatchItem.title`：评论切角
-- `ContentBatchItem.body`：生成评论正文
-- `ContentBatchItem.plan_json.rule_type`：`comment_angle`
+- `ContentBatchJob.product_topic`：文章为 `美素佳儿源悦活动生文`
+- `ContentBatchItem.title`：评论存评论切角，文章存生成标题
+- `ContentBatchItem.body`：生成正文
+- `ContentBatchItem.plan_json.rule_type`：评论为 `comment_angle`，文章为 `product_experience`
 
 暂不新增独立评论表。后续如果评论审核、投放、归因需要独立生命周期，再单独建表。
 
@@ -242,15 +254,16 @@ content.rewrite
 ## Demo 流程
 
 1. 打开内容生成工作台。
-2. 上传 `批量生成/评论切角_子关键词导出.csv`。
-3. 查看导入摘要：规则条数、示例数量、风险提示。
-4. 点击“按评论切角生成评论”。
-5. 在批量报告中查看每条评论及对应切角。
-6. 运营对评论做通过、修改意见或人工编辑保存。
+2. 上传文章规则包 `批量生成/产品使用体验_子关键词导出.csv`，或上传评论规则包 `批量生成/评论切角_子关键词导出.csv`。
+3. 查看导入摘要：规则条数、示例数量、默认生成量、风险提示。
+4. 点击“按业务规则包生成文章”或“按评论切角生成评论”。
+5. 在批量报告中查看每条内容、对应规则和执行 trace。
+6. 运营对内容做通过、修改意见、人工编辑保存，或把不希望出现的词加入业务违禁词。
 
 ## 回归边界
 
 - 源悦评论切角只走 `comment_angle_rule_set`。
 - 妈妈班活动规则包继续作为活动内容规则，不被评论生成读取。
-- 产品使用体验生文入口继续保留 `/content-agent/batches/start`，实现上逐步收敛到统一生成模型。
+- 产品使用体验生文入口走 `/content-agent/batches/start`，主执行链路已经统一到 `content.generate`。
+- 旧 `xhs.*` chain 保留为兼容能力，不再作为文章/评论主生成链路。
 - 对外只讲 MAGA 自动调用 `maga-worker`，不把 Hermes 作为产品概念。

@@ -3,7 +3,6 @@
 import os
 import socket
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -112,6 +111,8 @@ async def maga_http_e2e_client(maga_worker_server):
                     {"capability": "xhs.review_and_rewrite", "schema_version": "1"},
                     {"capability": "xhs.run_ae_review", "schema_version": "1"},
                     {"capability": "xhs.rewrite_draft", "schema_version": "1"},
+                    {"capability": "content.generate", "schema_version": "1"},
+                    {"capability": "content.rewrite", "schema_version": "1"},
                 ],
             )
         )
@@ -161,21 +162,14 @@ async def test_generation_start_calls_maga_worker_invoke_skeleton_over_http(maga
         result = await session.execute(select(ContentAgentStageCall).order_by(ContentAgentStageCall.sequence_no))
         stages = list(result.scalars())
 
-    assert [stage.capability for stage in stages] == [
-        "xhs.interpret_brief",
-        "xhs.run_ae_analysis",
-        "xhs.generate_draft",
-        "xhs.review_and_rewrite",
-    ]
+    assert [stage.capability for stage in stages] == ["content.generate"]
     assert all(stage.status == "succeeded" for stage in stages)
     assert all((stage.stats_json or {}).get("executor") == "maga-worker" for stage in stages)
-    assert all((stage.stats_json or {}).get("module") == "xhs-writer" for stage in stages)
-    generate_stage = next(stage for stage in stages if stage.capability == "xhs.generate_draft")
-    assert (generate_stage.input_snapshot or {})["generation_snapshot"]["batch_context"]["source"] == "single_generation"
-    assert (generate_stage.output_snapshot or {})["runtime_result"]["mode"] == "runtime_fast"
+    assert all((stage.stats_json or {}).get("module") == "content-generator" for stage in stages)
+    generate_stage = stages[0]
+    assert (generate_stage.input_snapshot or {})["content_type"] == "article"
+    assert (generate_stage.output_snapshot or {})["runtime_result"]["mode"] == "content_fake"
     assert (generate_stage.output_snapshot or {})["runtime_result"]["fake"] is True
-    review_stage = next(stage for stage in stages if stage.capability == "xhs.review_and_rewrite")
-    assert (review_stage.output_snapshot or {})["runtime_result"]["phase"] == "review_and_rewrite"
 
 
 @pytest.mark.asyncio
@@ -198,7 +192,7 @@ async def test_batch_generation_defaults_to_maga_worker_runtime_fast_over_http(m
     data = response.json()["data"]
     assert data["execution"]["generated_count"] == 1
     item = data["report"]["items"][0]
-    assert item["runtime_mode"] == "runtime_fast"
+    assert item["runtime_mode"] == "content_fake"
     assert item["generation_duration_ms"] is not None
 
     async with session_factory() as session:
@@ -207,12 +201,10 @@ async def test_batch_generation_defaults_to_maga_worker_runtime_fast_over_http(m
         item_result = await session.execute(select(ContentBatchItem))
         batch_item = item_result.scalar_one()
 
-    generate_stage = next(stage for stage in stages if stage.capability == "xhs.generate_draft")
-    assert (generate_stage.output_snapshot or {})["runtime_result"]["mode"] == "runtime_fast"
+    generate_stage = next(stage for stage in stages if stage.capability == "content.generate")
+    assert (generate_stage.output_snapshot or {})["runtime_result"]["mode"] == "content_fake"
     assert (generate_stage.output_snapshot or {})["runtime_result"]["fake"] is True
-    review_stage = next(stage for stage in stages if stage.capability == "xhs.review_and_rewrite")
-    assert (review_stage.output_snapshot or {})["runtime_result"]["phase"] == "review_and_rewrite"
-    assert batch_item.quality_json["executor"] == "runtime_fast"
+    assert batch_item.quality_json["executor"] == "content_fake"
 
 
 def _yuanyue_assets() -> list[AssetRegistry]:

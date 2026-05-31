@@ -16,6 +16,7 @@ from app.models.content_agent import (
     ContentBatchJob,
     ExecutorRegistry,
 )
+from app.models.expert_config import ExpertConfig
 from app.models.maga_assets import AssetRegistry
 from app.models.prompt_optimizer import PromptAsset, PromptVersion
 from app.services.content_batch_execution_service import ContentBatchExecutionService
@@ -33,6 +34,7 @@ def _execution_tables():
         PromptAsset.__table__,
         PromptVersion.__table__,
         AssetRegistry.__table__,
+        ExpertConfig.__table__,
     ]
 
 
@@ -103,18 +105,20 @@ async def test_batch_execution_generates_first_n_items_and_links_runs():
     assert items[0].title != items[1].title
     assert items[0].task_id is not None
     assert items[0].run_id is not None
-    assert items[0].quality_json["executor"] == "mock_or_skeleton"
+    assert items[0].quality_json["executor"] == "content_fake"
     review_report = items[0].quality_json["review_report"]
     assert review_report["rewrite_required"] is False
-    assert review_report["hard_results"][0]["ae_code"] == "brand_product_guard"
-    assert review_report["hard_results"][0]["pass"] is True
+    assert review_report["source"] == "maga_unified_content_generate"
+    assert review_report["hard_results"] == []
     assert items[0].quality_json["hard_pass"] is True
-    assert items[0].quality_json["soft_score_avg"] == 88.0
+    assert items[0].quality_json["soft_score_avg"] is None
+    assert items[0].quality_json["expert_config_code"] == "article_generator_v1"
+    assert items[0].plan_json["unified_generation"]["capability"] == "content.generate"
     assert items[0].diversity_json["opening_type"] == "过来人提醒"
     assert items[0].diversity_json["narrative_focus"] == "先共情"
     assert items[0].diversity_json["emotion"] == "稳"
     assert items[0].diversity_json["cta_type"] == "轻建议"
-    assert len(stage_calls) >= 8
+    assert "content.generate" in {stage.capability for stage in stage_calls}
 
 
 @pytest.mark.asyncio
@@ -148,7 +152,7 @@ async def test_batch_execution_rewrites_business_forbidden_terms():
                 asset_stage="production",
                 content_json={
                     "schema_version": "1",
-                    "terms": [{"term": "源悦", "enabled": True}],
+                    "terms": [{"term": "宝宝", "enabled": True}],
                 },
             )
         )
@@ -179,9 +183,9 @@ async def test_batch_execution_rewrites_business_forbidden_terms():
         item = (await session.execute(select(ContentBatchItem))).scalar_one()
         stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
 
-    assert "源悦" not in f"{item.title}\n{item.body}"
+    assert "宝宝" not in f"{item.title}\n{item.body}"
     forbidden_review = item.quality_json["forbidden_terms_review"]
-    assert forbidden_review["initial_hits"] == ["源悦"]
+    assert forbidden_review["initial_hits"] == ["宝宝"]
     assert forbidden_review["final_hits"] == []
     assert forbidden_review["rewrite_rounds"] == 1
     assert item.quality_json["review_report"]["hard_results"][-1]["ae_code"] == "forbidden_terms_guard"
@@ -192,55 +196,21 @@ async def test_batch_execution_rewrites_business_forbidden_terms():
 class RuntimeFastDraftReviewClient:
     async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
         capability = envelope.get("capability")
-        if capability == "xhs.interpret_brief":
+        if capability == "content.generate":
+            output = {
+                "title": "runtime content 标题",
+                "body": "runtime content 正文",
+                "runtime_result": {"mode": "content_runtime", "phase": "content_generate"},
+            }
+        elif capability == "content.rewrite":
             input_payload = envelope.get("input") or {}
+            previous = input_payload.get("previous_content") or {"title": "runtime content 标题", "body": "runtime content 正文"}
             output = {
-                "structured_brief": {
-                    "brief_type": input_payload.get("brief_type"),
-                    "product_topic": input_payload.get("product_topic"),
-                    "target_audience": input_payload.get("target_audience"),
-                    "style": input_payload.get("style"),
-                },
-                "generation_snapshot": input_payload.get("generation_snapshot"),
+                "title": previous.get("title") or "runtime content 标题",
+                "body": previous.get("body") or "runtime content 正文",
+                "final": previous,
+                "runtime_result": {"mode": "content_rewrite_runtime"},
             }
-        elif capability == "xhs.run_ae_analysis":
-            output = {"analyses": {}, "failed_aes": []}
-        elif capability == "xhs.generate_draft":
-            output = {
-                "draft": {"title": "runtime fast 标题", "body": "runtime fast 正文"},
-                "runtime_result": {"mode": "runtime_fast", "phase": "generate_draft", "draft_path": "/tmp/runtime-fast/draft.md"},
-            }
-        elif capability == "xhs.review_and_rewrite":
-            input_payload = envelope.get("input") or {}
-            draft = input_payload.get("draft") or {"title": "runtime fast 标题", "body": "runtime fast 正文"}
-            output = {
-                "final": draft,
-                "draft": draft,
-                "runtime_result": {
-                    "mode": "runtime_fast",
-                    "phase": "review_and_rewrite",
-                    "final_path": "/tmp/runtime-fast/final.md",
-                },
-                "review_report": {
-                    "hard_results": [
-                        {
-                            "ae_code": "compliance_redline",
-                            "pass": True,
-                            "risk_level": "low",
-                            "feedback": "pass",
-                            "evidence": [],
-                        }
-                    ],
-                    "soft_scores": [],
-                    "rewrite_required": True,
-                    "suggestions": ["把记录几天改成持续记录"],
-                },
-            }
-        elif capability == "xhs.run_ae_review":
-            output = {"review_report": {}, "hard_results": [], "soft_scores": [], "failed_aes": []}
-        elif capability == "xhs.rewrite_draft":
-            previous = (envelope.get("input") or {}).get("previous_draft") or {}
-            output = {"final": previous}
         else:
             output = {}
         return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
@@ -252,7 +222,7 @@ class SlowTrackingClient(RuntimeFastDraftReviewClient):
         self.max_active = 0
 
     async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
-        if envelope.get("capability") == "xhs.generate_draft":
+        if envelope.get("capability") == "content.generate":
             self.active += 1
             self.max_active = max(self.max_active, self.active)
             await asyncio.sleep(0.01)
@@ -269,33 +239,19 @@ class WorkerDownClient:
 class SimilarDraftRewriteClient(RuntimeFastDraftReviewClient):
     async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
         capability = envelope.get("capability")
-        if capability == "xhs.generate_draft":
+        if capability == "content.generate":
             output = {
-                "draft": {"title": "相似标题", "body": "第一段相同。第二段也相同。第三段继续相同。"},
+                "title": "相似标题",
+                "body": "第一段相同。第二段也相同。第三段继续相同。",
                 "runtime_result": {"mode": "runtime_fast"},
             }
             return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
-        if capability == "xhs.review_and_rewrite":
-            input_payload = envelope.get("input") or {}
-            draft = input_payload.get("draft") or {"title": "相似标题", "body": "第一段相同。第二段也相同。第三段继续相同。"}
-            output = {
-                "final": draft,
-                "draft": draft,
-                "review_report": {
-                    "hard_results": [{"ae_code": "compliance_redline", "pass": True}],
-                    "soft_scores": [],
-                    "rewrite_required": False,
-                },
-            }
-            return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
-        if capability == "xhs.rewrite_draft":
+        if capability == "content.rewrite":
             input_payload = envelope.get("input") or {}
             rewrite_report = input_payload.get("review_report") or {}
             output = {
-                "final": {
-                    "title": "降重后的标题",
-                    "body": f"换一个开头和结构来写。触发原因：{rewrite_report.get('rewrite_reason')}",
-                }
+                "title": "降重后的标题",
+                "body": f"换一个开头和结构来写。触发原因：{rewrite_report.get('rewrite_reason')}",
             }
             return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
         return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
@@ -303,8 +259,8 @@ class SimilarDraftRewriteClient(RuntimeFastDraftReviewClient):
 
 class StillSimilarRewriteClient(SimilarDraftRewriteClient):
     async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
-        if envelope.get("capability") == "xhs.rewrite_draft":
-            output = {"final": {"title": "仍然相似", "body": "第一段相同。第二段也相同。第三段继续相同。"}}
+        if envelope.get("capability") == "content.rewrite":
+            output = {"title": "仍然相似", "body": "第一段相同。第二段也相同。第三段继续相同。"}
             return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
         return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
 
@@ -482,7 +438,7 @@ async def test_batch_execution_rewrites_later_item_when_similarity_is_too_high()
     assert similarity_rewrites[0]["similarity_rewrite_passed"] is True
     assert similarity_rewrites[0]["post_rewrite_similarity_score"] < 0.42
     assert items[1].quality_json["review_report"]["rewrite_required"] is False
-    assert any(stage.capability == "xhs.rewrite_draft" for stage in stage_calls)
+    assert any(stage.capability == "content.rewrite" for stage in stage_calls)
 
 
 @pytest.mark.asyncio
@@ -622,7 +578,7 @@ async def test_batch_execution_marks_manual_review_when_similarity_rewrite_still
 
 
 @pytest.mark.asyncio
-async def test_batch_execution_preserves_review_report_returned_by_review_and_rewrite_runtime_fast():
+async def test_batch_execution_uses_unified_content_generate_runtime_output():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(
@@ -643,7 +599,7 @@ async def test_batch_execution_preserves_review_report_returned_by_review_and_re
             )
         )
         job = ContentBatchJob(
-            batch_code="batch_runtime_fast",
+            batch_code="batch_content_generate",
             asset_key="yuanyue",
             product_topic="宝宝便便不规律",
             target_audience="新手妈妈",
@@ -670,16 +626,15 @@ async def test_batch_execution_preserves_review_report_returned_by_review_and_re
         stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
 
     assert item.status == "generated"
-    assert item.title == "runtime fast 标题"
-    assert item.body == "runtime fast 正文"
+    assert item.title == "runtime content 标题"
+    assert item.body == "runtime content 正文"
     review_report = item.quality_json["review_report"]
-    assert review_report["hard_results"][0]["ae_code"] == "compliance_redline"
-    assert review_report["rewrite_required"] is True
-    assert review_report["suggestions"] == ["把记录几天改成持续记录"]
+    assert review_report["source"] == "maga_unified_content_generate"
+    assert review_report["rewrite_required"] is False
     assert item.quality_json["hard_pass"] is True
-    assert item.quality_json["executor"] == "runtime_fast"
+    assert item.quality_json["executor"] == "content_runtime"
     assert item.quality_json["soft_score_avg"] is None
-    assert {stage.capability for stage in stage_calls} >= {"xhs.generate_draft", "xhs.review_and_rewrite"}
+    assert {stage.capability for stage in stage_calls} == {"content.generate"}
 
 
 def _plan(item_no: int) -> dict:

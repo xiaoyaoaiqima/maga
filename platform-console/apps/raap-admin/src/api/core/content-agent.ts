@@ -25,7 +25,7 @@ export namespace ContentAgentApi {
 
   export interface BatchStartRequest {
     asset_key?: string;
-    product_topic: string;
+    product_topic?: null | string;
     target_audience?: null | string;
     persona_target?: null | string;
     style?: null | string;

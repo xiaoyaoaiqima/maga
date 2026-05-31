@@ -237,12 +237,55 @@ def _business_rule_text(rule: dict[str, Any]) -> str:
     lines: list[str] = []
     if rule.get("rule_type"):
         lines.append(f"- 规则类型：{rule.get('rule_type')}")
+    if rule.get("product_topic"):
+        lines.append(f"- 主题：{rule.get('product_topic')}")
+    if rule.get("target_audience"):
+        lines.append(f"- 目标人群：{rule.get('target_audience')}")
+    if rule.get("persona_target"):
+        lines.append(f"- 人设要求：{rule.get('persona_target')}")
+    if rule.get("style"):
+        lines.append(f"- 风格：{rule.get('style')}")
     if rule.get("comment_angle"):
         lines.append(f"- 评论切角：{rule.get('comment_angle')}")
     if rule.get("product_experience"):
         lines.append(f"- 产品使用体验：{rule.get('product_experience')}")
+    if rule.get("baby_stage") or rule.get("use_duration") or rule.get("topic"):
+        lines.append(
+            "- 体验拆解："
+            f"月龄={rule.get('baby_stage') or '-'}，"
+            f"使用时间={rule.get('use_duration') or '-'}，"
+            f"主题={rule.get('topic') or '-'}"
+        )
     if rule.get("corpus"):
         lines.append(f"- 业务语料：\n{rule.get('corpus')}")
+    for label, key in [
+        ("痛点资料", "painpoint_ref"),
+        ("卖点资料", "selling_point_ref"),
+        ("写作结构参考", "writing_pattern_ref"),
+    ]:
+        ref = rule.get(key)
+        if isinstance(ref, dict) and isinstance(ref.get("snapshot"), dict):
+            lines.append(f"- {label}：\n{json.dumps(ref['snapshot'], ensure_ascii=False, indent=2)}")
+    reference_refs = rule.get("reference_example_refs") or []
+    reference_examples = [
+        ref.get("snapshot")
+        for ref in reference_refs
+        if isinstance(ref, dict) and isinstance(ref.get("snapshot"), dict)
+    ]
+    if reference_examples:
+        lines.append("- 参考例文：\n" + json.dumps(reference_examples[:3], ensure_ascii=False, indent=2))
+    compliance_refs = rule.get("compliance_rule_refs") or []
+    compliance_rules = [
+        ref.get("snapshot")
+        for ref in compliance_refs
+        if isinstance(ref, dict) and isinstance(ref.get("snapshot"), dict)
+    ]
+    if compliance_rules:
+        lines.append("- 合规约束：\n" + json.dumps(compliance_rules, ensure_ascii=False, indent=2))
+    if isinstance(rule.get("diversity_slot"), dict):
+        lines.append("- 多样性槽位：\n" + json.dumps(rule["diversity_slot"], ensure_ascii=False, indent=2))
+    if isinstance(rule.get("brief_constraints"), dict):
+        lines.append("- 格式/篇幅约束：\n" + json.dumps(rule["brief_constraints"], ensure_ascii=False, indent=2))
     examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
     supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
     if examples:
@@ -329,7 +372,7 @@ def _fallback_prompt_template(content_type: str) -> str:
 
 def _normalize_model_config(value: dict[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
-    for key in ("provider", "provider_code", "model_code", "temperature", "max_tokens", "system_prompt"):
+    for key in ("provider", "provider_code", "model_code", "ge_model", "ae_model", "temperature", "max_tokens", "system_prompt"):
         item = value.get(key)
         if item is not None and item != "":
             normalized[key] = item

@@ -7,6 +7,7 @@ import * as Antd from 'ant-design-vue';
 
 import {
   importCommentAngleRuleSetApi,
+  importProductExperienceRuleSetApi,
 } from '#/api/core/assets';
 import {
   getAssetGenerationOptionsApi,
@@ -78,14 +79,17 @@ const commentRuleAssetKey = ref('yuanyue_comment_activity');
 const commentRuleImporting = ref(false);
 const commentRuleGenerating = ref(false);
 const commentImportSummary = ref<Record<string, any> | null>(null);
+const productRuleAssetKey = ref('yuanyue_product_experience');
+const productRuleImporting = ref(false);
+const productImportSummary = ref<Record<string, any> | null>(null);
 
 const formState = reactive({
-  asset_key: 'yuanyue',
-  product_topic: '宝宝便便不规律',
-  target_audience: '新手妈妈',
+  asset_key: 'yuanyue_product_experience',
+  product_topic: '',
+  target_audience: '',
   persona_target: '',
-  style: '经验复盘',
-  count: 5,
+  style: '',
+  count: 10,
   executor_code: 'hermes_maga_worker',
   ge_model: '',
   ae_model: '',
@@ -430,7 +434,7 @@ const currentModelConfig = () => ({
 });
 
 const handleGenerate = async () => {
-  if (!formState.product_topic.trim()) {
+  if (generationMode.value === 'single' && !formState.product_topic.trim()) {
     message.warning('请先填写主题');
     return;
   }
@@ -452,11 +456,7 @@ const handleGenerate = async () => {
     }
 
     const result = await startContentBatchApi({
-      asset_key: formState.asset_key,
-      product_topic: formState.product_topic,
-      target_audience: formState.target_audience,
-      persona_target: formState.persona_target || null,
-      style: formState.style,
+      asset_key: productRuleAssetKey.value || formState.asset_key,
       count: formState.count,
       executor_code: normalizeExecutorCode(formState.executor_code),
       model_config: currentModelConfig(),
@@ -471,6 +471,26 @@ const handleGenerate = async () => {
   } finally {
     generating.value = false;
   }
+};
+
+const handleProductRuleUpload = async (file: File) => {
+  productRuleImporting.value = true;
+  try {
+    const result = await importProductExperienceRuleSetApi({
+      asset_key: productRuleAssetKey.value,
+      created_by: formState.created_by,
+      display_name: '源悦-生文（产品使用体验）',
+      file,
+    });
+    productImportSummary.value = result.summary_json || null;
+    const ruleCount = productImportSummary.value?.rule_count || 0;
+    message.success(`产品使用体验规则包已导入：${ruleCount} 条`);
+  } catch {
+    message.error('产品使用体验规则包导入失败');
+  } finally {
+    productRuleImporting.value = false;
+  }
+  return false;
 };
 
 const handleCommentRuleUpload = async (file: File) => {
@@ -717,8 +737,45 @@ watch(
   <div class="content-agent-workbench p-4">
     <Row :gutter="16">
       <Col :lg="8" :xs="24">
-        <Card title="源悦评论切角" :bordered="false">
+        <Card title="源悦生文规则包" :bordered="false">
           <Space direction="vertical" class="comment-rule-panel">
+            <Input
+              v-model:value="productRuleAssetKey"
+              placeholder="业务规则包 asset_key"
+            />
+            <Upload
+              accept=".csv,.xlsx"
+              :before-upload="handleProductRuleUpload"
+              :disabled="productRuleImporting"
+              :show-upload-list="false"
+            >
+              <Button block :loading="productRuleImporting">
+                上传产品使用体验规则包
+              </Button>
+            </Upload>
+            <div v-if="productImportSummary" class="comment-rule-summary">
+              <Tag color="blue">
+                规则 {{ productImportSummary.rule_count || 0 }}
+              </Tag>
+              <Tag color="green">
+                示例 {{ productImportSummary.example_count || 0 }}
+              </Tag>
+              <div
+                v-if="productImportSummary.warnings?.length"
+                class="comment-rule-warnings"
+              >
+                {{ productImportSummary.warnings.join('；') }}
+              </div>
+            </div>
+          </Space>
+        </Card>
+
+        <Card class="mt-4" title="源悦评论切角" :bordered="false">
+          <Space direction="vertical" class="comment-rule-panel">
+            <Input
+              v-model:value="commentRuleAssetKey"
+              placeholder="业务规则包 asset_key"
+            />
             <Upload
               accept=".csv,.xlsx"
               :before-upload="handleCommentRuleUpload"
@@ -760,7 +817,7 @@ watch(
         <Card class="mt-4" title="新内容生成" :bordered="false">
           <Alert
             class="mb-4"
-            message="选择资料、主题、人群和风格后生成内容，并在报告中完成审核反馈。"
+            message="批量生文按已上传的业务规则包自动生成；单篇快速生成保留临时主题输入。"
             show-icon
             type="info"
           />
@@ -772,7 +829,19 @@ watch(
                 <RadioButton value="single">单篇快速生成</RadioButton>
               </RadioGroup>
             </FormItem>
-            <FormItem label="产品/品牌资料">
+            <FormItem
+              v-if="generationMode === 'batch'"
+              label="生文业务规则包"
+            >
+              <Input
+                v-model:value="productRuleAssetKey"
+                placeholder="默认 yuanyue_product_experience"
+              />
+            </FormItem>
+            <FormItem
+              v-if="generationMode === 'single'"
+              label="产品/品牌资料"
+            >
               <Select
                 v-model:value="formState.asset_key"
                 :filter-option="filterSelectOption"
@@ -781,7 +850,7 @@ watch(
                 show-search
               />
             </FormItem>
-            <FormItem label="主题" required>
+            <FormItem v-if="generationMode === 'single'" label="主题" required>
               <Select
                 v-model:value="formState.product_topic"
                 allow-clear
@@ -794,7 +863,7 @@ watch(
                 mode="combobox"
               />
             </FormItem>
-            <FormItem label="目标人群">
+            <FormItem v-if="generationMode === 'single'" label="目标人群">
               <Select
                 v-model:value="formState.target_audience"
                 allow-clear
@@ -807,7 +876,7 @@ watch(
                 mode="combobox"
               />
             </FormItem>
-            <FormItem label="人设">
+            <FormItem v-if="generationMode === 'single'" label="人设">
               <Select
                 v-model:value="formState.persona_target"
                 allow-clear
@@ -820,7 +889,7 @@ watch(
                 mode="combobox"
               />
             </FormItem>
-            <FormItem label="风格">
+            <FormItem v-if="generationMode === 'single'" label="风格">
               <Select
                 v-model:value="formState.style"
                 allow-clear
@@ -876,7 +945,9 @@ watch(
               @click="handleGenerate"
             >
               {{
-                generationMode === 'batch' ? '生成批次并查看报告' : '生成单篇'
+                generationMode === 'batch'
+                  ? '按业务规则包生成文章'
+                  : '生成单篇'
               }}
             </Button>
           </Form>

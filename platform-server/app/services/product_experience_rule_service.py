@@ -17,6 +17,7 @@ from app.models.maga_assets import AssetImportRun, AssetRegistry
 PRODUCT_EXPERIENCE_RULE_ASSET_TYPE = "product_experience_rule_set"
 DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY = "yuanyue_product_experience"
 DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME = "美素佳儿源悦活动生文"
+DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT = 10
 
 
 @dataclass(slots=True)
@@ -57,6 +58,7 @@ async def import_product_experience_rule_set(
         "rule_package_type": "product_experience",
         "business_rule_package": True,
         "activity_name": DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME,
+        "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
         "items": items,
     }
 
@@ -86,6 +88,7 @@ async def import_product_experience_rule_set(
             "business_rule_package": True,
             "rule_count": len(items),
             "example_count": example_count,
+            "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
             "warnings": warnings,
         },
         created_by=created_by,
@@ -104,6 +107,7 @@ async def import_product_experience_rule_set(
             "asset_type": PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
             "rule_count": len(items),
             "example_count": example_count,
+            "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
             "warnings": warnings,
         },
         created_by=created_by,
@@ -127,6 +131,7 @@ def product_experience_import_summary(result: ProductExperienceRuleSetImportResu
         "asset_key": result.asset_key,
         "rule_count": result.rule_count,
         "example_count": result.example_count,
+        "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
         "warnings": result.warnings,
     }
 

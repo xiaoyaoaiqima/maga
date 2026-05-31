@@ -181,6 +181,45 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
 
 
 @pytest.mark.asyncio
+async def test_article_batch_can_start_from_product_experience_rule_asset_key_only(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={"asset_key": "yuanyue_product_experience", "created_by": "ops"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["execution"]["requested_limit"] == 2
+    assert data["execution"]["generated_count"] == 2
+    report = data["report"]
+    assert report["asset_key"] == "yuanyue_product_experience"
+    assert report["product_topic"] == "美素佳儿源悦活动生文"
+    assert report["items"][0]["title"]
+    assert report["items"][0]["body"]
+
+    async with session_factory() as session:
+        item = (
+            await session.execute(
+                select(ContentBatchItem)
+                .where(ContentBatchItem.batch_id == data["batch_id"])
+                .order_by(ContentBatchItem.item_no)
+            )
+        ).scalars().first()
+
+    assert item.plan_json["rule_type"] == "product_experience"
+    assert item.plan_json["product_experience"] == "0-6个月，3个月内，奶量补充"
+    assert item.plan_json["unified_generation"]["capability"] == "content.generate"
+    assert [kw["category_code"] for kw in item.plan_json["unified_generation"]["selected_keywords"]] == [
+        "persona",
+        "writing_instruction",
+        "perturbation_rule",
+        "writing_method",
+        "format_control",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_comment_batch_runs_forbidden_term_review_and_rewrite(content_agent_workbench_client):
     client, session_factory = content_agent_workbench_client
     async with session_factory() as session:
@@ -620,6 +659,47 @@ def _yuanyue_assets() -> list[AssetRegistry]:
                 "default_generation_count": 10,
                 "rule_count": 3,
                 "example_count": 3,
+            },
+        ),
+        AssetRegistry(
+            asset_type="product_experience_rule_set",
+            asset_key="yuanyue_product_experience",
+            display_name="源悦产品使用体验规则",
+            version_no=1,
+            status="active",
+            asset_stage="production",
+            content_json={
+                "rule_type": "product_experience",
+                "activity_name": "美素佳儿源悦活动生文",
+                "default_generation_count": 10,
+                "items": [
+                    {
+                        "rule_id": "product_experience_001",
+                        "product_experience": "0-6个月，3个月内，奶量补充",
+                        "baby_stage": "0-6个月",
+                        "use_duration": "3个月内",
+                        "topic": "奶量补充",
+                        "corpus": "围绕0-6个月宝宝的奶量补充体验自然展开。",
+                        "examples": ["刚换源悦那阵子，喂奶没之前那么拉扯。"],
+                        "source_row_no": 1,
+                    },
+                    {
+                        "rule_id": "product_experience_002",
+                        "product_experience": "7-12个月，3-6个月，消化吸收",
+                        "baby_stage": "7-12个月",
+                        "use_duration": "3-6个月",
+                        "topic": "消化吸收",
+                        "corpus": "围绕喝完后的肚肚状态和便便节奏自然展开。",
+                        "examples": ["主要看喝完后的肚肚状态和便便节奏。"],
+                        "source_row_no": 2,
+                    },
+                ],
+            },
+            metadata_json={
+                "rule_type": "product_experience",
+                "default_generation_count": 10,
+                "rule_count": 2,
+                "example_count": 2,
             },
         ),
     ]

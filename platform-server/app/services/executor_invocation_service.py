@@ -298,11 +298,12 @@ def _mock_unified_content_generation(input_payload: dict[str, Any]) -> dict[str,
     business_rule = input_payload.get("business_rule") or {}
     selected = input_payload.get("selected_keywords") or []
     topic = business_rule.get("product_topic") or business_rule.get("product_experience") or "源悦体验"
+    target = business_rule.get("target_audience") or business_rule.get("baby_stage") or "妈妈"
     persona = _selected_keyword_name(selected, "persona") or "真实妈妈"
     method = _selected_keyword_name(selected, "writing_method") or "自然表达"
     return {
-        "title": f"{topic}，这样写更像真实分享",
-        "body": f"围绕{topic}，用{persona}的口吻承接业务规则，再用{method}把具体感受讲清楚。整体表达保持自然克制，不夸大、不照搬示例。",
+        "title": f"{topic}，{persona}的真实分享",
+        "body": f"围绕{topic}，写给{target}，用{persona}的口吻承接业务规则，再用{method}把具体感受讲清楚。整体表达保持自然克制，不夸大、不照搬示例。",
         "runtime_result": {
             "mode": "content_fake",
             "fake": True,
@@ -322,6 +323,19 @@ def _mock_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
         comment = _mock_remove_terms(str(previous.get("comment") or previous.get("body") or ""), hits)
         return {
             "comment": comment or "这个点我也在关注，想看看大家真实反馈。",
+            "runtime_result": {
+                "mode": "content_rewrite_fake",
+                "fake": True,
+                "reason": "mock_executor",
+            },
+        }
+    similarity = (input_payload.get("review_report") or {}).get("similarity")
+    if isinstance(similarity, dict):
+        reason = str((input_payload.get("review_report") or {}).get("rewrite_reason") or similarity.get("reason") or "")
+        return {
+            "title": "降重后的标题",
+            "body": f"换一个开头和结构来写。触发原因：{reason}",
+            "final": {"title": "降重后的标题", "body": f"换一个开头和结构来写。触发原因：{reason}"},
             "runtime_result": {
                 "mode": "content_rewrite_fake",
                 "fake": True,

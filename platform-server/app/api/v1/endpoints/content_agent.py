@@ -42,10 +42,9 @@ from app.services.content_batch_execution_service import ContentBatchExecutionSe
 from app.services.content_batch_planner import ContentBatchPlanner
 from app.services.content_batch_report_service import ContentBatchReportService
 from app.services.content_batch_review_service import ContentBatchReviewService
-from app.services.content_batch_snapshot_adapter import build_xhs_generation_snapshot_from_brief
 from app.services.content_comment_batch_service import ContentCommentBatchService
 from app.services.executor_invocation_service import ExecutorInvocationClient, MockExecutorInvocationClient
-from app.services.prompt_bundle_service import PromptBundleService
+from app.services.unified_content_generation_service import CONTENT_GENERATE_CAPABILITY, UnifiedContentGenerationService
 
 router = APIRouter()
 
@@ -60,36 +59,6 @@ def _map_protocol_error(exc: ValueError) -> HTTPException:
     if "run token" in message or "not current" in message or "stage header" in message:
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message)
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message)
-
-
-def _task_create_from_start_request(
-    request: ContentAgentStartGenerationRequest,
-    *,
-    prompt_bundle_snapshot: dict | None = None,
-) -> ContentAgentTaskCreate:
-    snapshot = build_xhs_generation_snapshot_from_brief(
-        product_topic=request.product_topic,
-        target_audience=request.target_audience,
-        persona_target=request.persona_target,
-        style=request.style,
-        model_config=request.generation_model_config.model_dump(exclude_none=True),
-        prompt_bundle_snapshot=prompt_bundle_snapshot,
-    )
-    return ContentAgentTaskCreate(
-        task_type="xhs_generate",
-        priority=request.priority,
-        executor_code=request.executor_code,
-        input_snapshot={
-            "brief_type": request.brief_type,
-            "product_topic": request.product_topic,
-            "target_audience": request.target_audience,
-            "persona_target": request.persona_target,
-            "style": request.style,
-            "generation_snapshot": snapshot,
-        },
-        asset_refs=snapshot.get("asset_refs") or {},
-        created_by=request.created_by,
-    )
 
 
 async def _model_config_with_maga_defaults(
@@ -152,21 +121,43 @@ async def start_generation(
         callback_base_url="/api/v1/content-agent",
     )
     try:
-        prompt_bundle_snapshot = await PromptBundleService(db).build_xhs_writer_prompt_bundle_snapshot()
-        task_request = _task_create_from_start_request(request, prompt_bundle_snapshot=prompt_bundle_snapshot)
-        task_request.input_snapshot["generation_snapshot"]["model_config"] = await _model_config_with_maga_defaults(
-            db,
-            request.generation_model_config.model_dump(exclude_none=True),
+        model_config = await _model_config_with_maga_defaults(
+            db, request.generation_model_config.model_dump(exclude_none=True)
         )
-        task_request.executor_code = executor_code
-        result = await orchestrator.run_mvp_generation_chain(task_request)
+        unified = await UnifiedContentGenerationService(db).build_snapshot(
+            content_type="article",
+            business_rule={
+                "rule_type": "ad_hoc_article",
+                "product_topic": request.product_topic,
+                "target_audience": request.target_audience,
+                "persona_target": request.persona_target,
+                "style": request.style,
+            },
+            item_no=1,
+            output_fields=["title", "body"],
+            model_config=model_config,
+        )
+        task_request = ContentAgentTaskCreate(
+            task_type="content_generate",
+            priority=request.priority,
+            executor_code=executor_code,
+            input_snapshot=unified.input_snapshot,
+            asset_refs=unified.asset_refs,
+            created_by=request.created_by,
+        )
+        result = await orchestrator.run_single_capability(task_request, capability=CONTENT_GENERATE_CAPABILITY)
     except ValueError as exc:
         raise _map_protocol_error(exc) from exc
+    output = result.output or {}
+    title = str(output.get("title") or "").strip()
+    body = str(output.get("body") or "").strip()
+    if not title or not body:
+        raise _map_protocol_error(ValueError("content.generate returned empty article"))
     response = ContentAgentStartGenerationResponse(
         task_id=result.run.task_id,
         run_id=result.run.id,
-        title=result.final_content["title"],
-        body=result.final_content["body"],
+        title=title,
+        body=body,
     )
     return ResponseData(message="Generation completed", data=response)
 
@@ -204,7 +195,7 @@ async def start_batch_generation(
             invocation_client=invocation_client,
             callback_base_url="/api/v1/content-agent",
             executor_code=executor_code,
-        ).execute_batch_items(job_id, limit=request.count, created_by=request.created_by)
+        ).execute_batch_items(job_id, limit=job.count, created_by=request.created_by)
         db.expire_all()
         report = await ContentBatchReportService(db).get_batch_report(job_id)
     except ValueError as exc:

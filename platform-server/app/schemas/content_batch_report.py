@@ -10,6 +10,7 @@ from app.core.content_agent_defaults import (
     MAGA_WORKER_DEFAULT_AE_MODEL,
     MAGA_WORKER_DEFAULT_GE_MODEL,
 )
+from app.services.product_experience_rule_service import DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY
 from app.schemas.base import BaseSchema, TimestampSchema
 
 
@@ -117,12 +118,12 @@ class ContentBatchModelConfig(BaseSchema):
 
 
 class ContentBatchStartRequest(BaseSchema):
-    asset_key: str = Field(default="yuanyue", max_length=128)
-    product_topic: str = Field(..., max_length=255)
+    asset_key: str = Field(default=DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY, max_length=128)
+    product_topic: str | None = Field(default=None, max_length=255)
     target_audience: str | None = Field(default=None, max_length=255)
     persona_target: str | None = Field(default=None, max_length=255)
     style: str | None = Field(default=None, max_length=255)
-    count: int = Field(default=5, ge=1, le=20)
+    count: int = Field(default=10, ge=1, le=20)
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     generation_model_config: ContentBatchModelConfig = Field(
         default_factory=ContentBatchModelConfig,
