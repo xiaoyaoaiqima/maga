@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import type { AssetsApi } from '#/api/core/assets';
+import type { UploadProps } from 'ant-design-vue';
 
 import { computed, h, onMounted, ref } from 'vue';
 
 import {
   CheckOutlined,
   DeleteOutlined,
+  DownloadOutlined,
+  EyeOutlined,
+  HistoryOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RollbackOutlined,
   SaveOutlined,
+  UploadOutlined,
 } from '@ant-design/icons-vue';
 import { useUserStore } from '@vben/stores';
 
@@ -23,6 +29,7 @@ import {
   Input,
   InputNumber,
   message,
+  Modal,
   Popconfirm,
   Row,
   Select,
@@ -32,10 +39,16 @@ import {
   Tag,
   Textarea,
   Tooltip,
+  Upload,
 } from 'ant-design-vue';
 
 import {
+  exportContentGenerationKeywordsApi,
   getContentGenerationKeywordsApi,
+  getContentGenerationKeywordVersionsApi,
+  importContentGenerationKeywordsApi,
+  previewContentGenerationKeywordsApi,
+  rollbackContentGenerationKeywordsApi,
   saveContentGenerationKeywordsApi,
 } from '#/api/core/assets';
 
@@ -53,6 +66,14 @@ const updateTime = ref<null | string>(null);
 const categories = ref<Category[]>([]);
 const selectedCategoryCode = ref('');
 const userStore = useUserStore();
+const versionModalVisible = ref(false);
+const versionLoading = ref(false);
+const versions = ref<AssetsApi.AssetSummary[]>([]);
+const previewModalVisible = ref(false);
+const previewLoading = ref(false);
+const previewContentType = ref<'article' | 'comment'>('comment');
+const previewRuleText = ref('这里是本次业务规则里的语料，用于预览系统关键词会如何进入最终 prompt。');
+const previewResult = ref<AssetsApi.SystemPromptKeywordPreviewResult | null>(null);
 
 const selectedCategory = computed(() =>
   categories.value.find(
@@ -114,6 +135,15 @@ const subKeywordColumns: any[] = [
   { title: '状态', key: 'enabled', width: 78 },
   { title: '语料', key: 'corpus' },
   { fixed: 'right', title: '操作', key: 'action', width: 76 },
+];
+
+const versionColumns: any[] = [
+  { title: '版本', dataIndex: 'version_no', key: 'version_no', width: 80 },
+  { title: '状态', key: 'status', width: 90 },
+  { title: '来源', dataIndex: 'source_name', key: 'source_name' },
+  { title: '创建人', dataIndex: 'created_by', key: 'created_by', width: 120 },
+  { title: '时间', dataIndex: 'create_time', key: 'create_time', width: 180 },
+  { fixed: 'right', title: '操作', key: 'action', width: 96 },
 ];
 
 function cloneCategories(input: Category[]) {
@@ -288,18 +318,159 @@ async function saveKeywords() {
   }
 }
 
+async function loadVersions() {
+  versionLoading.value = true;
+  try {
+    versions.value = await getContentGenerationKeywordVersionsApi({
+      asset_key: assetKey.value,
+      limit: 50,
+    });
+  } catch {
+    message.error('获取版本列表失败');
+  } finally {
+    versionLoading.value = false;
+  }
+}
+
+async function openVersionModal() {
+  versionModalVisible.value = true;
+  await loadVersions();
+}
+
+async function rollbackVersion(record: AssetsApi.AssetSummary) {
+  versionLoading.value = true;
+  try {
+    const asset = await rollbackContentGenerationKeywordsApi({
+      asset_key: assetKey.value,
+      created_by: operator.value,
+      version_no: record.version_no,
+    });
+    message.success(`已回滚并保存为版本 ${asset.version_no}`);
+    await loadKeywords();
+    await loadVersions();
+  } catch (error: any) {
+    message.error(error?.message || '回滚失败');
+  } finally {
+    versionLoading.value = false;
+  }
+}
+
+function downloadCsv(filename: string, text: string) {
+  const blob = new Blob([`\uFEFF${text}`], {
+    type: 'text/csv;charset=utf-8',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function exportKeywords() {
+  try {
+    const result = await exportContentGenerationKeywordsApi({
+      asset_key: assetKey.value,
+    });
+    downloadCsv(result.filename, result.csv_text);
+  } catch {
+    message.error('导出失败');
+  }
+}
+
+async function importKeywordsFile(file: File) {
+  saving.value = true;
+  try {
+    const result = await importContentGenerationKeywordsApi({
+      asset_key: assetKey.value,
+      created_by: operator.value,
+      display_name: displayName.value,
+      file,
+    });
+    message.success(`导入成功：${result.summary_json?.category_count || 0} 个类别`);
+    await loadKeywords();
+  } catch (error: any) {
+    message.error(error?.message || '导入失败');
+  } finally {
+    saving.value = false;
+  }
+}
+
+const beforeUploadKeywordFile: UploadProps['beforeUpload'] = (file) => {
+  void importKeywordsFile(file as File);
+  return false;
+};
+
+async function runPreview() {
+  previewLoading.value = true;
+  try {
+    normalizeBeforeSave();
+    previewResult.value = await previewContentGenerationKeywordsApi({
+      asset_key: assetKey.value,
+      business_rule: {
+        rule_type:
+          previewContentType.value === 'comment'
+            ? 'comment_angle'
+            : 'product_experience',
+        comment_angle:
+          previewContentType.value === 'comment' ? '预览评论切角' : undefined,
+        product_experience:
+          previewContentType.value === 'article'
+            ? '预览产品使用体验'
+            : undefined,
+        corpus: previewRuleText.value,
+      },
+      categories: categories.value,
+      content_type: previewContentType.value,
+      item_no: 1,
+      output_fields:
+        previewContentType.value === 'comment' ? ['comment'] : ['title', 'body'],
+      selection_policy: {
+        default_mode: 'one_per_enabled_category',
+      },
+    });
+  } catch (error: any) {
+    message.error(error?.message || '预览失败');
+  } finally {
+    previewLoading.value = false;
+  }
+}
+
+async function openPreviewModal() {
+  previewModalVisible.value = true;
+  await runPreview();
+}
+
 onMounted(loadKeywords);
 </script>
 
 <template>
   <div class="system-prompt-keywords-page p-4">
     <div class="page-toolbar">
-      <Space>
+      <Space wrap>
         <Input v-model:value="assetKey" class="asset-key-input" />
         <Input v-model:value="displayName" class="display-name-input" />
         <Tooltip title="刷新">
           <Button :icon="h(ReloadOutlined)" :loading="loading" @click="loadKeywords" />
         </Tooltip>
+        <Upload
+          accept=".csv,.xlsx"
+          :before-upload="beforeUploadKeywordFile"
+          :show-upload-list="false"
+        >
+          <Button :icon="h(UploadOutlined)" :loading="saving">
+            导入
+          </Button>
+        </Upload>
+        <Button :icon="h(DownloadOutlined)" @click="exportKeywords">
+          导出
+        </Button>
+        <Button :icon="h(HistoryOutlined)" @click="openVersionModal">
+          版本
+        </Button>
+        <Button :icon="h(EyeOutlined)" @click="openPreviewModal">
+          预览 Prompt
+        </Button>
         <Button
           type="primary"
           :icon="h(SaveOutlined)"
@@ -527,6 +698,90 @@ onMounted(loadKeywords);
         </Button>
       </Space>
     </div>
+
+    <Modal
+      v-model:open="versionModalVisible"
+      title="版本管理"
+      width="840px"
+      :footer="null"
+      @cancel="versionModalVisible = false"
+    >
+      <Table
+        row-key="id"
+        size="small"
+        :columns="versionColumns"
+        :data-source="versions"
+        :loading="versionLoading"
+        :pagination="false"
+        :scroll="{ x: 760 }"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'status'">
+            <Tag :color="record.status === 'active' ? 'green' : 'default'">
+              {{ record.status === 'active' ? '当前' : '归档' }}
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <Popconfirm
+              title="将这个版本复制为新的当前版本？"
+              @confirm="rollbackVersion(record)"
+            >
+              <Button
+                size="small"
+                :disabled="record.status === 'active'"
+                :icon="h(RollbackOutlined)"
+              >
+                回滚
+              </Button>
+            </Popconfirm>
+          </template>
+        </template>
+      </Table>
+    </Modal>
+
+    <Modal
+      v-model:open="previewModalVisible"
+      title="最终 Prompt 预览"
+      width="920px"
+      :confirm-loading="previewLoading"
+      ok-text="重新预览"
+      cancel-text="关闭"
+      @ok="runPreview"
+    >
+      <Space direction="vertical" class="preview-panel" size="middle">
+        <Space>
+          <Select
+            v-model:value="previewContentType"
+            style="width: 120px"
+            :options="[
+              { label: '评论', value: 'comment' },
+              { label: '文章', value: 'article' },
+            ]"
+          />
+          <Button :loading="previewLoading" :icon="h(EyeOutlined)" @click="runPreview">
+            生成预览
+          </Button>
+        </Space>
+        <Textarea
+          v-model:value="previewRuleText"
+          :auto-size="{ minRows: 3, maxRows: 6 }"
+        />
+        <div v-if="previewResult" class="preview-keywords">
+          <Tag
+            v-for="item in previewResult.selected_keywords"
+            :key="`${item.category_code}-${item.keyword_code}`"
+            color="blue"
+          >
+            {{ item.category_name }} / {{ item.keyword_name }}
+          </Tag>
+        </div>
+        <Textarea
+          :value="previewResult?.rendered_prompt || ''"
+          readonly
+          :auto-size="{ minRows: 14, maxRows: 24 }"
+        />
+      </Space>
+    </Modal>
   </div>
 </template>
 
@@ -619,6 +874,16 @@ onMounted(loadKeywords);
   display: grid;
   gap: 8px;
   grid-template-columns: minmax(220px, 1fr) 32px;
+}
+
+.preview-panel {
+  width: 100%;
+}
+
+.preview-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .empty-panel {

@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import csv
+import io
 from typing import Any
 
+from openpyxl import load_workbook
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.maga_assets import AssetRegistry
+from app.models.maga_assets import AssetImportRun, AssetRegistry
 
 CONTENT_GENERATION_KEYWORDS_ASSET_TYPE = "content_generation_keywords"
 DEFAULT_SYSTEM_KEYWORD_ASSET_KEY = "default_content_generation_keywords"
@@ -31,6 +34,37 @@ class SystemPromptKeywordService:
                 AssetRegistry.asset_stage == "production",
             )
             .order_by(AssetRegistry.version_no.desc(), AssetRegistry.id.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def list_versions(
+        self,
+        asset_key: str = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+        *,
+        limit: int = 20,
+    ) -> list[AssetRegistry]:
+        result = await self.db.execute(
+            select(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type == CONTENT_GENERATION_KEYWORDS_ASSET_TYPE,
+                AssetRegistry.asset_key == asset_key,
+                AssetRegistry.asset_stage == "production",
+            )
+            .order_by(AssetRegistry.version_no.desc(), AssetRegistry.id.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def get_version(self, *, asset_key: str, version_no: int) -> AssetRegistry | None:
+        result = await self.db.execute(
+            select(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type == CONTENT_GENERATION_KEYWORDS_ASSET_TYPE,
+                AssetRegistry.asset_key == asset_key,
+                AssetRegistry.version_no == version_no,
+                AssetRegistry.asset_stage == "production",
+            )
             .limit(1)
         )
         return result.scalar_one_or_none()
@@ -70,6 +104,73 @@ class SystemPromptKeywordService:
         self.db.add(asset)
         await self.db.flush()
         return asset
+
+    async def rollback_to_version(
+        self,
+        *,
+        asset_key: str,
+        version_no: int,
+        created_by: str,
+    ) -> AssetRegistry:
+        source_asset = await self.get_version(asset_key=asset_key, version_no=version_no)
+        if source_asset is None:
+            raise ValueError("要回滚的系统提示词关键词版本不存在")
+        content_json = normalize_system_prompt_keyword_content(source_asset.content_json or {}, strict=True)
+        asset = await self.save_keywords(
+            asset_key=asset_key,
+            display_name=source_asset.display_name or "系统提示词关键词",
+            content_json=content_json,
+            created_by=created_by,
+        )
+        asset.source_name = "system_prompt_keywords_rollback"
+        asset.source_uri = f"asset_registry://{source_asset.id}"
+        asset.metadata_json = {
+            **(asset.metadata_json or {}),
+            "rollback_from_asset_id": source_asset.id,
+            "rollback_from_version_no": source_asset.version_no,
+        }
+        await self.db.flush()
+        return asset
+
+    async def import_keywords(
+        self,
+        file_content: bytes,
+        *,
+        source_name: str,
+        asset_key: str = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+        display_name: str | None = None,
+        created_by: str = "maga-operator",
+    ) -> tuple[AssetRegistry, AssetImportRun]:
+        rows = _read_keyword_rows(file_content, source_name=source_name)
+        content_json = keyword_rows_to_content(rows)
+        asset = await self.save_keywords(
+            asset_key=asset_key,
+            display_name=display_name or "系统提示词关键词",
+            content_json=content_json,
+            created_by=created_by,
+        )
+        source_hash = hashlib.sha256(file_content).hexdigest()
+        asset.source_name = source_name
+        asset.source_uri = f"upload://{source_name}"
+        asset.source_hash = source_hash
+
+        metadata = _keyword_asset_metadata(asset.content_json)
+        run = AssetImportRun(
+            source_name=source_name,
+            source_uri=f"upload://{source_name}",
+            source_hash=source_hash,
+            status="succeeded",
+            imported_assets=1,
+            summary_json={
+                "asset_type": CONTENT_GENERATION_KEYWORDS_ASSET_TYPE,
+                "asset_key": asset.asset_key,
+                **metadata,
+            },
+            created_by=created_by,
+        )
+        self.db.add(run)
+        await self.db.flush()
+        return asset, run
 
     async def _next_asset_version(self, asset_key: str) -> int:
         result = await self.db.execute(
@@ -204,6 +305,122 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
     )
 
 
+def keyword_rows_to_content(rows: list[dict[str, str]]) -> dict[str, Any]:
+    categories_by_code: dict[str, dict[str, Any]] = {}
+    keyword_lookup: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for row in rows:
+        category_code = _clean_text(_row_value(row, "类别Code", "类别编码", "category_code", "category code"))
+        category_name = _clean_text(_row_value(row, "类别名称", "category_name", "category"))
+        keyword_code = _clean_text(_row_value(row, "子关键词Code", "子关键词编码", "keyword_code", "keyword code"))
+        keyword_name = _clean_text(_row_value(row, "子关键词名称", "keyword_name", "keyword"))
+        corpus = _clean_text(_row_value(row, "语料", "corpus", "prompt", "提示词"))
+        if not category_code:
+            category_code = category_name
+        if not category_name:
+            category_name = category_code
+        if not keyword_code:
+            keyword_code = keyword_name
+        if not keyword_name:
+            keyword_name = keyword_code
+        if not category_code or not keyword_code or not corpus:
+            continue
+
+        category = categories_by_code.setdefault(
+            category_code,
+            {
+                "category_code": category_code,
+                "category_name": category_name,
+                "description": _clean_text(_row_value(row, "类别说明", "说明", "description")),
+                "enabled": _as_bool(_row_value(row, "类别启用", "category_enabled", "enabled"), default=True),
+                "required": _as_bool(_row_value(row, "必选", "required"), default=False),
+                "sort_order": _as_int(_row_value(row, "类别顺序", "顺序", "sort_order"), default=(len(categories_by_code) + 1) * 10),
+                "selection_mode": _clean_text(_row_value(row, "选择模式", "selection_mode")) or "one",
+                "applicable_content_types": _content_types_from_text(
+                    _row_value(row, "适用内容", "适用内容类型", "applicable_content_types")
+                ),
+                "sub_keywords": [],
+            },
+        )
+        if category_name:
+            category["category_name"] = category_name
+
+        lookup_key = (category_code, keyword_code)
+        keyword = keyword_lookup.get(lookup_key)
+        if keyword is None:
+            keyword = {
+                "keyword_code": keyword_code,
+                "keyword_name": keyword_name,
+                "enabled": _as_bool(_row_value(row, "子关键词启用", "keyword_enabled"), default=True),
+                "weight": _as_int(_row_value(row, "权重", "weight"), default=1),
+                "corpus": [],
+            }
+            keyword_lookup[lookup_key] = keyword
+            category["sub_keywords"].append(keyword)
+        if keyword_name:
+            keyword["keyword_name"] = keyword_name
+        if corpus not in keyword["corpus"]:
+            keyword["corpus"].append(corpus)
+
+    content = normalize_system_prompt_keyword_content(
+        {
+            "schema_version": SYSTEM_PROMPT_KEYWORD_SCHEMA_VERSION,
+            "selection_policy": {"default_mode": "one_per_enabled_category"},
+            "categories": list(categories_by_code.values()),
+        },
+        strict=True,
+    )
+    if not content["categories"]:
+        raise ValueError("系统提示词关键词导入文件为空")
+    return content
+
+
+def export_keywords_csv(content_json: dict[str, Any]) -> str:
+    content = normalize_system_prompt_keyword_content(content_json)
+    output = io.StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=[
+            "类别Code",
+            "类别名称",
+            "类别说明",
+            "类别启用",
+            "必选",
+            "类别顺序",
+            "选择模式",
+            "适用内容",
+            "子关键词Code",
+            "子关键词名称",
+            "子关键词启用",
+            "权重",
+            "语料",
+        ],
+    )
+    writer.writeheader()
+    for category in content.get("categories") or []:
+        for keyword in category.get("sub_keywords") or []:
+            corpus_items = keyword.get("corpus") or [""]
+            for corpus in corpus_items:
+                writer.writerow(
+                    {
+                        "类别Code": category.get("category_code"),
+                        "类别名称": category.get("category_name"),
+                        "类别说明": category.get("description"),
+                        "类别启用": "是" if _as_bool(category.get("enabled"), default=True) else "否",
+                        "必选": "是" if _as_bool(category.get("required"), default=False) else "否",
+                        "类别顺序": category.get("sort_order"),
+                        "选择模式": category.get("selection_mode") or "one",
+                        "适用内容": ",".join(category.get("applicable_content_types") or []),
+                        "子关键词Code": keyword.get("keyword_code"),
+                        "子关键词名称": keyword.get("keyword_name"),
+                        "子关键词启用": "是" if _as_bool(keyword.get("enabled"), default=True) else "否",
+                        "权重": keyword.get("weight") or 1,
+                        "语料": corpus,
+                    }
+                )
+    return output.getvalue()
+
+
 def _normalize_selection_policy(value: Any) -> dict[str, Any]:
     policy = value if isinstance(value, dict) else {}
     return {
@@ -306,6 +523,37 @@ def _normalize_corpus(value: Any) -> list[str]:
     return [_clean_text(item) for item in values if _clean_text(item)]
 
 
+def _read_keyword_rows(file_content: bytes, *, source_name: str) -> list[dict[str, str]]:
+    lower_name = source_name.lower()
+    if lower_name.endswith(".xlsx"):
+        return _read_xlsx_rows(file_content)
+    if lower_name.endswith(".csv"):
+        return _read_csv_rows(file_content)
+    raise ValueError("only .csv and .xlsx files are supported")
+
+
+def _read_csv_rows(file_content: bytes) -> list[dict[str, str]]:
+    text = file_content.decode("utf-8-sig")
+    content = "".join(line for line in text.splitlines(True) if not line.startswith("#"))
+    return [
+        {str(key or "").strip(): str(value or "").strip() for key, value in row.items()}
+        for row in csv.DictReader(io.StringIO(content))
+        if any(str(value or "").strip() for value in row.values())
+    ]
+
+
+def _read_xlsx_rows(file_content: bytes) -> list[dict[str, str]]:
+    wb = load_workbook(io.BytesIO(file_content), data_only=True)
+    ws = wb.active
+    headers = [str(cell.value or "").strip() for cell in ws[1]]
+    rows: list[dict[str, str]] = []
+    for raw in ws.iter_rows(min_row=2, values_only=True):
+        row = {header: str(value or "").strip() for header, value in zip(headers, raw) if header}
+        if any(row.values()):
+            rows.append(row)
+    return rows
+
+
 def _keyword_asset_metadata(content_json: dict[str, Any]) -> dict[str, Any]:
     categories = content_json.get("categories") or []
     sub_keywords = [
@@ -332,13 +580,34 @@ def _clean_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _row_value(row: dict[str, str], *keys: str) -> str:
+    lowered = {key.lower().replace("_", "").replace(" ", ""): value for key, value in row.items()}
+    for key in keys:
+        if key in row:
+            return row[key]
+        normalized_key = key.lower().replace("_", "").replace(" ", "")
+        if normalized_key in lowered:
+            return lowered[normalized_key]
+    return ""
+
+
+def _content_types_from_text(value: Any) -> list[str]:
+    text = _clean_text(value)
+    if not text:
+        return ["article", "comment"]
+    mapping = {"文章": "article", "生文": "article", "评论": "comment"}
+    parts = [part.strip() for part in text.replace("，", ",").replace("、", ",").split(",") if part.strip()]
+    content_types = [mapping.get(part, part) for part in parts]
+    return content_types or ["article", "comment"]
+
+
 def _as_bool(value: Any, *, default: bool) -> bool:
     if value is None:
         return default
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
-        return value.strip().lower() not in {"0", "false", "no", "off", "否", "关闭"}
+        return value.strip().lower() not in {"0", "false", "no", "off", "否", "关闭", "停用"}
     return bool(value)
 
 

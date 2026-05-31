@@ -162,6 +162,11 @@ POST /api/v1/content-agent/batches/start
 ```http
 GET /api/v1/assets/content-generation-keywords?asset_key=default_content_generation_keywords
 PUT /api/v1/assets/content-generation-keywords
+GET /api/v1/assets/content-generation-keywords/versions
+POST /api/v1/assets/content-generation-keywords/rollback
+POST /api/v1/assets/content-generation-keywords/preview
+POST /api/v1/assets/imports/content-generation-keywords
+GET /api/v1/assets/exports/content-generation-keywords
 ```
 
 系统提示词关键词作为 `content_generation_keywords` 资产存储在 `asset_registry`，每次保存生成新的 production 版本，旧版本归档。页面入口：
@@ -171,6 +176,10 @@ PUT /api/v1/assets/content-generation-keywords
 ```
 
 管理页支持新增、编辑、停用关键词类别和子关键词；类别不是固定枚举，默认四类只是种子配置。
+
+运营可以通过 CSV/XLSX 批量导入系统提示词关键词，也可以导出当前版本继续编辑。导入导出采用一行一条语料的轻量格式，核心列包括 `类别Code`、`类别名称`、`子关键词Code`、`子关键词名称`、`语料`。页面提供版本列表和回滚能力，回滚会把旧版本复制成新的 production 版本，不直接改写历史版本。
+
+Prompt 预览用于在保存前查看“业务规则 + 当前页面关键词配置 + expert 模版”最终组装出的 prompt，帮助运营确认语料是否真的进入了生成上下文。
 
 ## 数据承载
 

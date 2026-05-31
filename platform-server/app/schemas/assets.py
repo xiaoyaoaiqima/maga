@@ -101,6 +101,39 @@ class SystemPromptKeywordUpdate(BaseModel):
     created_by: str | None = "maga-operator"
 
 
+class SystemPromptKeywordRollback(BaseModel):
+    asset_key: str = Field(default="default_content_generation_keywords", min_length=1)
+    version_no: int = Field(..., ge=1)
+    created_by: str | None = "maga-operator"
+
+
+class SystemPromptKeywordExportResponse(BaseModel):
+    asset_key: str
+    version_no: int | None = None
+    filename: str
+    csv_text: str
+
+
+class SystemPromptKeywordPreviewRequest(BaseModel):
+    asset_key: str = Field(default="default_content_generation_keywords", min_length=1)
+    content_type: str = Field(default="comment", min_length=1)
+    item_no: int = Field(default=1, ge=1)
+    output_fields: list[str] = Field(default_factory=lambda: ["comment"])
+    business_rule: dict[str, Any] | None = None
+    selection_policy: dict[str, Any] | None = None
+    categories: list[dict[str, Any]] | None = None
+    expert_config_code: str | None = None
+    llm_params: dict[str, Any] | None = None
+
+
+class SystemPromptKeywordPreviewResponse(BaseModel):
+    asset_key: str
+    content_type: str
+    selected_keywords: list[dict[str, Any]]
+    rendered_prompt: str
+    expert: dict[str, Any]
+
+
 class AssetCandidateCreate(BaseModel):
     asset_type: str = Field(..., min_length=1)
     asset_key: str = Field(..., min_length=1)

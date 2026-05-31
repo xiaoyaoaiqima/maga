@@ -10,6 +10,7 @@ from app.api.v1.endpoints.assets import router
 from app.core.database import get_db
 from app.models.base import Base
 from app.models.content_agent import ExecutorRegistry
+from app.models.expert_config import ExpertConfig
 from app.models.maga_assets import AssetChangeProposal, AssetChangeRequest, AssetImportRun, AssetRegistry
 
 
@@ -25,6 +26,7 @@ async def asset_client():
                 AssetChangeRequest.__table__,
                 AssetChangeProposal.__table__,
                 ExecutorRegistry.__table__,
+                ExpertConfig.__table__,
             ],
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -395,6 +397,70 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
         "像真实妈妈在评论区交流。",
         "别端着讲课。",
     ]
+
+    versions_response = await asset_client.get("/api/v1/assets/content-generation-keywords/versions")
+    versions = versions_response.json()["data"]
+    assert [item["version_no"] for item in versions] == [2, 1]
+    assert versions[0]["status"] == "active"
+    assert versions[1]["status"] == "archived"
+
+    rollback_response = await asset_client.post(
+        "/api/v1/assets/content-generation-keywords/rollback",
+        json={"asset_key": "default_content_generation_keywords", "version_no": 1, "created_by": "ops"},
+    )
+    assert rollback_response.status_code == 200
+    rolled_back = rollback_response.json()["data"]
+    assert rolled_back["version_no"] == 3
+    assert rolled_back["metadata_json"]["rollback_from_version_no"] == 1
+
+    export_response = await asset_client.get("/api/v1/assets/exports/content-generation-keywords")
+    export_data = export_response.json()["data"]
+    assert export_data["version_no"] == 3
+    assert "类别Code" in export_data["csv_text"]
+    assert "像真实妈妈在评论区交流。" in export_data["csv_text"]
+
+
+@pytest.mark.asyncio
+async def test_import_and_preview_content_generation_keywords(asset_client):
+    csv_content = "\n".join(
+        [
+            "类别Code,类别名称,类别说明,类别启用,必选,类别顺序,选择模式,适用内容,子关键词Code,子关键词名称,子关键词启用,权重,语料",
+            "persona,人设,表达身份,是,否,10,one,\"article,comment\",experienced_mom,经验型妈妈,是,1,像真实妈妈在评论区说话。",
+            "persona,人设,表达身份,是,否,10,one,\"article,comment\",experienced_mom,经验型妈妈,是,1,不要端着讲课。",
+            "rhythm,句式节奏,控制节奏,是,否,20,one,comment,short_sentence,短句,是,1,短句表达，像顺手评论。",
+        ]
+    )
+
+    import_response = await asset_client.post(
+        "/api/v1/assets/imports/content-generation-keywords",
+        data={"created_by": "ops"},
+        files={"file": ("系统提示词关键词.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+    assert import_response.status_code == 200
+    imported = import_response.json()["data"]
+    assert imported["imported_assets"] == 1
+    assert ["content_generation_keywords", "default_content_generation_keywords"] in imported["asset_keys"]
+    assert imported["summary_json"]["category_count"] == 2
+    assert imported["summary_json"]["corpus_count"] == 3
+
+    preview_response = await asset_client.post(
+        "/api/v1/assets/content-generation-keywords/preview",
+        json={
+            "asset_key": "default_content_generation_keywords",
+            "content_type": "comment",
+            "item_no": 1,
+            "business_rule": {
+                "rule_type": "comment_angle",
+                "comment_angle": "互动提问",
+                "corpus": "像妈妈在评论区问源悦真实反馈。",
+            },
+        },
+    )
+    assert preview_response.status_code == 200
+    preview = preview_response.json()["data"]
+    assert [item["category_code"] for item in preview["selected_keywords"]] == ["persona", "rhythm"]
+    assert "像妈妈在评论区问源悦真实反馈" in preview["rendered_prompt"]
+    assert "短句表达，像顺手评论" in preview["rendered_prompt"]
 
 
 @pytest.mark.asyncio

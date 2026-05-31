@@ -21,6 +21,10 @@ from app.schemas.assets import (
     ReferenceElementExtractRequest,
     ReferenceElementExtractResponse,
     SystemPromptKeywordAssetResponse,
+    SystemPromptKeywordExportResponse,
+    SystemPromptKeywordPreviewRequest,
+    SystemPromptKeywordPreviewResponse,
+    SystemPromptKeywordRollback,
     SystemPromptKeywordUpdate,
 )
 from app.services.asset_service import AssetService, normalize_asset_content
@@ -42,9 +46,11 @@ from app.services.system_prompt_keyword_service import (
     CONTENT_GENERATION_KEYWORDS_ASSET_TYPE,
     DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
     SystemPromptKeywordService,
+    export_keywords_csv,
     fallback_system_prompt_keyword_content,
     normalize_system_prompt_keyword_content,
 )
+from app.services.unified_content_generation_service import UnifiedContentGenerationService
 
 router = APIRouter()
 
@@ -277,6 +283,46 @@ async def import_product_experience_rule_set_endpoint(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/imports/content-generation-keywords", response_model=ResponseData)
+async def import_content_generation_keywords_endpoint(
+    file: UploadFile = File(...),
+    asset_key: str = Form(default=DEFAULT_SYSTEM_KEYWORD_ASSET_KEY),
+    display_name: str | None = Form(default=None),
+    created_by: str = Form(default="maga-operator"),
+    db: AsyncSession = Depends(get_db),
+):
+    filename = file.filename or "系统提示词关键词.csv"
+    if not filename.lower().endswith((".csv", ".xlsx")):
+        raise HTTPException(status_code=400, detail="only .csv and .xlsx files are supported")
+
+    file_content = await file.read()
+    service = SystemPromptKeywordService(db)
+    try:
+        asset, run = await service.import_keywords(
+            file_content,
+            source_name=filename,
+            asset_key=asset_key,
+            display_name=display_name,
+            created_by=created_by,
+        )
+        await db.commit()
+        await db.refresh(asset)
+        return ResponseData(
+            code=200,
+            message="success",
+            data=AssetImportResponse(
+                import_run_id=run.id,
+                imported_assets=1,
+                asset_keys=[(CONTENT_GENERATION_KEYWORDS_ASSET_TYPE, asset.asset_key)],
+                source_hash=asset.source_hash or "",
+                summary_json=run.summary_json,
+            ).model_dump(mode="json"),
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/reference-elements/extract", response_model=ResponseData)
 async def extract_reference_elements(payload: ReferenceElementExtractRequest, db: AsyncSession = Depends(get_db)):
     service = ReferenceElementExtractionService(db)
@@ -371,6 +417,35 @@ async def get_content_generation_keywords(
     )
 
 
+@router.get("/content-generation-keywords/versions", response_model=ResponseData)
+async def list_content_generation_keyword_versions(
+    asset_key: str = Query(default=DEFAULT_SYSTEM_KEYWORD_ASSET_KEY),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    service = SystemPromptKeywordService(db)
+    assets = await service.list_versions(asset_key=asset_key, limit=limit)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=[AssetRegistrySummaryResponse(
+            id=asset.id,
+            asset_type=asset.asset_type,
+            asset_key=asset.asset_key,
+            display_name=asset.display_name,
+            version_no=asset.version_no,
+            status=asset.status,
+            asset_stage=asset.asset_stage,
+            source_name=asset.source_name,
+            source_hash=asset.source_hash,
+            item_count=None,
+            created_by=asset.created_by,
+            create_time=asset.create_time,
+            update_time=asset.update_time,
+        ).model_dump(mode="json") for asset in assets],
+    )
+
+
 @router.put("/content-generation-keywords", response_model=ResponseData)
 async def save_content_generation_keywords(
     payload: SystemPromptKeywordUpdate,
@@ -396,6 +471,97 @@ async def save_content_generation_keywords(
         )
     except ValueError as exc:
         await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/content-generation-keywords/rollback", response_model=ResponseData)
+async def rollback_content_generation_keywords(
+    payload: SystemPromptKeywordRollback,
+    db: AsyncSession = Depends(get_db),
+):
+    service = SystemPromptKeywordService(db)
+    try:
+        asset = await service.rollback_to_version(
+            asset_key=payload.asset_key,
+            version_no=payload.version_no,
+            created_by=payload.created_by or "maga-operator",
+        )
+        await db.commit()
+        await db.refresh(asset)
+        return ResponseData(
+            code=200,
+            message="success",
+            data=AssetRegistryResponse.model_validate(asset).model_dump(mode="json"),
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/exports/content-generation-keywords", response_model=ResponseData)
+async def export_content_generation_keywords(
+    asset_key: str = Query(default=DEFAULT_SYSTEM_KEYWORD_ASSET_KEY),
+    db: AsyncSession = Depends(get_db),
+):
+    service = SystemPromptKeywordService(db)
+    asset = await service.get_latest_asset(asset_key=asset_key)
+    content_json = asset.content_json if asset else fallback_system_prompt_keyword_content()
+    filename = f"{asset_key}_系统提示词关键词.csv"
+    return ResponseData(
+        code=200,
+        message="success",
+        data=SystemPromptKeywordExportResponse(
+            asset_key=asset_key,
+            version_no=asset.version_no if asset else None,
+            filename=filename,
+            csv_text=export_keywords_csv(content_json),
+        ).model_dump(mode="json"),
+    )
+
+
+@router.post("/content-generation-keywords/preview", response_model=ResponseData)
+async def preview_content_generation_keywords(
+    payload: SystemPromptKeywordPreviewRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    business_rule = payload.business_rule or {
+        "rule_type": "comment_angle" if payload.content_type == "comment" else "product_experience",
+        "comment_angle": "示例评论切角" if payload.content_type == "comment" else None,
+        "product_experience": "示例产品使用体验" if payload.content_type != "comment" else None,
+        "corpus": "这里是本次业务规则里的语料，用于预览系统关键词会如何进入最终 prompt。",
+        "examples": ["这是一条用于预览的参考示例。"],
+    }
+    keyword_override = (
+        {
+            "selection_policy": payload.selection_policy or {},
+            "categories": payload.categories,
+        }
+        if payload.categories is not None
+        else None
+    )
+    try:
+        snapshot = await UnifiedContentGenerationService(db).build_snapshot(
+            content_type=payload.content_type,
+            business_rule={key: value for key, value in business_rule.items() if value is not None},
+            item_no=payload.item_no,
+            output_fields=payload.output_fields or (["comment"] if payload.content_type == "comment" else ["title", "body"]),
+            expert_config_code=payload.expert_config_code,
+            keyword_asset_key=payload.asset_key,
+            keyword_content_override=keyword_override,
+            model_config=payload.llm_params,
+        )
+        return ResponseData(
+            code=200,
+            message="success",
+            data=SystemPromptKeywordPreviewResponse(
+                asset_key=payload.asset_key,
+                content_type=payload.content_type,
+                selected_keywords=snapshot.input_snapshot["selected_keywords"],
+                rendered_prompt=snapshot.input_snapshot["rendered_prompt"],
+                expert=snapshot.input_snapshot["expert"],
+            ).model_dump(mode="json"),
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

@@ -142,6 +142,21 @@ export namespace AssetsApi {
     create_time?: null | string;
     update_time?: null | string;
   }
+
+  export interface SystemPromptKeywordExportResult {
+    asset_key: string;
+    csv_text: string;
+    filename: string;
+    version_no?: null | number;
+  }
+
+  export interface SystemPromptKeywordPreviewResult {
+    asset_key: string;
+    content_type: string;
+    expert: Record<string, any>;
+    rendered_prompt: string;
+    selected_keywords: Array<Record<string, any>>;
+  }
 }
 
 export async function getAssetSummariesApi(params?: {
@@ -297,6 +312,16 @@ export async function getContentGenerationKeywordsApi(params?: {
   );
 }
 
+export async function getContentGenerationKeywordVersionsApi(params?: {
+  asset_key?: string;
+  limit?: number;
+}) {
+  return requestClient.get<AssetsApi.AssetSummary[]>(
+    '/v1/assets/content-generation-keywords/versions',
+    { params },
+  );
+}
+
 export async function saveContentGenerationKeywordsApi(data: {
   asset_key: string;
   categories: AssetsApi.SystemPromptKeywordCategory[];
@@ -306,6 +331,67 @@ export async function saveContentGenerationKeywordsApi(data: {
 }) {
   return requestClient.put<AssetsApi.AssetRegistry>(
     '/v1/assets/content-generation-keywords',
+    data,
+  );
+}
+
+export async function rollbackContentGenerationKeywordsApi(data: {
+  asset_key: string;
+  created_by?: string;
+  version_no: number;
+}) {
+  return requestClient.post<AssetsApi.AssetRegistry>(
+    '/v1/assets/content-generation-keywords/rollback',
+    data,
+  );
+}
+
+export async function importContentGenerationKeywordsApi(data: {
+  asset_key: string;
+  created_by?: string;
+  display_name?: string;
+  file: File;
+}) {
+  const formData = new FormData();
+  formData.append('file', data.file);
+  formData.append('asset_key', data.asset_key);
+  if (data.display_name) {
+    formData.append('display_name', data.display_name);
+  }
+  formData.append('created_by', data.created_by || 'maga-operator');
+  return requestClient.post<AssetsApi.AssetImportResult>(
+    '/v1/assets/imports/content-generation-keywords',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 180_000,
+    },
+  );
+}
+
+export async function exportContentGenerationKeywordsApi(params?: {
+  asset_key?: string;
+}) {
+  return requestClient.get<AssetsApi.SystemPromptKeywordExportResult>(
+    '/v1/assets/exports/content-generation-keywords',
+    { params },
+  );
+}
+
+export async function previewContentGenerationKeywordsApi(data: {
+  asset_key: string;
+  business_rule?: Record<string, any>;
+  categories?: AssetsApi.SystemPromptKeywordCategory[];
+  content_type: string;
+  expert_config_code?: string;
+  item_no?: number;
+  output_fields?: string[];
+  selection_policy?: Record<string, any>;
+}) {
+  return requestClient.post<AssetsApi.SystemPromptKeywordPreviewResult>(
+    '/v1/assets/content-generation-keywords/preview',
     data,
   );
 }

@@ -50,11 +50,16 @@ class UnifiedContentGenerationService:
         output_fields: list[str],
         expert_config_code: str | None = None,
         keyword_asset_key: str = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+        keyword_content_override: dict[str, Any] | None = None,
         model_config: dict[str, Any] | None = None,
     ) -> UnifiedGenerationSnapshot:
-        keyword_asset = await self._latest_keyword_asset(keyword_asset_key)
+        keyword_asset = None if keyword_content_override is not None else await self._latest_keyword_asset(keyword_asset_key)
         keyword_content = normalize_system_prompt_keyword_content(
-            keyword_asset.content_json if keyword_asset else fallback_system_prompt_keyword_content()
+            keyword_content_override
+            if keyword_content_override is not None
+            else keyword_asset.content_json
+            if keyword_asset
+            else fallback_system_prompt_keyword_content()
         )
         selected_keywords = _select_keyword_bundle(keyword_content, content_type=content_type, item_no=item_no)
         expert = await self._expert_snapshot(
@@ -76,7 +81,11 @@ class UnifiedContentGenerationService:
             "output_fields": output_fields,
             "business_rule": business_rule,
             "selected_keywords": selected_keywords,
-            "keyword_asset": _keyword_asset_ref(keyword_asset, keyword_asset_key),
+            "keyword_asset": _keyword_asset_ref(
+                keyword_asset,
+                keyword_asset_key,
+                inline=keyword_content_override is not None,
+            ),
             "expert": expert,
             "model_config": expert["model_config"],
             "template_variables": variables,
@@ -86,7 +95,7 @@ class UnifiedContentGenerationService:
             input_snapshot=input_snapshot,
             asset_refs={
                 "business_rule": _business_rule_ref(business_rule),
-                "keyword_asset": _keyword_asset_ref(keyword_asset, keyword_asset_key),
+                "keyword_asset": _keyword_asset_ref(keyword_asset, keyword_asset_key, inline=keyword_content_override is not None),
                 "expert_config": {
                     "expert_config_code": expert["expert_config_code"],
                     "source": expert["source"],
@@ -328,7 +337,13 @@ def _business_rule_ref(rule: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _keyword_asset_ref(asset: AssetRegistry | None, asset_key: str) -> dict[str, Any]:
+def _keyword_asset_ref(asset: AssetRegistry | None, asset_key: str, *, inline: bool = False) -> dict[str, Any]:
+    if inline:
+        return {
+            "asset_type": SYSTEM_KEYWORD_ASSET_TYPE,
+            "asset_key": asset_key,
+            "source": "inline_preview",
+        }
     if asset:
         return {
             "asset_type": asset.asset_type,
