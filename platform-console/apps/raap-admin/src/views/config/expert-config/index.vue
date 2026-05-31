@@ -2503,9 +2503,7 @@ function handleTableChange(pag: any) {
                     allow-clear
                   />
                   <div class="form-item-hint">
-                    💡 模型列表从
-                    <router-link to="/llm/provider">LLM Provider</router-link>
-                    配置中动态获取
+                    💡 模型列表从内部 LLM Provider 配置中动态获取
                   </div>
                 </FormItem>
                 <FormItem label="模型参数 (JSON)" name="model_config">

@@ -6,7 +6,6 @@ import {
   ApiOutlined,
   ArrowRightOutlined,
   ClusterOutlined,
-  KeyOutlined,
   PlusOutlined,
   RobotOutlined,
   ThunderboltOutlined,
@@ -26,14 +25,6 @@ function handleTabChange(key: number | string) {
 
 // 快捷入口配置
 const quickActions = [
-  {
-    key: 'keyword',
-    title: '系统提示词关键词',
-    description: '维护生成链路自动选取的提示词关键词',
-    icon: KeyOutlined,
-    path: '/content-agent/system-prompt-keywords',
-    color: '#1890ff',
-  },
   {
     key: 'strategy',
     title: '业务规则',
@@ -68,12 +59,6 @@ function goToQuickAction(action: (typeof quickActions)[0]) {
 // 新建空白 Agent - 显示指导
 function handleCreateBlank() {
   showGuideModal.value = true;
-}
-
-// 跳转到系统提示词关键词
-function goToKeywords() {
-  showGuideModal.value = false;
-  router.push('/content-agent/system-prompt-keywords');
 }
 
 // 跳转到业务规则
@@ -168,19 +153,8 @@ function goToJobCreate() {
           <div class="guide-step">
             <div class="step-number">1</div>
             <div class="step-content">
-              <h4>准备关键词语料</h4>
-              <p>在关键词语料中心，选择你想要的品牌、产品、标签等语料</p>
-              <Button type="link" @click="goToKeywords">
-                前往关键词语料 <ArrowRightOutlined />
-              </Button>
-            </div>
-          </div>
-
-          <div class="guide-step">
-            <div class="step-number">2</div>
-            <div class="step-content">
               <h4>配置关键词策略</h4>
-              <p>设置内容生成策略，定义人设、风格、变量等</p>
+              <p>上传活动业务规则包，作为正式生成任务的规则来源</p>
               <Button type="link" @click="goToStrategy">
                 前往策略配置 <ArrowRightOutlined />
               </Button>
@@ -188,7 +162,7 @@ function goToJobCreate() {
           </div>
 
           <div class="guide-step">
-            <div class="step-number">3</div>
+            <div class="step-number">2</div>
             <div class="step-content">
               <h4>选择 Agent 模板创建</h4>
               <p>从现有 Agent 模板中选择一个，快速创建副本</p>
@@ -199,7 +173,7 @@ function goToJobCreate() {
           </div>
 
           <div class="guide-step">
-            <div class="step-number">4</div>
+            <div class="step-number">3</div>
             <div class="step-content">
               <h4>启动任务</h4>
               <p>配置内容策略，选择 Expert，开始执行生文任务</p>

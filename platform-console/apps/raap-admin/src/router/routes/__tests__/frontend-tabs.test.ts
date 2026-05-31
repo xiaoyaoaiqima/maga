@@ -24,29 +24,19 @@ function collectPaths(routes: typeof frontendTabRoutes): string[] {
 }
 
 describe('frontend controlled sidebar tabs', () => {
-  it('keeps the MVP sidebar to content, assets, rules, system keywords, feedback, prompt optimization, and model management', () => {
+  it('keeps the operator sidebar to business rules, generation results, and feedback', () => {
     const paths = collectPaths(frontendTabRoutes);
     const titles = frontendTabRoutes.map((route) => route.meta?.title);
 
     expect(paths).toEqual([
-      '/content-agent/workbench',
-      '/assets/training',
       '/business-rules',
-      '/content-agent/system-prompt-keywords',
-      '/assets/reference-elements',
-      '/dashboard/rlhf',
-      '/expert/prompt-optimizer',
-      '/llm/provider',
+      '/content-agent/workbench',
+      '/content-agent/feedback',
     ]);
     expect(titles).toEqual([
-      '内容生成',
-      '资料训练',
       '业务规则',
-      '系统提示词关键词',
-      '例文抽取',
-      '反馈训练',
-      '提示词优化',
-      '模型管理',
+      '生成结果',
+      '评价反馈',
     ]);
   });
 
@@ -54,10 +44,8 @@ describe('frontend controlled sidebar tabs', () => {
     expect(accessRoutes).toEqual(frontendTabRoutes);
   });
 
-  it('defaults the console home to content generation', () => {
-    expect(overridesPreferences.app?.defaultHomePath).toBe(
-      '/content-agent/workbench',
-    );
+  it('defaults the console home to business rules', () => {
+    expect(overridesPreferences.app?.defaultHomePath).toBe('/business-rules');
   });
 
   it('does not expose the legacy agent workbench in the MVP sidebar', () => {
@@ -70,8 +58,14 @@ describe('frontend controlled sidebar tabs', () => {
     const paths = collectPaths(frontendTabRoutes);
 
     expect(paths).not.toContain('/job/agent');
+    expect(paths).not.toContain('/assets/training');
+    expect(paths).not.toContain('/assets/reference-elements');
+    expect(paths).not.toContain('/content-agent/system-prompt-keywords');
+    expect(paths).not.toContain('/dashboard/rlhf');
+    expect(paths).not.toContain('/expert/prompt-optimizer');
     expect(paths).not.toContain('/expert/calibration');
     expect(paths).not.toContain('/dashboard/ai-dashboard');
+    expect(paths).not.toContain('/llm/provider');
     expect(paths).not.toContain('/llm/routes');
     expect(paths).not.toContain('/llm/stats');
   });

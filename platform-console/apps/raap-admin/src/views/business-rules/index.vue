@@ -3,8 +3,13 @@ import type { UploadProps } from 'ant-design-vue';
 import type { AssetsApi } from '#/api/core/assets';
 
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
-import { ReloadOutlined, UploadOutlined } from '@ant-design/icons-vue';
+import {
+  PlayCircleOutlined,
+  ReloadOutlined,
+  UploadOutlined,
+} from '@ant-design/icons-vue';
 import { useUserStore } from '@vben/stores';
 
 import {
@@ -31,6 +36,10 @@ import {
   importCommentAngleRuleSetApi,
   importProductExperienceRuleSetApi,
 } from '#/api/core/assets';
+import {
+  startCommentBatchApi,
+  startContentBatchApi,
+} from '#/api/core/content-agent';
 
 type RulePackageType = 'comment_angle' | 'product_experience';
 
@@ -65,6 +74,7 @@ const ruleAssetTypes = Object.values(rulePackageConfigs).map(
 
 const loading = ref(false);
 const importing = ref(false);
+const generating = ref(false);
 const importRunsLoading = ref(false);
 const packageType = ref<RulePackageType>('comment_angle');
 const assetKey = ref(rulePackageConfigs.comment_angle.defaultAssetKey);
@@ -74,6 +84,7 @@ const importRuns = ref<AssetsApi.AssetImportRun[]>([]);
 const selectedSummary = ref<AssetsApi.AssetSummary | null>(null);
 const selectedAsset = ref<AssetsApi.AssetRegistry | null>(null);
 const userStore = useUserStore();
+const router = useRouter();
 
 const currentConfig = computed(() => rulePackageConfigs[packageType.value]);
 const selectedItems = computed(() => {
@@ -110,6 +121,12 @@ const selectedExampleCount = computed(
 const selectedWarnings = computed(() =>
   Array.isArray(selectedMeta.value.warnings) ? selectedMeta.value.warnings : [],
 );
+const selectedDefaultGenerationCount = computed(
+  () =>
+    selectedMeta.value.default_generation_count ??
+    selectedAsset.value?.content_json?.default_generation_count ??
+    '-',
+);
 
 const rulePackageColumns: any[] = [
   { title: '规则包', dataIndex: 'display_name', key: 'display_name' },
@@ -119,7 +136,7 @@ const rulePackageColumns: any[] = [
   { title: '条数', dataIndex: 'item_count', key: 'item_count', width: 80 },
   { title: '来源', dataIndex: 'source_name', key: 'source_name', width: 220 },
   { title: '更新时间', dataIndex: 'update_time', key: 'update_time', width: 180 },
-  { fixed: 'right', title: '操作', key: 'action', width: 90 },
+  { fixed: 'right', title: '操作', key: 'action', width: 150 },
 ];
 
 const importRunColumns: any[] = [
@@ -204,6 +221,44 @@ async function openAsset(row: AssetsApi.AssetSummary | Record<string, any>) {
   selectedAsset.value = await getAssetDetailApi(row.asset_type, row.asset_key, {
     asset_stage: row.asset_stage,
   });
+}
+
+// 运营在规则包管理页直接触发生成，入口按规则包类型分流到统一生文/评论批量接口。
+async function generateFromRulePackage(
+  row: AssetsApi.AssetRegistry | AssetsApi.AssetSummary | Record<string, any>,
+) {
+  if (!row?.asset_key || !row?.asset_type) {
+    message.warning('请先选择一个业务规则包');
+    return;
+  }
+  generating.value = true;
+  try {
+    const payload = {
+      asset_key: row.asset_key,
+      created_by: currentOperator.value,
+    };
+    const result =
+      row.asset_type === 'comment_angle_rule_set'
+        ? await startCommentBatchApi(payload)
+        : row.asset_type === 'product_experience_rule_set'
+          ? await startContentBatchApi(payload)
+          : null;
+    if (!result) {
+      message.warning('当前规则包类型暂不支持一键生成');
+      return;
+    }
+    message.success(
+      `生成完成：${result.execution.generated_count}/${result.execution.requested_limit}`,
+    );
+    await router.push({
+      path: '/content-agent/workbench',
+      query: { batch_id: String(result.batch_id) },
+    });
+  } catch {
+    message.error('生成失败，请检查规则包和 worker 状态');
+  } finally {
+    generating.value = false;
+  }
 }
 
 const beforeUpload: UploadProps['beforeUpload'] = async (file) => {
@@ -332,9 +387,19 @@ onMounted(() => {
                 {{ text ?? '-' }}
               </template>
               <template v-else-if="column.key === 'action'">
-                <Button size="small" type="link" @click="openAsset(record)">
-                  查看
-                </Button>
+                <Space size="small">
+                  <Button size="small" type="link" @click="openAsset(record)">
+                    查看
+                  </Button>
+                  <Button
+                    size="small"
+                    type="link"
+                    :loading="generating"
+                    @click="generateFromRulePackage(record)"
+                  >
+                    生成
+                  </Button>
+                </Space>
               </template>
             </template>
           </Table>
@@ -343,6 +408,17 @@ onMounted(() => {
     </Row>
 
     <Card class="mt-4" title="规则包详情" :bordered="false">
+      <template #extra>
+        <Button
+          v-if="selectedAsset"
+          type="primary"
+          :loading="generating"
+          @click="generateFromRulePackage(selectedAsset)"
+        >
+          <template #icon><PlayCircleOutlined /></template>
+          按此规则包生成
+        </Button>
+      </template>
       <template v-if="selectedAsset">
         <Descriptions size="small" :column="4" bordered>
           <DescriptionsItem label="名称">
@@ -362,6 +438,9 @@ onMounted(() => {
           </DescriptionsItem>
           <DescriptionsItem label="示例">
             {{ selectedExampleCount }}
+          </DescriptionsItem>
+          <DescriptionsItem label="默认生成">
+            {{ selectedDefaultGenerationCount }}
           </DescriptionsItem>
           <DescriptionsItem label="来源">
             {{ selectedAsset.source_name || '-' }}

@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import type { ContentAgentApi } from '#/api/core/content-agent';
 
-import { computed, h, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, h, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
+
+import { useUserStore } from '@vben/stores';
 
 import {
   Alert,
   Button,
   Card,
   Col,
-  Descriptions,
-  DescriptionsItem,
-  Divider,
   Empty,
+  Input,
   List,
   ListItem,
   message,
@@ -27,19 +27,63 @@ import {
 import {
   getContentBatchListApi,
   getContentBatchReportApi,
+  getTrainingFeedbackSamplesApi,
+  submitBatchItemFeedbackApi,
 } from '#/api/core/content-agent';
 
+const { TextArea } = Input;
+
 const route = useRoute();
-const router = useRouter();
+const userStore = useUserStore();
 
 const batchLoading = ref(false);
 const reportLoading = ref(false);
+const trainingFeedbackLoading = ref(false);
+const reviewingItemId = ref<null | number>(null);
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
 const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
 const batchTotal = ref(0);
+const trainingFeedbackSamples = ref<ContentAgentApi.TrainingFeedbackSample[]>(
+  [],
+);
+const trainingFeedbackTotal = ref(0);
+const feedbackDrafts = reactive<Record<number, string>>({});
+
+const currentOperator = computed(
+  () =>
+    userStore.userInfo?.realName ||
+    userStore.userInfo?.username ||
+    'maga-operator',
+);
 
 const selectedItems = computed(() => selectedReport.value?.items || []);
 const selectedSummary = computed(() => selectedReport.value?.summary || null);
+const reviewItems = computed(() =>
+  selectedItems.value.filter((item) => item.body || item.error_message),
+);
+
+const feedbackSummary = computed(() => {
+  const items = selectedItems.value;
+  return {
+    approved_count: items.filter((item) => item.review_status === 'approved')
+      .length,
+    feedback_count: selectedSummary.value?.feedback_count || 0,
+    manual_edited_count: items.filter(
+      (item) => item.review_status === 'manual_edited',
+    ).length,
+    needs_revision_count: items.filter(
+      (item) => item.review_status === 'needs_revision',
+    ).length,
+    pending_count: items.filter((item) => !item.review_status).length,
+    risk_count: items.filter(
+      (item) =>
+        item.hard_pass === false ||
+        item.rewrite_required ||
+        item.forbidden_hits?.length ||
+        item.similarity_warnings?.length,
+    ).length,
+  };
+});
 
 const statusColor = (status?: string) => {
   if (status === 'approved') return 'green';
@@ -59,17 +103,32 @@ const passColor = (value?: boolean | null) => {
   return 'default';
 };
 
+const reviewStatusLabel = (status?: null | string) => {
+  if (status === 'approved') return '已通过';
+  if (status === 'needs_revision') return '待修改';
+  if (status === 'manual_edited') return '人工编辑';
+  return status || '未审核';
+};
+
+const actionLabel = (action?: string) => {
+  if (action === 'approve') return '通过';
+  if (action === 'manual_edit') return '人工改写';
+  if (action === 'request_revision') return '要求修改';
+  return action || '-';
+};
+
 const formatDuration = (durationMs?: null | number) => {
   if (durationMs === null || durationMs === undefined) return '-';
   if (durationMs < 1000) return `${durationMs}ms`;
   return `${(durationMs / 1000).toFixed(durationMs < 10_000 ? 2 : 1)}s`;
 };
 
-const itemFailureMessage = (item: ContentAgentApi.BatchReportItem) => {
-  const stageError = item.trace_stage_calls?.find(
-    (stage) => stage.status === 'failed' && stage.error_message,
-  )?.error_message;
-  return item.error_message || stageError || '正文尚未生成，请查看执行链路。';
+const feedbackActionLabel = (
+  action: ContentAgentApi.BatchItemFeedbackAction,
+) => {
+  if (action === 'approve') return '通过';
+  if (action === 'manual_edit') return '人工编辑保存';
+  return '提交修改意见';
 };
 
 const rejectSourceLabel = (source?: string) => {
@@ -78,13 +137,6 @@ const rejectSourceLabel = (source?: string) => {
   if (source === 'forbidden_term') return '禁用词';
   if (source === 'executor_error') return '执行失败';
   return source || '审核';
-};
-
-const reviewStatusLabel = (status?: null | string) => {
-  if (status === 'approved') return '已通过';
-  if (status === 'needs_revision') return '待修改';
-  if (status === 'manual_edited') return '人工编辑';
-  return status || '未审核';
 };
 
 const forbiddenReviewOf = (item: ContentAgentApi.BatchReportItem) => {
@@ -112,6 +164,13 @@ const forbiddenRewriteMethodLabel = (method?: string) => {
   return method;
 };
 
+const itemFailureMessage = (item: ContentAgentApi.BatchReportItem) => {
+  const stageError = item.trace_stage_calls?.find(
+    (stage) => stage.status === 'failed' && stage.error_message,
+  )?.error_message;
+  return item.error_message || stageError || '正文尚未生成，请查看执行链路。';
+};
+
 const traceLines = (item: ContentAgentApi.BatchReportItem) => [
   `run_id: ${item.trace_run_id || item.run_id || '-'}`,
   `task_id: ${item.task_id || '-'}`,
@@ -129,10 +188,6 @@ const copyText = async (text?: null | string) => {
   message.success('已复制');
 };
 
-const copyArticle = async (item: ContentAgentApi.BatchReportItem) => {
-  await copyText(`${item.title || ''}\n\n${item.body || ''}`.trim());
-};
-
 const showTrace = (item: ContentAgentApi.BatchReportItem) => {
   Modal.info({
     title: `第 ${item.item_no} 条执行 Trace`,
@@ -148,12 +203,6 @@ const showTrace = (item: ContentAgentApi.BatchReportItem) => {
       ),
       h('p', `Run ID：${item.trace_run_id || item.run_id || '-'}`),
       h('p', `Task ID：${item.task_id || '-'}`),
-      h(
-        'p',
-        `总耗时：${formatDuration(item.total_duration_ms)}；生文耗时：${formatDuration(
-          item.generation_duration_ms,
-        )}`,
-      ),
       h(
         'div',
         { class: 'trace-modal-stages' },
@@ -199,7 +248,6 @@ const loadBatches = async () => {
     const data = await getContentBatchListApi({ limit: 20, offset: 0 });
     batchList.value = data?.items || [];
     batchTotal.value = data?.total || 0;
-    // 从业务规则页跳转过来时，优先打开刚生成的批次报告。
     const queryBatchId = Number(route.query.batch_id || 0);
     if (
       queryBatchId > 0 &&
@@ -216,17 +264,186 @@ const loadBatches = async () => {
   }
 };
 
-const goFeedback = () => {
-  router.push({
-    path: '/content-agent/feedback',
-    query: selectedReport.value
-      ? { batch_id: String(selectedReport.value.batch_id) }
-      : {},
+const loadTrainingFeedbackSamples = async () => {
+  trainingFeedbackLoading.value = true;
+  try {
+    const data = await getTrainingFeedbackSamplesApi({ limit: 30, offset: 0 });
+    trainingFeedbackSamples.value = data?.items || [];
+    trainingFeedbackTotal.value = data?.total || 0;
+  } finally {
+    trainingFeedbackLoading.value = false;
+  }
+};
+
+const replaceReportItem = (updated: ContentAgentApi.BatchReportItem) => {
+  if (!selectedReport.value) return;
+  selectedReport.value.items = selectedReport.value.items.map((item) =>
+    item.item_id === updated.item_id ? updated : item,
+  );
+};
+
+const refreshSelectedReport = async () => {
+  if (!selectedReport.value) return;
+  selectedReport.value = await getContentBatchReportApi(
+    selectedReport.value.batch_id,
+  );
+};
+
+const submitFeedback = async (
+  item: ContentAgentApi.BatchReportItem,
+  action: ContentAgentApi.BatchItemFeedbackAction,
+) => {
+  const feedbackText = feedbackDrafts[item.item_id] || '';
+  if (action === 'request_revision' && !feedbackText.trim()) {
+    message.warning('请先填写修改意见');
+    return;
+  }
+
+  reviewingItemId.value = item.item_id;
+  try {
+    const response = await submitBatchItemFeedbackApi(item.item_id, {
+      action,
+      title: item.title,
+      body: item.body,
+      feedback_text:
+        feedbackText || (action === 'approve' ? '可发布' : undefined),
+      created_by: currentOperator.value,
+    });
+    replaceReportItem(response.item);
+    await refreshSelectedReport();
+    await loadTrainingFeedbackSamples();
+    message.success(`${feedbackActionLabel(action)}已保存`);
+  } finally {
+    reviewingItemId.value = null;
+  }
+};
+
+const selectedText = () => {
+  const selection = window.getSelection?.();
+  const value = selection?.toString().trim() || '';
+  return value.length <= 100 ? value : '';
+};
+
+const openBusinessForbiddenTermModal = (
+  item: ContentAgentApi.BatchReportItem,
+) => {
+  const state = reactive({
+    term: selectedText(),
+  });
+  Modal.confirm({
+    title: '加入业务违禁词',
+    width: 520,
+    okText: '加入',
+    cancelText: '取消',
+    content: () =>
+      h('div', { class: 'business-forbidden-term-modal' }, [
+        h(Input, {
+          value: state.term,
+          placeholder: '输入不希望后续内容再出现的词',
+          maxlength: 100,
+          allowClear: true,
+          'onUpdate:value': (value: string) => {
+            state.term = value;
+          },
+        }),
+        h(
+          'div',
+          { class: 'business-forbidden-term-hint' },
+          '会保存到当前业务规则包的违禁词里，并刷新这篇内容的风险命中。',
+        ),
+      ]),
+    async onOk() {
+      const term = state.term.trim();
+      if (!term) {
+        message.warning('请先输入业务违禁词');
+        return Promise.reject(new Error('empty business forbidden term'));
+      }
+      reviewingItemId.value = item.item_id;
+      try {
+        const response = await submitBatchItemFeedbackApi(item.item_id, {
+          action: 'request_revision',
+          title: item.title,
+          body: item.body,
+          feedback_text: `加入业务违禁词：${term}`,
+          business_forbidden_terms: [term],
+          created_by: currentOperator.value,
+        });
+        replaceReportItem(response.item);
+        await refreshSelectedReport();
+        await loadTrainingFeedbackSamples();
+        message.success(`已加入业务违禁词：${term}`);
+      } finally {
+        reviewingItemId.value = null;
+      }
+    },
+  });
+};
+
+const openManualEdit = (item: ContentAgentApi.BatchReportItem) => {
+  const state = reactive({
+    title: item.title || '',
+    body: item.body || '',
+    feedback_text: feedbackDrafts[item.item_id] || '运营人工编辑保存',
+  });
+  Modal.confirm({
+    title: `人工编辑第 ${item.item_no} 条`,
+    width: 820,
+    content: () =>
+      h('div', { class: 'manual-edit-modal' }, [
+        h(Input, {
+          value: state.title,
+          placeholder: '标题',
+          'onUpdate:value': (value: string) => {
+            state.title = value;
+          },
+        }),
+        h(TextArea, {
+          value: state.body,
+          placeholder: '正文',
+          rows: 12,
+          style: 'margin-top: 12px',
+          'onUpdate:value': (value: string) => {
+            state.body = value;
+          },
+        }),
+        h(TextArea, {
+          value: state.feedback_text,
+          placeholder: '编辑说明',
+          rows: 2,
+          style: 'margin-top: 12px',
+          'onUpdate:value': (value: string) => {
+            state.feedback_text = value;
+          },
+        }),
+      ]),
+    async onOk() {
+      if (!state.title.trim() || !state.body.trim()) {
+        message.warning('标题和正文不能为空');
+        return Promise.reject(new Error('empty manual edit'));
+      }
+      reviewingItemId.value = item.item_id;
+      try {
+        const response = await submitBatchItemFeedbackApi(item.item_id, {
+          action: 'manual_edit',
+          title: state.title,
+          body: state.body,
+          feedback_text: state.feedback_text,
+          created_by: currentOperator.value,
+        });
+        replaceReportItem(response.item);
+        await refreshSelectedReport();
+        await loadTrainingFeedbackSamples();
+        message.success('人工编辑已保存');
+      } finally {
+        reviewingItemId.value = null;
+      }
+    },
   });
 };
 
 onMounted(() => {
   loadBatches();
+  loadTrainingFeedbackSamples();
 });
 
 watch(
@@ -238,10 +455,10 @@ watch(
 </script>
 
 <template>
-  <div class="content-agent-result-page p-4">
+  <div class="content-agent-feedback-page p-4">
     <Row :gutter="16">
       <Col :lg="7" :xs="24">
-        <Card title="历史批次" :bordered="false">
+        <Card title="待评价批次" :bordered="false">
           <template #extra>
             <Button size="small" @click="loadBatches">刷新</Button>
           </template>
@@ -265,16 +482,59 @@ watch(
                   #{{ batch.batch_id }} · {{ batch.batch_code || '-' }}
                 </div>
                 <div class="batch-meta">
-                  {{ batch.summary.generated_count }}/{{
-                    batch.summary.total_count
+                  {{ batch.summary.feedback_count }} 条反馈 · 风险
+                  {{
+                    batch.summary.remaining_rewrite_required_count +
+                    batch.summary.similarity_warning_count
                   }}
-                  条 · 红线通过 {{ batch.summary.hard_pass_count }} · 改写
-                  {{ batch.summary.rewrite_item_count }}
                 </div>
               </div>
             </div>
             <div v-if="batchTotal" class="batch-total">
               共 {{ batchTotal }} 个批次
+            </div>
+          </Spin>
+        </Card>
+
+        <Card class="mt-4" title="最近反馈" :bordered="false">
+          <template #extra>
+            <Button
+              size="small"
+              :loading="trainingFeedbackLoading"
+              @click="loadTrainingFeedbackSamples"
+            >
+              刷新
+            </Button>
+          </template>
+          <Spin :spinning="trainingFeedbackLoading">
+            <Empty
+              v-if="trainingFeedbackSamples.length === 0"
+              description="暂无反馈"
+            />
+            <div v-else class="sample-list">
+              <div
+                v-for="sample in trainingFeedbackSamples"
+                :key="sample.feedback_id"
+                class="sample-item"
+              >
+                <Space wrap>
+                  <Tag :color="statusColor(sample.review_status)">
+                    {{ reviewStatusLabel(sample.review_status) }}
+                  </Tag>
+                  <Tag>{{ actionLabel(sample.action) }}</Tag>
+                  <span>{{ sample.title || '未生成标题' }}</span>
+                </Space>
+                <div class="batch-meta">
+                  批次 #{{ sample.batch_id || '-' }} · 第
+                  {{ sample.item_no }} 条 · {{ sample.submitter || 'unknown' }}
+                </div>
+                <div v-if="sample.comment" class="sample-comment">
+                  {{ sample.comment }}
+                </div>
+              </div>
+            </div>
+            <div v-if="trainingFeedbackTotal" class="batch-total">
+              共 {{ trainingFeedbackTotal }} 条反馈
             </div>
           </Spin>
         </Card>
@@ -285,7 +545,7 @@ watch(
           <Card v-if="selectedReport" :bordered="false">
             <template #title>
               <Space>
-                <span>生成结果</span>
+                <span>评价反馈</span>
                 <Tag>
                   {{
                     selectedReport.batch_code || `#${selectedReport.batch_id}`
@@ -297,86 +557,52 @@ watch(
               </Space>
             </template>
             <template #extra>
-              <Space>
-                <Button size="small" @click="goFeedback">去评价</Button>
-                <Button
-                  size="small"
-                  @click="openReport(selectedReport.batch_id)"
-                >
-                  刷新报告
-                </Button>
-              </Space>
+              <Button
+                size="small"
+                @click="openReport(selectedReport.batch_id)"
+              >
+                刷新报告
+              </Button>
             </template>
 
-            <Descriptions :column="2" size="small" bordered>
-              <DescriptionsItem label="主题">
-                {{ selectedReport.product_topic }}
-              </DescriptionsItem>
-              <DescriptionsItem label="资料">
-                {{ selectedReport.asset_key }}
-              </DescriptionsItem>
-              <DescriptionsItem label="人群">
-                {{ selectedReport.target_audience || '-' }}
-              </DescriptionsItem>
-              <DescriptionsItem label="风格">
-                {{ selectedReport.style || '-' }}
-              </DescriptionsItem>
-            </Descriptions>
-
-            <Row v-if="selectedSummary" class="mt-4" :gutter="12">
+            <Row :gutter="12">
               <Col :span="4">
-                <Statistic title="总数" :value="selectedSummary.total_count" />
+                <Statistic title="未评价" :value="feedbackSummary.pending_count" />
+              </Col>
+              <Col :span="4">
+                <Statistic title="已通过" :value="feedbackSummary.approved_count" />
               </Col>
               <Col :span="4">
                 <Statistic
-                  title="已生成"
-                  :value="selectedSummary.generated_count"
+                  title="待修改"
+                  :value="feedbackSummary.needs_revision_count"
                 />
               </Col>
               <Col :span="4">
                 <Statistic
-                  title="红线通过"
-                  :value="selectedSummary.hard_pass_count"
+                  title="人工编辑"
+                  :value="feedbackSummary.manual_edited_count"
                 />
               </Col>
               <Col :span="4">
-                <Statistic
-                  title="自动改写"
-                  :value="selectedSummary.rewrite_item_count"
-                />
+                <Statistic title="风险项" :value="feedbackSummary.risk_count" />
               </Col>
               <Col :span="4">
-                <Statistic
-                  title="待继续改"
-                  :value="selectedSummary.remaining_rewrite_required_count"
-                />
-              </Col>
-              <Col :span="4">
-                <Statistic
-                  title="禁用词命中"
-                  :value="selectedSummary.forbidden_hit_count"
-                />
+                <Statistic title="反馈数" :value="feedbackSummary.feedback_count" />
               </Col>
             </Row>
 
             <Alert
-              v-if="
-                selectedSummary?.forbidden_hit_count ||
-                selectedSummary?.remaining_rewrite_required_count ||
-                selectedSummary?.similarity_warning_count
-              "
               class="mt-4"
-              message="这批内容仍有风险项或相似内容，请优先查看标红和标橙内容。"
+              message="逐条确认内容是否可用；不希望后续出现的词，直接加入业务违禁词。"
               show-icon
-              type="warning"
+              type="info"
             />
 
-            <Divider />
-
-            <List :data-source="selectedItems" item-layout="vertical">
+            <List class="mt-4" :data-source="reviewItems" item-layout="vertical">
               <template #renderItem="{ item }">
                 <ListItem :key="item.item_id">
-                  <Card class="content-card" :bordered="true">
+                  <Card class="feedback-card" :bordered="true">
                     <template #title>
                       <Space wrap>
                         <span>第 {{ item.item_no }} 条</span>
@@ -392,42 +618,19 @@ watch(
                                 : '未知'
                           }}
                         </Tag>
-                        <Tag
-                          v-if="item.rewrite_rounds || item.rewrite_reason"
-                          color="blue"
-                        >
-                          已自动改写
+                        <Tag :color="statusColor(item.review_status || '')">
+                          {{ reviewStatusLabel(item.review_status) }}
                         </Tag>
-                        <Tag v-if="item.forbidden_hits.length > 0" color="red">
+                        <Tag v-if="item.forbidden_hits.length" color="red">
                           禁用词 {{ item.forbidden_hits.join('、') }}
                         </Tag>
-                        <Tag
-                          v-if="item.similarity_warnings?.length"
-                          color="orange"
-                        >
+                        <Tag v-if="item.similarity_warnings?.length" color="orange">
                           疑似趋同 {{ item.similarity_warnings.length }}
-                        </Tag>
-                        <Tag v-if="item.review_status" color="purple">
-                          {{ reviewStatusLabel(item.review_status) }} · v{{
-                            item.latest_version_no || 1
-                          }}
-                        </Tag>
-                        <Tag v-if="item.runtime_mode" color="cyan">
-                          {{ item.runtime_mode }}
-                        </Tag>
-                        <Tag v-if="item.generation_duration_ms">
-                          生文 {{ formatDuration(item.generation_duration_ms) }}
-                        </Tag>
-                        <Tag v-if="item.total_duration_ms">
-                          总耗时 {{ formatDuration(item.total_duration_ms) }}
                         </Tag>
                       </Space>
                     </template>
                     <template #extra>
                       <Space>
-                        <Button size="small" @click="copyArticle(item)">
-                          复制
-                        </Button>
                         <Button
                           v-if="item.trace_run_id || item.run_id"
                           size="small"
@@ -467,9 +670,6 @@ watch(
                             <Tag color="red">
                               {{ rejectSourceLabel(reason.source) }}
                             </Tag>
-                            <span v-if="reason.code" class="reason-code">
-                              {{ reason.code }}
-                            </span>
                             <span>{{ reason.message }}</span>
                             <span v-if="reason.evidence?.length">
                               证据：{{ reason.evidence.join('；') }}
@@ -521,78 +721,52 @@ watch(
                     </Alert>
 
                     <Alert
-                      v-if="item.similarity_warnings?.length"
+                      v-if="item.human_feedback_text"
                       class="mt-3"
-                      type="warning"
+                      :message="`最近反馈：${item.human_feedback_text}`"
                       show-icon
-                    >
-                      <template #message>
-                        <div class="reason-list">
-                          <div
-                            v-for="warning in item.similarity_warnings"
-                            :key="`${item.item_id}-${warning.item_no}-${warning.score}`"
-                            class="inline-info-row"
-                          >
-                            <Tag color="orange">疑似趋同</Tag>
-                            <span>
-                              与{{
-                                warning.scope === 'history' ? '历史批次' : ''
-                              }}第 {{ warning.item_no }} 条正文相似度
-                              {{ Math.round(warning.score * 100) }}%
-                            </span>
-                            <span v-if="warning.batch_code">
-                              批次：{{ warning.batch_code }}
-                            </span>
-                            <span>{{ warning.reason }}</span>
-                          </div>
-                        </div>
-                      </template>
-                    </Alert>
+                      type="success"
+                    />
 
-                    <div class="content-meta mt-3">
-                      <Tag v-if="item.opening_type">
-                        {{ item.opening_type }}
-                      </Tag>
-                      <Tag v-if="item.structure_type">
-                        {{ item.structure_type }}
-                      </Tag>
-                      <Tag v-if="item.content_angle">
-                        {{ item.content_angle }}
-                      </Tag>
-                      <Tag v-if="item.scene_type">
-                        {{ item.scene_type }}
-                      </Tag>
-                      <Tag v-if="item.evidence_type">
-                        {{ item.evidence_type }}
-                      </Tag>
-                      <Tag>字数 {{ item.body_chars }}</Tag>
-                      <Tag>建议 {{ item.suggestion_count }}</Tag>
-                      <Tag>替换 {{ item.replacement_count }}</Tag>
-                      <Tag v-if="item.trace_run_id || item.run_id">
-                        Run #{{ item.trace_run_id || item.run_id }}
-                      </Tag>
-                    </div>
-
-                    <div
-                      v-if="item.trace_stage_calls?.length"
-                      class="trace-stage-list"
-                    >
-                      <span>执行链路</span>
-                      <Tag
-                        v-for="stage in item.trace_stage_calls"
-                        :key="stage.stage_call_id"
-                        :color="
-                          stage.status === 'succeeded'
-                            ? 'green'
-                            : stage.status === 'failed'
-                              ? 'red'
-                              : 'blue'
-                        "
+                    <TextArea
+                      v-model:value="feedbackDrafts[item.item_id]"
+                      class="mt-3"
+                      placeholder="填写修改意见，或说明为什么通过。"
+                      :rows="2"
+                    />
+                    <Space class="mt-2">
+                      <Button
+                        size="small"
+                        type="primary"
+                        :loading="reviewingItemId === item.item_id"
+                        @click="submitFeedback(item, 'approve')"
                       >
-                        {{ stage.capability }} ·
-                        {{ formatDuration(stage.duration_ms) }}
-                      </Tag>
-                    </div>
+                        通过
+                      </Button>
+                      <Button
+                        size="small"
+                        :loading="reviewingItemId === item.item_id"
+                        @click="submitFeedback(item, 'request_revision')"
+                      >
+                        提交修改意见
+                      </Button>
+                      <Button
+                        size="small"
+                        :loading="reviewingItemId === item.item_id"
+                        @click="openManualEdit(item)"
+                      >
+                        人工编辑保存
+                      </Button>
+                      <Button
+                        v-if="item.body"
+                        danger
+                        size="small"
+                        :loading="reviewingItemId === item.item_id"
+                        @click="openBusinessForbiddenTermModal(item)"
+                      >
+                        加入业务违禁词
+                      </Button>
+                    </Space>
                   </Card>
                 </ListItem>
               </template>
@@ -600,7 +774,7 @@ watch(
           </Card>
 
           <Card v-else :bordered="false">
-            <Empty description="暂无生成结果，请先在业务规则页上传规则包并生成" />
+            <Empty description="暂无可评价批次，请先在业务规则页生成内容" />
           </Card>
         </Spin>
       </Col>
@@ -609,17 +783,20 @@ watch(
 </template>
 
 <style scoped>
-.content-agent-result-page {
+.content-agent-feedback-page {
   min-height: 100%;
 }
 
-.batch-list {
+.batch-list,
+.sample-list,
+.reason-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.batch-list-item {
+.batch-list-item,
+.sample-item {
   cursor: pointer;
   border: 1px solid #f0f0f0;
   border-radius: 8px;
@@ -642,14 +819,18 @@ watch(
 }
 
 .batch-meta,
-.batch-total,
-.content-meta {
+.batch-total {
   color: #666;
   font-size: 12px;
   margin-top: 4px;
 }
 
-.content-card {
+.sample-comment {
+  color: #444;
+  margin-top: 6px;
+}
+
+.feedback-card {
   width: 100%;
 }
 
@@ -659,32 +840,11 @@ watch(
   color: #262626;
 }
 
-.reason-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .inline-info-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-}
-
-.reason-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  color: #a8071a;
-}
-
-.trace-stage-list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  color: #666;
-  font-size: 12px;
 }
 
 .trace-modal {

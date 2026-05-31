@@ -2343,7 +2343,6 @@ watch(
             <p>创建生文任务的完整流程如下：</p>
             <ol class="guide-steps">
               <li><strong>上传业务规则</strong> - 在业务规则页上传活动规则包</li>
-              <li><strong>维护系统提示词关键词</strong> - 配置可扩展的提示词维度和语料</li>
               <li>
                 <strong>创建 Agent</strong> - 选择一个 Agent 模板，创建或复制
                 Agent
@@ -2360,12 +2359,6 @@ watch(
                   @click="router.push('/business-rules')"
                 >
                   前往业务规则
-                </Button>
-                <Button
-                  size="small"
-                  @click="router.push('/content-agent/system-prompt-keywords')"
-                >
-                  前往系统提示词关键词
                 </Button>
                 <Button size="small" @click="router.push('/agent/workbench')">
                   前往 Agent 工作台

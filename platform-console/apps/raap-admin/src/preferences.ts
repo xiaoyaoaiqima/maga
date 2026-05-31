@@ -12,7 +12,7 @@ export const overridesPreferences = defineOverridesPreferences({
     // 侧边栏菜单/Tab 由前端路由配置控制，避免依赖后端 sys_menu 漏配导致入口消失
     accessMode: 'frontend',
     // 默认首页
-    defaultHomePath: '/content-agent/workbench',
+    defaultHomePath: '/business-rules',
     // 默认开启水印
     watermark: true,
   },

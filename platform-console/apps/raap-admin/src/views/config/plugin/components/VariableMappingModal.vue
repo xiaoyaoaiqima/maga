@@ -304,7 +304,7 @@ async function submitQuickCreateStrategy() {
 
 // 跳转到新链路配置页面
 function goToStrategyManagement() {
-  router.push('/content-agent/system-prompt-keywords');
+  router.push('/business-rules');
 }
 
 // 获取策略中某维度的节点数量
@@ -453,7 +453,7 @@ watch(selectedStrategyId, () => {
               class="strategy-manage-link"
               @click="goToStrategyManagement"
             >
-              策略管理 →
+              业务规则 →
             </Button>
           </div>
           <div class="strategy-select-row">
@@ -667,7 +667,7 @@ watch(selectedStrategyId, () => {
         <span>
           快速创建的策略不包含维度配置，创建后请在
           <Button type="link" size="small" @click="goToStrategyManagement">
-            策略管理页面
+            业务规则页面
           </Button>
           完善维度和节点池配置。
         </span>

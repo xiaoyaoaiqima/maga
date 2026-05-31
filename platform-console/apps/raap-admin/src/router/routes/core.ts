@@ -75,20 +75,10 @@ const coreRoutes: RouteRecordRaw[] = [
         path: 'content-agent/workbench',
         component: () => import('#/views/content-agent/workbench/index.vue'),
         meta: {
-          title: '内容生成',
+          title: '生成结果',
           icon: 'RobotOutlined',
           order: -99,
           activeMenu: '/content-agent/workbench',
-        },
-      },
-      {
-        name: 'MagaAssetTraining',
-        path: 'assets/training',
-        component: () => import('#/views/assets/training/index.vue'),
-        meta: {
-          title: '资料训练',
-          icon: 'DatabaseOutlined',
-          activeMenu: '/assets/training',
         },
       },
       {
@@ -102,54 +92,13 @@ const coreRoutes: RouteRecordRaw[] = [
         },
       },
       {
-        name: 'SystemPromptKeywords',
-        path: 'content-agent/system-prompt-keywords',
-        component: () =>
-          import('#/views/content-agent/system-prompt-keywords/index.vue'),
+        name: 'ContentAgentFeedback',
+        path: 'content-agent/feedback',
+        component: () => import('#/views/content-agent/feedback/index.vue'),
         meta: {
-          title: '系统提示词关键词',
-          icon: 'DatabaseOutlined',
-          activeMenu: '/content-agent/system-prompt-keywords',
-        },
-      },
-      {
-        name: 'ReferenceElementExtractor',
-        path: 'assets/reference-elements',
-        component: () => import('#/views/assets/reference-elements/index.vue'),
-        meta: {
-          title: '例文抽取',
-          icon: 'DatabaseOutlined',
-          activeMenu: '/assets/reference-elements',
-        },
-      },
-      {
-        name: 'DashboardRlhf',
-        path: 'dashboard/rlhf',
-        component: () => import('#/views/dashboard/rlhf/index.vue'),
-        meta: {
-          title: '反馈训练',
+          title: '评价反馈',
           icon: 'LineChartOutlined',
-          activeMenu: '/dashboard/rlhf',
-        },
-      },
-      {
-        name: 'ExpertPromptOptimizer',
-        path: 'expert/prompt-optimizer',
-        component: () => import('#/views/expert/prompt-optimizer/index.vue'),
-        meta: {
-          title: '提示词优化',
-          icon: 'RobotOutlined',
-          activeMenu: '/expert/prompt-optimizer',
-        },
-      },
-      {
-        name: 'MagaModelManagement',
-        path: 'llm/provider',
-        component: () => import('#/views/llm/provider/index.vue'),
-        meta: {
-          title: '模型管理',
-          icon: 'RobotOutlined',
-          activeMenu: '/llm/provider',
+          activeMenu: '/content-agent/feedback',
         },
       },
       {
