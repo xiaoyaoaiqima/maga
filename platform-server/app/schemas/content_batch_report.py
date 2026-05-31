@@ -249,6 +249,8 @@ class ContentTrainingFeedbackSampleListResponse(BaseSchema):
 class ContentBatchItemFeedbackRequest(BaseSchema):
     action: Literal["approve", "request_revision", "manual_edit", "accept_rewrite", "reject_rewrite"]
     feedback_text: str | None = Field(default=None, max_length=4000)
+    quoted_text: str | None = Field(default=None, max_length=2000)
+    feedback_categories: list[str] = Field(default_factory=list)
     title: str | None = Field(default=None, max_length=255)
     body: str | None = Field(default=None, max_length=20000)
     created_by: str | None = Field(default=None, max_length=100)

@@ -290,6 +290,8 @@ export namespace ContentAgentApi {
   export interface BatchItemFeedbackRequest {
     action: BatchItemFeedbackAction;
     feedback_text?: null | string;
+    feedback_categories?: string[];
+    quoted_text?: null | string;
     title?: null | string;
     body?: null | string;
     created_by?: null | string;

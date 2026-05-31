@@ -61,6 +61,15 @@ _ASSET_RULE_DOMAIN_PATTERNS = [
     r"提及",
     r"宣称",
 ]
+_FEEDBACK_CATEGORY_LABELS = {
+    "unnatural": "不自然/生硬",
+    "too_long": "太长/啰嗦",
+    "too_ad_like": "广告感太强",
+    "fact_issue": "信息不准确",
+    "tone_mismatch": "语气不对",
+    "forbidden_term": "有违禁词",
+    "rule_mismatch": "不符合业务规则",
+}
 
 
 class ContentBatchReviewService:
@@ -88,12 +97,14 @@ class ContentBatchReviewService:
 
         previous_title = item.title
         previous_body = item.body
+        quoted_text = _normalize_quoted_text(request.quoted_text)
+        feedback_categories = _normalize_feedback_categories(request.feedback_categories)
         review_status = _ACTION_STATUS[request.action]
         auto_rewrite_requested = request.auto_rewrite and request.action == "request_revision"
         if request.auto_rewrite and request.action != "request_revision":
             raise ValueError("auto rewrite only supports request_revision feedback")
-        if auto_rewrite_requested and not (request.feedback_text or "").strip():
-            raise ValueError("auto rewrite requires feedback_text")
+        if auto_rewrite_requested and not (request.feedback_text or "").strip() and not feedback_categories:
+            raise ValueError("auto rewrite requires feedback_text or feedback_categories")
 
         if request.action == "manual_edit":
             if not (request.title and request.title.strip()) or not (request.body and request.body.strip()):
@@ -111,6 +122,8 @@ class ContentBatchReviewService:
                 "action": request.action,
                 "review_status": review_status,
                 "feedback_text": request.feedback_text,
+                "quoted_text": quoted_text,
+                "feedback_categories": feedback_categories,
                 "created_by": request.created_by,
             }
         )
@@ -119,6 +132,10 @@ class ContentBatchReviewService:
 
         next_version_no = await self._next_version_no(item_id)
         version_metadata = {"batch_id": item.batch_id, "item_no": item.item_no}
+        if quoted_text:
+            version_metadata["quoted_text"] = quoted_text
+        if feedback_categories:
+            version_metadata["feedback_categories"] = feedback_categories
         if request.action == "manual_edit":
             version_metadata["previous_content"] = {
                 "title": previous_title,
@@ -145,6 +162,7 @@ class ContentBatchReviewService:
             run_id=item.run_id,
             action=request.action,
             review_status=review_status,
+            quoted_text=quoted_text,
             comment=request.feedback_text,
             submitter=request.created_by,
             metadata_json={
@@ -152,6 +170,7 @@ class ContentBatchReviewService:
                 "source": "content_batch_workbench",
                 "manual_edit": request.action == "manual_edit",
                 "auto_rewrite_requested": auto_rewrite_requested,
+                "feedback_categories": feedback_categories,
             },
         )
         self.db.add(feedback)
@@ -169,6 +188,8 @@ class ContentBatchReviewService:
                     "item_no": item.item_no,
                     "feedback_id": feedback.id,
                     "version_id": version.id,
+                    "quoted_text": quoted_text,
+                    "feedback_categories": feedback_categories,
                 },
             )
             metadata_patch = {
@@ -344,7 +365,13 @@ class ContentBatchReviewService:
         content_type = _content_type_for_item(item)
         previous_content = _previous_content_for_item(item, content_type=content_type)
         output_fields = ["comment"] if content_type == "comment" else ["title", "body"]
-        rewrite_instructions = _operator_rewrite_instructions(request.feedback_text)
+        quoted_text = _normalize_quoted_text(request.quoted_text)
+        feedback_categories = _normalize_feedback_categories(request.feedback_categories)
+        rewrite_instructions = _operator_rewrite_instructions(
+            request.feedback_text,
+            quoted_text=quoted_text,
+            feedback_categories=feedback_categories,
+        )
         input_payload = {
             "rewrite_source": "operator_feedback",
             "previous_content": previous_content,
@@ -354,6 +381,8 @@ class ContentBatchReviewService:
             "selected_keywords": _selected_keywords_from_item(item),
             "forbidden_hits": [],
             "operator_feedback": request.feedback_text,
+            "quoted_text": quoted_text,
+            "feedback_categories": feedback_categories,
             "review_report": {
                 "hard_results": [],
                 "soft_scores": [],
@@ -361,6 +390,8 @@ class ContentBatchReviewService:
                 "rewrite_required": True,
                 "rewrite_reason": "operator_feedback",
                 "operator_feedback": request.feedback_text,
+                "quoted_text": quoted_text,
+                "feedback_categories": feedback_categories,
             },
             "rewrite_round": _current_rewrite_round(item) + 1,
             "rewrite_instructions": rewrite_instructions,
@@ -394,6 +425,8 @@ class ContentBatchReviewService:
         human_review["auto_rewrite"] = {
             "source": "operator_feedback",
             "feedback_text": request.feedback_text,
+            "quoted_text": quoted_text,
+            "feedback_categories": feedback_categories,
             "source_version_id": source_version.id,
             "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
         }
@@ -426,6 +459,8 @@ class ContentBatchReviewService:
                 "source": "operator_feedback_auto_rewrite",
                 "source_version_id": source_version.id,
                 "feedback_id": feedback.id,
+                "quoted_text": quoted_text,
+                "feedback_categories": feedback_categories,
                 "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
             },
         )
@@ -607,15 +642,28 @@ def _selected_keywords_from_item(item: ContentBatchItem) -> list[Any]:
     return []
 
 
-def _operator_rewrite_instructions(feedback_text: str | None) -> list[str]:
+def _operator_rewrite_instructions(
+    feedback_text: str | None,
+    *,
+    quoted_text: str | None = None,
+    feedback_categories: list[str] | None = None,
+) -> list[str]:
     feedback = (feedback_text or "").strip()
+    categories = _normalize_feedback_categories(feedback_categories)
     instructions = [
         "这是运营反馈改写，不是违禁词替换；先理解反馈意图，再重写相关短句。",
-        f"运营反馈原文：{feedback}",
         "不要只做同义替换、调换语序或把生硬表达换成另一句生硬表达。",
         "这里的“只改必要位置”指被反馈影响的一整句或相邻短句，不是词级替换。",
         "保留原业务规则、内容类型和评论区语气；改完要像真实妈妈顺手说的话。",
     ]
+    if feedback:
+        instructions.append(f"运营反馈原文：{feedback}")
+    if quoted_text:
+        instructions.append(f"运营圈选的原文片段：{quoted_text}")
+        instructions.append("优先处理圈选片段所在的一整句；如果只改圈选片段仍不自然，可以重写相邻短句。")
+    if categories:
+        labels = [_FEEDBACK_CATEGORY_LABELS.get(category, category) for category in categories]
+        instructions.append("运营选择的问题类型：" + "、".join(labels))
     quoted_terms = _quoted_feedback_terms(feedback)
     if quoted_terms:
         instructions.append(
@@ -629,8 +677,37 @@ def _operator_rewrite_instructions(feedback_text: str | None) -> list[str]:
         instructions.append("反馈指向长度问题：在不丢核心信息的前提下压缩句子，少用解释性铺垫。")
     if re.search(r"广告|营销|口播|种草感|推销", feedback):
         instructions.append("反馈指向营销感问题：降低推荐口吻，改成个人观察或轻交流。")
+    # 结构化问题类型用于稳定约束改写方向，避免模型只盯着自由文本做机械替换。
+    if "unnatural" in categories:
+        instructions.append("问题类型是不自然/生硬：优先把表达改得更像评论区顺手说话，少用书面观察句。")
+    if "too_long" in categories:
+        instructions.append("问题类型是太长/啰嗦：压缩表达，保留核心意思，少解释。")
+    if "too_ad_like" in categories:
+        instructions.append("问题类型是广告感太强：降低推荐和卖点堆叠，改成个人轻反馈。")
+    if "fact_issue" in categories:
+        instructions.append("问题类型是信息不准确：不要新增事实，拿不准的表述改得更克制。")
+    if "tone_mismatch" in categories:
+        instructions.append("问题类型是语气不对：贴近当前内容类型和人设，避免讲课感。")
+    if "rule_mismatch" in categories:
+        instructions.append("问题类型是不符合业务规则：重新对齐业务规则，不额外扩展无关卖点。")
+    if "forbidden_term" in categories:
+        instructions.append("问题类型是有违禁词：自然避开被反馈的风险表达，不要换成同类强功效词。")
     instructions.append("不要解释改写过程，只返回改写后的内容。")
     return instructions
+
+
+def _normalize_feedback_categories(values: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    for value in values or []:
+        code = str(value or "").strip()
+        if code in _FEEDBACK_CATEGORY_LABELS and code not in normalized:
+            normalized.append(code)
+    return normalized
+
+
+def _normalize_quoted_text(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    return text[:2000] if text else None
 
 
 def _quoted_feedback_terms(feedback: str) -> list[str]:

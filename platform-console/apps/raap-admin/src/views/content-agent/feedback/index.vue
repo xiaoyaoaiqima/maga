@@ -49,7 +49,19 @@ const trainingFeedbackSamples = ref<ContentAgentApi.TrainingFeedbackSample[]>(
   [],
 );
 const trainingFeedbackTotal = ref(0);
+const feedbackCategorySelections = reactive<Record<number, string[]>>({});
 const feedbackDrafts = reactive<Record<number, string>>({});
+const feedbackQuotedTexts = reactive<Record<number, string>>({});
+
+const feedbackCategoryOptions = [
+  { code: 'unnatural', label: '不自然' },
+  { code: 'too_long', label: '太长' },
+  { code: 'too_ad_like', label: '广告感' },
+  { code: 'fact_issue', label: '信息不准' },
+  { code: 'tone_mismatch', label: '语气不对' },
+  { code: 'rule_mismatch', label: '不符规则' },
+  { code: 'forbidden_term', label: '违禁词' },
+];
 
 const currentOperator = computed(
   () =>
@@ -148,6 +160,16 @@ const defaultFeedbackText = (
 
 const hasPendingAutoRewrite = (item: ContentAgentApi.BatchReportItem) =>
   item.version_compare?.compare_type === 'auto_rewrite';
+
+const selectedFeedbackCategories = (itemId: number) =>
+  feedbackCategorySelections[itemId] || [];
+
+const toggleFeedbackCategory = (itemId: number, code: string) => {
+  const selected = selectedFeedbackCategories(itemId);
+  feedbackCategorySelections[itemId] = selected.includes(code)
+    ? selected.filter((item) => item !== code)
+    : [...selected, code];
+};
 
 const rejectSourceLabel = (source?: string) => {
   if (source === 'hard_review') return '硬性审核';
@@ -310,8 +332,13 @@ const submitFeedback = async (
   options: { autoRewrite?: boolean } = {},
 ) => {
   const feedbackText = feedbackDrafts[item.item_id] || '';
-  if (action === 'request_revision' && !feedbackText.trim()) {
-    message.warning('请先填写修改意见');
+  const feedbackCategories = selectedFeedbackCategories(item.item_id);
+  if (
+    action === 'request_revision' &&
+    !feedbackText.trim() &&
+    feedbackCategories.length === 0
+  ) {
+    message.warning('请先填写修改意见，或选择一个问题类型');
     return;
   }
 
@@ -322,6 +349,8 @@ const submitFeedback = async (
       title: item.title,
       body: item.body,
       feedback_text: feedbackText || defaultFeedbackText(action),
+      feedback_categories: feedbackCategories,
+      quoted_text: feedbackQuotedTexts[item.item_id],
       created_by: currentOperator.value,
       auto_rewrite: options.autoRewrite,
     });
@@ -341,7 +370,21 @@ const submitFeedback = async (
 const selectedText = () => {
   const selection = window.getSelection?.();
   const value = selection?.toString().trim() || '';
-  return value.length <= 100 ? value : '';
+  return value.length <= 200 ? value : value.slice(0, 200);
+};
+
+const captureSelectedQuote = (item: ContentAgentApi.BatchReportItem) => {
+  const quote = selectedText();
+  if (!quote) {
+    message.warning('请先在正文里选中需要反馈的片段');
+    return;
+  }
+  feedbackQuotedTexts[item.item_id] = quote;
+  message.success('已带入选中片段');
+};
+
+const clearQuotedText = (itemId: number) => {
+  delete feedbackQuotedTexts[itemId];
 };
 
 const openBusinessForbiddenTermModal = (
@@ -807,6 +850,47 @@ watch(
                       </Button>
                     </Space>
 
+                    <div class="feedback-tools mt-3">
+                      <div class="feedback-tool-row">
+                        <span class="feedback-tool-label">问题类型</span>
+                        <Space wrap>
+                          <Button
+                            v-for="option in feedbackCategoryOptions"
+                            :key="option.code"
+                            size="small"
+                            :type="
+                              selectedFeedbackCategories(item.item_id).includes(
+                                option.code,
+                              )
+                                ? 'primary'
+                                : 'default'
+                            "
+                            @click="
+                              toggleFeedbackCategory(item.item_id, option.code)
+                            "
+                          >
+                            {{ option.label }}
+                          </Button>
+                        </Space>
+                      </div>
+                      <div class="feedback-tool-row">
+                        <span class="feedback-tool-label">引用片段</span>
+                        <Button
+                          size="small"
+                          @click="captureSelectedQuote(item)"
+                        >
+                          带入选中片段
+                        </Button>
+                        <Tag
+                          v-if="feedbackQuotedTexts[item.item_id]"
+                          closable
+                          @close="clearQuotedText(item.item_id)"
+                        >
+                          {{ feedbackQuotedTexts[item.item_id] }}
+                        </Tag>
+                      </div>
+                    </div>
+
                     <TextArea
                       v-model:value="feedbackDrafts[item.item_id]"
                       class="mt-3"
@@ -928,6 +1012,29 @@ watch(
   white-space: pre-wrap;
   line-height: 1.8;
   color: #262626;
+}
+
+.feedback-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.feedback-tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.feedback-tool-label {
+  flex: 0 0 64px;
+  color: #8c8c8c;
+  font-size: 12px;
 }
 
 .inline-info-row {

@@ -413,6 +413,8 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
         json={
             "action": "request_revision",
             "feedback_text": "开头再具体一点，少一点总结腔。",
+            "quoted_text": "原正文比较总结。",
+            "feedback_categories": ["unnatural", "too_ad_like", "unknown"],
             "auto_rewrite": True,
             "created_by": "reviewer-a",
         },
@@ -453,9 +455,15 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
     rewrite_input = rewrite_stage.input_snapshot or {}
     rewrite_instructions = "\n".join(rewrite_input.get("rewrite_instructions") or [])
     assert rewrite_input["rewrite_source"] == "operator_feedback"
+    assert rewrite_input["quoted_text"] == "原正文比较总结。"
+    assert rewrite_input["feedback_categories"] == ["unnatural", "too_ad_like"]
     assert rewrite_input["model_config"]["temperature"] >= 0.55
     assert "不是违禁词替换" in rewrite_instructions
     assert "不要只做同义替换" in rewrite_instructions
+    assert "运营圈选的原文片段：原正文比较总结。" in rewrite_instructions
+    assert "不自然/生硬" in rewrite_instructions
+    assert feedback.quoted_text == "原正文比较总结。"
+    assert feedback.metadata_json["feedback_categories"] == ["unnatural", "too_ad_like"]
 
 
 @pytest.mark.asyncio
