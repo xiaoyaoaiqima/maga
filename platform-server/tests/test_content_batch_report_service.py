@@ -14,6 +14,7 @@ from app.models.content_agent import (
     ContentBatchJob,
     ContentFeedback,
 )
+from app.models.maga_assets import AssetRegistry
 from app.services.content_batch_report_service import ContentBatchReportService
 
 
@@ -30,6 +31,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
                 ContentFeedback.__table__,
                 ContentAgentStageCall.__table__,
                 ContentAgentRun.__table__,
+                AssetRegistry.__table__,
             ],
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -162,6 +164,20 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
                 submitter="reviewer-a",
             )
         )
+        session.add(
+            AssetRegistry(
+                asset_type="business_forbidden_terms",
+                asset_key="yuanyue",
+                display_name="源悦业务违禁词",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "schema_version": "1",
+                    "terms": [{"term": "医生", "enabled": True}],
+                },
+            )
+        )
         await session.commit()
 
         report = await ContentBatchReportService(session).get_batch_report(job.id)
@@ -212,3 +228,6 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
     assert rejected.reject_reasons[0].code == "compliance_redline"
     assert rejected.reject_reasons[0].message == "命中硬性审核红线：医生"
     assert rejected.reject_reasons[0].evidence == ["医生"]
+    assert rejected.forbidden_hits == ["医生"]
+    assert rejected.reject_reasons[1].source == "forbidden_term"
+    assert rejected.reject_reasons[1].message == "命中禁用词：医生"

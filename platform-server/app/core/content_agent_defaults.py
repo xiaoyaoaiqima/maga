@@ -47,6 +47,7 @@ COMMENT_CAPABILITY_SPECS = [
 
 CONTENT_CAPABILITY_SPECS = [
     {"capability": "content.generate", "schema_version": "1"},
+    {"capability": "content.rewrite", "schema_version": "1"},
 ]
 
 MAGA_WORKER_MANIFEST_CAPABILITY_SPECS = [

@@ -569,6 +569,71 @@ const submitFeedback = async (
   }
 };
 
+const selectedText = () => {
+  const selection = window.getSelection?.();
+  const value = selection?.toString().trim() || '';
+  return value.length <= 100 ? value : '';
+};
+
+const openBusinessForbiddenTermModal = (
+  item: ContentAgentApi.BatchReportItem,
+) => {
+  const state = reactive({
+    term: selectedText(),
+  });
+  Modal.confirm({
+    title: `加入业务违禁词`,
+    width: 520,
+    okText: '加入',
+    cancelText: '取消',
+    content: () =>
+      h('div', { class: 'business-forbidden-term-modal' }, [
+        h(Input, {
+          value: state.term,
+          placeholder: '输入不希望后续内容再出现的词',
+          maxlength: 100,
+          allowClear: true,
+          'onUpdate:value': (value: string) => {
+            state.term = value;
+          },
+        }),
+        h(
+          'div',
+          { class: 'business-forbidden-term-hint' },
+          '会保存到当前业务规则包的违禁词里，并刷新这篇内容的风险命中。',
+        ),
+      ]),
+    async onOk() {
+      const term = state.term.trim();
+      if (!term) {
+        message.warning('请先输入业务违禁词');
+        return Promise.reject(new Error('empty business forbidden term'));
+      }
+      reviewingItemId.value = item.item_id;
+      try {
+        const response = await submitBatchItemFeedbackApi(item.item_id, {
+          action: 'request_revision',
+          title: item.title,
+          body: item.body,
+          feedback_text: `加入业务违禁词：${term}`,
+          business_forbidden_terms: [term],
+          created_by: formState.created_by,
+        });
+        replaceReportItem(response.item);
+        if (selectedReport.value) {
+          selectedReport.value = await getContentBatchReportApi(
+            selectedReport.value.batch_id,
+          );
+        }
+        await loadTrainingFeedbackSamples();
+        message.success(`已加入业务违禁词：${term}`);
+      } finally {
+        reviewingItemId.value = null;
+      }
+    },
+  });
+};
+
 const openManualEdit = (item: ContentAgentApi.BatchReportItem) => {
   const state = reactive({
     title: item.title || '',
@@ -1032,6 +1097,15 @@ watch(
                               复制
                             </Button>
                             <Button
+                              v-if="item.body"
+                              danger
+                              size="small"
+                              :loading="reviewingItemId === item.item_id"
+                              @click="openBusinessForbiddenTermModal(item)"
+                            >
+                              加入违禁词
+                            </Button>
+                            <Button
                               v-if="item.trace_run_id || item.run_id"
                               size="small"
                               @click="showTrace(item)"
@@ -1441,6 +1515,15 @@ watch(
                         >
                           人工编辑保存
                         </Button>
+                        <Button
+                          v-if="item.body"
+                          danger
+                          size="small"
+                          :loading="reviewingItemId === item.item_id"
+                          @click="openBusinessForbiddenTermModal(item)"
+                        >
+                          加入业务违禁词
+                        </Button>
                       </Space>
                     </div>
                   </div>
@@ -1479,6 +1562,13 @@ watch(
 .comment-rule-warnings {
   margin-top: 8px;
   color: #ad6800;
+  line-height: 1.6;
+}
+
+.business-forbidden-term-hint {
+  margin-top: 8px;
+  color: #666;
+  font-size: 12px;
   line-height: 1.6;
 }
 

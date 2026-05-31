@@ -107,6 +107,41 @@ async def test_unified_generation_splits_article_and_comment_instructions(unifie
 
 
 @pytest.mark.asyncio
+async def test_unified_generation_does_not_put_business_forbidden_terms_in_prompt(unified_session_factory):
+    async with unified_session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type="business_forbidden_terms",
+                asset_key="yuanyue_comment_activity",
+                display_name="源悦评论业务违禁词",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "schema_version": "1",
+                    "terms": [{"term": "绝对好", "enabled": True}],
+                },
+            )
+        )
+        await session.commit()
+
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="comment",
+            business_rule={
+                "asset_key": "yuanyue_comment_activity",
+                "rule_type": "comment_angle",
+                "comment_angle": "整体适应",
+            },
+            item_no=1,
+            output_fields=["comment"],
+        )
+
+    assert "business_forbidden_terms" not in snapshot.input_snapshot
+    assert "business_forbidden_terms" not in snapshot.asset_refs
+    assert "绝对好" not in snapshot.input_snapshot["rendered_prompt"]
+
+
+@pytest.mark.asyncio
 async def test_unified_generation_handles_extensible_keyword_categories(unified_session_factory):
     async with unified_session_factory() as session:
         session.add(

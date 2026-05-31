@@ -15,6 +15,7 @@ from app.schemas.content_agent import ContentAgentTaskCreate
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.content_batch_snapshot_adapter import build_xhs_generation_snapshot_from_plan
 from app.services.executor_invocation_service import ExecutorInvocationClient
+from app.services.forbidden_term_review_service import ForbiddenTermReviewService
 from app.services.prompt_bundle_service import PromptBundleService
 
 SIMILARITY_REWRITE_THRESHOLD = 0.42
@@ -187,6 +188,13 @@ class ContentBatchExecutionService:
                     "evidence_type": diversity_slot.get("evidence_type"),
                     "forbidden_overlap_group": diversity_slot.get("forbidden_overlap_group"),
                 }
+                await ForbiddenTermReviewService(db).review_and_rewrite_item(
+                    item=item,
+                    asset_key=item.plan_json.get("asset_key"),
+                    orchestrator=orchestrator,
+                    executor_code=self.executor_code,
+                    content_type="article",
+                )
                 item.error_message = None
                 await db.commit()
                 return _ItemExecutionResult(item_id=item_id, generated=True, failed=False)

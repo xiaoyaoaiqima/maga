@@ -217,6 +217,7 @@ export namespace ContentAgentApi {
     title?: null | string;
     body?: null | string;
     created_by?: null | string;
+    business_forbidden_terms?: string[];
   }
 
   export interface BatchItemFeedbackResponse {

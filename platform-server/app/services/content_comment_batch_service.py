@@ -19,6 +19,7 @@ from app.services.comment_angle_rule_service import (
 )
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.executor_invocation_service import ExecutorInvocationClient
+from app.services.forbidden_term_review_service import ForbiddenTermReviewService
 from app.services.unified_content_generation_service import (
     CONTENT_GENERATE_CAPABILITY,
     UnifiedContentGenerationService,
@@ -258,6 +259,13 @@ class ContentCommentBatchService:
                     "comment_angle": (item.plan_json or {}).get("comment_angle"),
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                 }
+                await ForbiddenTermReviewService(db).review_and_rewrite_item(
+                    item=item,
+                    asset_key=(item.plan_json or {}).get("asset_key"),
+                    orchestrator=orchestrator,
+                    executor_code=self.executor_code,
+                    content_type="comment",
+                )
                 item.error_message = None
                 await db.commit()
                 return True

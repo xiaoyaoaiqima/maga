@@ -257,6 +257,8 @@ class MockExecutorInvocationClient:
             }
         elif capability == "content.generate":
             output = _mock_unified_content_generation(input_payload)
+        elif capability == "content.rewrite":
+            output = _mock_content_rewrite(input_payload)
         elif capability == "comment.generate":
             output = {
                 "comment": _mock_comment_from_rule(input_payload),
@@ -308,6 +310,48 @@ def _mock_unified_content_generation(input_payload: dict[str, Any]) -> dict[str,
             "expert_config_code": ((input_payload.get("expert") or {}).get("expert_config_code")),
         },
     }
+
+
+def _mock_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
+    previous = input_payload.get("previous_content") or input_payload.get("previous_draft") or {}
+    if not isinstance(previous, dict):
+        previous = {}
+    hits = [str(value).strip() for value in input_payload.get("forbidden_hits") or [] if str(value).strip()]
+    output_fields = input_payload.get("output_fields") or []
+    if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
+        comment = _mock_remove_terms(str(previous.get("comment") or previous.get("body") or ""), hits)
+        return {
+            "comment": comment or "这个点我也在关注，想看看大家真实反馈。",
+            "runtime_result": {
+                "mode": "content_rewrite_fake",
+                "fake": True,
+                "reason": "mock_executor",
+            },
+        }
+    title = _mock_remove_terms(str(previous.get("title") or ""), hits) or "改写后标题"
+    body = _mock_remove_terms(str(previous.get("body") or ""), hits) or "改写后正文"
+    return {
+        "title": title,
+        "body": body,
+        "final": {"title": title, "body": body},
+        "runtime_result": {
+            "mode": "content_rewrite_fake",
+            "fake": True,
+            "reason": "mock_executor",
+        },
+    }
+
+
+def _mock_remove_terms(value: str, hits: list[str]) -> str:
+    text = value
+    for term in hits:
+        text = text.replace(term, "")
+    while "  " in text:
+        text = text.replace("  ", " ")
+    for duplicate in ["、、", "，，", "。。", "；；"]:
+        while duplicate in text:
+            text = text.replace(duplicate, duplicate[0])
+    return text.strip(" ，。；、")
 
 
 def _selected_keyword_name(selected_keywords: list[dict[str, Any]], category_code: str) -> str | None:

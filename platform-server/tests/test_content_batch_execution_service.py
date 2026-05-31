@@ -117,6 +117,78 @@ async def test_batch_execution_generates_first_n_items_and_links_runs():
     assert len(stage_calls) >= 8
 
 
+@pytest.mark.asyncio
+async def test_batch_execution_rewrites_business_forbidden_terms():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add(
+            ExecutorRegistry(
+                executor_code="hermes_maga_worker",
+                executor_type="hermes_profile",
+                display_name="Hermes MAGA worker",
+                invoke_url="mock://maga-worker/invoke",
+                enabled=1,
+                config_json={},
+            )
+        )
+        session.add(
+            AssetRegistry(
+                asset_type="business_forbidden_terms",
+                asset_key="yuanyue",
+                display_name="源悦业务违禁词",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "schema_version": "1",
+                    "terms": [{"term": "源悦", "enabled": True}],
+                },
+            )
+        )
+        job = ContentBatchJob(
+            batch_code="batch_forbidden_rewrite",
+            asset_key="yuanyue",
+            product_topic="宝宝便便不规律",
+            target_audience="新手妈妈",
+            style="经验老道型",
+            count=1,
+            status="planned",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(ContentBatchItem(batch_id=job.id, item_no=1, status="planned", plan_json=_plan(1)))
+        await session.commit()
+
+        service = ContentBatchExecutionService(
+            session,
+            invocation_client=MockExecutorInvocationClient(),
+            callback_base_url="http://maga.test/api/v1/executor",
+        )
+        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
+        await session.commit()
+
+    assert result.generated_count == 1
+    async with session_factory() as session:
+        item = (await session.execute(select(ContentBatchItem))).scalar_one()
+        stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
+
+    assert "源悦" not in f"{item.title}\n{item.body}"
+    forbidden_review = item.quality_json["forbidden_terms_review"]
+    assert forbidden_review["initial_hits"] == ["源悦"]
+    assert forbidden_review["final_hits"] == []
+    assert forbidden_review["rewrite_rounds"] == 1
+    assert item.quality_json["review_report"]["hard_results"][-1]["ae_code"] == "forbidden_terms_guard"
+    assert item.quality_json["review_report"]["hard_results"][-1]["pass"] is True
+    assert any(stage.capability == "content.rewrite" for stage in stage_calls)
+
+
 class RuntimeFastDraftReviewClient:
     async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
         capability = envelope.get("capability")

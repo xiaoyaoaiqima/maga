@@ -30,6 +30,7 @@ MVP_XHS_CAPABILITIES = [
     "xhs.review_and_rewrite",
 ]
 REWRITE_XHS_CAPABILITY = "xhs.rewrite_draft"
+CONTENT_REWRITE_CAPABILITY = "content.rewrite"
 
 
 class ContentAgentInvokeError(RuntimeError):
@@ -207,6 +208,61 @@ class ContentAgentOrchestrator:
         await self.db.refresh(run)
         return MvpGenerationResult(run=run, final_content=final_content, stage_calls=[stage_call])
 
+    async def run_content_rewrite_stage(
+        self,
+        *,
+        run_id: int,
+        executor_code: str | None,
+        input_payload: dict[str, Any],
+    ) -> SingleCapabilityResult:
+        executor = await self._require_executor(executor_code)
+        if not executor.invoke_url:
+            raise ValueError("executor invoke_url is required")
+        run = await self.db.get(ContentAgentRun, run_id)
+        if not run:
+            raise ValueError("content agent run not found")
+
+        # 违禁词审核由 MAGA 控制，模型改写只作为同一 run 下追加的执行痕迹。
+        run.status = "running"
+        run.status_substate = f"running.{CONTENT_REWRITE_CAPABILITY}"
+        run.finished_at = None
+        await self.db.flush()
+
+        stage_call = await self.service.create_stage_call(
+            run.id,
+            ContentAgentStageCallCreate(
+                capability=CONTENT_REWRITE_CAPABILITY,
+                schema_version=FIRST_XHS_SCHEMA_VERSION,
+                invoke_mode="sync",
+                input_snapshot=input_payload,
+            ),
+        )
+        try:
+            stage_call, invoke_result = await self._invoke_and_record_stage(executor, run, stage_call)
+        except ContentAgentInvokeError:
+            await self.service.complete_run(
+                run.id,
+                ContentAgentRunCompleteRequest(output_summary=self._rewrite_input_summary(input_payload)),
+            )
+            await self.db.refresh(run)
+            raise
+        if invoke_result.status == "failed":
+            await self.service.complete_run(
+                run.id,
+                ContentAgentRunCompleteRequest(output_summary=self._rewrite_input_summary(input_payload)),
+            )
+            await self.db.refresh(run)
+            raise ValueError(invoke_result.error_message or f"stage failed: {CONTENT_REWRITE_CAPABILITY}")
+
+        output = stage_call.output_snapshot or {}
+        run.rewrite_round += 1
+        await self.service.complete_run(
+            run.id,
+            ContentAgentRunCompleteRequest(output_summary=self._rewrite_output_summary(output)),
+        )
+        await self.db.refresh(run)
+        return SingleCapabilityResult(run=run, output=output, stage_calls=[stage_call])
+
     async def _invoke_and_record_stage(
         self,
         executor: ExecutorRegistry,
@@ -363,6 +419,27 @@ class ContentAgentOrchestrator:
         if not title or not body:
             raise ValueError("generation did not produce publishable title/body")
         return {"title": str(title), "body": str(body)}
+
+    def _rewrite_output_summary(self, output: dict[str, Any]) -> dict[str, str]:
+        if output.get("comment"):
+            return {"comment": str(output["comment"])}
+        final = output.get("final") if isinstance(output.get("final"), dict) else {}
+        title = output.get("title") or final.get("title")
+        body = output.get("body") or final.get("body")
+        if title or body:
+            return {"title": str(title or ""), "body": str(body or "")}
+        return {}
+
+    def _rewrite_input_summary(self, input_payload: dict[str, Any]) -> dict[str, str]:
+        previous = input_payload.get("previous_content") or input_payload.get("previous_draft") or {}
+        if not isinstance(previous, dict):
+            return {}
+        if previous.get("comment"):
+            return {"comment": str(previous["comment"])}
+        return {
+            "title": str(previous.get("title") or ""),
+            "body": str(previous.get("body") or ""),
+        }
 
     def _executor_token(self, executor: ExecutorRegistry) -> str | None:
         config = executor.config_json or {}

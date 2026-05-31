@@ -27,8 +27,8 @@ from app.schemas.content_batch_report import (
     ContentTrainingFeedbackSample,
     ContentTrainingFeedbackSampleListResponse,
 )
+from app.services.forbidden_term_review_service import ForbiddenTermReviewService, find_forbidden_hits
 
-FORBIDDEN_TERMS = ["治疗便秘", "治好便秘", "改善便秘", "解决便秘", "根治", "疗效"]
 SIMILARITY_WARNING_THRESHOLD = 0.42
 
 
@@ -50,8 +50,16 @@ class ContentBatchReportService:
             items = await self._batch_items(job.id)
             versions_by_item = await self._latest_versions_for_items(items)
             feedback_counts = await self._feedback_counts_for_items(items)
+            forbidden_terms = await self._forbidden_terms_for_job(job)
             report_items = [
-                self._report_item(item, [], versions_by_item.get(item.id), None, feedback_counts.get(item.id, 0))
+                self._report_item(
+                    item,
+                    [],
+                    versions_by_item.get(item.id),
+                    None,
+                    feedback_counts.get(item.id, 0),
+                    forbidden_terms=forbidden_terms,
+                )
                 for item in items
             ]
             self._attach_similarity_warnings(report_items)
@@ -81,6 +89,7 @@ class ContentBatchReportService:
         runs_by_id = await self._runs_for_items(items)
         versions_by_item = await self._latest_versions_for_items(items)
         feedback_counts = await self._feedback_counts_for_items(items)
+        forbidden_terms = await self._forbidden_terms_for_job(job)
         report_items = [
             self._report_item(
                 item,
@@ -88,6 +97,7 @@ class ContentBatchReportService:
                 versions_by_item.get(item.id),
                 runs_by_id.get(item.run_id or -1),
                 feedback_counts.get(item.id, 0),
+                forbidden_terms=forbidden_terms,
             )
             for item in items
         ]
@@ -148,7 +158,16 @@ class ContentBatchReportService:
         latest_version = (await self._latest_versions_for_items([item])).get(item.id)
         run = (await self._runs_for_items([item])).get(item.run_id or -1)
         feedback_count = (await self._feedback_counts_for_items([item])).get(item.id, 0)
-        return self._report_item(item, stage_calls, latest_version, run, feedback_count)
+        job = await self._job_for_item(item)
+        forbidden_terms = await self._forbidden_terms_for_job(job)
+        return self._report_item(
+            item,
+            stage_calls,
+            latest_version,
+            run,
+            feedback_count,
+            forbidden_terms=forbidden_terms,
+        )
 
     def _training_feedback_sample(
         self,
@@ -184,6 +203,15 @@ class ContentBatchReportService:
         if job is None:
             raise ValueError("batch job not found")
         return job
+
+    async def _job_for_item(self, item: ContentBatchItem) -> ContentBatchJob | None:
+        if not item.batch_id:
+            return None
+        result = await self.db.execute(select(ContentBatchJob).where(ContentBatchJob.id == item.batch_id))
+        return result.scalar_one_or_none()
+
+    async def _forbidden_terms_for_job(self, job: ContentBatchJob | None) -> list[str]:
+        return await ForbiddenTermReviewService(self.db).list_terms(asset_key=job.asset_key if job else None)
 
     @staticmethod
     def _job_persona_target(job: ContentBatchJob | None) -> str | None:
@@ -255,6 +283,7 @@ class ContentBatchReportService:
         latest_version: ContentBatchItemVersion | None = None,
         run: ContentAgentRun | None = None,
         feedback_count: int = 0,
+        forbidden_terms: list[str] | None = None,
     ) -> ContentBatchReportItem:
         quality = item.quality_json or {}
         review = quality.get("review_report") or {}
@@ -262,6 +291,7 @@ class ContentBatchReportService:
         runtime_result = self._runtime_result(stage_calls)
         generation_stage = self._generation_stage(stage_calls)
         text = f"{item.title or ''}\n{item.body or ''}"
+        forbidden_hits = self._forbidden_hits(text, forbidden_terms)
         return ContentBatchReportItem(
             item_id=item.id,
             item_no=item.item_no,
@@ -278,14 +308,14 @@ class ContentBatchReportService:
             rewrite_rounds=review.get("rewrite_rounds"),
             suggestion_count=len(review.get("suggestions") or []),
             replacement_count=len(review.get("replacement_needed") or []),
-            forbidden_hits=self._forbidden_hits(text),
+            forbidden_hits=forbidden_hits,
             final_path=runtime_result.get("final_path"),
             debug_dir=runtime_result.get("debug_dir"),
             review_status=latest_version.review_status if latest_version else (quality.get("human_review") or {}).get("review_status"),
             latest_version_no=latest_version.version_no if latest_version else None,
             human_feedback_text=latest_version.feedback_text if latest_version else (quality.get("human_review") or {}).get("feedback_text"),
             feedback_count=feedback_count,
-            reject_reasons=self._reject_reasons(item, review, text),
+            reject_reasons=self._reject_reasons(item, review, forbidden_hits),
             similarity_warnings=[],
             runtime_mode=runtime_result.get("mode") or quality.get("executor"),
             generation_duration_ms=self._stage_duration_ms(generation_stage) if generation_stage else None,
@@ -329,7 +359,12 @@ class ContentBatchReportService:
             stats=stage.stats_json,
         )
 
-    def _reject_reasons(self, item: ContentBatchItem, review: dict[str, Any], text: str) -> list[ContentBatchRejectReason]:
+    def _reject_reasons(
+        self,
+        item: ContentBatchItem,
+        review: dict[str, Any],
+        forbidden_hits: list[str],
+    ) -> list[ContentBatchRejectReason]:
         reasons: list[ContentBatchRejectReason] = []
         # 把 xhs-writer 的结构化审核结果转成运营能直接看到的驳回原因。
         for hard_result in review.get("hard_results") or []:
@@ -361,7 +396,7 @@ class ContentBatchReportService:
                 )
             elif failed:
                 reasons.append(ContentBatchRejectReason(source="failed_ae", code=str(failed), message=str(failed)))
-        for term in self._forbidden_hits(text):
+        for term in forbidden_hits:
             reasons.append(ContentBatchRejectReason(source="forbidden_term", code=term, message=f"命中禁用词：{term}"))
         if item.status == "failed" and item.error_message:
             reasons.append(ContentBatchRejectReason(source="executor_error", message=item.error_message))
@@ -429,8 +464,8 @@ class ContentBatchReportService:
             similarity_warning_count=sum(1 for item in items if item.similarity_warnings),
         )
 
-    def _forbidden_hits(self, text: str) -> list[str]:
-        return [term for term in FORBIDDEN_TERMS if term in text]
+    def _forbidden_hits(self, text: str, business_terms: list[str] | None = None) -> list[str]:
+        return find_forbidden_hits(text, business_terms)
 
     def _max_pairwise_jaccard(self, bodies: list[str]) -> float:
         max_score = 0.0

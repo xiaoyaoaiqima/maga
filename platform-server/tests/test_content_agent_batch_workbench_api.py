@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.api.v1.endpoints.content_agent import router
 from app.core.database import get_db
 from app.models.base import Base
-from app.models.content_agent import ContentBatchItem, ContentFeedback, ExecutorRegistry
+from app.models.content_agent import ContentAgentStageCall, ContentBatchItem, ContentFeedback, ExecutorRegistry
 from app.models.llm_provider_config import LLMProviderConfig
 from app.models.maga_assets import AssetChangeRequest, AssetRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
@@ -41,6 +41,7 @@ async def content_agent_workbench_client():
                     {"capability": "xhs.rewrite_draft", "schema_version": "1"},
                     {"capability": "comment.generate", "schema_version": "1"},
                     {"capability": "content.generate", "schema_version": "1"},
+                    {"capability": "content.rewrite", "schema_version": "1"},
                 ],
                 enabled=1,
             )
@@ -177,6 +178,47 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
         "writing_method",
         "format_control",
     ]
+
+
+@pytest.mark.asyncio
+async def test_comment_batch_runs_forbidden_term_review_and_rewrite(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    async with session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type="business_forbidden_terms",
+                asset_key="yuanyue_comment_activity",
+                display_name="源悦评论业务违禁词",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "schema_version": "1",
+                    "terms": [{"term": "源悦", "enabled": True}],
+                },
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/content-agent/comment-batches/start",
+        json={"asset_key": "yuanyue_comment_activity", "created_by": "ops"},
+    )
+
+    assert response.status_code == 200
+    report = response.json()["data"]["report"]
+    first = report["items"][0]
+    assert "源悦" not in first["body"]
+    assert first["forbidden_hits"] == []
+    assert first["quality"]["forbidden_terms_review"]["initial_hits"] == ["源悦"]
+    assert first["quality"]["forbidden_terms_review"]["final_hits"] == []
+    assert first["quality"]["review_report"]["hard_results"][-1]["ae_code"] == "forbidden_terms_guard"
+    assert report["summary"]["rewrite_item_count"] >= 1
+
+    async with session_factory() as session:
+        stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
+
+    assert any(stage.capability == "content.rewrite" for stage in stage_calls)
 
 
 @pytest.mark.asyncio
@@ -329,6 +371,70 @@ async def test_batch_feedback_is_persisted_for_training(content_agent_workbench_
     assert feedback.submitter == "reviewer-a"
     assert feedback.metadata_json["source"] == "content_batch_workbench"
     assert feedback.metadata_json.get("asset_change_request_id") is None
+
+
+@pytest.mark.asyncio
+async def test_operator_feedback_can_add_business_forbidden_term(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    start_response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "count": 1,
+            "created_by": "ops",
+        },
+    )
+    item = start_response.json()["data"]["report"]["items"][0]
+    term = item["body"][:4]
+
+    feedback_response = await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={
+            "action": "request_revision",
+            "feedback_text": f"加入业务违禁词：{term}",
+            "business_forbidden_terms": [term],
+            "created_by": "ops",
+        },
+    )
+
+    assert feedback_response.status_code == 200
+    feedback_data = feedback_response.json()["data"]
+    assert feedback_data["item"]["review_status"] == "needs_revision"
+    assert term not in feedback_data["item"]["body"]
+    assert term not in feedback_data["item"]["forbidden_hits"]
+    assert feedback_data["item"]["quality"]["forbidden_terms_review"]["initial_hits"] == [term]
+    assert feedback_data["item"]["quality"]["forbidden_terms_review"]["final_hits"] == []
+
+    report_response = await client.get(
+        f"/api/v1/content-agent/batches/{start_response.json()['data']['batch_id']}/report"
+    )
+    report = report_response.json()["data"]
+    assert term not in report["items"][0]["body"]
+    assert term not in report["items"][0]["forbidden_hits"]
+    assert report["summary"]["forbidden_hit_count"] == 0
+
+    async with session_factory() as session:
+        asset = (
+            await session.execute(
+                select(AssetRegistry).where(
+                    AssetRegistry.asset_type == "business_forbidden_terms",
+                    AssetRegistry.asset_key == "yuanyue",
+                    AssetRegistry.status == "active",
+                )
+            )
+        ).scalar_one()
+        feedback = (await session.execute(select(ContentFeedback))).scalar_one()
+        change_request = (await session.execute(select(AssetChangeRequest))).scalar_one_or_none()
+
+    assert asset.content_json["terms"][-1]["term"] == term
+    assert feedback.metadata_json["business_forbidden_terms"] == [term]
+    assert feedback.metadata_json["business_forbidden_terms_added"] == [term]
+    assert feedback.metadata_json["forbidden_terms_review"]["initial_hits"] == [term]
+    assert feedback.metadata_json["forbidden_terms_review"]["final_hits"] == []
+    assert change_request is None
 
 
 @pytest.mark.asyncio

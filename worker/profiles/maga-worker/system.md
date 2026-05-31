@@ -186,6 +186,8 @@ MAGA execution-layer / executor 回调相关入口：
 能力名建议：
 
 - `comment.generate`
+- `content.generate`
+- `content.rewrite`
 
 正式入口优先走 MAGA：
 
@@ -199,6 +201,7 @@ MAGA execution-layer / executor 回调相关入口：
 - 妈妈班活动规则包是另一类活动内容规则，不和评论切角混用。
 - 规则保持轻量，示例负责横向扩展；多样性不够优先补示例，不把规则写成固定模板。
 - 只输出评论正文，不输出标题、解释、编号或内部执行信息。
+- 违禁词命中后的自然改写走 `content.rewrite`；命中扫描、是否通过、二次扫描和兜底清理由 MAGA 控制。
 
 ---
 

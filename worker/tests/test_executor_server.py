@@ -494,6 +494,36 @@ def test_content_generate_fake_mode_returns_comment_from_unified_input(monkeypat
     assert data["output"]["runtime_result"]["expert_config_code"] == "comment_generator_v1"
 
 
+def test_content_rewrite_fake_mode_removes_forbidden_terms(monkeypatch):
+    monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/invoke",
+        json=_envelope(
+            "content.rewrite",
+            {
+                "content_type": "comment",
+                "output_fields": ["comment"],
+                "previous_content": {"comment": "我家刚开始也在看源悦，想蹲蹲真实反馈"},
+                "forbidden_hits": ["源悦"],
+                "rewrite_instructions": ["删除或自然替换命中的违禁词"],
+            },
+            stage_call_id="stage-content-rewrite-fake",
+        ),
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["stage_call_id"] == "stage-content-rewrite-fake"
+    assert data["status"] == "succeeded"
+    assert data["stats"]["module"] == "content-generator"
+    assert data["output"]["comment"] == "我家刚开始也在看，想蹲蹲真实反馈"
+    assert "源悦" not in data["output"]["comment"]
+    assert data["output"]["runtime_result"]["mode"] == "content_rewrite_fake"
+
+
 def test_run_ae_review_returns_structured_review_report(monkeypatch):
     client = _client(monkeypatch)
 

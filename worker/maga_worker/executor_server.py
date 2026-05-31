@@ -33,6 +33,7 @@ SUPPORTED_CAPABILITIES = {
     "asset.import",
     "comment.generate",
     "content.generate",
+    "content.rewrite",
 }
 
 app = FastAPI(title="Hermes MAGA worker executor", version="0.1.0")
@@ -259,6 +260,166 @@ def _handle_content_generate(input_payload: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
+def _handle_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
+    previous = _rewrite_previous_content(input_payload)
+    content_type = str(input_payload.get("content_type") or ("comment" if previous.get("comment") else "article"))
+    output_fields = input_payload.get("output_fields") or (["comment"] if content_type == "comment" else ["title", "body"])
+    forbidden_hits = _rewrite_forbidden_hits(input_payload)
+
+    if os.environ.get("MAGA_WORKER_RUNTIME_FAST_FAKE") == "1":
+        output = _stable_rewrite_from_previous(previous, forbidden_hits, content_type=content_type, output_fields=output_fields)
+        output["runtime_result"] = {
+            "mode": "content_rewrite_fake",
+            "fake": True,
+            "reason": "MAGA_WORKER_RUNTIME_FAST_FAKE",
+            "forbidden_hits": forbidden_hits,
+        }
+        return output
+
+    from maga_worker.xhs_runtime import call_model, model_ge
+
+    model_config = input_payload.get("model_config") or input_payload.get("rewrite_model_config") or {}
+    model = str(model_config.get("model_code") or model_config.get("ge_model") or os.environ.get("MAGA_WORKER_REWRITE_MODEL") or model_ge())
+    temperature = _float_or_default(model_config.get("temperature"), 0.35)
+    max_tokens = _int_or_none(model_config.get("max_tokens"))
+    system = str(
+        model_config.get("system_prompt")
+        or "你是中文内容审核后的自然改写助手，只按要求改写，不解释过程。"
+    )
+    raw = call_model(
+        model,
+        system=system,
+        user=_rewrite_prompt(input_payload, previous=previous, forbidden_hits=forbidden_hits, content_type=content_type),
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    output = _normalize_rewrite_output(raw, input_payload, content_type=content_type, output_fields=output_fields)
+    output["runtime_result"] = {
+        "mode": "content_rewrite_runtime",
+        "fake": False,
+        "provider_code": model_config.get("provider_code"),
+        "model_code": model,
+        "forbidden_hits": forbidden_hits,
+    }
+    return output
+
+
+def _rewrite_previous_content(input_payload: dict[str, Any]) -> dict[str, str]:
+    previous = input_payload.get("previous_content") or input_payload.get("previous_draft") or {}
+    content_type = str(input_payload.get("content_type") or "")
+    if isinstance(previous, str):
+        if content_type == "comment" or (input_payload.get("output_fields") or []) == ["comment"]:
+            return {"comment": previous}
+        title, body = _title_body_from_text(previous)
+        return {"title": title, "body": body}
+    if not isinstance(previous, dict):
+        previous = {}
+    if content_type == "comment" or (input_payload.get("output_fields") or []) == ["comment"]:
+        return {"comment": str(previous.get("comment") or previous.get("body") or input_payload.get("comment") or "").strip()}
+    return {
+        "title": str(previous.get("title") or input_payload.get("title") or "").strip(),
+        "body": str(previous.get("body") or previous.get("comment") or input_payload.get("body") or "").strip(),
+    }
+
+
+def _rewrite_forbidden_hits(input_payload: dict[str, Any]) -> list[str]:
+    values = input_payload.get("forbidden_hits")
+    if values is None:
+        values = ((input_payload.get("review_report") or {}).get("forbidden_terms_review") or {}).get("hits")
+    if values is None:
+        values = (((input_payload.get("review_report") or {}).get("hard_results") or [{}])[0] or {}).get("evidence")
+    return [str(value).strip() for value in values or [] if str(value).strip()]
+
+
+def _stable_rewrite_from_previous(
+    previous: dict[str, str],
+    forbidden_hits: list[str],
+    *,
+    content_type: str,
+    output_fields: list[Any],
+) -> dict[str, str]:
+    if content_type == "comment" or output_fields == ["comment"]:
+        comment = _remove_terms_from_text(previous.get("comment") or previous.get("body") or "", forbidden_hits)
+        comment = _normalize_comment_text(comment) or "这个点我也在关注，想看看大家真实反馈。"
+        return {"comment": comment}
+
+    title = _remove_terms_from_text(previous.get("title") or "", forbidden_hits) or "真实体验分享"
+    body = _remove_terms_from_text(previous.get("body") or "", forbidden_hits) or "围绕真实使用感受自然表达，保持克制，不夸大。"
+    return {"title": title, "body": body, "final": {"title": title, "body": body}}
+
+
+def _remove_terms_from_text(value: str, forbidden_hits: list[str]) -> str:
+    text = str(value or "")
+    for term in forbidden_hits:
+        text = text.replace(term, "")
+    while "  " in text:
+        text = text.replace("  ", " ")
+    for duplicate in ["、、", "，，", "。。", "；；"]:
+        while duplicate in text:
+            text = text.replace(duplicate, duplicate[0])
+    return text.strip(" ，。；、")
+
+
+def _rewrite_prompt(
+    input_payload: dict[str, Any],
+    *,
+    previous: dict[str, str],
+    forbidden_hits: list[str],
+    content_type: str,
+) -> str:
+    output_instruction = (
+        "输出要求：只输出改写后的评论正文，不要标题、编号、解释。"
+        if content_type == "comment"
+        else '输出要求：只输出 JSON，格式为 {"title": "...", "body": "..."}，不要解释。'
+    )
+    parts = [
+        f"内容类型：{content_type}",
+        "原内容：\n" + json.dumps(previous, ensure_ascii=False, indent=2),
+        f"必须删除或自然替换的违禁词：{'、'.join(forbidden_hits) if forbidden_hits else '无'}",
+        "改写原则：只改命中词和相关句子，尽量保留原意、语气、结构和业务规则；不得新增功效承诺、医疗诊断或绝对化表达。",
+        output_instruction,
+    ]
+    instructions = input_payload.get("rewrite_instructions") or []
+    if instructions:
+        parts.append("补充指令：\n" + "\n".join(f"- {item}" for item in instructions if str(item).strip()))
+    business_rule = input_payload.get("business_rule")
+    if business_rule:
+        parts.append("业务规则：\n" + json.dumps(business_rule, ensure_ascii=False, indent=2))
+    selected_keywords = input_payload.get("selected_keywords")
+    if selected_keywords:
+        parts.append("已选系统关键词：\n" + json.dumps(selected_keywords, ensure_ascii=False, indent=2))
+    return "\n\n".join(parts)
+
+
+def _normalize_rewrite_output(
+    raw: str,
+    input_payload: dict[str, Any],
+    *,
+    content_type: str,
+    output_fields: list[Any],
+) -> dict[str, str]:
+    if content_type == "comment" or output_fields == ["comment"]:
+        parsed = _parse_json_object(raw)
+        comment = str(parsed.get("comment") or parsed.get("评论") or "").strip() if parsed else ""
+        comment = _normalize_comment_text(comment or raw)
+        if not comment:
+            raise ValueError("content.rewrite produced empty comment")
+        return {"comment": comment}
+
+    parsed = _parse_json_object(raw)
+    title = str(parsed.get("title") or parsed.get("标题") or "").strip()
+    body = str(parsed.get("body") or parsed.get("正文") or "").strip()
+    if not title or not body:
+        title, body = _title_body_from_text(raw)
+    if not body:
+        previous = _rewrite_previous_content(input_payload)
+        body = previous.get("body") or ""
+    if not body:
+        raise ValueError("content.rewrite produced empty body")
+    title = title or (_rewrite_previous_content(input_payload).get("title") or "改写后标题")
+    return {"title": title, "body": body, "final": {"title": title, "body": body}}
+
+
 def _stable_content_from_unified_input(input_payload: dict[str, Any]) -> dict[str, str]:
     output_fields = input_payload.get("output_fields") or []
     if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
@@ -425,6 +586,8 @@ def _handle_capability(capability: str, input_payload: dict[str, Any]) -> dict[s
         return import_asset_package(input_payload)
     if capability == "content.generate":
         return _handle_content_generate(input_payload)
+    if capability == "content.rewrite":
+        return _handle_content_rewrite(input_payload)
     if capability == "comment.generate":
         return _handle_comment_generate(input_payload)
     if capability == "xhs.interpret_brief":

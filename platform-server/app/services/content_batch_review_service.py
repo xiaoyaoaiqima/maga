@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +12,12 @@ from app.schemas.content_batch_report import (
     ContentBatchItemFeedbackRequest,
     ContentBatchItemFeedbackResponse,
 )
+from app.services.business_forbidden_term_service import (
+    BusinessForbiddenTermService,
+    normalize_business_forbidden_terms,
+)
 from app.services.content_batch_report_service import ContentBatchReportService
+from app.services.forbidden_term_review_service import ForbiddenTermReviewService
 
 
 _ACTION_STATUS = {
@@ -113,12 +117,55 @@ class ContentBatchReviewService:
         )
         self.db.add(feedback)
         await self.db.flush()
-        change_request = await self._maybe_create_asset_change_request(
-            item=item,
-            version=version,
-            feedback=feedback,
-            request=request,
-        )
+        business_forbidden_terms = normalize_business_forbidden_terms(request.business_forbidden_terms)
+        if business_forbidden_terms:
+            job = await self._job_for_item(item)
+            term_result = await BusinessForbiddenTermService(self.db).add_terms(
+                asset_key=job.asset_key if job else None,
+                terms=business_forbidden_terms,
+                created_by=request.created_by,
+                source_context={
+                    "batch_id": item.batch_id,
+                    "item_id": item.id,
+                    "item_no": item.item_no,
+                    "feedback_id": feedback.id,
+                    "version_id": version.id,
+                },
+            )
+            metadata_patch = {
+                "business_forbidden_terms": business_forbidden_terms,
+                "business_forbidden_terms_added": term_result.added_terms,
+                "business_forbidden_terms_asset_key": term_result.asset_key,
+            }
+            version.metadata_json = {**(version.metadata_json or {}), **metadata_patch}
+            feedback.metadata_json = {**(feedback.metadata_json or {}), **metadata_patch}
+            forbidden_review = await ForbiddenTermReviewService(self.db).review_and_rewrite_item(
+                item=item,
+                asset_key=term_result.asset_key,
+                orchestrator=None,
+                executor_code=None,
+                content_type=_content_type_for_item(item),
+            )
+            version.title = item.title
+            version.body = item.body
+            version.metadata_json = {
+                **(version.metadata_json or {}),
+                "forbidden_terms_review": forbidden_review,
+            }
+            feedback.metadata_json = {
+                **(feedback.metadata_json or {}),
+                "forbidden_terms_review": forbidden_review,
+            }
+            await self.db.flush()
+
+        change_request = None
+        if not business_forbidden_terms:
+            change_request = await self._maybe_create_asset_change_request(
+                item=item,
+                version=version,
+                feedback=feedback,
+                request=request,
+            )
         if change_request is not None:
             version.metadata_json = {
                 **(version.metadata_json or {}),
@@ -231,3 +278,10 @@ def _excerpt(value: str | None, *, limit: int = 500) -> str | None:
         return None
     text = value.strip()
     return text if len(text) <= limit else f"{text[:limit]}..."
+
+
+def _content_type_for_item(item: ContentBatchItem) -> str:
+    plan = item.plan_json or {}
+    if plan.get("rule_type") == "comment_angle" or plan.get("output_fields") == ["comment"]:
+        return "comment"
+    return "article"

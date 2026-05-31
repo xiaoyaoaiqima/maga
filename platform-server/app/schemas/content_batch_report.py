@@ -201,6 +201,7 @@ class ContentBatchItemFeedbackRequest(BaseSchema):
     title: str | None = Field(default=None, max_length=255)
     body: str | None = Field(default=None, max_length=20000)
     created_by: str | None = Field(default=None, max_length=100)
+    business_forbidden_terms: list[str] = Field(default_factory=list)
 
 
 class ContentBatchItemFeedbackResponse(BaseSchema):
