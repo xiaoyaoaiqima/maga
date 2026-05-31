@@ -5,11 +5,25 @@
 Demo 主线调整为：
 
 1. 运营拆解并上传业务规则包。
-2. 系统按规则包自动规划生成任务。
-3. `maga-worker` 执行生成。
+2. 系统按规则包自动规划生成任务，并自动补齐内置生成关键词。
+3. `maga-worker` 通过统一 `content.generate` 能力执行生成。
 4. 运营在批量报告里查看、审核、反馈。
 
 运营不再在生成时手填主题、人群、风格和数量。业务信息以规则包为准，生成策略由系统自动补齐。
+
+## 统一生成链路
+
+文章和评论都走同一套逻辑：
+
+1. 业务规则包提供本次生成需求的业务信息。
+2. 系统内置四类关键词：`人设`、`生文指令`、`扰动规则`、`写作手法`。
+3. 每类关键词下有多个子关键词，每个子关键词挂一组语料。
+4. 每次生成时，系统从四类关键词中各自动选择 1 个子关键词。
+5. `expert` 使用提示词模版把业务规则和四类关键词语料组装成最终 prompt。
+6. `expert` 的模型配置决定 provider、model_code、temperature、max_tokens。
+7. `maga-worker` 只负责按最终 prompt 生成内容并返回结构化结果。
+
+这里的 `expert` 不是人设，也不是业务规则；它是“提示词模版 + 模型参数配置”。业务规则负责告诉模型写什么，四类关键词负责告诉模型怎么写，expert 负责把这些输入组装成最终提示词。
 
 ## 规则包边界
 
@@ -31,7 +45,7 @@ Demo 主线调整为：
 - 可选 `评论示例`
 - 可选 `评论补充`
 
-生成时每条 item 的计划中带完整切角规则、语料、示例和补充，worker 只输出评论正文。
+生成时每条 item 的计划中带完整切角规则、语料、示例和补充。系统再自动选择四类关键词，并把最终组装结果写入 `plan_json.unified_generation`，worker 只输出评论正文。
 
 ### 源悦活动生文
 
@@ -133,7 +147,7 @@ POST /api/v1/content-agent/comment-batches/start
 
 `asset_key`、`created_by`、`executor_code` 都是可选字段。接口不接收运营手填的 `product_topic`、`target_audience`、`style`、`count`。
 
-### 保留现有生文链路
+### 生文链路
 
 现有接口继续保留：
 
@@ -141,7 +155,7 @@ POST /api/v1/content-agent/comment-batches/start
 POST /api/v1/content-agent/batches/start
 ```
 
-它仍服务产品使用体验、妈妈班等长文或笔记生成链路，不受评论批量生成影响。
+它仍服务产品使用体验、妈妈班等长文或笔记生成入口。后续实现上会逐步收敛到同一套 `业务规则包 -> 四类关键词 -> expert -> content.generate` 的执行模型。
 
 ## 数据承载
 
@@ -156,21 +170,22 @@ POST /api/v1/content-agent/batches/start
 
 ## Worker Capability
 
-新增 capability：
+统一生成 capability：
 
 ```text
-comment.generate
+content.generate
 ```
 
-输入来自单条 `plan_json`：
+输入来自系统组装后的统一快照：
 
-- `comment_angle`
-- `corpus`
-- `examples`
-- `supplements`
-- `source_row_no`
+- `content_type`：`comment` 或 `article`
+- `business_rule`：本条业务规则
+- `selected_keywords`：四类关键词各 1 个子关键词及其语料
+- `expert`：提示词模版和模型参数配置快照
+- `rendered_prompt`：最终给模型的 prompt
+- `output_fields`：评论为 `["comment"]`，文章为 `["title", "body"]`
 
-输出统一为：
+评论输出为：
 
 ```json
 {
@@ -178,7 +193,16 @@ comment.generate
 }
 ```
 
-本地 fake runtime 用规则示例稳定返回评论，方便 Demo 和测试；真实 runtime 使用评论切角语料和示例生成一条自然评论。
+文章输出为：
+
+```json
+{
+  "title": "...",
+  "body": "..."
+}
+```
+
+本地 fake runtime 会优先用规则示例稳定返回，方便 Demo 和测试；真实 runtime 使用 `rendered_prompt`、模型配置和输出字段生成内容。
 
 ## Demo 流程
 
@@ -193,5 +217,5 @@ comment.generate
 
 - 源悦评论切角只走 `comment_angle_rule_set`。
 - 妈妈班活动规则包继续作为活动内容规则，不被评论生成读取。
-- 产品使用体验生文继续走原有 `/content-agent/batches/start`。
+- 产品使用体验生文入口继续保留 `/content-agent/batches/start`，实现上逐步收敛到统一生成模型。
 - 对外只讲 MAGA 自动调用 `maga-worker`，不把 Hermes 作为产品概念。

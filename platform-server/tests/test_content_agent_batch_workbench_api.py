@@ -40,6 +40,7 @@ async def content_agent_workbench_client():
                     {"capability": "xhs.run_ae_review", "schema_version": "1"},
                     {"capability": "xhs.rewrite_draft", "schema_version": "1"},
                     {"capability": "comment.generate", "schema_version": "1"},
+                    {"capability": "content.generate", "schema_version": "1"},
                 ],
                 enabled=1,
             )
@@ -168,6 +169,13 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
     assert item.plan_json["comment_angle"] == "整体适应"
     assert "像妈妈在评论区聊刚开始喝源悦" in item.plan_json["corpus"]
     assert item.plan_json["examples"] == ["我家刚开始也在看源悦，想蹲蹲真实反馈"]
+    assert item.plan_json["unified_generation"]["capability"] == "content.generate"
+    assert [kw["category_code"] for kw in item.plan_json["unified_generation"]["selected_keywords"]] == [
+        "persona",
+        "writing_instruction",
+        "perturbation_rule",
+        "writing_method",
+    ]
 
 
 @pytest.mark.asyncio

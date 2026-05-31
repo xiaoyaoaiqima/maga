@@ -307,7 +307,7 @@ class ContentBatchReportService:
 
     def _runtime_result(self, stage_calls: list[ContentAgentStageCall]) -> dict[str, Any]:
         for stage in stage_calls:
-            if stage.capability != "xhs.generate_draft":
+            if stage.capability not in {"xhs.generate_draft", "content.generate"}:
                 continue
             output = stage.output_snapshot or {}
             runtime_result = output.get("runtime_result")
@@ -316,7 +316,7 @@ class ContentBatchReportService:
         return {}
 
     def _generation_stage(self, stage_calls: list[ContentAgentStageCall]) -> ContentAgentStageCall | None:
-        return next((stage for stage in stage_calls if stage.capability == "xhs.generate_draft"), None)
+        return next((stage for stage in stage_calls if stage.capability in {"xhs.generate_draft", "content.generate"}), None)
 
     def _stage_trace(self, stage: ContentAgentStageCall) -> ContentBatchStageTrace:
         return ContentBatchStageTrace(

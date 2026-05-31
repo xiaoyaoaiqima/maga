@@ -255,6 +255,8 @@ class MockExecutorInvocationClient:
                     },
                 ],
             }
+        elif capability == "content.generate":
+            output = _mock_unified_content_generation(input_payload)
         elif capability == "comment.generate":
             output = {
                 "comment": _mock_comment_from_rule(input_payload),
@@ -272,6 +274,48 @@ class MockExecutorInvocationClient:
             output=output,
             stats={"mock": True},
         )
+
+
+def _mock_unified_content_generation(input_payload: dict[str, Any]) -> dict[str, Any]:
+    output_fields = input_payload.get("output_fields") or []
+    if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
+        business_rule = input_payload.get("business_rule") or {}
+        comment = _mock_comment_from_rule(business_rule)
+        if not comment:
+            comment = _mock_comment_from_rule(input_payload)
+        return {
+            "comment": comment,
+            "runtime_result": {
+                "mode": "content_fake",
+                "fake": True,
+                "reason": "mock_executor",
+                "expert_config_code": ((input_payload.get("expert") or {}).get("expert_config_code")),
+            },
+        }
+
+    business_rule = input_payload.get("business_rule") or {}
+    selected = input_payload.get("selected_keywords") or []
+    topic = business_rule.get("product_topic") or business_rule.get("product_experience") or "源悦体验"
+    persona = _selected_keyword_name(selected, "persona") or "真实妈妈"
+    method = _selected_keyword_name(selected, "writing_method") or "自然表达"
+    return {
+        "title": f"{topic}，这样写更像真实分享",
+        "body": f"围绕{topic}，用{persona}的口吻承接业务规则，再用{method}把具体感受讲清楚。整体表达保持自然克制，不夸大、不照搬示例。",
+        "runtime_result": {
+            "mode": "content_fake",
+            "fake": True,
+            "reason": "mock_executor",
+            "expert_config_code": ((input_payload.get("expert") or {}).get("expert_config_code")),
+        },
+    }
+
+
+def _selected_keyword_name(selected_keywords: list[dict[str, Any]], category_code: str) -> str | None:
+    for item in selected_keywords:
+        if item.get("category_code") == category_code:
+            value = item.get("keyword_name")
+            return str(value) if value else None
+    return None
 
 
 def _mock_comment_from_rule(input_payload: dict[str, Any]) -> str:

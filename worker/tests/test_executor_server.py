@@ -456,6 +456,44 @@ def test_comment_generate_fake_mode_returns_stable_comment(monkeypatch):
     }
 
 
+def test_content_generate_fake_mode_returns_comment_from_unified_input(monkeypatch):
+    monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/invoke",
+        json=_envelope(
+            "content.generate",
+            {
+                "content_type": "comment",
+                "output_fields": ["comment"],
+                "business_rule": {
+                    "item_no": 1,
+                    "comment_angle": "整体适应",
+                    "corpus": "整体适应：\n像妈妈在评论区聊刚开始喝源悦的观察。",
+                    "examples": ["我家刚开始也在看源悦，想蹲蹲真实反馈"],
+                },
+                "selected_keywords": [
+                    {"category_code": "persona", "keyword_name": "经验型妈妈", "corpus": ["自然交流"]}
+                ],
+                "expert": {"expert_config_code": "comment_generator_v1"},
+                "rendered_prompt": "生成一条评论",
+            },
+            stage_call_id="stage-content-fake",
+        ),
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["stage_call_id"] == "stage-content-fake"
+    assert data["status"] == "succeeded"
+    assert data["stats"]["module"] == "content-generator"
+    assert data["output"]["comment"] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
+    assert data["output"]["runtime_result"]["mode"] == "content_fake"
+    assert data["output"]["runtime_result"]["expert_config_code"] == "comment_generator_v1"
+
+
 def test_run_ae_review_returns_structured_review_report(monkeypatch):
     client = _client(monkeypatch)
 

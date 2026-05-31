@@ -6,6 +6,7 @@ service only executes a requested capability from the input snapshot.
 from __future__ import annotations
 
 import os
+import json
 import re
 import time
 from typing import Any
@@ -31,6 +32,7 @@ SUPPORTED_CAPABILITIES = {
     "xhs.rewrite_draft",
     "asset.import",
     "comment.generate",
+    "content.generate",
 }
 
 app = FastAPI(title="Hermes MAGA worker executor", version="0.1.0")
@@ -72,6 +74,8 @@ def _stats(started: float) -> dict[str, Any]:
 def _module_for_capability(capability: str) -> str:
     if capability.startswith("asset."):
         return "asset-steward"
+    if capability.startswith("content."):
+        return "content-generator"
     if capability.startswith("comment."):
         return "comment-generator"
     return "xhs-writer"
@@ -219,6 +223,150 @@ def _handle_comment_generate(input_payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _handle_content_generate(input_payload: dict[str, Any]) -> dict[str, Any]:
+    if os.environ.get("MAGA_WORKER_RUNTIME_FAST_FAKE") == "1":
+        output = _stable_content_from_unified_input(input_payload)
+        output["runtime_result"] = {
+            "mode": "content_fake",
+            "fake": True,
+            "reason": "MAGA_WORKER_RUNTIME_FAST_FAKE",
+            "expert_config_code": (input_payload.get("expert") or {}).get("expert_config_code"),
+        }
+        return output
+
+    from maga_worker.xhs_runtime import call_model, model_ge
+
+    model_config = input_payload.get("model_config") or {}
+    model = str(model_config.get("model_code") or model_config.get("ge_model") or model_ge())
+    temperature = _float_or_default(model_config.get("temperature"), 0.8)
+    max_tokens = _int_or_none(model_config.get("max_tokens"))
+    system = str(
+        model_config.get("system_prompt")
+        or "你是中文小红书内容生成器，严格按用户提示输出，不解释过程。"
+    )
+    prompt = str(input_payload.get("rendered_prompt") or "").strip()
+    if not prompt:
+        prompt = _fallback_rendered_prompt(input_payload)
+    raw = call_model(model, system=system, user=prompt, temperature=temperature, max_tokens=max_tokens)
+    output = _normalize_unified_content_output(raw, input_payload)
+    output["runtime_result"] = {
+        "mode": "content_runtime",
+        "fake": False,
+        "expert_config_code": (input_payload.get("expert") or {}).get("expert_config_code"),
+        "provider_code": model_config.get("provider_code"),
+        "model_code": model,
+    }
+    return output
+
+
+def _stable_content_from_unified_input(input_payload: dict[str, Any]) -> dict[str, str]:
+    output_fields = input_payload.get("output_fields") or []
+    if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
+        business_rule = input_payload.get("business_rule") or {}
+        return {"comment": _stable_comment_from_rule(business_rule)}
+
+    business_rule = input_payload.get("business_rule") or {}
+    selected_keywords = input_payload.get("selected_keywords") or []
+    topic = business_rule.get("product_topic") or business_rule.get("product_experience") or "源悦体验"
+    persona = _selected_keyword_name(selected_keywords, "persona") or "真实妈妈"
+    method = _selected_keyword_name(selected_keywords, "writing_method") or "自然写法"
+    return {
+        "title": f"{topic}，这样写更像真实分享",
+        "body": f"围绕{topic}，用{persona}的口吻承接业务规则，再用{method}把具体感受讲清楚。整体表达保持自然克制，不夸大、不照搬示例。",
+    }
+
+
+def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -> dict[str, str]:
+    output_fields = input_payload.get("output_fields") or []
+    if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
+        comment = _normalize_comment_text(raw)
+        if not comment:
+            raise ValueError("content.generate produced empty comment")
+        return {"comment": comment}
+
+    parsed = _parse_json_object(raw)
+    title = str(parsed.get("title") or parsed.get("标题") or "").strip()
+    body = str(parsed.get("body") or parsed.get("正文") or "").strip()
+    if not title or not body:
+        title, body = _title_body_from_text(raw)
+    if not body:
+        raise ValueError("content.generate produced empty body")
+    return {"title": title or "源悦真实体验分享", "body": body}
+
+
+def _parse_json_object(raw: str) -> dict[str, Any]:
+    value = str(raw or "").strip()
+    value = re.sub(r"^```(?:json)?\s*", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*```$", "", value).strip()
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", value, flags=re.DOTALL)
+        if not match:
+            return {}
+        try:
+            parsed = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _title_body_from_text(raw: str) -> tuple[str, str]:
+    lines = [line.strip() for line in str(raw or "").splitlines() if line.strip()]
+    title = ""
+    body_lines: list[str] = []
+    for line in lines:
+        normalized = re.sub(r"^(?:[-*•]\s*|\d+[、.．]\s*)", "", line).strip()
+        title_match = re.match(r"^(?:标题|title)[:：]\s*(.+)$", normalized, flags=re.IGNORECASE)
+        body_match = re.match(r"^(?:正文|body)[:：]\s*(.+)$", normalized, flags=re.IGNORECASE)
+        if title_match:
+            title = title_match.group(1).strip()
+            continue
+        if body_match:
+            body_lines.append(body_match.group(1).strip())
+            continue
+        body_lines.append(normalized)
+    if not title and body_lines:
+        first = body_lines[0]
+        if len(first) <= 36 and len(body_lines) > 1:
+            title = first
+            body_lines = body_lines[1:]
+    return title, "\n".join(body_lines).strip()
+
+
+def _fallback_rendered_prompt(input_payload: dict[str, Any]) -> str:
+    parts = [
+        f"内容类型：{input_payload.get('content_type') or ''}",
+        f"输出字段：{input_payload.get('output_fields') or []}",
+        "业务规则：\n" + json.dumps(input_payload.get("business_rule") or {}, ensure_ascii=False, indent=2),
+        "系统关键词：\n" + json.dumps(input_payload.get("selected_keywords") or [], ensure_ascii=False, indent=2),
+    ]
+    return "\n\n".join(parts)
+
+
+def _selected_keyword_name(selected_keywords: list[dict[str, Any]], category_code: str) -> str | None:
+    for item in selected_keywords:
+        if isinstance(item, dict) and item.get("category_code") == category_code:
+            value = item.get("keyword_name")
+            return str(value) if value else None
+    return None
+
+
+def _float_or_default(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        return None
+    return result if result > 0 else None
+
+
 def _review_report(input_payload: dict[str, Any]) -> dict[str, Any]:
     generation_snapshot = input_payload.get("generation_snapshot") or {}
     compliance_rules = ((generation_snapshot.get("assets") or {}).get("compliance_rules") or [])
@@ -275,6 +423,8 @@ def _review_report(input_payload: dict[str, Any]) -> dict[str, Any]:
 def _handle_capability(capability: str, input_payload: dict[str, Any]) -> dict[str, Any]:
     if capability == "asset.import":
         return import_asset_package(input_payload)
+    if capability == "content.generate":
+        return _handle_content_generate(input_payload)
     if capability == "comment.generate":
         return _handle_comment_generate(input_payload)
     if capability == "xhs.interpret_brief":

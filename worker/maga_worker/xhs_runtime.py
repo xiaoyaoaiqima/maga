@@ -126,18 +126,23 @@ def ge_prompt_parts() -> tuple[str, str, str]:
 
 
 # ─────────────────── 模型调用 ───────────────────
-def call_model(model: str, system: str, user: str, temperature: float = 0.7) -> str:
+def call_model(model: str, system: str, user: str, temperature: float = 0.7, max_tokens: int | None = None) -> str:
     """单次模型调用，返回纯文本。失败重试 3 次。"""
     last_err: Exception | None = None
     for _ in range(3):
         try:
-            resp = _client().chat.completions.create(
-                model=model,
-                messages=[
+            request = {
+                "model": model,
+                "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                temperature=temperature,
+                "temperature": temperature,
+            }
+            if max_tokens:
+                request["max_tokens"] = max_tokens
+            resp = _client().chat.completions.create(
+                **request,
             )
             return resp.choices[0].message.content or ""
         except Exception as e:

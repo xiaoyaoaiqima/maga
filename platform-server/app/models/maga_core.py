@@ -27,6 +27,7 @@ from app.models.content_agent import (
 )
 from app.models.llm_model_route import LLMModelRoute
 from app.models.llm_provider_config import LLMProviderConfig
+from app.models.expert_config import ExpertConfig
 from app.models.prompt_optimizer import PromptAsset, PromptVersion
 
 
@@ -95,6 +96,7 @@ MAGA_CORE_MODELS = (
     PromptVersion,
     LLMProviderConfig,
     LLMModelRoute,
+    ExpertConfig,
 )
 
 MAGA_CORE_TABLE_NAMES = tuple(model.__tablename__ for model in MAGA_CORE_MODELS)

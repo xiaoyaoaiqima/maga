@@ -19,8 +19,12 @@ from app.services.comment_angle_rule_service import (
 )
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.executor_invocation_service import ExecutorInvocationClient
+from app.services.unified_content_generation_service import (
+    CONTENT_GENERATE_CAPABILITY,
+    UnifiedContentGenerationService,
+)
 
-COMMENT_GENERATE_CAPABILITY = "comment.generate"
+COMMENT_GENERATE_CAPABILITY = CONTENT_GENERATE_CAPABILITY
 
 
 @dataclass(frozen=True)
@@ -198,11 +202,29 @@ class ContentCommentBatchService:
                 invocation_client=self.invocation_client,
                 callback_base_url=self.callback_base_url,
             )
+            unified = await UnifiedContentGenerationService(db).build_snapshot(
+                content_type="comment",
+                business_rule=dict(item.plan_json or {}),
+                item_no=item.item_no,
+                output_fields=["comment"],
+            )
+            item.plan_json = {
+                **(item.plan_json or {}),
+                "unified_generation": {
+                    "capability": COMMENT_GENERATE_CAPABILITY,
+                    "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
+                    "keyword_asset": unified.input_snapshot.get("keyword_asset") or {},
+                    "expert": unified.input_snapshot.get("expert") or {},
+                    "rendered_prompt": unified.input_snapshot.get("rendered_prompt") or "",
+                },
+            }
+            await db.flush()
             task_request = ContentAgentTaskCreate(
-                task_type="comment_generate",
+                task_type="content_generate",
                 executor_code=self.executor_code,
-                input_snapshot=dict(item.plan_json or {}),
+                input_snapshot=unified.input_snapshot,
                 asset_refs={
+                    **unified.asset_refs,
                     "comment_angle_rule_set": {
                         "asset_key": (item.plan_json or {}).get("asset_key"),
                         "asset_id": (item.plan_json or {}).get("rule_asset_id"),
@@ -215,7 +237,7 @@ class ContentCommentBatchService:
                 result = await orchestrator.run_single_capability(task_request, capability=COMMENT_GENERATE_CAPABILITY)
                 comment = str((result.output or {}).get("comment") or "").strip()
                 if not comment:
-                    raise ValueError("comment.generate returned empty comment")
+                    raise ValueError("content.generate returned empty comment")
                 item.status = "generated"
                 item.task_id = result.run.task_id
                 item.run_id = result.run.id
@@ -226,12 +248,15 @@ class ContentCommentBatchService:
                     "stage_call_count": len(result.stage_calls),
                     "run_status": result.run.status,
                     "rule_type": "comment_angle",
+                    "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
+                    "expert_config_code": (unified.input_snapshot.get("expert") or {}).get("expert_config_code"),
                     "hard_pass": True,
                 }
                 item.diversity_json = {
                     "rule_type": "comment_angle",
                     "source_row_no": (item.plan_json or {}).get("source_row_no"),
                     "comment_angle": (item.plan_json or {}).get("comment_angle"),
+                    "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                 }
                 item.error_message = None
                 await db.commit()
