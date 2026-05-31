@@ -316,7 +316,17 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
     assert fallback["source"] == "fallback"
     assert fallback["asset_type"] == "content_generation_keywords"
     assert fallback["content_json"]["schema_version"] == "2"
-    assert len(fallback["content_json"]["categories"]) >= 4
+    fallback_categories = fallback["content_json"]["categories"]
+    assert len(fallback_categories) >= 6
+    assert [item["category_name"] for item in fallback_categories[:3]] == [
+        "人设",
+        "生文指令",
+        "生评论指令",
+    ]
+    assert fallback_categories[1]["applicable_content_types"] == ["article"]
+    assert fallback_categories[2]["applicable_content_types"] == ["comment"]
+    assert fallback_categories[-1]["category_name"] == "格式控制"
+    assert fallback_categories[-1]["sub_keywords"][0]["keyword_name"] == "短平干净"
 
     payload = {
         "asset_key": "default_content_generation_keywords",

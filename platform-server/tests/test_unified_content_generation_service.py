@@ -63,7 +63,7 @@ async def test_unified_generation_selects_one_sub_keyword_per_category(unified_s
     selected = snapshot.input_snapshot["selected_keywords"]
     assert [item["category_code"] for item in selected] == [
         "persona",
-        "writing_instruction",
+        "comment_writing_instruction",
         "perturbation_rule",
         "writing_method",
     ]
@@ -72,6 +72,38 @@ async def test_unified_generation_selects_one_sub_keyword_per_category(unified_s
     assert snapshot.input_snapshot["content_type"] == "comment"
     assert "整体适应" in snapshot.input_snapshot["rendered_prompt"]
     assert "观察妈妈" in snapshot.input_snapshot["rendered_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_unified_generation_splits_article_and_comment_instructions(unified_session_factory):
+    async with unified_session_factory() as session:
+        comment_snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="comment",
+            business_rule={"rule_type": "comment_angle", "comment_angle": "整体适应"},
+            item_no=1,
+            output_fields=["comment"],
+        )
+        article_snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="article",
+            business_rule={"rule_type": "product_experience", "topic": "宝宝便便不规律"},
+            item_no=1,
+            output_fields=["title", "body"],
+        )
+
+    comment_codes = [
+        item["category_code"]
+        for item in comment_snapshot.input_snapshot["selected_keywords"]
+    ]
+    article_codes = [
+        item["category_code"]
+        for item in article_snapshot.input_snapshot["selected_keywords"]
+    ]
+    assert "comment_writing_instruction" in comment_codes
+    assert "writing_instruction" not in comment_codes
+    assert "format_control" in comment_codes
+    assert "writing_instruction" in article_codes
+    assert "comment_writing_instruction" not in article_codes
+    assert "format_control" in article_codes
 
 
 @pytest.mark.asyncio

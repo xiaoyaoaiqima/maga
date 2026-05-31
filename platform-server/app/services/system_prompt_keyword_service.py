@@ -190,7 +190,9 @@ def normalize_system_prompt_keyword_content(content_json: dict[str, Any], *, str
     """Normalize old/new keyword asset shapes into the extensible v2 schema."""
 
     raw_categories = content_json.get("categories") if isinstance(content_json, dict) else None
-    categories = _normalize_categories(raw_categories, strict=strict)
+    categories = _split_legacy_writing_instruction_categories(
+        _normalize_categories(raw_categories, strict=strict)
+    )
     if strict and not categories:
         raise ValueError("至少需要一个关键词类别")
 
@@ -234,8 +236,33 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                 {
                     "category_code": "writing_instruction",
                     "category_name": "生文指令",
-                    "description": "默认生成约束，不是类别上限。",
+                    "description": "文章生成约束，不是类别上限。",
                     "sort_order": 20,
+                    "applicable_content_types": ["article"],
+                    "sub_keywords": [
+                        {
+                            "keyword_code": "natural_article",
+                            "keyword_name": "自然成文表达",
+                            "corpus": ["像真实妈妈写一段完整分享，表达自然，不写成广告口播或硬科普。"],
+                        },
+                        {
+                            "keyword_code": "specific_expansion",
+                            "keyword_name": "具体问题展开",
+                            "corpus": ["围绕一个具体带娃问题展开，不泛泛罗列卖点，也不把话说得太满。"],
+                        },
+                        {
+                            "keyword_code": "light_article_experience",
+                            "keyword_name": "轻经验分享",
+                            "corpus": ["可以有轻量经验感和选择过程，但不要虚构强亲历或承诺效果。"],
+                        },
+                    ],
+                },
+                {
+                    "category_code": "comment_writing_instruction",
+                    "category_name": "生评论指令",
+                    "description": "评论生成约束，不是类别上限。",
+                    "sort_order": 25,
+                    "applicable_content_types": ["comment"],
                     "sub_keywords": [
                         {
                             "keyword_code": "natural_comment",
@@ -243,14 +270,14 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                             "corpus": ["语言像顺手评论，短句优先，不写成广告口播或完整科普段落。"],
                         },
                         {
-                            "keyword_code": "specific_question",
+                            "keyword_code": "specific_comment_question",
                             "keyword_name": "带着具体问题来",
-                            "corpus": ["把泛泛的兴趣落到一个具体问题上，让内容更像真实妈妈在交流。"],
+                            "corpus": ["把泛泛的兴趣落到一个具体问题上，让内容更像真实妈妈在评论区交流。"],
                         },
                         {
-                            "keyword_code": "light_experience",
-                            "keyword_name": "轻经验分享",
-                            "corpus": ["可以用轻量经验感表达，但不要虚构强亲历或承诺效果。"],
+                            "keyword_code": "light_comment_experience",
+                            "keyword_name": "轻经验互动",
+                            "corpus": ["可以带一点轻量经验感或观望感，但不要虚构强亲历或承诺效果。"],
                         },
                     ],
                 },
@@ -297,6 +324,35 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                             "keyword_code": "plain_explain",
                             "keyword_name": "白话解释法",
                             "corpus": ["把复杂点说得更白话，但不扩写成硬科普。"],
+                        },
+                    ],
+                },
+                {
+                    "category_code": "format_control",
+                    "category_name": "格式控制",
+                    "description": "统一控制篇幅、emoji 和段落排版，不是类别上限。",
+                    "sort_order": 50,
+                    "sub_keywords": [
+                        {
+                            "keyword_code": "compact_clean",
+                            "keyword_name": "短平干净",
+                            "corpus": [
+                                "评论控制在20到50字，尽量一句话，不用emoji，不刻意分段；文章控制在150到250字，分2到3个短段，段落之间空行，不用emoji。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "light_emoji",
+                            "keyword_name": "少量表情",
+                            "corpus": [
+                                "评论控制在30到80字，最多1个emoji，不连续堆表情；文章控制在180到300字，分2到4段，可用1到2个emoji并自然分散。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "rich_layout",
+                            "keyword_name": "分段清楚",
+                            "corpus": [
+                                "评论控制在50到100字，最多两句话，少用或不用emoji；文章控制在250到400字，分3到5段，避免超过100字的长段，emoji最多3个且不能连续出现。"
+                            ],
                         },
                     ],
                 },
@@ -489,6 +545,44 @@ def _normalize_categories(raw_categories: Any, *, strict: bool) -> list[dict[str
         )
 
     return sorted(categories, key=lambda item: (item.get("sort_order", 0), item.get("category_code", "")))
+
+
+def _split_legacy_writing_instruction_categories(categories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    has_comment_instruction = any(
+        item.get("category_code") == "comment_writing_instruction"
+        or item.get("category_name") == "生评论指令"
+        for item in categories
+    )
+    if has_comment_instruction:
+        return categories
+
+    split_categories: list[dict[str, Any]] = []
+    for category in categories:
+        content_types = set(category.get("applicable_content_types") or [])
+        should_split = (
+            category.get("category_code") == "writing_instruction"
+            and {"article", "comment"}.issubset(content_types)
+        )
+        if not should_split:
+            split_categories.append(category)
+            continue
+
+        article_category = {
+            **category,
+            "description": category.get("description") or "文章生成约束，不是类别上限。",
+            "applicable_content_types": ["article"],
+        }
+        comment_category = {
+            **category,
+            "category_code": "comment_writing_instruction",
+            "category_name": "生评论指令",
+            "description": "评论生成约束，不是类别上限。",
+            "sort_order": _as_int(category.get("sort_order"), default=20) + 5,
+            "applicable_content_types": ["comment"],
+        }
+        split_categories.extend([article_category, comment_category])
+
+    return sorted(split_categories, key=lambda item: (item.get("sort_order", 0), item.get("category_code", "")))
 
 
 def _normalize_sub_keywords(raw_sub_keywords: Any, *, strict: bool) -> list[dict[str, Any]]:

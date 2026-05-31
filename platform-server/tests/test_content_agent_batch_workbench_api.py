@@ -172,9 +172,10 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
     assert item.plan_json["unified_generation"]["capability"] == "content.generate"
     assert [kw["category_code"] for kw in item.plan_json["unified_generation"]["selected_keywords"]] == [
         "persona",
-        "writing_instruction",
+        "comment_writing_instruction",
         "perturbation_rule",
         "writing_method",
+        "format_control",
     ]
 
 
