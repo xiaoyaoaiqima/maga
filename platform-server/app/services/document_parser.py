@@ -19,7 +19,6 @@ import openpyxl
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge_base_file import KnowledgeBaseFile
-from app.services.excel_parser import ExcelParser
 from app.services.cos_service import get_cos_service
 
 logger = logging.getLogger(__name__)

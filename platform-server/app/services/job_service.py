@@ -978,62 +978,9 @@ class JobService:
         node_ids: List[str],
         tenant_code: str = "default"
     ) -> Dict[str, str]:
-        """
-        批量获取节点名称（通过 Dapr 调用 keyword-corpus 服务）
-
-        Args:
-            node_ids: 节点 ID 列表
-            tenant_code: 租户编码
-
-        Returns:
-            节点 ID 到名称的映射
-        """
-        if not node_ids:
-            return {}
-
-        import httpx
-
-        KEYWORD_CORPUS_APP_ID = "raap-service-keyword-corpus"
-
-        # 通过 Dapr 调用
-        dapr_url = (
-            f"http://localhost:{settings.DAPR_HTTP_PORT}"
-            f"/v1.0/invoke/{KEYWORD_CORPUS_APP_ID}/method/api/v1/categories/keywords/batch-get"
-        )
-
-        node_ids_int = []
-        for nid in node_ids:
-            try:
-                node_ids_int.append(int(nid))
-            except (ValueError, TypeError):
-                logger.warning(f"[_fetch_node_names] Invalid node_id: {nid}")
-
-        if not node_ids_int:
-            return {}
-
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.post(
-                    dapr_url,
-                    json={"node_ids": node_ids_int, "include_children": False},
-                    params={"tenant_code": tenant_code},
-                )
-
-                if resp.status_code == 200:
-                    result = resp.json()
-                    data = result.get("data", {})
-                    # 提取 node_id -> name 映射
-                    node_id_to_name = {}
-                    for nid_str, node_info in data.items():
-                        if isinstance(node_info, dict):
-                            node_id_to_name[nid_str] = node_info.get("name", nid_str)
-                    logger.info(f"[_fetch_node_names] Fetched {len(node_id_to_name)} node names")
-                    return node_id_to_name
-                else:
-                    logger.warning(f"[_fetch_node_names] API failed: status={resp.status_code}")
-        except Exception as e:
-            logger.warning(f"[_fetch_node_names] Failed to fetch node names: {e}")
-
+        """旧关键词节点源已下线。"""
+        if node_ids:
+            logger.warning(f"旧关键词节点源已下线，忽略 node_ids={node_ids[:3]}, tenant_code={tenant_code}")
         return {}
 
     async def _extract_context_list(

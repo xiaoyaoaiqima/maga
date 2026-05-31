@@ -1553,9 +1553,9 @@ function onStrategyChange(value: unknown) {
 // 策略搜索过滤
 function filterStrategyOption(
   input: string,
-  option: { label: string; value: string },
+  option?: { label?: unknown; value?: unknown },
 ) {
-  return option.label.toLowerCase().includes(input.toLowerCase());
+  return String(option?.label || '').toLowerCase().includes(input.toLowerCase());
 }
 
 // 切换策略选择（多选）
@@ -2342,14 +2342,8 @@ watch(
           <div class="guide-content">
             <p>创建生文任务的完整流程如下：</p>
             <ol class="guide-steps">
-              <li>
-                <strong>准备关键词语料</strong> -
-                在关键词语料中心，挑选想要的语料
-              </li>
-              <li>
-                <strong>配置关键词策略</strong> -
-                设置内容生成策略（人设、风格、变量等）
-              </li>
+              <li><strong>上传业务规则</strong> - 在业务规则页上传活动规则包</li>
+              <li><strong>维护系统提示词关键词</strong> - 配置可扩展的提示词维度和语料</li>
               <li>
                 <strong>创建 Agent</strong> - 选择一个 Agent 模板，创建或复制
                 Agent
@@ -2363,15 +2357,15 @@ watch(
               <Space>
                 <Button
                   size="small"
-                  @click="router.push('/keyword_corpus/graph')"
+                  @click="router.push('/business-rules')"
                 >
-                  前往关键词语料
+                  前往业务规则
                 </Button>
                 <Button
                   size="small"
-                  @click="router.push('/keyword_corpus/strategy')"
+                  @click="router.push('/content-agent/system-prompt-keywords')"
                 >
-                  前往策略配置
+                  前往系统提示词关键词
                 </Button>
                 <Button size="small" @click="router.push('/agent/workbench')">
                   前往 Agent 工作台
@@ -3005,8 +2999,8 @@ watch(
                           }))
                         "
                         :filter-option="
-                          (input: string, option: { label: string }) =>
-                            option.label
+                          (input: string, option?: { label?: unknown }) =>
+                            String(option?.label || '')
                               .toLowerCase()
                               .includes(input.toLowerCase())
                         "

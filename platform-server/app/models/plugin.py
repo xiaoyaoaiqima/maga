@@ -2,7 +2,7 @@
 Plugin model
 
 v2 重构：
-- 新增 strategy_id 字段：绑定的内容策略ID（来自 keyword-corpus 服务）
+- 新增 strategy_id 字段：历史内容策略ID
 - 新增 variable_mappings 字段：变量到 label 的映射配置
 """
 from datetime import datetime
@@ -68,11 +68,11 @@ class Plugin(Base):
     
     # ========== v2 新增字段 ==========
     
-    # 绑定的内容策略ID（来自 keyword-corpus 服务的 content_strategies 表）
+    # 历史内容策略ID；旧策略系统已下线，仅保留字段兼容历史数据。
     strategy_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
         nullable=True,
-        comment="绑定的内容策略ID（来自 keyword-corpus 服务，换活动时切换）"
+        comment="历史内容策略ID（旧策略系统已下线）"
     )
     
     # 变量映射配置（只定义变量到 label 的映射，不绑定具体节点）
@@ -178,4 +178,3 @@ class Plugin(Base):
         """获取变量对应的 label"""
         mapping = self.get_variable_mapping_by_name(variable_name)
         return mapping.get("label") if mapping else None
-

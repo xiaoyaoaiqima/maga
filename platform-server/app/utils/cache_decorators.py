@@ -185,7 +185,7 @@ def invalidate_tree_cache(
     tenant_codes_kwarg: Optional[str] = None,
 ):
     """
-    兼容 keyword-corpus 的分类树缓存失效装饰器。
+    兼容历史分类树缓存失效装饰器。
 
     这里采用保守策略：
     - 优先读取显式传入的 tenant_codes_kwarg

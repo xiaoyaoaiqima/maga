@@ -5,7 +5,7 @@
 Demo 主线调整为：
 
 1. 运营拆解并上传业务规则包。
-2. 系统按规则包自动规划生成任务，并自动补齐内置生成关键词。
+2. 系统按规则包自动规划生成任务，并自动补齐系统提示词关键词。
 3. `maga-worker` 通过统一 `content.generate` 能力执行生成。
 4. 运营在批量报告里查看、审核、反馈。
 
@@ -16,14 +16,14 @@ Demo 主线调整为：
 文章和评论都走同一套逻辑：
 
 1. 业务规则包提供本次生成需求的业务信息。
-2. 系统内置四类关键词：`人设`、`生文指令`、`扰动规则`、`写作手法`。
-3. 每类关键词下有多个子关键词，每个子关键词挂一组语料。
-4. 每次生成时，系统从四类关键词中各自动选择 1 个子关键词。
-5. `expert` 使用提示词模版把业务规则和四类关键词语料组装成最终 prompt。
+2. 系统读取版本化的“系统提示词关键词”资产，默认种子包含 `人设`、`生文指令`、`扰动规则`、`写作手法`，但这些不是系统上限。
+3. 每个关键词类别下有多个子关键词，每个子关键词挂一组语料。
+4. 每次生成时，系统从每个启用类别中自动选择 1 个启用子关键词；后续新增类别只需要在管理页配置。
+5. `expert` 使用提示词模版把业务规则和本次选中的关键词语料组装成最终 prompt。
 6. `expert` 的模型配置决定 provider、model_code、temperature、max_tokens。
 7. `maga-worker` 只负责按最终 prompt 生成内容并返回结构化结果。
 
-这里的 `expert` 不是人设，也不是业务规则；它是“提示词模版 + 模型参数配置”。业务规则负责告诉模型写什么，四类关键词负责告诉模型怎么写，expert 负责把这些输入组装成最终提示词。
+这里的 `expert` 不是人设，也不是业务规则；它是“提示词模版 + 模型参数配置”。业务规则负责告诉模型写什么，系统提示词关键词负责告诉模型怎么写，expert 负责把这些输入组装成最终提示词。
 
 ## 规则包边界
 
@@ -45,7 +45,7 @@ Demo 主线调整为：
 - 可选 `评论示例`
 - 可选 `评论补充`
 
-生成时每条 item 的计划中带完整切角规则、语料、示例和补充。系统再自动选择四类关键词，并把最终组装结果写入 `plan_json.unified_generation`，worker 只输出评论正文。
+生成时每条 item 的计划中带完整切角规则、语料、示例和补充。系统再自动选择启用的系统提示词关键词，并把最终组装结果写入 `plan_json.unified_generation`，worker 只输出评论正文。
 
 ### 源悦活动生文
 
@@ -155,7 +155,22 @@ POST /api/v1/content-agent/comment-batches/start
 POST /api/v1/content-agent/batches/start
 ```
 
-它仍服务产品使用体验、妈妈班等长文或笔记生成入口。后续实现上会逐步收敛到同一套 `业务规则包 -> 四类关键词 -> expert -> content.generate` 的执行模型。
+它仍服务产品使用体验、妈妈班等长文或笔记生成入口。后续实现上会逐步收敛到同一套 `业务规则包 -> 系统提示词关键词 -> expert -> content.generate` 的执行模型。
+
+### 系统提示词关键词
+
+```http
+GET /api/v1/assets/content-generation-keywords?asset_key=default_content_generation_keywords
+PUT /api/v1/assets/content-generation-keywords
+```
+
+系统提示词关键词作为 `content_generation_keywords` 资产存储在 `asset_registry`，每次保存生成新的 production 版本，旧版本归档。页面入口：
+
+```text
+/#/content-agent/system-prompt-keywords
+```
+
+管理页支持新增、编辑、停用关键词类别和子关键词；类别不是固定枚举，默认四类只是种子配置。
 
 ## 数据承载
 
@@ -180,7 +195,7 @@ content.generate
 
 - `content_type`：`comment` 或 `article`
 - `business_rule`：本条业务规则
-- `selected_keywords`：四类关键词各 1 个子关键词及其语料
+- `selected_keywords`：每个启用关键词类别自动选出的 1 个子关键词及其语料
 - `expert`：提示词模版和模型参数配置快照
 - `rendered_prompt`：最终给模型的 prompt
 - `output_fields`：评论为 `["comment"]`，文章为 `["title", "body"]`

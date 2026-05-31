@@ -6,19 +6,14 @@ import random
 import re
 from typing import Dict, Any, Optional, List, Tuple
 
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.expert_config_service import ExpertConfigService
 from app.services.plugin_service import PluginService
 from app.services.plugin_context_service import PluginContextService
-from app.core.config import settings
 from app.core.logger import get_logger
 
 logger = get_logger()
-
-# Dapr 调用 keyword-corpus 服务
-KEYWORD_CORPUS_APP_ID = "raap-service-keyword-corpus"
 
 
 def _corpus_to_text(corpus_item: Dict[str, Any]) -> str:
@@ -35,7 +30,7 @@ def _corpus_to_text(corpus_item: Dict[str, Any]) -> str:
     if "template_code" in corpus_item and "fields" in corpus_item:
         fields = corpus_item.get("fields", {})
         if isinstance(fields, dict):
-            # 优先使用 field_keys 顺序（keyword-corpus 返回的顺序保证）
+            # 优先使用 field_keys 顺序。
             field_keys = corpus_item.get("field_keys")
             logger.info(f"[_corpus_to_text] template_code={corpus_item.get('template_code')}, field_keys={field_keys}, fields_keys={list(fields.keys())}")
             if field_keys and isinstance(field_keys, list):
@@ -60,87 +55,9 @@ def _corpus_to_text(corpus_item: Dict[str, Any]) -> str:
 
 
 async def _fetch_corpus_from_tree(node_ids: List[str], tenant_code: str = "default") -> Dict[str, Dict[str, Any]]:
-    """
-    从 keyword-corpus 服务批量获取节点的语料
-
-    优先通过 Dapr 调用，失败时 fallback 到直接 HTTP 调用
-
-    Args:
-        node_ids: 节点 ID 列表
-        tenant_code: 租户编码
-
-    Returns:
-        节点 ID 到语料的映射
-    """
-    if not node_ids:
-        return {}
-
-    # 方法一：通过 Dapr sidecar 调用
-    dapr_url = (
-        f"http://localhost:{settings.DAPR_HTTP_PORT}"
-        f"/v1.0/invoke/{KEYWORD_CORPUS_APP_ID}/method/api/v1/categories/keywords/batch-get"
-    )
-
-    # 方法二：直接调用 keyword-corpus 服务（fallback）
-    # 在 K8s 中服务名是 raap-service-keyword-corpus，端口 5100
-    # 服务通过 ClusterIP 暴露在端口 80
-    # 注意：不能用 localhost:5100，因为那会连接到 Orchestrator 自身
-    direct_urls = [
-        f"http://{KEYWORD_CORPUS_APP_ID}:80/api/v1/categories/keywords/batch-get",  # K8s 内部 (ClusterIP port)
-        f"http://{KEYWORD_CORPUS_APP_ID}:5100/api/v1/categories/keywords/batch-get",  # K8s 内部 (container port)
-    ]
-
-    async def try_fetch(url: str) -> Optional[Dict[str, Dict[str, Any]]]:
-        """尝试从指定 URL 获取数据"""
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:  # 减少超时时间到5秒
-                logger.debug(f"[_fetch_corpus] trying url={url}, node_ids={node_ids}")
-                resp = await client.post(
-                    url,
-                    json={"node_ids": node_ids, "include_children": False},
-                    params={"tenant_code": tenant_code},
-                )
-
-                if resp.status_code == 200:
-                    result = resp.json()
-                    data = result.get("data", {})
-                    logger.debug(f"[_fetch_corpus] success: url={url}, got {len(data)} nodes")
-                    # 如果请求成功但返回空数据，可能是 Dapr 冷启动问题，返回 None 以便重试
-                    if not data and node_ids:
-                        logger.warning(f"[_fetch_corpus] got 0 nodes for {len(node_ids)} requested, may retry")
-                        return None
-                    return data
-                else:
-                    logger.debug(f"[_fetch_corpus] failed: url={url}, status={resp.status_code}, body={resp.text[:200]}")
-                    return None
-        except Exception as e:
-            logger.debug(f"[_fetch_corpus] error: url={url}, error={e}")
-            return None
-
-    # 重试逻辑：Dapr sidecar 可能需要几秒钟启动
-    import asyncio
-    max_retries = 3
-    retry_delay = 0.5  # 500ms
-    
-    for attempt in range(max_retries):
-        # 先尝试 Dapr
-        result = await try_fetch(dapr_url)
-        if result is not None:
-            return result
-
-        # Dapr 失败，尝试直接调用
-        for direct_url in direct_urls:
-            result = await try_fetch(direct_url)
-            if result is not None:
-                return result
-        
-        # 如果不是最后一次尝试，等待后重试
-        if attempt < max_retries - 1:
-            logger.debug(f"[_fetch_corpus] retry {attempt + 1}/{max_retries} after {retry_delay}s")
-            await asyncio.sleep(retry_delay)
-            retry_delay *= 2  # 指数退避
-
-    logger.warning(f"所有方式获取节点语料均失败: node_ids={node_ids[:3]}...")
+    """旧 keyword_tree 语料源已下线，保留空返回避免历史调试链路启动失败。"""
+    if node_ids:
+        logger.warning(f"旧 keyword_tree 语料源已下线，忽略 node_ids={node_ids[:3]}")
     return {}
 
 
@@ -773,7 +690,7 @@ class JobTestHelper:
         展开 strategy_v3 模式的 plan（多策略维度合并）。
 
         说明：
-        - 调用 keyword-corpus 的合并 API 获取合并组合
+        - 旧策略系统已下线，调用兼容层时会给出明确错误
         - 如果有 merged_allocations（旧格式），根据 allocations 生成 plan_items
         - 如果没有 merged_allocations（轻量级格式），根据 target_count 和返回的组合生成 plan_items
         - 查询 ExpertConfig 和 Plugin 表获取 plugin strategy_id 绑定（支持插件策略自动映射）

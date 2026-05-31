@@ -24,15 +24,16 @@ function collectPaths(routes: typeof frontendTabRoutes): string[] {
 }
 
 describe('frontend controlled sidebar tabs', () => {
-  it('keeps the MVP sidebar to content, assets, reference extraction, keyword corpus, feedback, prompt optimization, and model management', () => {
+  it('keeps the MVP sidebar to content, assets, rules, system keywords, feedback, prompt optimization, and model management', () => {
     const paths = collectPaths(frontendTabRoutes);
     const titles = frontendTabRoutes.map((route) => route.meta?.title);
 
     expect(paths).toEqual([
       '/content-agent/workbench',
       '/assets/training',
+      '/business-rules',
+      '/content-agent/system-prompt-keywords',
       '/assets/reference-elements',
-      '/keyword-corpus/template-variable-corpus',
       '/dashboard/rlhf',
       '/expert/prompt-optimizer',
       '/llm/provider',
@@ -40,8 +41,9 @@ describe('frontend controlled sidebar tabs', () => {
     expect(titles).toEqual([
       '内容生成',
       '资料训练',
+      '业务规则',
+      '系统提示词关键词',
       '例文抽取',
-      '关键词语料',
       '反馈训练',
       '提示词优化',
       '模型管理',
@@ -67,7 +69,6 @@ describe('frontend controlled sidebar tabs', () => {
   it('does not expose legacy RAAP modules in the MVP sidebar', () => {
     const paths = collectPaths(frontendTabRoutes);
 
-    expect(paths).not.toContain('/keyword_corpus/graph');
     expect(paths).not.toContain('/job/agent');
     expect(paths).not.toContain('/expert/calibration');
     expect(paths).not.toContain('/dashboard/ai-dashboard');

@@ -54,13 +54,8 @@ from app.models.activity import Activity
 from app.models.activity_question import ActivityQuestion
 from app.models.activity_question_option import ActivityQuestionOption
 from app.models.agent import Agent
-from app.models.content_strategy import ContentStrategy
-from app.models.corpus_template import CorpusTemplate
 from app.models.knowledge_base import KnowledgeBase
 from app.models.knowledge_base_file import KnowledgeBaseFile
-from app.models.graph import GraphEdge, GraphNode, NodePropertyMeta
-from app.models.node_pending_audit import NodePendingAudit
-from app.models.ban_term import BanTerm, BanTermMeta
 from app.models.base import Base
 from app.models.base_model import BaseModel
 from app.models.model_config import ModelConfig
@@ -137,16 +132,8 @@ __all__ = [
     "ActivityQuestion",
     "ActivityQuestionOption",
     "Agent",
-    "ContentStrategy",
-    "CorpusTemplate",
     "KnowledgeBase",
     "KnowledgeBaseFile",
-    "GraphNode",
-    "GraphEdge",
-    "NodePropertyMeta",
-    "NodePendingAudit",
-    "BanTerm",
-    "BanTermMeta",
     "Base",
     "BaseModel",
     "ModelConfig",

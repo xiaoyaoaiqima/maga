@@ -20,6 +20,8 @@ from app.schemas.assets import (
     AssetRegistrySummaryResponse,
     ReferenceElementExtractRequest,
     ReferenceElementExtractResponse,
+    SystemPromptKeywordAssetResponse,
+    SystemPromptKeywordUpdate,
 )
 from app.services.asset_service import AssetService, normalize_asset_content
 from app.services.asset_import_service import import_yuanyue_training_rules
@@ -36,6 +38,13 @@ from app.services.product_experience_rule_service import (
     product_experience_import_summary,
 )
 from app.services.reference_element_extraction_service import ReferenceElementExtractionService
+from app.services.system_prompt_keyword_service import (
+    CONTENT_GENERATION_KEYWORDS_ASSET_TYPE,
+    DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+    SystemPromptKeywordService,
+    fallback_system_prompt_keyword_content,
+    normalize_system_prompt_keyword_content,
+)
 
 router = APIRouter()
 
@@ -312,6 +321,82 @@ async def get_generation_options(
         message="success",
         data=AssetGenerationOptionsResponse.model_validate(options).model_dump(mode="json"),
     )
+
+
+@router.get("/content-generation-keywords", response_model=ResponseData)
+async def get_content_generation_keywords(
+    asset_key: str = Query(default=DEFAULT_SYSTEM_KEYWORD_ASSET_KEY),
+    db: AsyncSession = Depends(get_db),
+):
+    service = SystemPromptKeywordService(db)
+    asset = await service.get_latest_asset(asset_key=asset_key)
+    if asset is None:
+        content_json = fallback_system_prompt_keyword_content()
+        return ResponseData(
+            code=200,
+            message="success",
+            data=SystemPromptKeywordAssetResponse(
+                asset_type=CONTENT_GENERATION_KEYWORDS_ASSET_TYPE,
+                asset_key=asset_key,
+                display_name="系统提示词关键词",
+                source="fallback",
+                content_json=content_json,
+                metadata_json={
+                    "schema_version": content_json.get("schema_version"),
+                    "category_count": len(content_json.get("categories") or []),
+                },
+            ).model_dump(mode="json"),
+        )
+
+    content_json = normalize_system_prompt_keyword_content(asset.content_json or {})
+    return ResponseData(
+        code=200,
+        message="success",
+        data=SystemPromptKeywordAssetResponse(
+            id=asset.id,
+            asset_type=asset.asset_type,
+            asset_key=asset.asset_key,
+            display_name=asset.display_name,
+            version_no=asset.version_no,
+            status=asset.status,
+            asset_stage=asset.asset_stage,
+            source="asset_registry",
+            source_hash=asset.source_hash,
+            content_json=content_json,
+            metadata_json=asset.metadata_json,
+            created_by=asset.created_by,
+            create_time=asset.create_time,
+            update_time=asset.update_time,
+        ).model_dump(mode="json"),
+    )
+
+
+@router.put("/content-generation-keywords", response_model=ResponseData)
+async def save_content_generation_keywords(
+    payload: SystemPromptKeywordUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    service = SystemPromptKeywordService(db)
+    try:
+        asset = await service.save_keywords(
+            asset_key=payload.asset_key,
+            display_name=payload.display_name,
+            content_json={
+                "selection_policy": payload.selection_policy or {},
+                "categories": payload.categories,
+            },
+            created_by=payload.created_by or "maga-operator",
+        )
+        await db.commit()
+        await db.refresh(asset)
+        return ResponseData(
+            code=200,
+            message="success",
+            data=AssetRegistryResponse.model_validate(asset).model_dump(mode="json"),
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/candidates", response_model=ResponseData)

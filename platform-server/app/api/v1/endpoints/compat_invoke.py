@@ -20,7 +20,6 @@ router = APIRouter()
 APP_ID_PATH_PREFIX = {
     "raap-service-ag": "/__internal/critic",
     "raap-service-generation-experts": "/__internal/generation",
-    "raap-service-keyword-corpus": "/__internal/keyword-corpus",
 }
 
 

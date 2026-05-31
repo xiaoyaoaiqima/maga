@@ -28,18 +28,18 @@ function handleTabChange(key: number | string) {
 const quickActions = [
   {
     key: 'keyword',
-    title: '关键词语料',
-    description: '管理品牌、产品、标签等关键词语料',
+    title: '系统提示词关键词',
+    description: '维护生成链路自动选取的提示词关键词',
     icon: KeyOutlined,
-    path: '/keyword_corpus/graph',
+    path: '/content-agent/system-prompt-keywords',
     color: '#1890ff',
   },
   {
     key: 'strategy',
-    title: '关键词策略',
-    description: '配置内容生成策略和变量组合',
+    title: '业务规则',
+    description: '管理活动级业务规则包',
     icon: ThunderboltOutlined,
-    path: '/keyword_corpus/strategy',
+    path: '/business-rules',
     color: '#52c41a',
   },
   {
@@ -70,16 +70,16 @@ function handleCreateBlank() {
   showGuideModal.value = true;
 }
 
-// 跳转到关键词语料
+// 跳转到系统提示词关键词
 function goToKeywords() {
   showGuideModal.value = false;
-  router.push('/keyword_corpus/graph');
+  router.push('/content-agent/system-prompt-keywords');
 }
 
-// 跳转到策略
+// 跳转到业务规则
 function goToStrategy() {
   showGuideModal.value = false;
-  router.push('/keyword_corpus/strategy');
+  router.push('/business-rules');
 }
 
 // 跳转到 Agent 模板

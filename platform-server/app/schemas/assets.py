@@ -76,6 +76,31 @@ class AssetGenerationOptionsResponse(BaseModel):
     styles: list[str]
 
 
+class SystemPromptKeywordAssetResponse(BaseModel):
+    id: int | None = None
+    asset_type: str
+    asset_key: str
+    display_name: str | None = None
+    version_no: int | None = None
+    status: str = "active"
+    asset_stage: str = "production"
+    source: str
+    source_hash: str | None = None
+    content_json: dict[str, Any]
+    metadata_json: dict[str, Any] | None = None
+    created_by: str | None = None
+    create_time: datetime | None = None
+    update_time: datetime | None = None
+
+
+class SystemPromptKeywordUpdate(BaseModel):
+    asset_key: str = Field(default="default_content_generation_keywords", min_length=1)
+    display_name: str | None = "系统提示词关键词"
+    selection_policy: dict[str, Any] | None = None
+    categories: list[dict[str, Any]] = Field(default_factory=list)
+    created_by: str | None = "maga-operator"
+
+
 class AssetCandidateCreate(BaseModel):
     asset_type: str = Field(..., min_length=1)
     asset_key: str = Field(..., min_length=1)

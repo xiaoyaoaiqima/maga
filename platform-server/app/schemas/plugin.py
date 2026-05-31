@@ -30,7 +30,7 @@ class PluginBase(BaseSchema):
     remark: Optional[str] = Field(default=None, description="备注")
     
     # ========== v2 新增字段 ==========
-    strategy_id: Optional[int] = Field(default=None, description="绑定的内容策略ID（来自 keyword-corpus 服务）")
+    strategy_id: Optional[int] = Field(default=None, description="历史内容策略ID（旧策略系统已下线）")
     variable_mappings: Optional[List[VariableMapping]] = Field(default=None, description="变量映射配置")
     
     @field_validator('enabled', mode='before')
@@ -92,4 +92,3 @@ class VariableMappingConfigResponse(BaseSchema):
     strategy_name: Optional[str] = Field(None, description="内容策略名称")
     strategy_labels: List[str] = Field(default_factory=list, description="策略中可用的 label 列表")
     variable_mappings: List[VariableMapping] = Field(default_factory=list, description="变量映射配置列表")
-

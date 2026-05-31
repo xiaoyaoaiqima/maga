@@ -70,7 +70,6 @@ async def get_system_info():
     services_to_check = {
         "critic": "raap-service-ag",
         "generation": "raap-service-generation-experts",
-        "keyword": "raap-service-keyword-corpus",
     }
 
     # 添加 orchestrator 自身状态

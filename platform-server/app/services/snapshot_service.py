@@ -10,16 +10,10 @@
 import random
 from typing import Any, Dict, List, Optional
 
-import httpx
-
-from app.core.config import settings
 from app.core.logger import get_logger
 from app.models.plugin import Plugin
 
 logger = get_logger()
-
-# Dapr 调用 keyword-corpus 服务
-KEYWORD_CORPUS_APP_ID = "raap-service-keyword-corpus"
 
 
 def _extract_node_ids_from_pool(pool_value: Any) -> List[str]:
@@ -52,50 +46,8 @@ async def _fetch_strategy_detail(
     strategy_id: int,
     tenant_code: str = "default"
 ) -> Optional[Dict[str, Any]]:
-    """
-    获取策略详情（包含 node_pools）
-    
-    Returns:
-        策略详情，包含 node_pools 字段
-    """
-    # 方法一：通过 Dapr sidecar 调用
-    dapr_url = (
-        f"http://localhost:{settings.DAPR_HTTP_PORT}"
-        f"/v1.0/invoke/{KEYWORD_CORPUS_APP_ID}/method/api/v1/content-strategies/{strategy_id}"
-    )
-    
-    # 方法二：直接调用 keyword-corpus 服务（fallback）
-    # 注意：不能用 localhost，因为那会连接到 Orchestrator 自身
-    direct_urls = [
-        f"http://{KEYWORD_CORPUS_APP_ID}:80/api/v1/content-strategies/{strategy_id}",
-        f"http://{KEYWORD_CORPUS_APP_ID}:5100/api/v1/content-strategies/{strategy_id}",
-    ]
-    
-    async def try_fetch(url: str) -> Optional[Dict[str, Any]]:
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(url, params={"tenant_code": tenant_code})
-                if resp.status_code == 200:
-                    return resp.json()
-                else:
-                    logger.debug(f"获取策略详情失败: url={url}, status={resp.status_code}")
-                    return None
-        except Exception as e:
-            logger.debug(f"调用失败: url={url}, error={e}")
-            return None
-    
-    # 先尝试 Dapr
-    result = await try_fetch(dapr_url)
-    if result is not None:
-        return result
-    
-    # Dapr 失败，尝试直接调用
-    for direct_url in direct_urls:
-        result = await try_fetch(direct_url)
-        if result is not None:
-            return result
-    
-    logger.warning(f"所有方式获取策略详情均失败: strategy_id={strategy_id}")
+    """旧关键词策略源已下线。"""
+    logger.warning(f"旧关键词策略源已下线，忽略 strategy_id={strategy_id}, tenant_code={tenant_code}")
     return None
 
 
@@ -103,62 +55,9 @@ async def _fetch_nodes_batch(
     node_ids: List[str],
     tenant_code: str = "default"
 ) -> Dict[str, Dict[str, Any]]:
-    """
-    批量获取节点详情（包含语料）
-    
-    Returns:
-        节点ID -> 节点详情的映射
-    """
-    if not node_ids:
-        return {}
-    
-    # 方法一：通过 Dapr sidecar 调用
-    dapr_url = (
-        f"http://localhost:{settings.DAPR_HTTP_PORT}"
-        f"/v1.0/invoke/{KEYWORD_CORPUS_APP_ID}/method/api/v1/categories/keywords/batch-get"
-    )
-    
-    # 方法二：直接调用 keyword-corpus 服务（fallback）
-    # 注意：不能用 localhost，因为那会连接到 Orchestrator 自身
-    direct_urls = [
-        f"http://{KEYWORD_CORPUS_APP_ID}:80/api/v1/categories/keywords/batch-get",  # K8s ClusterIP
-        f"http://{KEYWORD_CORPUS_APP_ID}:5100/api/v1/categories/keywords/batch-get",  # K8s container port
-    ]
-    
-    async def try_fetch(url: str) -> Optional[Dict[str, Dict[str, Any]]]:
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    url,
-                    json={"node_ids": node_ids, "include_children": False},
-                    params={"tenant_code": tenant_code},
-                )
-                
-                if resp.status_code == 200:
-                    result = resp.json()
-                    data = result.get("data", {})
-                    if data:
-                        logger.debug(f"成功获取 {len(data)} 个节点的语料 (from {url})")
-                    return data
-                else:
-                    logger.debug(f"获取语料失败: url={url}, status={resp.status_code}")
-                    return None
-        except Exception as e:
-            logger.debug(f"调用失败: url={url}, error={e}")
-            return None
-    
-    # 先尝试 Dapr
-    result = await try_fetch(dapr_url)
-    if result is not None:
-        return result
-    
-    # Dapr 失败，尝试直接调用
-    for direct_url in direct_urls:
-        result = await try_fetch(direct_url)
-        if result is not None:
-            return result
-    
-    logger.warning(f"所有方式获取节点语料均失败: node_ids={node_ids[:3]}...")
+    """旧关键词节点源已下线。"""
+    if node_ids:
+        logger.warning(f"旧关键词节点源已下线，忽略 node_ids={node_ids[:3]}, tenant_code={tenant_code}")
     return {}
 
 

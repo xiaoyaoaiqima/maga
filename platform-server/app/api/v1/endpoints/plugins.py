@@ -7,13 +7,11 @@ v2 重构：
 """
 from typing import Any, Dict, List, Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.logger import get_logger
 from app.schemas.base import ResponseData
@@ -33,9 +31,6 @@ from app.utils.plugin_renderer import PluginRenderer
 
 logger = get_logger()
 router = APIRouter()
-
-# Dapr 调用 keyword-corpus 服务
-KEYWORD_CORPUS_APP_ID = "raap-service-keyword-corpus"
 
 
 @router.post("", response_model=ResponseData[PluginResponse])
@@ -224,34 +219,8 @@ async def copy_plugin(
 # ========== v2 新增 API：变量映射配置 ==========
 
 async def _fetch_strategy_detail(strategy_id: int, tenant_code: str = "default") -> Optional[Dict[str, Any]]:
-    """获取策略详情（内部函数）"""
-    dapr_url = (
-        f"http://localhost:{settings.DAPR_HTTP_PORT}"
-        f"/v1.0/invoke/{KEYWORD_CORPUS_APP_ID}/method/api/v1/content-strategies/{strategy_id}"
-    )
-    # 注意：不能用 localhost，因为那会连接到 Orchestrator 自身
-    direct_urls = [
-        f"http://{KEYWORD_CORPUS_APP_ID}:80/api/v1/content-strategies/{strategy_id}",
-        f"http://{KEYWORD_CORPUS_APP_ID}:5100/api/v1/content-strategies/{strategy_id}",
-    ]
-    
-    async def try_fetch(url: str) -> Optional[Dict[str, Any]]:
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(url, params={"tenant_code": tenant_code})
-                if resp.status_code == 200:
-                    return resp.json()
-        except Exception as e:
-            logger.debug(f"调用失败: url={url}, error={e}")
-        return None
-    
-    result = await try_fetch(dapr_url)
-    if result:
-        return result
-    for url in direct_urls:
-        result = await try_fetch(url)
-        if result:
-            return result
+    """旧关键词策略源已下线。"""
+    logger.warning(f"旧关键词策略源已下线，忽略 strategy_id={strategy_id}, tenant_code={tenant_code}")
     return None
 
 

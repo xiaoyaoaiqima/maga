@@ -11,19 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.expert_config import ExpertConfig
 from app.models.maga_assets import AssetRegistry
+from app.services.system_prompt_keyword_service import (
+    CONTENT_GENERATION_KEYWORDS_ASSET_TYPE,
+    DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+    fallback_system_prompt_keyword_content,
+    normalize_system_prompt_keyword_content,
+)
 
 CONTENT_GENERATE_CAPABILITY = "content.generate"
-SYSTEM_KEYWORD_ASSET_TYPE = "content_generation_keywords"
-DEFAULT_SYSTEM_KEYWORD_ASSET_KEY = "default_content_generation_keywords"
+SYSTEM_KEYWORD_ASSET_TYPE = CONTENT_GENERATION_KEYWORDS_ASSET_TYPE
 DEFAULT_COMMENT_EXPERT_CONFIG_CODE = "comment_generator_v1"
 DEFAULT_ARTICLE_EXPERT_CONFIG_CODE = "article_generator_v1"
-
-KEYWORD_CATEGORIES = [
-    ("persona", "人设"),
-    ("writing_instruction", "生文指令"),
-    ("perturbation_rule", "扰动规则"),
-    ("writing_method", "写作手法"),
-]
 
 
 @dataclass(frozen=True)
@@ -36,7 +34,7 @@ class UnifiedContentGenerationService:
     """Compile one executable generation prompt from a business rule package.
 
     The operator-facing input remains only the uploaded business rule package.
-    MAGA then selects one sub-keyword from each built-in category and renders
+    MAGA then selects one sub-keyword from each enabled keyword category and renders
     the expert prompt template into a stateless executor payload.
     """
 
@@ -55,8 +53,10 @@ class UnifiedContentGenerationService:
         model_config: dict[str, Any] | None = None,
     ) -> UnifiedGenerationSnapshot:
         keyword_asset = await self._latest_keyword_asset(keyword_asset_key)
-        keyword_content = keyword_asset.content_json if keyword_asset else _fallback_keyword_asset_content()
-        selected_keywords = _select_keyword_bundle(keyword_content, item_no=item_no)
+        keyword_content = normalize_system_prompt_keyword_content(
+            keyword_asset.content_json if keyword_asset else fallback_system_prompt_keyword_content()
+        )
+        selected_keywords = _select_keyword_bundle(keyword_content, content_type=content_type, item_no=item_no)
         expert = await self._expert_snapshot(
             expert_config_code or _default_expert_code(content_type),
             content_type=content_type,
@@ -144,14 +144,20 @@ class UnifiedContentGenerationService:
         return _fallback_expert_snapshot(expert_config_code, content_type=content_type, model_config=model_config)
 
 
-def _select_keyword_bundle(content_json: dict[str, Any], *, item_no: int) -> list[dict[str, Any]]:
+def _select_keyword_bundle(content_json: dict[str, Any], *, content_type: str, item_no: int) -> list[dict[str, Any]]:
     categories = _categories_from_content(content_json)
     selected: list[dict[str, Any]] = []
     base = max(1, item_no) - 1
-    for offset, (category_code, category_name) in enumerate(KEYWORD_CATEGORIES):
-        category = categories.get(category_code) or categories.get(category_name) or {}
+    for offset, category in enumerate(categories):
+        if category.get("enabled") is False:
+            continue
+        applicable_content_types = category.get("applicable_content_types")
+        if isinstance(applicable_content_types, list) and applicable_content_types:
+            if content_type not in {str(item) for item in applicable_content_types}:
+                continue
         sub_keywords = category.get("sub_keywords") or category.get("items") or []
         sub_keywords = [item for item in sub_keywords if isinstance(item, dict)]
+        sub_keywords = [item for item in sub_keywords if item.get("enabled") is not False]
         if not sub_keywords:
             continue
         item = sub_keywords[(base + offset) % len(sub_keywords)]
@@ -160,8 +166,8 @@ def _select_keyword_bundle(content_json: dict[str, Any], *, item_no: int) -> lis
             corpus = [corpus]
         selected.append(
             {
-                "category_code": category_code,
-                "category_name": category.get("category_name") or category.get("name") or category_name,
+                "category_code": category.get("category_code") or category.get("code") or category.get("category_name"),
+                "category_name": category.get("category_name") or category.get("name") or category.get("category_code"),
                 "keyword_code": item.get("keyword_code") or item.get("code") or item.get("子关键词") or item.get("keyword_name"),
                 "keyword_name": item.get("keyword_name") or item.get("name") or item.get("子关键词") or item.get("keyword_code"),
                 "corpus": [str(value).strip() for value in corpus if str(value).strip()],
@@ -170,17 +176,23 @@ def _select_keyword_bundle(content_json: dict[str, Any], *, item_no: int) -> lis
     return selected
 
 
-def _categories_from_content(content_json: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _categories_from_content(content_json: dict[str, Any]) -> list[dict[str, Any]]:
     raw_categories = content_json.get("categories") if isinstance(content_json, dict) else None
     if isinstance(raw_categories, dict):
-        return {str(key): value for key, value in raw_categories.items() if isinstance(value, dict)}
-    if isinstance(raw_categories, list):
-        return {
-            str(item.get("category_code") or item.get("category_name") or item.get("name")): item
-            for item in raw_categories
-            if isinstance(item, dict)
-        }
-    return {}
+        categories = [
+            {
+                **value,
+                "category_code": value.get("category_code") or key,
+                "category_name": value.get("category_name") or value.get("name") or key,
+            }
+            for key, value in raw_categories.items()
+            if isinstance(value, dict)
+        ]
+    elif isinstance(raw_categories, list):
+        categories = [item for item in raw_categories if isinstance(item, dict)]
+    else:
+        categories = []
+    return sorted(categories, key=lambda item: (item.get("sort_order") or 0, item.get("category_code") or ""))
 
 
 def _template_variables(
@@ -239,7 +251,7 @@ def _generation_requirements(content_type: str, output_fields: list[str]) -> str
         )
     return (
         "输出 JSON 对象，字段包含 title 和 body；正文保持小红书自然表达；"
-        "业务规则优先，四类关键词语料用于人设、指令、扰动和写法控制。"
+        "业务规则优先，系统提示词关键词语料用于表达身份、生成指令、多样性和写法控制。"
     )
 
 
@@ -329,97 +341,4 @@ def _keyword_asset_ref(asset: AssetRegistry | None, asset_key: str) -> dict[str,
         "asset_type": SYSTEM_KEYWORD_ASSET_TYPE,
         "asset_key": asset_key,
         "source": "fallback",
-    }
-
-
-def _fallback_keyword_asset_content() -> dict[str, Any]:
-    return {
-        "schema_version": "1",
-        "asset_type": SYSTEM_KEYWORD_ASSET_TYPE,
-        "categories": [
-            {
-                "category_code": "persona",
-                "category_name": "人设",
-                "sub_keywords": [
-                    {
-                        "keyword_code": "experienced_mom",
-                        "keyword_name": "经验型妈妈",
-                        "corpus": ["像有带娃经验的妈妈在评论区交流，语气自然，不端着讲课。"],
-                    },
-                    {
-                        "keyword_code": "careful_observer",
-                        "keyword_name": "细节观察型妈妈",
-                        "corpus": ["表达时多写具体观察和真实顾虑，少下结论，保留一点继续观望的感觉。"],
-                    },
-                    {
-                        "keyword_code": "rational_comparer",
-                        "keyword_name": "理性比较型妈妈",
-                        "corpus": ["用克制的比较口吻表达，关注选择依据，不做绝对化推荐。"],
-                    },
-                ],
-            },
-            {
-                "category_code": "writing_instruction",
-                "category_name": "生文指令",
-                "sub_keywords": [
-                    {
-                        "keyword_code": "natural_comment",
-                        "keyword_name": "自然评论区表达",
-                        "corpus": ["语言像顺手评论，短句优先，不写成广告口播或完整科普段落。"],
-                    },
-                    {
-                        "keyword_code": "specific_question",
-                        "keyword_name": "带着具体问题来",
-                        "corpus": ["把泛泛的兴趣落到一个具体问题上，让内容更像真实妈妈在交流。"],
-                    },
-                    {
-                        "keyword_code": "light_experience",
-                        "keyword_name": "轻经验分享",
-                        "corpus": ["可以用轻量经验感表达，但不要虚构强亲历或承诺效果。"],
-                    },
-                ],
-            },
-            {
-                "category_code": "perturbation_rule",
-                "category_name": "扰动规则",
-                "sub_keywords": [
-                    {
-                        "keyword_code": "opening_shift",
-                        "keyword_name": "开头扰动",
-                        "corpus": ["不要总用同一种开头，可从共鸣、追问、观察、轻提醒里选一种自然切入。"],
-                    },
-                    {
-                        "keyword_code": "length_shift",
-                        "keyword_name": "长短扰动",
-                        "corpus": ["同批内容长短要有变化，本条优先控制在一到两句话。"],
-                    },
-                    {
-                        "keyword_code": "stance_shift",
-                        "keyword_name": "态度扰动",
-                        "corpus": ["态度可以是想了解、轻共鸣、谨慎观望或补充经验，不要每条都像强推荐。"],
-                    },
-                ],
-            },
-            {
-                "category_code": "writing_method",
-                "category_name": "写作手法",
-                "sub_keywords": [
-                    {
-                        "keyword_code": "scene_detail",
-                        "keyword_name": "场景细节法",
-                        "corpus": ["用一个带娃场景或选择奶粉时的小细节承接业务规则。"],
-                    },
-                    {
-                        "keyword_code": "question_hook",
-                        "keyword_name": "问题钩子法",
-                        "corpus": ["用真实问题引出互动，让评论更像妈妈之间互相确认。"],
-                    },
-                    {
-                        "keyword_code": "plain_explain",
-                        "keyword_name": "白话解释法",
-                        "corpus": ["把复杂点说得更白话，但不扩写成硬科普。"],
-                    },
-                ],
-            },
-        ],
     }

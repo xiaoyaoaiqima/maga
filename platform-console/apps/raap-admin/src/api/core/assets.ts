@@ -98,6 +98,50 @@ export namespace AssetsApi {
     persisted_asset_version?: null | number;
     items: Array<Record<string, any>>;
   }
+
+  export interface SystemPromptSubKeyword {
+    keyword_code: string;
+    keyword_name: string;
+    enabled: boolean;
+    weight: number;
+    corpus: string[];
+  }
+
+  export interface SystemPromptKeywordCategory {
+    applicable_content_types: string[];
+    category_code: string;
+    category_name: string;
+    description?: string;
+    enabled: boolean;
+    required: boolean;
+    selection_mode: string;
+    sort_order: number;
+    sub_keywords: SystemPromptSubKeyword[];
+  }
+
+  export interface SystemPromptKeywordContent {
+    asset_type?: string;
+    categories: SystemPromptKeywordCategory[];
+    schema_version: string;
+    selection_policy: Record<string, any>;
+  }
+
+  export interface SystemPromptKeywordAsset {
+    id?: null | number;
+    asset_type: string;
+    asset_key: string;
+    display_name?: null | string;
+    version_no?: null | number;
+    status: string;
+    asset_stage: string;
+    source: string;
+    source_hash?: null | string;
+    content_json: SystemPromptKeywordContent;
+    metadata_json?: null | Record<string, any>;
+    created_by?: null | string;
+    create_time?: null | string;
+    update_time?: null | string;
+  }
 }
 
 export async function getAssetSummariesApi(params?: {
@@ -241,5 +285,27 @@ export async function extractReferenceElementsApi(data: {
     '/v1/assets/reference-elements/extract',
     data,
     { timeout: 180_000 },
+  );
+}
+
+export async function getContentGenerationKeywordsApi(params?: {
+  asset_key?: string;
+}) {
+  return requestClient.get<AssetsApi.SystemPromptKeywordAsset>(
+    '/v1/assets/content-generation-keywords',
+    { params },
+  );
+}
+
+export async function saveContentGenerationKeywordsApi(data: {
+  asset_key: string;
+  categories: AssetsApi.SystemPromptKeywordCategory[];
+  created_by?: string;
+  display_name?: string;
+  selection_policy?: Record<string, any>;
+}) {
+  return requestClient.put<AssetsApi.AssetRegistry>(
+    '/v1/assets/content-generation-keywords',
+    data,
   );
 }

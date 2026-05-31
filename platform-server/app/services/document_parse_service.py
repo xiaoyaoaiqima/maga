@@ -22,7 +22,7 @@ class DocumentParseReq(BaseModel):
     content_id: str
     file_path: str = Field(..., description="文档文件路径")
     file_type: str = Field(..., description="文件类型: pdf/docx/pptx/xlsx")
-    category_type: str = Field(..., description="分类类型（对应 keyword-corpus 的 corpus_templates.category_type）")
+    category_type: str = Field(..., description="分类类型")
     template_fields: List[Dict[str, Any]] = Field(..., description="语料模板字段定义")
     tenant_code: str = "default"
     model_code: str = "gpt-4o"

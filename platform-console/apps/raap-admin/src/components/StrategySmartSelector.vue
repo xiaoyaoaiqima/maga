@@ -111,7 +111,7 @@ const emit = defineEmits<{
 // ==================== 状态 ====================
 
 // 筛选模式
-type FilterMode = 'all' | 'by-tag' | 'recommended' | 'unmapped';
+type FilterMode = 'all' | 'by-tag' | 'grouped' | 'recommended' | 'unmapped';
 const filterMode = ref<FilterMode>('recommended');
 const searchKeyword = ref('');
 const selectedTags = ref<string[]>([]);
@@ -380,7 +380,7 @@ const availableTags = computed(() => {
 // 按匹配度分组策略
 const strategiesByMatchGroup = computed(() => {
   const groups: Record<
-    string,
+    'none' | 'partial' | 'perfect',
     { label: string; strategies: typeof filteredStrategies.value }
   > = {
     perfect: { label: '完美匹配', strategies: [] },
@@ -454,7 +454,7 @@ function isVariableMapped(variable: string): boolean {
 
 // 检查维度是否已映射到变量
 function isDimensionMapped(dimension: string): boolean {
-  return props.variableMappings[dimension]?.length > 0;
+  return (props.variableMappings[dimension]?.length ?? 0) > 0;
 }
 
 // 获取策略是否已选中

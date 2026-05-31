@@ -595,7 +595,7 @@ class JobCreateDraftService:
             except Exception as e:
                 logger.warning(f"[Strategy V3 Compile] 查询 ExpertConfig/Plugin 失败: {e}")
 
-        # 1. 调用 keyword-corpus 服务获取合并组合
+        # 1. 旧策略系统已下线，调用兼容层时会给出明确错误。
         logger.info(f"[Strategy V3 Compile] 获取多策略合并组合: selections={strategy_selections}")
 
         # ⭐ 从 payload 中提取采样模式参数
@@ -736,7 +736,7 @@ class JobCreateDraftService:
         payload = draft.draft_json or {}
         mode: str = draft.mode
 
-        # 获取 tenant_code（用于策略模式调用 keyword-corpus）
+        # 获取 tenant_code（兼容历史策略模式）
         tenant_code = "default"
         if draft.tenant_id:
             from app.models.tenant import Tenant
@@ -825,6 +825,5 @@ class JobCreateDraftService:
             logger.warning(f"回写 draft.compiled_json.job_id 失败: {e}")
 
         return job
-
 
 

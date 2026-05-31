@@ -302,9 +302,9 @@ async function submitQuickCreateStrategy() {
   }
 }
 
-// 跳转到策略管理页面
+// 跳转到新链路配置页面
 function goToStrategyManagement() {
-  router.push('/keyword-corpus/strategy');
+  router.push('/content-agent/system-prompt-keywords');
 }
 
 // 获取策略中某维度的节点数量

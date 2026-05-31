@@ -261,8 +261,11 @@ function getSelectedNodeNames(varName: string): string[] {
                   size="small"
                   style="width: 100px"
                   @change="
-                    (val: 'random' | 'weighted' | 'all') =>
-                      updateStrategy(varName, val)
+                    (val) =>
+                      updateStrategy(
+                        varName,
+                        String(val || 'random') as 'all' | 'random' | 'weighted',
+                      )
                   "
                 >
                   <SelectOption value="random">随机</SelectOption>

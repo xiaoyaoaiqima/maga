@@ -51,7 +51,7 @@ const nodeNameMap = reactive(new Map<string, string>());
 
 const extractNodeIdsFromString = (value: string): string[] => {
   const matches = [...value.matchAll(/node:(\d+)/g)];
-  return matches.map((match) => match[1]).filter(Boolean);
+  return matches.flatMap((match) => (match[1] ? [match[1]] : []));
 };
 
 const extractNodeIdsFromContext = (

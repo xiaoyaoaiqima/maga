@@ -75,6 +75,49 @@ async def test_unified_generation_selects_one_sub_keyword_per_category(unified_s
 
 
 @pytest.mark.asyncio
+async def test_unified_generation_handles_extensible_keyword_categories(unified_session_factory):
+    async with unified_session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type=SYSTEM_KEYWORD_ASSET_TYPE,
+                asset_key=DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+                display_name="扩展关键词",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "categories": [
+                        _category("persona", "人设", ["经验妈妈"]),
+                        _category("rhythm", "句式节奏", ["短句"]),
+                        {
+                            **_category("article_only", "文章专用", ["长文结构"]),
+                            "applicable_content_types": ["article"],
+                        },
+                        {
+                            **_category("disabled_category", "停用类别", ["不应出现"]),
+                            "enabled": False,
+                        },
+                    ]
+                },
+            )
+        )
+        await session.commit()
+
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="comment",
+            business_rule={"rule_type": "comment_angle", "comment_angle": "互动提问"},
+            item_no=1,
+            output_fields=["comment"],
+        )
+
+    selected = snapshot.input_snapshot["selected_keywords"]
+    assert [item["category_code"] for item in selected] == ["persona", "rhythm"]
+    assert "短句语料" in snapshot.input_snapshot["rendered_prompt"]
+    assert "长文结构语料" not in snapshot.input_snapshot["rendered_prompt"]
+    assert "不应出现语料" not in snapshot.input_snapshot["rendered_prompt"]
+
+
+@pytest.mark.asyncio
 async def test_unified_generation_uses_expert_template_and_model_config(unified_session_factory):
     async with unified_session_factory() as session:
         session.add(

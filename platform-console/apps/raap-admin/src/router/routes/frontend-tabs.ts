@@ -41,6 +41,18 @@ const frontendTabRoutes: RouteRecordRaw[] = [
     },
   },
   {
+    name: 'SystemPromptKeywords',
+    path: '/content-agent/system-prompt-keywords',
+    component: () =>
+      import('#/views/content-agent/system-prompt-keywords/index.vue'),
+    meta: {
+      title: '系统提示词关键词',
+      icon: 'lucide:list-plus',
+      order: -86,
+      activeMenu: '/content-agent/system-prompt-keywords',
+    },
+  },
+  {
     name: 'ReferenceElementExtractor',
     path: '/assets/reference-elements',
     component: () => import('#/views/assets/reference-elements/index.vue'),
@@ -49,18 +61,6 @@ const frontendTabRoutes: RouteRecordRaw[] = [
       icon: 'lucide:scan-text',
       order: -85,
       activeMenu: '/assets/reference-elements',
-    },
-  },
-  {
-    name: 'TemplateVariableCorpus',
-    path: '/keyword-corpus/template-variable-corpus',
-    component: () =>
-      import('#/views/keyword_corpus/template-variable-corpus/index.vue'),
-    meta: {
-      title: '关键词语料',
-      icon: 'lucide:file-text',
-      order: -82,
-      activeMenu: '/keyword-corpus/template-variable-corpus',
     },
   },
   {

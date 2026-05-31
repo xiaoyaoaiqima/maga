@@ -49,9 +49,6 @@ from app.api.v1.endpoints import ab_tests
 from app.modules.critic.router import external_router as critic_external_router
 from app.modules.critic.router import internal_router as critic_internal_router
 from app.modules.generation.router import internal_router as generation_internal_router
-from app.modules.keyword_corpus.router import external_router as keyword_corpus_external_router
-from app.modules.keyword_corpus.router import internal_router as keyword_corpus_internal_router
-from app.modules.keyword_corpus.router import knowledge_router as keyword_corpus_knowledge_router
 
 api_router = APIRouter()
 
@@ -132,11 +129,8 @@ api_router.include_router(critic_scores.router, prefix="/critic-scores", tags=["
 # Message/Notification endpoints
 api_router.include_router(messages.router, tags=["messages"])
 
-# Keyword corpus / critic endpoints
-api_router.include_router(keyword_corpus_external_router, prefix="/keyword-corpus", tags=["keyword-corpus"])
-api_router.include_router(keyword_corpus_knowledge_router, tags=["knowledge-bases"])
-api_router.include_router(critic_external_router, tags=["keyword-corpus"])
-api_router.include_router(keyword_corpus_internal_router, prefix="/__internal/keyword-corpus/api/v1", tags=["internal-keyword-corpus"])
+# Critic endpoints
+api_router.include_router(critic_external_router, tags=["critic"])
 api_router.include_router(critic_internal_router, prefix="/__internal/critic/api/v1", tags=["internal-critic"])
 api_router.include_router(generation_internal_router, prefix="/__internal/generation/api/v1", tags=["internal-generation"])
 

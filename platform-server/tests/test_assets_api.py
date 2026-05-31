@@ -305,6 +305,99 @@ async def test_generation_options_are_extracted_from_uploaded_assets(asset_clien
 
 
 @pytest.mark.asyncio
+async def test_content_generation_keywords_get_fallback_and_save_versions(asset_client):
+    fallback_response = await asset_client.get("/api/v1/assets/content-generation-keywords")
+    assert fallback_response.status_code == 200
+    fallback_payload = fallback_response.json()
+    assert fallback_payload["code"] == 200
+    fallback = fallback_payload["data"]
+    assert fallback["source"] == "fallback"
+    assert fallback["asset_type"] == "content_generation_keywords"
+    assert fallback["content_json"]["schema_version"] == "2"
+    assert len(fallback["content_json"]["categories"]) >= 4
+
+    payload = {
+        "asset_key": "default_content_generation_keywords",
+        "display_name": "系统提示词关键词",
+        "created_by": "ops",
+        "selection_policy": {"default_mode": "one_per_enabled_category"},
+        "categories": [
+            {
+                "category_code": "persona",
+                "category_name": "人设",
+                "enabled": True,
+                "required": False,
+                "sort_order": 10,
+                "selection_mode": "one",
+                "applicable_content_types": ["article", "comment"],
+                "sub_keywords": [
+                    {
+                        "keyword_code": "experienced_mom",
+                        "keyword_name": "经验型妈妈",
+                        "enabled": True,
+                        "weight": 1,
+                        "corpus": ["像真实妈妈在评论区交流。"],
+                    }
+                ],
+            },
+            {
+                "category_code": "rhythm",
+                "category_name": "句式节奏",
+                "enabled": True,
+                "required": False,
+                "sort_order": 20,
+                "selection_mode": "one",
+                "applicable_content_types": ["comment"],
+                "sub_keywords": [
+                    {
+                        "keyword_code": "short_sentence",
+                        "keyword_name": "短句",
+                        "enabled": True,
+                        "weight": 1,
+                        "corpus": ["短句表达，不写成说明书。"],
+                    }
+                ],
+            },
+        ],
+    }
+
+    first_save = await asset_client.put("/api/v1/assets/content-generation-keywords", json=payload)
+    assert first_save.status_code == 200
+    first_asset = first_save.json()["data"]
+    assert first_asset["version_no"] == 1
+    assert first_asset["metadata_json"]["category_count"] == 2
+    assert first_asset["metadata_json"]["corpus_count"] == 2
+
+    second_payload = {
+        **payload,
+        "categories": [
+            {
+                **payload["categories"][0],
+                "sub_keywords": [
+                    {
+                        **payload["categories"][0]["sub_keywords"][0],
+                        "corpus": ["像真实妈妈在评论区交流。", "别端着讲课。"],
+                    }
+                ],
+            }
+        ],
+    }
+    second_save = await asset_client.put("/api/v1/assets/content-generation-keywords", json=second_payload)
+    assert second_save.status_code == 200
+    second_asset = second_save.json()["data"]
+    assert second_asset["version_no"] == 2
+
+    latest_response = await asset_client.get("/api/v1/assets/content-generation-keywords")
+    latest = latest_response.json()["data"]
+    assert latest["source"] == "asset_registry"
+    assert latest["version_no"] == 2
+    assert latest["content_json"]["categories"][0]["sub_keywords"][0]["corpus"] == [
+        "像真实妈妈在评论区交流。",
+        "别端着讲课。",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_asset_stage_can_list_candidate_assets_without_polluting_production(asset_client):
     production_response = await asset_client.get("/api/v1/assets/summary", params={"asset_key": "yuanyue"})
     production_payload = production_response.json()
