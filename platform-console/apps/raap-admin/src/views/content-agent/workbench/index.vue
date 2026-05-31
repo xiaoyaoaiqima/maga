@@ -184,6 +184,149 @@ const showQuality = (item: ContentAgentApi.BatchReportItem) => {
   });
 };
 
+const snapshotJson = (value: unknown) => JSON.stringify(value ?? {}, null, 2);
+
+const isEmptySnapshotValue = (value: unknown) => {
+  if (value === null || value === undefined || value === '') return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === 'object') return Object.keys(value).length === 0;
+  return false;
+};
+
+const snapshotPre = (value: unknown, emptyText = '无') =>
+  h(
+    'pre',
+    { class: 'snapshot-pre' },
+    isEmptySnapshotValue(value) ? emptyText : snapshotJson(value),
+  );
+
+const snapshotTextPre = (value?: null | string, emptyText = '无') =>
+  h('pre', { class: 'snapshot-pre snapshot-prompt' }, value || emptyText);
+
+const snapshotSection = (title: string, children: any[]) =>
+  h('section', { class: 'snapshot-section' }, [
+    h('div', { class: 'snapshot-section-title' }, title),
+    ...children,
+  ]);
+
+const snapshotLine = (label: string, value: unknown) =>
+  h('div', { class: 'snapshot-line' }, [
+    h('span', { class: 'snapshot-line-label' }, label),
+    h('span', { class: 'snapshot-line-value' }, String(value || '-')),
+  ]);
+
+const snapshotKeywordNodes = (keywords?: Array<Record<string, any>>) => {
+  if (!keywords?.length) return [h('span', { class: 'snapshot-empty' }, '无')];
+  return [
+    h(
+      'div',
+      { class: 'snapshot-keyword-list' },
+      keywords.map((keyword) =>
+        h('div', { class: 'snapshot-keyword' }, [
+          h('div', { class: 'snapshot-keyword-head' }, [
+            h(
+              Tag,
+              { color: 'blue' },
+              () => keyword.category_name || keyword.category_code || '关键词',
+            ),
+            h(
+              'strong',
+              keyword.keyword_name || keyword.keyword_code || '未命名子关键词',
+            ),
+          ]),
+          h(
+            'div',
+            { class: 'snapshot-keyword-corpus' },
+            Array.isArray(keyword.corpus)
+              ? keyword.corpus.join('\n')
+              : keyword.corpus || '',
+          ),
+        ]),
+      ),
+    ),
+  ];
+};
+
+const snapshotRewriteNodes = (records?: Array<Record<string, any>>) => {
+  if (!records?.length)
+    return [h('span', { class: 'snapshot-empty' }, '未触发模型改写')];
+  return records.map((record) =>
+    h('div', { class: 'snapshot-rewrite-record' }, [
+      h('div', { class: 'snapshot-rewrite-head' }, [
+        h(
+          Tag,
+          { color: record.status === 'succeeded' ? 'green' : 'red' },
+          () => `${record.capability || 'rewrite'} · ${record.status || '-'}`,
+        ),
+        h(
+          'span',
+          `#${record.sequence_no || '-'} ${record.stage_call_id || ''}`,
+        ),
+      ]),
+      snapshotLine('命中词', (record.forbidden_hits || []).join('、')),
+      snapshotLine(
+        '模型',
+        record.model_config?.model_code || record.model_config?.ge_model,
+      ),
+      snapshotLine('耗时', formatDuration(record.duration_ms)),
+      h('div', { class: 'snapshot-two-cols' }, [
+        h('div', [h('strong', '改写前'), snapshotPre(record.before)]),
+        h('div', [h('strong', '改写后'), snapshotPre(record.after)]),
+      ]),
+      record.rendered_prompt
+        ? snapshotTextPre(record.rendered_prompt, '无改写 Prompt')
+        : null,
+    ]),
+  );
+};
+
+const showGenerationSnapshot = (item: ContentAgentApi.BatchReportItem) => {
+  const snapshot: ContentAgentApi.GenerationSnapshot =
+    item.generation_snapshot || {};
+  Modal.info({
+    title: `第 ${item.item_no} 条链路快照`,
+    width: 980,
+    content: h('div', { class: 'snapshot-modal' }, [
+      h(
+        Button,
+        {
+          size: 'small',
+          onClick: () => copyText(snapshotJson(snapshot)),
+        },
+        () => '复制快照',
+      ),
+      h('div', { class: 'snapshot-line-grid' }, [
+        snapshotLine('规则类型', snapshot.rule_type),
+        snapshotLine('内容类型', snapshot.content_type),
+        snapshotLine('Capability', snapshot.capability),
+        snapshotLine('运行模式', snapshot.model_route?.runtime_mode),
+        snapshotLine('执行器', snapshot.model_route?.executor_code),
+        snapshotLine('模型', snapshot.model_route?.model_code),
+      ]),
+      snapshotSection('业务规则', [snapshotPre(snapshot.business_rule)]),
+      snapshotSection(
+        '系统关键词',
+        snapshotKeywordNodes(snapshot.selected_keywords),
+      ),
+      snapshotSection('Expert / 模型', [
+        h('div', { class: 'snapshot-two-cols' }, [
+          snapshotPre(snapshot.expert),
+          snapshotPre(snapshot.model_config),
+        ]),
+      ]),
+      snapshotSection('Prompt', [
+        snapshotTextPre(snapshot.rendered_prompt, '无 Prompt 快照'),
+      ]),
+      snapshotSection('审核改写', [
+        snapshotPre(snapshot.forbidden_terms_review, '无违禁词审核命中'),
+        ...snapshotRewriteNodes(snapshot.rewrite_records),
+      ]),
+      snapshotSection('执行阶段', [snapshotPre(snapshot.execution_stages)]),
+    ]),
+    okText: '关闭',
+  });
+};
+
 const openReport = async (batchId: number, showLoading = true) => {
   if (showLoading) reportLoading.value = true;
   try {
@@ -201,10 +344,7 @@ const loadBatches = async () => {
     batchTotal.value = data?.total || 0;
     // 从业务规则页跳转过来时，优先打开刚生成的批次报告。
     const queryBatchId = Number(route.query.batch_id || 0);
-    if (
-      queryBatchId > 0 &&
-      selectedReport.value?.batch_id !== queryBatchId
-    ) {
+    if (queryBatchId > 0 && selectedReport.value?.batch_id !== queryBatchId) {
       await openReport(queryBatchId, false);
       return;
     }
@@ -435,6 +575,13 @@ watch(
                         >
                           Trace
                         </Button>
+                        <Button
+                          v-if="item.generation_snapshot"
+                          size="small"
+                          @click="showGenerationSnapshot(item)"
+                        >
+                          链路快照
+                        </Button>
                         <Button size="small" @click="showQuality(item)">
                           质量报告
                         </Button>
@@ -482,7 +629,9 @@ watch(
                     <Alert
                       v-if="forbiddenReviewOf(item)?.initial_hits?.length"
                       class="mt-3"
-                      :type="forbiddenReviewOf(item)?.pass ? 'success' : 'error'"
+                      :type="
+                        forbiddenReviewOf(item)?.pass ? 'success' : 'error'
+                      "
                       show-icon
                     >
                       <template #message>
@@ -500,7 +649,9 @@ watch(
                           </Tag>
                           <span>
                             初始命中：{{
-                              forbiddenReviewHits(item, 'initial_hits').join('、')
+                              forbiddenReviewHits(item, 'initial_hits').join(
+                                '、',
+                              )
                             }}
                           </span>
                           <span>
@@ -508,10 +659,16 @@ watch(
                               forbiddenRewriteMethodLabel(
                                 forbiddenReviewOf(item)?.rewrite_method,
                               )
-                            }}，{{ forbiddenReviewOf(item)?.rewrite_rounds || 0 }}
+                            }}，{{
+                              forbiddenReviewOf(item)?.rewrite_rounds || 0
+                            }}
                             轮
                           </span>
-                          <span v-if="forbiddenReviewHits(item, 'final_hits').length">
+                          <span
+                            v-if="
+                              forbiddenReviewHits(item, 'final_hits').length > 0
+                            "
+                          >
                             仍命中：{{
                               forbiddenReviewHits(item, 'final_hits').join('、')
                             }}
@@ -600,7 +757,9 @@ watch(
           </Card>
 
           <Card v-else :bordered="false">
-            <Empty description="暂无生成结果，请先在业务规则页上传规则包并生成" />
+            <Empty
+              description="暂无生成结果，请先在业务规则页上传规则包并生成"
+            />
           </Card>
         </Spin>
       </Col>
@@ -708,5 +867,117 @@ watch(
   border: 1px solid #f0f0f0;
   border-radius: 8px;
   padding: 8px 10px;
+}
+
+.snapshot-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 72vh;
+  overflow: auto;
+}
+
+.snapshot-section {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.snapshot-section-title {
+  margin-bottom: 8px;
+  color: #262626;
+  font-weight: 600;
+}
+
+.snapshot-line-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.snapshot-line {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  color: #595959;
+  font-size: 12px;
+}
+
+.snapshot-line-label {
+  flex: 0 0 72px;
+  color: #8c8c8c;
+}
+
+.snapshot-line-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.snapshot-pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: #fafafa;
+  color: #262626;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.snapshot-prompt {
+  max-height: 360px;
+}
+
+.snapshot-keyword-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.snapshot-keyword {
+  border: 1px solid #f5f5f5;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.snapshot-keyword-head,
+.snapshot-rewrite-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.snapshot-keyword-corpus {
+  color: #595959;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.snapshot-two-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.snapshot-rewrite-record {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.snapshot-empty {
+  color: #8c8c8c;
+}
+
+@media (max-width: 768px) {
+  .snapshot-line-grid,
+  .snapshot-two-cols {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

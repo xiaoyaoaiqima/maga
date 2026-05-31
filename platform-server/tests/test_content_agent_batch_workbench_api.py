@@ -156,6 +156,10 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
     assert report["items"][0]["title"] == "整体适应"
     assert report["items"][0]["body"] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
     assert report["items"][0]["quality"]["rule_type"] == "comment_angle"
+    assert report["items"][0]["generation_snapshot"]["rule_type"] == "comment_angle"
+    assert report["items"][0]["generation_snapshot"]["business_rule"]["comment_angle"] == "整体适应"
+    assert report["items"][0]["generation_snapshot"]["expert"]["expert_config_code"] == "comment_generator_v1"
+    assert "整体适应" in report["items"][0]["generation_snapshot"]["rendered_prompt"]
 
     async with session_factory() as session:
         item = (
@@ -252,6 +256,10 @@ async def test_comment_batch_runs_forbidden_term_review_and_rewrite(content_agen
     assert first["quality"]["forbidden_terms_review"]["initial_hits"] == ["源悦"]
     assert first["quality"]["forbidden_terms_review"]["final_hits"] == []
     assert first["quality"]["review_report"]["hard_results"][-1]["ae_code"] == "forbidden_terms_guard"
+    assert first["generation_snapshot"]["forbidden_terms_review"]["initial_hits"] == ["源悦"]
+    assert first["generation_snapshot"]["rewrite_records"][0]["capability"] == "content.rewrite"
+    assert "源悦" in first["generation_snapshot"]["rewrite_records"][0]["before"]["comment"]
+    assert "源悦" not in first["generation_snapshot"]["rewrite_records"][0]["after"]["comment"]
     assert report["summary"]["rewrite_item_count"] >= 1
 
     async with session_factory() as session:

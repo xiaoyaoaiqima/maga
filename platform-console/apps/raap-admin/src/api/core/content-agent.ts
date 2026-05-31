@@ -84,6 +84,24 @@ export namespace ContentAgentApi {
     similarity_warning_count: number;
   }
 
+  export interface GenerationSnapshot {
+    schema_version?: string;
+    rule_type?: null | string;
+    content_type?: null | string;
+    capability?: null | string;
+    output_fields?: string[];
+    business_rule?: Record<string, any>;
+    selected_keywords?: Array<Record<string, any>>;
+    keyword_asset?: Record<string, any>;
+    expert?: Record<string, any>;
+    model_config?: Record<string, any>;
+    model_route?: Record<string, any>;
+    rendered_prompt?: null | string;
+    forbidden_terms_review?: null | Record<string, any>;
+    rewrite_records?: Array<Record<string, any>>;
+    execution_stages?: Array<Record<string, any>>;
+  }
+
   export interface BatchReportItem {
     item_id: number;
     item_no: number;
@@ -143,6 +161,7 @@ export namespace ContentAgentApi {
     evidence_type?: null | string;
     asset_combo_key?: null | string;
     asset_reuse_reason?: null | string;
+    generation_snapshot?: GenerationSnapshot | null;
     diversity?: null | Record<string, any>;
     quality?: null | Record<string, any>;
     error_message?: null | string;

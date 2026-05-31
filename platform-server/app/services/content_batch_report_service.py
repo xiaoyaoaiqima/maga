@@ -330,6 +330,7 @@ class ContentBatchReportService:
             evidence_type=diversity.get("evidence_type"),
             asset_combo_key=(item.plan_json or {}).get("asset_combo_key"),
             asset_reuse_reason=(item.plan_json or {}).get("asset_reuse_reason"),
+            generation_snapshot=self._generation_snapshot(item, stage_calls, run, quality),
             diversity=diversity or None,
             quality=quality or None,
             error_message=item.error_message,
@@ -347,6 +348,164 @@ class ContentBatchReportService:
 
     def _generation_stage(self, stage_calls: list[ContentAgentStageCall]) -> ContentAgentStageCall | None:
         return next((stage for stage in stage_calls if stage.capability in {"xhs.generate_draft", "content.generate"}), None)
+
+    def _generation_snapshot(
+        self,
+        item: ContentBatchItem,
+        stage_calls: list[ContentAgentStageCall],
+        run: ContentAgentRun | None,
+        quality: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        plan = item.plan_json or {}
+        if not isinstance(plan, dict):
+            plan = {}
+        unified = plan.get("unified_generation") if isinstance(plan.get("unified_generation"), dict) else {}
+        generation_stage = self._generation_stage(stage_calls)
+        generation_input = self._stage_input(generation_stage)
+        source = self._generation_source(generation_input, unified)
+        business_rule = self._business_rule_snapshot(source, plan)
+        selected_keywords = self._selected_keywords_snapshot(source, unified, quality)
+        expert = self._dict_value(source.get("expert")) or self._dict_value(unified.get("expert")) or {}
+        model_config = (
+            self._dict_value(source.get("model_config"))
+            or self._dict_value(expert.get("model_config"))
+            or self._dict_value(plan.get("model_config"))
+            or {}
+        )
+        rendered_prompt = self._string_or_none(source.get("rendered_prompt") or unified.get("rendered_prompt"))
+        forbidden_review = self._forbidden_review(quality)
+        rewrite_records = self._rewrite_records(stage_calls)
+        if not any([business_rule, selected_keywords, expert, rendered_prompt, forbidden_review, rewrite_records, generation_stage]):
+            return None
+        capability = (
+            self._string_or_none(source.get("capability"))
+            or self._string_or_none(unified.get("capability"))
+            or (generation_stage.capability if generation_stage else None)
+        )
+        output_fields = source.get("output_fields") or business_rule.get("output_fields") or plan.get("output_fields") or []
+        return {
+            "schema_version": "1",
+            "rule_type": business_rule.get("rule_type"),
+            "content_type": source.get("content_type") or ("comment" if output_fields == ["comment"] else "article"),
+            "capability": capability,
+            "output_fields": output_fields,
+            "business_rule": business_rule,
+            "selected_keywords": selected_keywords,
+            "keyword_asset": self._dict_value(source.get("keyword_asset")) or self._dict_value(unified.get("keyword_asset")) or {},
+            "expert": expert,
+            "model_config": model_config,
+            "model_route": self._model_route(
+                run=run,
+                capability=capability,
+                runtime_mode=self._runtime_result(stage_calls).get("mode") or quality.get("executor"),
+                model_config=model_config,
+            ),
+            "rendered_prompt": rendered_prompt,
+            "forbidden_terms_review": forbidden_review,
+            "rewrite_records": rewrite_records,
+            "execution_stages": [self._stage_trace(stage).model_dump(mode="json") for stage in stage_calls],
+        }
+
+    def _generation_source(self, generation_input: dict[str, Any], unified: dict[str, Any]) -> dict[str, Any]:
+        nested_snapshot = generation_input.get("generation_snapshot")
+        if isinstance(nested_snapshot, dict):
+            return nested_snapshot
+        if any(key in generation_input for key in ("business_rule", "selected_keywords", "expert", "rendered_prompt")):
+            return generation_input
+        return unified
+
+    def _business_rule_snapshot(self, source: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+        business_rule = self._dict_value(source.get("business_rule")) or plan
+        return {
+            key: value
+            for key, value in dict(business_rule).items()
+            if key not in {"unified_generation", "batch_context", "model_config"}
+        }
+
+    def _selected_keywords_snapshot(
+        self,
+        source: dict[str, Any],
+        unified: dict[str, Any],
+        quality: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        candidates = source.get("selected_keywords") or unified.get("selected_keywords") or quality.get("selected_keywords")
+        return [item for item in candidates or [] if isinstance(item, dict)]
+
+    def _forbidden_review(self, quality: dict[str, Any]) -> dict[str, Any] | None:
+        review_report = quality.get("review_report") if isinstance(quality.get("review_report"), dict) else {}
+        review = quality.get("forbidden_terms_review") or review_report.get("forbidden_terms_review")
+        return review if isinstance(review, dict) else None
+
+    def _rewrite_records(self, stage_calls: list[ContentAgentStageCall]) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for stage in stage_calls:
+            if stage.capability not in {"content.rewrite", "xhs.rewrite_draft"}:
+                continue
+            input_payload = stage.input_snapshot or {}
+            output_payload = stage.output_snapshot or {}
+            records.append(
+                {
+                    "stage_call_id": stage.stage_call_id,
+                    "sequence_no": stage.sequence_no,
+                    "capability": stage.capability,
+                    "status": stage.status,
+                    "duration_ms": self._stage_duration_ms(stage),
+                    "before": self._rewrite_before(input_payload),
+                    "after": self._rewrite_after(output_payload),
+                    "forbidden_hits": self._list_of_strings(input_payload.get("forbidden_hits")),
+                    "rewrite_instructions": self._list_of_strings(input_payload.get("rewrite_instructions")),
+                    "expert": self._dict_value(input_payload.get("expert")) or {},
+                    "model_config": self._dict_value(input_payload.get("model_config")) or {},
+                    "rendered_prompt": self._string_or_none(input_payload.get("rendered_prompt")),
+                    "error_message": stage.error_message,
+                }
+            )
+        return records
+
+    def _rewrite_before(self, input_payload: dict[str, Any]) -> dict[str, str]:
+        previous = input_payload.get("previous_content") or input_payload.get("previous_draft") or {}
+        return self._content_summary(previous if isinstance(previous, dict) else {})
+
+    def _rewrite_after(self, output_payload: dict[str, Any]) -> dict[str, str]:
+        return self._content_summary(output_payload)
+
+    def _content_summary(self, payload: dict[str, Any]) -> dict[str, str]:
+        final = payload.get("final") if isinstance(payload.get("final"), dict) else {}
+        comment = payload.get("comment") or final.get("comment")
+        if comment:
+            return {"comment": str(comment)}
+        title = payload.get("title") or final.get("title")
+        body = payload.get("body") or final.get("body")
+        result: dict[str, str] = {}
+        if title:
+            result["title"] = str(title)
+        if body:
+            result["body"] = str(body)
+        return result
+
+    def _model_route(
+        self,
+        *,
+        run: ContentAgentRun | None,
+        capability: str | None,
+        runtime_mode: str | None,
+        model_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "executor_code": run.executor_code if run else None,
+            "executor_type": run.executor_type if run else None,
+            "capability": capability,
+            "runtime_mode": runtime_mode,
+            "provider_code": model_config.get("provider_code") or model_config.get("provider"),
+            "model_code": model_config.get("model_code") or model_config.get("ge_model"),
+            "temperature": model_config.get("temperature"),
+            "max_tokens": model_config.get("max_tokens"),
+        }
+
+    def _stage_input(self, stage: ContentAgentStageCall | None) -> dict[str, Any]:
+        if stage is None or not isinstance(stage.input_snapshot, dict):
+            return {}
+        return stage.input_snapshot
 
     def _stage_trace(self, stage: ContentAgentStageCall) -> ContentBatchStageTrace:
         return ContentBatchStageTrace(
@@ -444,6 +603,14 @@ class ContentBatchReportService:
         if value is None:
             return None
         return str(value)
+
+    def _dict_value(self, value: Any) -> dict[str, Any]:
+        return value if isinstance(value, dict) else {}
+
+    def _list_of_strings(self, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
 
     def _summary(self, items: list[ContentBatchReportItem]) -> ContentBatchReportSummary:
         generated_statuses = {"generated", "approved", "manual_edited", "needs_revision"}

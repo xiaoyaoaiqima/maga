@@ -93,6 +93,7 @@ class ContentBatchReportItem(BaseSchema):
     evidence_type: str | None = None
     asset_combo_key: str | None = None
     asset_reuse_reason: str | None = None
+    generation_snapshot: dict[str, Any] | None = None
     diversity: dict[str, Any] | None = None
     quality: dict[str, Any] | None = None
     error_message: str | None = None

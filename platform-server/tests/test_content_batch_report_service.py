@@ -55,8 +55,36 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
                     item_no=1,
                     status="generated",
                     plan_json={
+                        "rule_type": "product_experience",
                         "product_topic": "宝宝便便不规律",
                         "asset_combo_key": "pain:0|sell:0|example:0",
+                        "unified_generation": {
+                            "capability": "content.generate",
+                            "selected_keywords": [
+                                {
+                                    "category_code": "persona",
+                                    "category_name": "人设",
+                                    "keyword_code": "real_mom",
+                                    "keyword_name": "真实妈妈",
+                                    "corpus": ["像真实妈妈一样说具体经历"],
+                                }
+                            ],
+                            "keyword_asset": {
+                                "asset_type": "content_generation_keywords",
+                                "asset_key": "default_content_generation_keywords",
+                                "version_no": 2,
+                            },
+                            "expert": {
+                                "expert_config_code": "article_generator_v1",
+                                "expert_config_name": "文章生成 Expert",
+                                "model_config": {
+                                    "provider_code": "aihubmix",
+                                    "model_code": "gpt-5.1",
+                                    "temperature": 0.8,
+                                },
+                            },
+                            "rendered_prompt": "业务=宝宝便便不规律\n关键词=真实妈妈",
+                        },
                     },
                     run_id=101,
                     task_id=201,
@@ -219,6 +247,14 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
     assert first.scene_type == "便便观察"
     assert first.evidence_type == "观察指标"
     assert first.asset_combo_key == "pain:0|sell:0|example:0"
+    assert first.generation_snapshot is not None
+    assert first.generation_snapshot["rule_type"] == "product_experience"
+    assert first.generation_snapshot["business_rule"]["product_topic"] == "宝宝便便不规律"
+    assert first.generation_snapshot["selected_keywords"][0]["keyword_name"] == "真实妈妈"
+    assert first.generation_snapshot["expert"]["expert_config_code"] == "article_generator_v1"
+    assert first.generation_snapshot["model_route"]["model_code"] == "gpt-5.1"
+    assert "宝宝便便不规律" in first.generation_snapshot["rendered_prompt"]
+    assert first.generation_snapshot["execution_stages"][0]["stage_call_id"] == "stage-101-generate"
     assert report.items[1].asset_reuse_reason == "素材组合池已用完，按轮换策略复用"
 
     rejected = report.items[2]
