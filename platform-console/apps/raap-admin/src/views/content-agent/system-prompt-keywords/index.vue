@@ -233,6 +233,25 @@ function removeCategory(category: Category) {
   selectedCategoryCode.value = categories.value[0]?.category_code || '';
 }
 
+function categoryRowProps(record: Category) {
+  return {
+    class:
+      record.category_code === selectedCategoryCode.value
+        ? 'category-row selected-row'
+        : 'category-row',
+    onClick: () => {
+      selectedCategoryCode.value = record.category_code;
+    },
+  };
+}
+
+function updateSelectedCategoryCode(value: string) {
+  const category = selectedCategory.value;
+  if (!category) return;
+  category.category_code = value;
+  selectedCategoryCode.value = value;
+}
+
 function addSubKeyword() {
   const category = selectedCategory.value;
   if (!category) return;
@@ -530,18 +549,11 @@ onMounted(loadKeywords);
             row-key="category_code"
             size="small"
             :columns="categoryColumns"
+            :custom-row="categoryRowProps"
             :data-source="categoryRows"
             :loading="loading"
             :pagination="false"
             :scroll="{ x: 760 }"
-            @row="
-              (record) => ({
-                class: record.category_code === selectedCategoryCode ? 'selected-row' : '',
-                onClick: () => {
-                  selectedCategoryCode = record.category_code;
-                },
-              })
-            "
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'category'">
@@ -593,7 +605,10 @@ onMounted(loadKeywords);
             <Row :gutter="12">
               <Col :lg="8" :xs="24">
                 <FormItem label="类别 Code">
-                  <Input v-model:value="selectedCategory.category_code" />
+                  <Input
+                    :value="selectedCategory.category_code"
+                    @update:value="updateSelectedCategoryCode"
+                  />
                 </FormItem>
               </Col>
               <Col :lg="8" :xs="24">
@@ -939,6 +954,10 @@ onMounted(loadKeywords);
 
 :deep(.selected-row td) {
   background: #e6f4ff !important;
+}
+
+:deep(.category-row) {
+  cursor: pointer;
 }
 
 @media (max-width: 768px) {
