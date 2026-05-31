@@ -138,6 +138,32 @@ class ContentCommentBatchStartRequest(BaseSchema):
     created_by: str | None = Field(default=None, max_length=100)
 
 
+class ContentGenerationPreflightRequest(BaseSchema):
+    asset_key: str = Field(..., max_length=128)
+    asset_type: str | None = Field(default=None, max_length=64)
+    executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
+
+
+class ContentGenerationPreflightCheck(BaseSchema):
+    code: str
+    label: str
+    status: Literal["pass", "warning", "fail"]
+    message: str
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContentGenerationPreflightResponse(BaseSchema):
+    passed: bool
+    status: Literal["ready", "warning", "blocked"]
+    asset_key: str
+    asset_type: str | None = None
+    content_type: Literal["article", "comment"] | None = None
+    executor_code: str
+    checks: list[ContentGenerationPreflightCheck] = Field(default_factory=list)
+    blocking_codes: list[str] = Field(default_factory=list)
+    warning_codes: list[str] = Field(default_factory=list)
+
+
 class ContentBatchExecutionSummary(BaseSchema):
     requested_limit: int
     generated_count: int

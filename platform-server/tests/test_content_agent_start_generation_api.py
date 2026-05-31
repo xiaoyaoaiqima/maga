@@ -10,7 +10,10 @@ from app.api.v1.endpoints.content_agent import router
 from app.core.database import get_db
 from app.models.base import Base
 from app.models.content_agent import ContentAgentTask, ExecutorRegistry
+from app.models.expert_config import ExpertConfig
+from app.models.llm_model_route import LLMModelRoute
 from app.models.llm_provider_config import LLMProviderConfig
+from app.models.maga_assets import AssetRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 from fastapi import FastAPI
 
@@ -211,3 +214,113 @@ async def test_start_generation_endpoint_persists_unified_prompt_snapshot(start_
     assert "美素佳儿源悦" in task.input_snapshot["rendered_prompt"]
     assert "新手妈妈" in task.input_snapshot["rendered_prompt"]
     assert task.input_snapshot["selected_keywords"]
+
+
+@pytest.mark.asyncio
+async def test_preflight_check_blocks_missing_worker_rewrite_capability(start_generation_client):
+    client, session_factory = start_generation_client
+    await _seed_preflight_dependencies(session_factory)
+
+    response = await client.post(
+        "/api/v1/content-agent/preflight-check",
+        json={
+            "asset_key": "yuanyue_comment_activity",
+            "asset_type": "comment_angle_rule_set",
+            "executor_code": "hermes_maga_worker",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["passed"] is False
+    assert data["blocking_codes"] == ["worker_capabilities"]
+
+
+@pytest.mark.asyncio
+async def test_preflight_check_passes_when_generation_flow_is_ready(start_generation_client):
+    client, session_factory = start_generation_client
+    await _seed_preflight_dependencies(session_factory, include_rewrite_capability=True)
+
+    response = await client.post(
+        "/api/v1/content-agent/preflight-check",
+        json={
+            "asset_key": "yuanyue_comment_activity",
+            "asset_type": "comment_angle_rule_set",
+            "executor_code": "hermes_maga_worker",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["passed"] is True
+    assert data["content_type"] == "comment"
+    assert "worker_capabilities" not in data["blocking_codes"]
+
+
+async def _seed_preflight_dependencies(session_factory, *, include_rewrite_capability: bool = False):
+    async with session_factory() as session:
+        executor = (
+            await session.execute(
+                select(ExecutorRegistry).where(ExecutorRegistry.executor_code == "hermes_maga_worker")
+            )
+        ).scalar_one()
+        if include_rewrite_capability:
+            executor.supported_capabilities_json = [
+                *(executor.supported_capabilities_json or []),
+                {"capability": "content.rewrite", "schema_version": "1"},
+            ]
+        session.add(
+            AssetRegistry(
+                asset_type="comment_angle_rule_set",
+                asset_key="yuanyue_comment_activity",
+                display_name="源悦-评论（评论切角）",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                source_name="test.csv",
+                content_json={
+                    "items": [
+                        {
+                            "comment_angle": "真实体验",
+                            "corpus": "围绕源悦活动写一条自然评论。",
+                        }
+                    ]
+                },
+                metadata_json={"rule_count": 1},
+            )
+        )
+        session.add(
+            LLMModelRoute(
+                id=1,
+                model_code="deepseek-v4-flash",
+                model_name="deepseek-v4-flash",
+                provider_code="deepseek",
+                provider_model="deepseek-v4-flash",
+                priority=50,
+                enabled=1,
+                currency="USD",
+                is_deleted=0,
+            )
+        )
+        for expert_id, code, name, expert_type, capability in [
+            (1, "comment_generator_v1", "评论生成 Expert", "GENERATION", "content.generate"),
+            (2, "content_rewrite_v1", "审核改写 Expert", "REWRITE", "content.rewrite"),
+        ]:
+            session.add(
+                ExpertConfig(
+                    id=expert_id,
+                    expert_config_code=code,
+                    expert_config_name=name,
+                    expert_type=expert_type,
+                    expert_app="maga-worker",
+                    expert_service="content-generation-flow",
+                    expert_func=capability,
+                    model_code="deepseek-v4-flash",
+                    model_config={"provider_code": "deepseek"},
+                    prompt_template="请根据 {{ business_rule }} 生成内容。",
+                    enabled=True,
+                    publish_status="PUBLISHED",
+                    is_deleted=0,
+                )
+            )
+        await session.commit()

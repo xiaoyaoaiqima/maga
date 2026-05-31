@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import type { UploadProps } from 'ant-design-vue';
+
 import type { AssetsApi } from '#/api/core/assets';
 
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+
+import { useUserStore } from '@vben/stores';
 
 import {
   PlayCircleOutlined,
   ReloadOutlined,
   UploadOutlined,
 } from '@ant-design/icons-vue';
-import { useUserStore } from '@vben/stores';
-
 import {
   Button,
   Card,
@@ -38,6 +39,7 @@ import {
   importProductExperienceRuleSetApi,
 } from '#/api/core/assets';
 import {
+  preflightContentGenerationApi,
   startCommentBatchApi,
   startContentBatchApi,
 } from '#/api/core/content-agent';
@@ -136,7 +138,12 @@ const rulePackageColumns: any[] = [
   { title: '版本', dataIndex: 'version_no', key: 'version_no', width: 80 },
   { title: '条数', dataIndex: 'item_count', key: 'item_count', width: 80 },
   { title: '来源', dataIndex: 'source_name', key: 'source_name', width: 220 },
-  { title: '更新时间', dataIndex: 'update_time', key: 'update_time', width: 180 },
+  {
+    title: '更新时间',
+    dataIndex: 'update_time',
+    key: 'update_time',
+    width: 180,
+  },
   { fixed: 'right', title: '操作', key: 'action', width: 150 },
 ];
 
@@ -154,16 +161,31 @@ const importRunColumns: any[] = [
 const previewColumns = computed<any[]>(() => {
   if (selectedAsset.value?.asset_type === 'product_experience_rule_set') {
     return [
-      { title: '产品使用体验', dataIndex: 'product_experience', key: 'product_experience', width: 230 },
+      {
+        title: '产品使用体验',
+        dataIndex: 'product_experience',
+        key: 'product_experience',
+        width: 230,
+      },
       { title: '月龄', dataIndex: 'baby_stage', key: 'baby_stage', width: 120 },
-      { title: '使用时间', dataIndex: 'use_duration', key: 'use_duration', width: 120 },
+      {
+        title: '使用时间',
+        dataIndex: 'use_duration',
+        key: 'use_duration',
+        width: 120,
+      },
       { title: '主题', dataIndex: 'topic', key: 'topic', width: 130 },
       { title: '语料', dataIndex: 'corpus', key: 'corpus' },
       { title: '示例', key: 'examples', width: 80 },
     ];
   }
   return [
-    { title: '评论切角', dataIndex: 'comment_angle', key: 'comment_angle', width: 240 },
+    {
+      title: '评论切角',
+      dataIndex: 'comment_angle',
+      key: 'comment_angle',
+      width: 240,
+    },
     { title: '语料', dataIndex: 'corpus', key: 'corpus' },
     { title: '示例', key: 'examples', width: 80 },
     { title: '补充', key: 'supplements', width: 80 },
@@ -193,7 +215,7 @@ async function loadRuleAssets() {
       ),
     );
     ruleAssets.value = groups.flat();
-    if (!selectedSummary.value && ruleAssets.value.length) {
+    if (!selectedSummary.value && ruleAssets.value.length > 0) {
       const firstAsset = ruleAssets.value[0];
       if (firstAsset) {
         await openAsset(firstAsset);
@@ -234,16 +256,29 @@ async function generateFromRulePackage(
   }
   generating.value = true;
   try {
+    const preflight = await preflightContentGenerationApi({
+      asset_key: row.asset_key,
+      asset_type: row.asset_type,
+    });
+    if (!preflight.passed) {
+      showPreflightFailure(preflight);
+      return;
+    }
+    if (preflight.warning_codes.length > 0) {
+      message.warning(
+        `生成前检查有 ${preflight.warning_codes.length} 项提示，已继续生成`,
+      );
+    }
     const payload = {
       asset_key: row.asset_key,
       created_by: currentOperator.value,
     };
-    const result =
-      row.asset_type === 'comment_angle_rule_set'
-        ? await startCommentBatchApi(payload)
-        : row.asset_type === 'product_experience_rule_set'
-          ? await startContentBatchApi(payload)
-          : null;
+    let result = null;
+    if (row.asset_type === 'comment_angle_rule_set') {
+      result = await startCommentBatchApi(payload);
+    } else if (row.asset_type === 'product_experience_rule_set') {
+      result = await startContentBatchApi(payload);
+    }
     if (!result) {
       message.warning('当前规则包类型暂不支持一键生成');
       return;
@@ -260,6 +295,18 @@ async function generateFromRulePackage(
   } finally {
     generating.value = false;
   }
+}
+
+function showPreflightFailure(preflight: {
+  checks: Array<{ label: string; message: string; status: string }>;
+}) {
+  const failures = preflight.checks.filter((item) => item.status === 'fail');
+  Modal.warning({
+    title: '生成前检查未通过',
+    content:
+      failures.map((item) => `${item.label}：${item.message}`).join('；') ||
+      '请检查业务规则包和生文配置。',
+  });
 }
 
 const beforeUpload: UploadProps['beforeUpload'] = async (file) => {
@@ -297,9 +344,7 @@ async function confirmUpload() {
       packageType.value === 'comment_angle'
         ? await importCommentAngleRuleSetApi(payload)
         : await importProductExperienceRuleSetApi(payload);
-    message.success(
-      `导入完成：${result.summary_json?.rule_count || 0} 条规则`,
-    );
+    message.success(`导入完成：${result.summary_json?.rule_count || 0} 条规则`);
     selectedSummary.value = null;
     selectedAsset.value = null;
     uploadConfirmOpen.value = false;
@@ -355,10 +400,10 @@ function assetKeyFromDisplayName(name: string, type: RulePackageType) {
   const normalizedName = name.trim();
   const asciiSlug = normalizedName
     .normalize('NFKD')
-    .replace(/[\u0300-\u036F]/g, '')
+    .replaceAll(/[\u0300-\u036F]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
+    .replaceAll(/[^a-z0-9]+/g, '_')
+    .replaceAll(/^_+|_+$/g, '')
     .slice(0, 48);
   // asset_key 是内部版本化资产标识，运营只维护名称；中文文件名用短 hash 保持稳定。
   const suffix = asciiSlug || shortHash(normalizedName);
@@ -492,7 +537,7 @@ onMounted(() => {
           </DescriptionsItem>
         </Descriptions>
 
-        <div v-if="selectedWarnings.length" class="warning-row">
+        <div v-if="selectedWarnings.length > 0" class="warning-row">
           <Tag
             v-for="warning in selectedWarnings"
             :key="warning"
@@ -548,7 +593,9 @@ onMounted(() => {
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'rule_package'">
             {{ packageLabel(record.summary_json?.asset_type) }}
-            <span class="muted">{{ record.summary_json?.asset_key || '' }}</span>
+            <span class="muted">{{
+              record.summary_json?.asset_key || ''
+            }}</span>
           </template>
           <template v-else-if="column.key === 'rule_count'">
             {{ record.summary_json?.rule_count ?? '-' }}

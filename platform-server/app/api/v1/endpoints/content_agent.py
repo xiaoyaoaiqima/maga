@@ -13,6 +13,8 @@ from app.schemas.content_batch_report import (
     ContentBatchItemFeedbackRequest,
     ContentBatchItemFeedbackResponse,
     ContentBatchListResponse,
+    ContentGenerationPreflightRequest,
+    ContentGenerationPreflightResponse,
     ContentBatchReportResponse,
     ContentBatchStartRequest,
     ContentBatchStartResponse,
@@ -44,6 +46,7 @@ from app.services.content_batch_report_service import ContentBatchReportService
 from app.services.content_batch_review_service import ContentBatchReviewService
 from app.services.content_comment_batch_service import ContentCommentBatchService
 from app.services.executor_invocation_service import ExecutorInvocationClient, MockExecutorInvocationClient
+from app.services.content_generation_preflight_service import ContentGenerationPreflightService
 from app.services.unified_content_generation_service import CONTENT_GENERATE_CAPABILITY, UnifiedContentGenerationService
 
 router = APIRouter()
@@ -251,6 +254,22 @@ async def start_comment_batch_generation(
         report=report,
     )
     return ResponseData(message="Comment batch generation completed", data=response)
+
+
+@router.post("/preflight-check", response_model=ResponseData[ContentGenerationPreflightResponse])
+async def check_content_generation_preflight(
+    request: ContentGenerationPreflightRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentGenerationPreflightResponse]:
+    result = await ContentGenerationPreflightService(db).check(
+        asset_key=request.asset_key,
+        asset_type=request.asset_type,
+        executor_code=_normalized_executor_code(request.executor_code),
+    )
+    return ResponseData(
+        message="Content generation preflight checked",
+        data=result,
+    )
 
 
 @router.get("/batches", response_model=ResponseData[ContentBatchListResponse])

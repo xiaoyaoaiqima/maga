@@ -8,8 +8,8 @@ export namespace ContentAgentApi {
     style?: null | string;
     executor_code?: string;
     model_config?: null | {
-      ge_model?: null | string;
       ae_model?: null | string;
+      ge_model?: null | string;
     };
     brief_type?: string;
     priority?: number;
@@ -32,8 +32,8 @@ export namespace ContentAgentApi {
     count?: number;
     executor_code?: string;
     model_config?: null | {
-      ge_model?: null | string;
       ae_model?: null | string;
+      ge_model?: null | string;
     };
     created_by?: null | string;
   }
@@ -42,6 +42,32 @@ export namespace ContentAgentApi {
     asset_key?: string;
     executor_code?: string;
     created_by?: null | string;
+  }
+
+  export interface PreflightCheck {
+    code: string;
+    label: string;
+    status: 'fail' | 'pass' | 'warning';
+    message: string;
+    detail: Record<string, any>;
+  }
+
+  export interface PreflightRequest {
+    asset_key: string;
+    asset_type?: null | string;
+    executor_code?: string;
+  }
+
+  export interface PreflightResponse {
+    passed: boolean;
+    status: 'blocked' | 'ready' | 'warning';
+    asset_key: string;
+    asset_type?: null | string;
+    content_type?: 'article' | 'comment' | null;
+    executor_code: string;
+    checks: PreflightCheck[];
+    blocking_codes: string[];
+    warning_codes: string[];
   }
 
   export interface BatchReportSummary {
@@ -82,32 +108,32 @@ export namespace ContentAgentApi {
     human_feedback_text?: null | string;
     feedback_count: number;
     reject_reasons: Array<{
-      source: string;
       code?: null | string;
+      evidence: string[];
       message: string;
       risk_level?: null | string;
-      evidence: string[];
+      source: string;
     }>;
     similarity_warnings: Array<{
-      item_no: number;
-      score: number;
-      reason: string;
-      batch_id?: null | number;
       batch_code?: null | string;
+      batch_id?: null | number;
+      item_no: number;
+      reason: string;
       scope?: string;
+      score: number;
     }>;
     runtime_mode?: null | string;
     generation_duration_ms?: null | number;
     total_duration_ms?: null | number;
     trace_run_id?: null | number;
     trace_stage_calls: Array<{
-      stage_call_id: string;
-      sequence_no: number;
       capability: string;
-      status: string;
       duration_ms?: null | number;
       error_message?: null | string;
+      sequence_no: number;
+      stage_call_id: string;
       stats?: null | Record<string, any>;
+      status: string;
     }>;
     opening_type?: null | string;
     structure_type?: null | string;
@@ -256,6 +282,15 @@ export async function startCommentBatchApi(
     '/v1/content-agent/comment-batches/start',
     data,
     { timeout: 300_000 },
+  );
+}
+
+export async function preflightContentGenerationApi(
+  data: ContentAgentApi.PreflightRequest,
+) {
+  return requestClient.post<ContentAgentApi.PreflightResponse>(
+    '/v1/content-agent/preflight-check',
+    data,
   );
 }
 
