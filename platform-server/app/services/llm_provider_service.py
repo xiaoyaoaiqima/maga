@@ -222,6 +222,142 @@ class LLMModelRouteService:
         await self.db.refresh(db_obj)
         return db_obj
 
+    async def sync_configured_models(
+        self,
+        provider: LLMProviderConfig,
+        model_ids: Optional[List[str]] = None,
+        overwrite: bool = False,
+    ) -> Dict[str, Any]:
+        """从 Provider 已配置的模型清单生成本地模型路由。"""
+        configured_model_ids = self._get_configured_model_ids(provider)
+        if model_ids:
+            requested = {model_id.strip() for model_id in model_ids if model_id.strip()}
+            configured_model_ids = [
+                model_id for model_id in configured_model_ids if model_id in requested
+            ]
+
+        synced_count = 0
+        skipped_count = 0
+        failed_count = 0
+        details = []
+
+        for model_id in configured_model_ids:
+            try:
+                existing_routes, _ = await self.list(
+                    model_code=model_id,
+                    provider_code=provider.provider_code,
+                    limit=1,
+                )
+
+                if existing_routes and not overwrite:
+                    skipped_count += 1
+                    details.append({"model_id": model_id, "status": "skipped"})
+                    continue
+
+                route_payload = self._build_route_payload_from_config(
+                    provider=provider,
+                    model_id=model_id,
+                )
+
+                if existing_routes:
+                    await self.update(
+                        existing_routes[0].id,
+                        LLMModelRouteUpdate(
+                            model_name=route_payload.model_name,
+                            provider_model=route_payload.provider_model,
+                            priority=route_payload.priority,
+                            enabled=route_payload.enabled,
+                            cost_per_1k_input=route_payload.cost_per_1k_input,
+                            cost_per_1k_output=route_payload.cost_per_1k_output,
+                            currency=route_payload.currency,
+                            timeout_seconds=route_payload.timeout_seconds,
+                            description=route_payload.description,
+                        ),
+                    )
+                    details.append({"model_id": model_id, "status": "updated"})
+                else:
+                    await self.create(route_payload)
+                    details.append({"model_id": model_id, "status": "created"})
+                synced_count += 1
+            except Exception as e:
+                failed_count += 1
+                details.append({
+                    "model_id": model_id,
+                    "status": "failed",
+                    "reason": str(e),
+                })
+
+        return {
+            "synced_count": synced_count,
+            "skipped_count": skipped_count,
+            "failed_count": failed_count,
+            "details": details,
+        }
+
+    def _get_configured_model_ids(self, provider: LLMProviderConfig) -> List[str]:
+        """按默认模型优先的顺序，归一化 Provider 上配置的模型 ID。"""
+        raw_models: List[Any] = []
+        if provider.default_model:
+            raw_models.append(provider.default_model)
+
+        available_models = provider.available_models or []
+        if isinstance(available_models, str):
+            try:
+                parsed = json.loads(available_models)
+                available_models = parsed if isinstance(parsed, list) else [available_models]
+            except json.JSONDecodeError:
+                available_models = re.split(r"[\s,]+", available_models)
+        raw_models.extend(available_models)
+
+        model_ids: List[str] = []
+        seen = set()
+        for raw_model in raw_models:
+            if not isinstance(raw_model, str):
+                continue
+            model_id = raw_model.strip()
+            if not model_id or model_id in seen:
+                continue
+            seen.add(model_id)
+            model_ids.append(model_id)
+        return model_ids
+
+    def _build_route_payload_from_config(
+        self,
+        provider: LLMProviderConfig,
+        model_id: str,
+    ) -> LLMModelRouteCreate:
+        """把 Provider 模型清单中的一项转换为最小可用的模型路由。"""
+        currency = "CNY" if provider.provider_code == "aliyun" else "USD"
+        input_cost = None
+        output_cost = None
+        suggested_price = get_model_price_reference(model_id)
+        if suggested_price:
+            input_cost = suggested_price["input"]
+            output_cost = suggested_price["output"]
+            if provider.provider_code == "aliyun":
+                input_cost = (input_cost / Decimal("0.138")).quantize(
+                    Decimal("0.0000001"),
+                    rounding=ROUND_HALF_UP,
+                )
+                output_cost = (output_cost / Decimal("0.138")).quantize(
+                    Decimal("0.0000001"),
+                    rounding=ROUND_HALF_UP,
+                )
+
+        return LLMModelRouteCreate(
+            model_code=model_id,
+            model_name=model_id,
+            provider_code=provider.provider_code,
+            provider_model=model_id,
+            priority=provider.priority or 50,
+            enabled=True,
+            cost_per_1k_input=input_cost,
+            cost_per_1k_output=output_cost,
+            currency=currency,
+            timeout_seconds=provider.timeout,
+            description="由 Provider 可用模型配置自动生成",
+        )
+
     async def update(self, route_id: int, data: LLMModelRouteUpdate) -> Optional[LLMModelRoute]:
         """更新路由"""
         result = await self.db.execute(

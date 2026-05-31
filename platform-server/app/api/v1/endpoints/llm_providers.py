@@ -751,6 +751,40 @@ async def sync_models(
         raise HTTPException(status_code=500, detail=f"同步模型失败: {str(e)}")
 
 
+@router.post("/{code}/sync-configured-models", response_model=ResponseData)
+async def sync_configured_models(
+    code: str,
+    request: SyncModelsRequest = SyncModelsRequest(),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    从 Provider 已配置的 default_model / available_models 生成本地模型路由。
+
+    这条路径不访问远程模型接口，适合运营或管理员已经手动维护好可用模型清单后，
+    一键让 Expert 的模型下拉能够选到这些模型。
+    """
+    provider_service = LLMProviderService(db)
+    route_service = LLMModelRouteService(db)
+
+    provider = await provider_service.get_by_code(code)
+    if not provider:
+        raise HTTPException(status_code=404, detail=f"Provider '{code}' not found")
+
+    result = await route_service.sync_configured_models(
+        provider=provider,
+        model_ids=request.model_ids,
+        overwrite=request.overwrite,
+    )
+
+    return ResponseData(
+        data=SyncModelsResponse(**result).model_dump(),
+        message=(
+            f"生成完成：成功 {result['synced_count']}，"
+            f"跳过 {result['skipped_count']}，失败 {result['failed_count']}"
+        ),
+    )
+
+
 # ==================== 模型路由 API ====================
 
 @static_router.get("/routes", response_model=ResponseData)

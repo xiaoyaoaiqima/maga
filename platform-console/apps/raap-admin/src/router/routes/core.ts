@@ -102,6 +102,62 @@ const coreRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'ContentAgentSystemPromptKeywords',
+        path: 'content-agent/system-prompt-keywords',
+        component: () =>
+          import('#/views/content-agent/system-prompt-keywords/index.vue'),
+        meta: {
+          title: '系统提示词关键词',
+          hideInMenu: true,
+          hideInTab: false,
+          activeMenu: '/content-agent/system-prompt-keywords',
+        },
+      },
+      {
+        name: 'ContentGenerationExperts',
+        path: 'content-agent/experts',
+        component: () => import('#/views/content-agent/experts/index.vue'),
+        meta: {
+          title: '生文 Expert',
+          hideInMenu: true,
+          hideInTab: false,
+          activeMenu: '/content-agent/experts',
+        },
+      },
+      {
+        name: 'MagaModelManagement',
+        path: 'llm/provider',
+        component: () => import('#/views/llm/provider/index.vue'),
+        meta: {
+          title: '模型配置',
+          hideInMenu: true,
+          hideInTab: false,
+          activeMenu: '/llm/provider',
+        },
+      },
+      {
+        name: 'MagaModelRoutes',
+        path: 'llm/routes',
+        component: () => import('#/views/llm/routes/index.vue'),
+        meta: {
+          title: '模型路由',
+          hideInMenu: true,
+          hideInTab: false,
+          activeMenu: '/llm/provider',
+        },
+      },
+      {
+        name: 'MagaModelStats',
+        path: 'llm/stats',
+        component: () => import('#/views/llm/stats/index.vue'),
+        meta: {
+          title: '模型统计',
+          hideInMenu: true,
+          hideInTab: false,
+          activeMenu: '/llm/provider',
+        },
+      },
+      {
         name: 'DashboardPanel',
         path: 'dashboard/:panelId',
         component: () => import('#/views/dashboard/ai-dashboard/index.vue'),

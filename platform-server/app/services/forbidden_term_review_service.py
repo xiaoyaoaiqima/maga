@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.content_agent import ContentBatchItem
 from app.services.business_forbidden_term_service import BusinessForbiddenTermService
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
+from app.services.content_generation_expert_service import ContentGenerationExpertService
 
 STATIC_FORBIDDEN_TERMS = ["治疗便秘", "治好便秘", "改善便秘", "解决便秘", "根治", "疗效"]
 MAX_FORBIDDEN_TERM_REWRITE_ROUNDS = 2
@@ -77,15 +78,29 @@ class ForbiddenTermReviewService:
             rewrite_rounds = round_no
             try:
                 if item.run_id and orchestrator is not None:
+                    input_payload = _rewrite_input_payload(
+                        item,
+                        hits=current_hits,
+                        content_type=content_type,
+                        rewrite_round=round_no,
+                    )
+                    # 改写是否触发、命中词扫描和兜底清理由 MAGA 控制；
+                    # Expert 只负责把本轮改写的 prompt 模板和模型参数交给 worker。
+                    input_payload.update(
+                        await ContentGenerationExpertService(self.db).build_rewrite_snapshot(
+                            content_type=content_type,
+                            previous_content=input_payload["previous_content"],
+                            business_rule=input_payload["business_rule"],
+                            selected_keywords=input_payload["selected_keywords"],
+                            forbidden_hits=current_hits,
+                            rewrite_instructions=input_payload["rewrite_instructions"],
+                            output_fields=input_payload["output_fields"],
+                        )
+                    )
                     result = await orchestrator.run_content_rewrite_stage(
                         run_id=item.run_id,
                         executor_code=executor_code,
-                        input_payload=_rewrite_input_payload(
-                            item,
-                            hits=current_hits,
-                            content_type=content_type,
-                            rewrite_round=round_no,
-                        ),
+                        input_payload=input_payload,
                     )
                     _apply_rewrite_output(item, result.output or {}, content_type=content_type)
                     rewrite_method = "content.rewrite"

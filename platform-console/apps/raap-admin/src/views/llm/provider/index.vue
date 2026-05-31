@@ -43,6 +43,7 @@ import {
   getRemoteModelsApi,
   getRouteListApi,
   resetCircuitBreakerApi,
+  syncConfiguredModelsApi,
   syncModelsApi,
   testProviderApi,
   updateProviderApi,
@@ -71,6 +72,7 @@ const isSubmitting = ref(false);
 const detailVisible = ref(false);
 const viewingProvider = ref<LLMApi.ProviderConfig | null>(null);
 const testingProvider = ref<null | string>(null);
+const syncingConfiguredProvider = ref<null | string>(null);
 const pagination = reactive({
   current: 1,
   pageSize: 10,
@@ -239,7 +241,7 @@ const columns = [
     sorter: (a: any, b: any) =>
       (a.update_time || '').localeCompare(b.update_time || ''),
   },
-  { title: '操作', key: 'action', width: 360 },
+  { title: '操作', key: 'action', width: 460 },
 ];
 
 // 获取 Provider 列表
@@ -397,6 +399,36 @@ async function handleGetRemoteModels(record: LLMApi.ProviderConfig) {
     remoteModels.value = [];
   } finally {
     remoteModelsLoading.value = false;
+  }
+}
+
+// 从 Provider 已维护的可用模型清单生成模型路由
+async function handleSyncConfiguredModels(record: LLMApi.ProviderConfig) {
+  const configuredModels = [
+    record.default_model,
+    ...(record.available_models || []),
+  ].filter((modelId): modelId is string => Boolean(modelId?.trim()));
+
+  if (configuredModels.length === 0) {
+    message.warning('请先配置默认模型或可用模型');
+    return;
+  }
+
+  syncingConfiguredProvider.value = record.provider_code;
+  try {
+    const result = await syncConfiguredModelsApi(record.provider_code, {
+      overwrite: false,
+    });
+    message.success(
+      `路由生成完成：${result.synced_count} 个成功，${result.skipped_count} 个已存在`,
+    );
+    if (result.failed_count > 0) {
+      message.warning(`${result.failed_count} 个模型生成失败`);
+    }
+  } catch (error: any) {
+    message.error(`生成路由失败: ${error?.message || '未知错误'}`);
+  } finally {
+    syncingConfiguredProvider.value = null;
   }
 }
 
@@ -859,6 +891,16 @@ onMounted(() => {
                 @click="handleGetRemoteModels(record as LLMApi.ProviderConfig)"
               >
                 📦 模型
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                :loading="syncingConfiguredProvider === record.provider_code"
+                @click="
+                  handleSyncConfiguredModels(record as LLMApi.ProviderConfig)
+                "
+              >
+                🧩 生成路由
               </Button>
               <Button
                 type="link"

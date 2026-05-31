@@ -279,6 +279,7 @@ def _handle_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
             "fake": True,
             "reason": "MAGA_WORKER_RUNTIME_FAST_FAKE",
             "forbidden_hits": forbidden_hits,
+            "expert_config_code": (input_payload.get("expert") or {}).get("expert_config_code"),
         }
         return output
 
@@ -292,10 +293,18 @@ def _handle_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
         model_config.get("system_prompt")
         or "你是中文内容审核后的自然改写助手，只按要求改写，不解释过程。"
     )
+    prompt = str(input_payload.get("rendered_prompt") or "").strip()
+    if not prompt:
+        prompt = _rewrite_prompt(
+            input_payload,
+            previous=previous,
+            forbidden_hits=forbidden_hits,
+            content_type=content_type,
+        )
     raw = call_model(
         model,
         system=system,
-        user=_rewrite_prompt(input_payload, previous=previous, forbidden_hits=forbidden_hits, content_type=content_type),
+        user=prompt,
         temperature=temperature,
         max_tokens=max_tokens,
     )
@@ -306,6 +315,7 @@ def _handle_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
         "provider_code": model_config.get("provider_code"),
         "model_code": model,
         "forbidden_hits": forbidden_hits,
+        "expert_config_code": (input_payload.get("expert") or {}).get("expert_config_code"),
     }
     return output
 

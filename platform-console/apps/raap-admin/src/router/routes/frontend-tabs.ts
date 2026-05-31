@@ -40,6 +40,40 @@ const frontendTabRoutes: RouteRecordRaw[] = [
       activeMenu: '/content-agent/feedback',
     },
   },
+  {
+    name: 'ContentAgentSystemPromptKeywords',
+    path: '/content-agent/system-prompt-keywords',
+    component: () =>
+      import('#/views/content-agent/system-prompt-keywords/index.vue'),
+    meta: {
+      title: '系统关键词',
+      icon: 'lucide:list-tree',
+      order: -70,
+      activeMenu: '/content-agent/system-prompt-keywords',
+    },
+  },
+  {
+    name: 'ContentGenerationExperts',
+    path: '/content-agent/experts',
+    component: () => import('#/views/content-agent/experts/index.vue'),
+    meta: {
+      title: '生文 Expert',
+      icon: 'lucide:bot',
+      order: -60,
+      activeMenu: '/content-agent/experts',
+    },
+  },
+  {
+    name: 'MagaModelManagement',
+    path: '/llm/provider',
+    component: () => import('#/views/llm/provider/index.vue'),
+    meta: {
+      title: '模型配置',
+      icon: 'lucide:sliders-horizontal',
+      order: -50,
+      activeMenu: '/llm/provider',
+    },
+  },
 ];
 
 export { frontendTabRoutes };

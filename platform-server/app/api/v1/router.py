@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     auth,
     compat_invoke,
     content_agent,
+    content_generation_experts,
     cache_monitor,
     calibration_records,
     calibration_tasks,
@@ -81,6 +82,7 @@ api_router.include_router(job_variants.router, prefix="/job-variants", tags=["jo
 api_router.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 api_router.include_router(expert_tasks.router, prefix="/expert-tasks", tags=["expert-tasks"])
 api_router.include_router(content_agent.router, prefix="/content-agent", tags=["content-agent"])
+api_router.include_router(content_generation_experts.router, prefix="/content-agent", tags=["content-generation-experts"])
 api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
 api_router.include_router(prompt_optimizer.router, prefix="/prompt-optimizer", tags=["prompt-optimizer"])
 

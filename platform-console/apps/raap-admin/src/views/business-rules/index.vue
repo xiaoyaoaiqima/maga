@@ -2,7 +2,7 @@
 import type { UploadProps } from 'ant-design-vue';
 import type { AssetsApi } from '#/api/core/assets';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import {
@@ -21,6 +21,7 @@ import {
   Empty,
   Input,
   message,
+  Modal,
   Row,
   Select,
   Space,
@@ -77,8 +78,9 @@ const importing = ref(false);
 const generating = ref(false);
 const importRunsLoading = ref(false);
 const packageType = ref<RulePackageType>('comment_angle');
-const assetKey = ref(rulePackageConfigs.comment_angle.defaultAssetKey);
 const displayName = ref(rulePackageConfigs.comment_angle.defaultDisplayName);
+const pendingFile = ref<File | null>(null);
+const uploadConfirmOpen = ref(false);
 const ruleAssets = ref<AssetsApi.AssetSummary[]>([]);
 const importRuns = ref<AssetsApi.AssetImportRun[]>([]);
 const selectedSummary = ref<AssetsApi.AssetSummary | null>(null);
@@ -131,7 +133,6 @@ const selectedDefaultGenerationCount = computed(
 const rulePackageColumns: any[] = [
   { title: '规则包', dataIndex: 'display_name', key: 'display_name' },
   { title: '类型', dataIndex: 'asset_type', key: 'asset_type', width: 150 },
-  { title: 'Key', dataIndex: 'asset_key', key: 'asset_key', width: 220 },
   { title: '版本', dataIndex: 'version_no', key: 'version_no', width: 80 },
   { title: '条数', dataIndex: 'item_count', key: 'item_count', width: 80 },
   { title: '来源', dataIndex: 'source_name', key: 'source_name', width: 220 },
@@ -267,13 +268,30 @@ const beforeUpload: UploadProps['beforeUpload'] = async (file) => {
     message.warning('只支持 .csv 或 .xlsx 文件');
     return Upload.LIST_IGNORE;
   }
+
+  pendingFile.value = file;
+  displayName.value = displayNameFromFile(file.name);
+  uploadConfirmOpen.value = true;
+  return Upload.LIST_IGNORE;
+};
+
+async function confirmUpload() {
+  if (!pendingFile.value) {
+    message.warning('请先选择文件');
+    return;
+  }
+  if (!displayName.value.trim()) {
+    message.warning('请填写规则包名称');
+    return;
+  }
+
   importing.value = true;
   try {
     const payload = {
-      asset_key: assetKey.value,
+      asset_key: assetKeyFromDisplayName(displayName.value, packageType.value),
       created_by: currentOperator.value,
-      display_name: displayName.value,
-      file,
+      display_name: displayName.value.trim(),
+      file: pendingFile.value,
     };
     const result =
       packageType.value === 'comment_angle'
@@ -284,14 +302,21 @@ const beforeUpload: UploadProps['beforeUpload'] = async (file) => {
     );
     selectedSummary.value = null;
     selectedAsset.value = null;
+    uploadConfirmOpen.value = false;
+    pendingFile.value = null;
     await Promise.all([loadRuleAssets(), loadImportRuns()]);
   } catch {
     message.error('导入失败，请检查文件格式');
   } finally {
     importing.value = false;
   }
-  return Upload.LIST_IGNORE;
-};
+}
+
+function cancelUpload() {
+  if (importing.value) return;
+  uploadConfirmOpen.value = false;
+  pendingFile.value = null;
+}
 
 function packageLabel(assetType?: string) {
   const config = Object.values(rulePackageConfigs).find(
@@ -314,13 +339,31 @@ function formatValue(value: unknown) {
   return String(value);
 }
 
-function resetFormForType(type: RulePackageType) {
-  const config = rulePackageConfigs[type];
-  assetKey.value = config.defaultAssetKey;
-  displayName.value = config.defaultDisplayName;
+function displayNameFromFile(fileName: string) {
+  return fileName.replace(/\.[^.]+$/, '').trim() || fileName;
 }
 
-watch(packageType, resetFormForType);
+function shortHash(text: string) {
+  let hash = 0;
+  for (const char of text) {
+    hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+function assetKeyFromDisplayName(name: string, type: RulePackageType) {
+  const normalizedName = name.trim();
+  const asciiSlug = normalizedName
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036F]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+  // asset_key 是内部版本化资产标识，运营只维护名称；中文文件名用短 hash 保持稳定。
+  const suffix = asciiSlug || shortHash(normalizedName);
+  return `${rulePackageConfigs[type].defaultAssetKey}_${suffix}`.slice(0, 120);
+}
 
 onMounted(() => {
   loadRuleAssets();
@@ -332,15 +375,17 @@ onMounted(() => {
   <div class="business-rule-page p-4">
     <Row :gutter="16">
       <Col :lg="8" :xs="24">
-        <Card title="上传规则包" :bordered="false">
+        <Card title="上传业务规则包" :bordered="false">
           <Space class="rule-form" direction="vertical">
-            <Select
-              v-model:value="packageType"
-              :options="packageTypeOptions"
-              class="full-width"
-            />
-            <Input v-model:value="displayName" placeholder="规则包名称" />
-            <Input v-model:value="assetKey" placeholder="asset_key" />
+            <div class="form-field">
+              <div class="field-label">业务类型</div>
+              <Select
+                v-model:value="packageType"
+                :disabled="importing"
+                :options="packageTypeOptions"
+                class="full-width"
+              />
+            </div>
             <Upload
               :accept="currentConfig.accept"
               :before-upload="beforeUpload"
@@ -349,7 +394,7 @@ onMounted(() => {
             >
               <Button block type="primary" :loading="importing">
                 <template #icon><UploadOutlined /></template>
-                上传业务规则
+                上传文件
               </Button>
             </Upload>
           </Space>
@@ -369,7 +414,7 @@ onMounted(() => {
             :data-source="ruleAssets"
             :loading="loading"
             :pagination="{ pageSize: 6 }"
-            :scroll="{ x: 1180 }"
+            :scroll="{ x: 960 }"
             row-key="id"
             size="small"
           >
@@ -429,9 +474,6 @@ onMounted(() => {
           </DescriptionsItem>
           <DescriptionsItem label="版本">
             v{{ selectedAsset.version_no }}
-          </DescriptionsItem>
-          <DescriptionsItem label="Key">
-            {{ selectedAsset.asset_key }}
           </DescriptionsItem>
           <DescriptionsItem label="规则">
             {{ selectedRuleCount }}
@@ -522,6 +564,31 @@ onMounted(() => {
         </template>
       </Table>
     </Card>
+
+    <Modal
+      v-model:open="uploadConfirmOpen"
+      title="确认上传"
+      ok-text="上传"
+      cancel-text="取消"
+      :confirm-loading="importing"
+      @ok="confirmUpload"
+      @cancel="cancelUpload"
+    >
+      <Space class="confirm-form" direction="vertical">
+        <div class="confirm-file">
+          <span>文件</span>
+          <strong>{{ pendingFile?.name || '-' }}</strong>
+        </div>
+        <div class="form-field">
+          <div class="field-label">规则包名称</div>
+          <Input
+            v-model:value="displayName"
+            :disabled="importing"
+            placeholder="默认取文件名，可编辑"
+          />
+        </div>
+      </Space>
+    </Modal>
   </div>
 </template>
 
@@ -534,6 +601,42 @@ onMounted(() => {
 .rule-form,
 .full-width {
   width: 100%;
+}
+
+.form-field,
+.confirm-form {
+  width: 100%;
+}
+
+.field-label {
+  color: #595959;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.confirm-file {
+  align-items: center;
+  background: #f5f7fb;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.confirm-file span {
+  color: #8c8c8c;
+}
+
+.confirm-file strong {
+  color: #262626;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .warning-row {

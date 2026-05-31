@@ -195,6 +195,28 @@ GET /api/v1/assets/exports/content-generation-keywords
 
 Prompt 预览用于在保存前查看“业务规则 + 当前页面关键词配置 + expert 模版”最终组装出的 prompt，帮助运营确认语料是否真的进入了生成上下文。
 
+## 生文 Expert 管理
+
+新链路里的 Expert 不再等同于旧 RAAP 的 Agent/Job 编排节点，而是一次模型执行的配置单元：
+
+- Prompt 模板
+- 模型参数：`provider_code`、`model_code`、`temperature`、`max_tokens`、`system_prompt`
+- 执行能力：`content.generate` 或 `content.rewrite`
+
+页面入口：
+
+```text
+/#/content-agent/experts
+```
+
+默认包含三个配置：
+
+- `article_generator_v1`：文章生成，能力为 `content.generate`
+- `comment_generator_v1`：评论生成，能力为 `content.generate`
+- `content_rewrite_v1`：审核改写，能力为 `content.rewrite`
+
+审核本身不是让模型自由判断。MAGA 后端先用系统违禁词和业务违禁词做确定性扫描；命中后才把原文、命中词、业务规则、已选系统关键词和改写 Expert 渲染后的 prompt 交给 `maga-worker` 执行 `content.rewrite`；改写后再二次扫描，不通过时继续兜底清理或交给人工。
+
 ## 数据承载
 
 文章和评论 Demo 先复用现有批量任务表：

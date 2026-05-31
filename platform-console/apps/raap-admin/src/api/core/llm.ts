@@ -349,6 +349,19 @@ export async function syncModelsApi(
   );
 }
 
+/**
+ * 从 Provider 已配置的可用模型生成本地模型路由
+ */
+export async function syncConfiguredModelsApi(
+  code: string,
+  data?: LLMApi.SyncModelsRequest,
+) {
+  return requestClient.post<LLMApi.SyncModelsResponse>(
+    `/v1/llm-providers/${code}/sync-configured-models`,
+    data ?? {},
+  );
+}
+
 // ==================== Model Route API ====================
 
 /**
