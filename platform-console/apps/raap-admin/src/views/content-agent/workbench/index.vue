@@ -29,6 +29,8 @@ import {
   getContentBatchReportApi,
 } from '#/api/core/content-agent';
 
+import VersionComparePanel from '../components/version_compare_panel.vue';
+
 const route = useRoute();
 const router = useRouter();
 
@@ -596,6 +598,11 @@ watch(
                       v-else
                       :message="itemFailureMessage(item)"
                       type="error"
+                    />
+
+                    <VersionComparePanel
+                      v-if="item.version_compare"
+                      :item="item"
                     />
 
                     <Alert

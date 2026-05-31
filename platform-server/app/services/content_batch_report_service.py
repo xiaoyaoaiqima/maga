@@ -24,6 +24,8 @@ from app.schemas.content_batch_report import (
     ContentBatchSimilarityWarning,
     ContentBatchReportSummary,
     ContentBatchStageTrace,
+    ContentBatchVersionCompare,
+    ContentBatchVersionSnapshot,
     ContentTrainingFeedbackSample,
     ContentTrainingFeedbackSampleListResponse,
 )
@@ -48,16 +50,16 @@ class ContentBatchReportService:
         list_items: list[ContentBatchListItem] = []
         for job in jobs:
             items = await self._batch_items(job.id)
-            versions_by_item = await self._latest_versions_for_items(items)
+            versions_by_item = await self._versions_for_items(items)
             feedback_counts = await self._feedback_counts_for_items(items)
             forbidden_terms = await self._forbidden_terms_for_job(job)
             report_items = [
                 self._report_item(
                     item,
                     [],
-                    versions_by_item.get(item.id),
-                    None,
-                    feedback_counts.get(item.id, 0),
+                    versions=versions_by_item.get(item.id, []),
+                    run=None,
+                    feedback_count=feedback_counts.get(item.id, 0),
                     forbidden_terms=forbidden_terms,
                 )
                 for item in items
@@ -87,16 +89,16 @@ class ContentBatchReportService:
         stage_calls = await self._stage_calls_for_items(items)
         stages_by_run = self._group_stages_by_run(stage_calls)
         runs_by_id = await self._runs_for_items(items)
-        versions_by_item = await self._latest_versions_for_items(items)
+        versions_by_item = await self._versions_for_items(items)
         feedback_counts = await self._feedback_counts_for_items(items)
         forbidden_terms = await self._forbidden_terms_for_job(job)
         report_items = [
             self._report_item(
                 item,
                 stages_by_run.get(item.run_id or -1, []),
-                versions_by_item.get(item.id),
-                runs_by_id.get(item.run_id or -1),
-                feedback_counts.get(item.id, 0),
+                versions=versions_by_item.get(item.id, []),
+                run=runs_by_id.get(item.run_id or -1),
+                feedback_count=feedback_counts.get(item.id, 0),
                 forbidden_terms=forbidden_terms,
             )
             for item in items
@@ -155,7 +157,7 @@ class ContentBatchReportService:
 
     async def build_item_report(self, item: ContentBatchItem) -> ContentBatchReportItem:
         stage_calls = await self._stage_calls_for_items([item])
-        latest_version = (await self._latest_versions_for_items([item])).get(item.id)
+        versions = (await self._versions_for_items([item])).get(item.id, [])
         run = (await self._runs_for_items([item])).get(item.run_id or -1)
         feedback_count = (await self._feedback_counts_for_items([item])).get(item.id, 0)
         job = await self._job_for_item(item)
@@ -163,9 +165,9 @@ class ContentBatchReportService:
         return self._report_item(
             item,
             stage_calls,
-            latest_version,
-            run,
-            feedback_count,
+            versions=versions,
+            run=run,
+            feedback_count=feedback_count,
             forbidden_terms=forbidden_terms,
         )
 
@@ -259,6 +261,20 @@ class ContentBatchReportService:
             latest.setdefault(version.item_id, version)
         return latest
 
+    async def _versions_for_items(self, items: list[ContentBatchItem]) -> dict[int, list[ContentBatchItemVersion]]:
+        item_ids = [item.id for item in items if item.id]
+        if not item_ids:
+            return {}
+        result = await self.db.execute(
+            select(ContentBatchItemVersion)
+            .where(ContentBatchItemVersion.item_id.in_(item_ids))
+            .order_by(ContentBatchItemVersion.item_id, ContentBatchItemVersion.version_no)
+        )
+        versions: dict[int, list[ContentBatchItemVersion]] = {}
+        for version in result.scalars().all():
+            versions.setdefault(version.item_id, []).append(version)
+        return versions
+
     async def _feedback_counts_for_items(self, items: list[ContentBatchItem]) -> dict[int, int]:
         item_ids = [item.id for item in items if item.id]
         if not item_ids:
@@ -281,10 +297,14 @@ class ContentBatchReportService:
         item: ContentBatchItem,
         stage_calls: list[ContentAgentStageCall],
         latest_version: ContentBatchItemVersion | None = None,
+        *,
+        versions: list[ContentBatchItemVersion] | None = None,
         run: ContentAgentRun | None = None,
         feedback_count: int = 0,
         forbidden_terms: list[str] | None = None,
     ) -> ContentBatchReportItem:
+        ordered_versions = versions or []
+        latest_version = latest_version or (ordered_versions[-1] if ordered_versions else None)
         quality = item.quality_json or {}
         review = quality.get("review_report") or {}
         diversity = item.diversity_json or {}
@@ -317,6 +337,7 @@ class ContentBatchReportService:
             feedback_count=feedback_count,
             reject_reasons=self._reject_reasons(item, review, forbidden_hits),
             similarity_warnings=[],
+            version_compare=self._version_compare(latest_version, ordered_versions),
             runtime_mode=runtime_result.get("mode") or quality.get("executor"),
             generation_duration_ms=self._stage_duration_ms(generation_stage) if generation_stage else None,
             total_duration_ms=self._total_duration_ms(run, stage_calls),
@@ -335,6 +356,91 @@ class ContentBatchReportService:
             quality=quality or None,
             error_message=item.error_message,
         )
+
+    def _version_compare(
+        self,
+        latest_version: ContentBatchItemVersion | None,
+        versions: list[ContentBatchItemVersion],
+    ) -> ContentBatchVersionCompare | None:
+        # “通过”等反馈也会生成版本；报告里应展示最近一次真正改变文本的版本差异。
+        candidate_versions = list(reversed(versions))
+        if latest_version is not None and latest_version not in versions:
+            candidate_versions.insert(0, latest_version)
+        if not candidate_versions:
+            return None
+        for version in candidate_versions:
+            if version.source_action not in {"auto_rewrite", "manual_edit"}:
+                continue
+            before = self._compare_before_snapshot(version, versions)
+            if before is None:
+                continue
+            after = self._version_snapshot(version)
+            title_changed = (before.title or "") != (after.title or "")
+            body_changed = (before.body or "") != (after.body or "")
+            if not title_changed and not body_changed and version.source_action != "auto_rewrite":
+                continue
+            return ContentBatchVersionCompare(
+                compare_type=version.source_action,
+                before=before,
+                after=after,
+                title_changed=title_changed,
+                body_changed=body_changed,
+                body_before_chars=len(before.body or ""),
+                body_after_chars=len(after.body or ""),
+            )
+        return None
+
+    def _compare_before_snapshot(
+        self,
+        latest_version: ContentBatchItemVersion,
+        versions: list[ContentBatchItemVersion],
+    ) -> ContentBatchVersionSnapshot | None:
+        metadata = latest_version.metadata_json if isinstance(latest_version.metadata_json, dict) else {}
+        source_version_id = metadata.get("source_version_id")
+        if source_version_id is not None:
+            for version in versions:
+                if version.id == source_version_id:
+                    return self._version_snapshot(version)
+
+        if latest_version.source_action == "manual_edit":
+            previous_content = metadata.get("previous_content") if isinstance(metadata.get("previous_content"), dict) else {}
+            if previous_content:
+                return ContentBatchVersionSnapshot(
+                    version_id=None,
+                    version_no=max((latest_version.version_no or 1) - 1, 0),
+                    source_action="before_manual_edit",
+                    review_status=None,
+                    title=previous_content.get("title"),
+                    body=previous_content.get("body"),
+                    feedback_text=latest_version.feedback_text,
+                    created_by=latest_version.created_by,
+                    create_time=self._format_time(latest_version.create_time),
+                )
+
+        if latest_version.source_action not in {"auto_rewrite", "manual_edit"}:
+            return None
+        previous_versions = [version for version in versions if version.version_no < latest_version.version_no]
+        if not previous_versions:
+            return None
+        return self._version_snapshot(previous_versions[-1])
+
+    @staticmethod
+    def _version_snapshot(version: ContentBatchItemVersion) -> ContentBatchVersionSnapshot:
+        return ContentBatchVersionSnapshot(
+            version_id=version.id,
+            version_no=version.version_no,
+            source_action=version.source_action,
+            review_status=version.review_status,
+            title=version.title,
+            body=version.body,
+            feedback_text=version.feedback_text,
+            created_by=version.created_by,
+            create_time=ContentBatchReportService._format_time(version.create_time),
+        )
+
+    @staticmethod
+    def _format_time(value: Any) -> str | None:
+        return value.strftime("%Y-%m-%d %H:%M:%S") if value else None
 
     def _runtime_result(self, stage_calls: list[ContentAgentStageCall]) -> dict[str, Any]:
         for stage in stage_calls:

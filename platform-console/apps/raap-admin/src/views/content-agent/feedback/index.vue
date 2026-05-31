@@ -31,6 +31,8 @@ import {
   submitBatchItemFeedbackApi,
 } from '#/api/core/content-agent';
 
+import VersionComparePanel from '../components/version_compare_panel.vue';
+
 const { TextArea } = Input;
 
 const route = useRoute();
@@ -752,6 +754,11 @@ watch(
                       :message="`最近反馈：${item.human_feedback_text}`"
                       show-icon
                       type="success"
+                    />
+
+                    <VersionComparePanel
+                      v-if="item.version_compare"
+                      :item="item"
                     />
 
                     <TextArea

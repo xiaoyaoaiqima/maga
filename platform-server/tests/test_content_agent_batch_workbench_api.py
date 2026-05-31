@@ -362,6 +362,10 @@ async def test_batch_workbench_can_record_operator_feedback_and_manual_edit(cont
     assert manual_data["version_no"] == 2
     assert manual_data["item"]["title"] == "我家便便不规律那阵子，转源悦后的真实记录"
     assert manual_data["item"]["body"] == "这是运营人工改后的正文，保留真实经历，也避免医疗化表达。"
+    assert manual_data["item"]["version_compare"]["compare_type"] == "manual_edit"
+    assert manual_data["item"]["version_compare"]["before"]["body"] == item["body"]
+    assert manual_data["item"]["version_compare"]["after"]["body"] == "这是运营人工改后的正文，保留真实经历，也避免医疗化表达。"
+    assert manual_data["item"]["version_compare"]["body_changed"] is True
 
     approve_response = await client.post(
         f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
@@ -383,6 +387,8 @@ async def test_batch_workbench_can_record_operator_feedback_and_manual_edit(cont
     assert report_item["latest_version_no"] == 3
     assert report_item["human_feedback_text"] == "可发布"
     assert report_item["feedback_count"] == 3
+    assert report_item["version_compare"]["compare_type"] == "manual_edit"
+    assert report_item["version_compare"]["after"]["body"] == "这是运营人工改后的正文，保留真实经历，也避免医疗化表达。"
 
 
 @pytest.mark.asyncio
@@ -423,6 +429,10 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
     assert rewritten["quality"]["human_review"]["auto_rewrite"]["source"] == "operator_feedback"
     assert rewritten["quality"]["review_report"]["rewrite_reason"] == "operator_feedback"
     assert rewritten["generation_snapshot"]["rewrite_records"][-1]["capability"] == "content.rewrite"
+    assert rewritten["version_compare"]["compare_type"] == "auto_rewrite"
+    assert rewritten["version_compare"]["before"]["body"] == original_body
+    assert rewritten["version_compare"]["after"]["body"] == rewritten["body"]
+    assert rewritten["version_compare"]["body_changed"] is True
 
     async with session_factory() as session:
         versions = (
@@ -439,6 +449,13 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
     assert feedback.metadata_json["auto_rewrite"] is True
     assert feedback.metadata_json["auto_rewrite_version_id"] == versions[-1].id
     assert any(stage.capability == "content.rewrite" for stage in stage_calls)
+    rewrite_stage = next(stage for stage in stage_calls if stage.capability == "content.rewrite")
+    rewrite_input = rewrite_stage.input_snapshot or {}
+    rewrite_instructions = "\n".join(rewrite_input.get("rewrite_instructions") or [])
+    assert rewrite_input["rewrite_source"] == "operator_feedback"
+    assert rewrite_input["model_config"]["temperature"] >= 0.55
+    assert "不是违禁词替换" in rewrite_instructions
+    assert "不要只做同义替换" in rewrite_instructions
 
 
 @pytest.mark.asyncio

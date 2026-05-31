@@ -140,6 +140,35 @@ export namespace ContentAgentApi {
       scope?: string;
       score: number;
     }>;
+    version_compare?: null | {
+      after: {
+        body?: null | string;
+        create_time?: null | string;
+        created_by?: null | string;
+        feedback_text?: null | string;
+        review_status?: null | string;
+        source_action: string;
+        title?: null | string;
+        version_id?: null | number;
+        version_no?: null | number;
+      };
+      before: {
+        body?: null | string;
+        create_time?: null | string;
+        created_by?: null | string;
+        feedback_text?: null | string;
+        review_status?: null | string;
+        source_action: string;
+        title?: null | string;
+        version_id?: null | number;
+        version_no?: null | number;
+      };
+      body_after_chars: number;
+      body_before_chars: number;
+      body_changed: boolean;
+      compare_type: string;
+      title_changed: boolean;
+    };
     runtime_mode?: null | string;
     generation_duration_ms?: null | number;
     total_duration_ms?: null | number;

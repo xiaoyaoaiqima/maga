@@ -81,6 +81,8 @@ class ContentBatchReviewService:
         request: ContentBatchItemFeedbackRequest,
     ) -> ContentBatchItemFeedbackResponse:
         item = await self._require_item(item_id)
+        previous_title = item.title
+        previous_body = item.body
         review_status = _ACTION_STATUS[request.action]
         auto_rewrite_requested = request.auto_rewrite and request.action == "request_revision"
         if request.auto_rewrite and request.action != "request_revision":
@@ -111,6 +113,12 @@ class ContentBatchReviewService:
         item.quality_json = quality
 
         next_version_no = await self._next_version_no(item_id)
+        version_metadata = {"batch_id": item.batch_id, "item_no": item.item_no}
+        if request.action == "manual_edit":
+            version_metadata["previous_content"] = {
+                "title": previous_title,
+                "body": previous_body,
+            }
         version = ContentBatchItemVersion(
             item_id=item_id,
             version_no=next_version_no,
@@ -120,7 +128,7 @@ class ContentBatchReviewService:
             body=item.body,
             feedback_text=request.feedback_text,
             created_by=request.created_by,
-            metadata_json={"batch_id": item.batch_id, "item_no": item.item_no},
+            metadata_json=version_metadata,
         )
         self.db.add(version)
         await self.db.flush()
@@ -240,6 +248,7 @@ class ContentBatchReviewService:
         output_fields = ["comment"] if content_type == "comment" else ["title", "body"]
         rewrite_instructions = _operator_rewrite_instructions(request.feedback_text)
         input_payload = {
+            "rewrite_source": "operator_feedback",
             "previous_content": previous_content,
             "content_type": content_type,
             "output_fields": output_fields,
@@ -259,17 +268,17 @@ class ContentBatchReviewService:
             "rewrite_instructions": rewrite_instructions,
         }
         # 自动改写仍复用内容流的改写 Expert；MAGA 只把运营反馈组装进确定的改写输入。
-        input_payload.update(
-            await ContentGenerationExpertService(self.db).build_rewrite_snapshot(
-                content_type=content_type,
-                previous_content=previous_content,
-                business_rule=input_payload["business_rule"],
-                selected_keywords=input_payload["selected_keywords"],
-                forbidden_hits=[],
-                rewrite_instructions=rewrite_instructions,
-                output_fields=output_fields,
-            )
+        rewrite_snapshot = await ContentGenerationExpertService(self.db).build_rewrite_snapshot(
+            content_type=content_type,
+            previous_content=previous_content,
+            business_rule=input_payload["business_rule"],
+            selected_keywords=input_payload["selected_keywords"],
+            forbidden_hits=[],
+            rewrite_instructions=rewrite_instructions,
+            output_fields=output_fields,
         )
+        rewrite_snapshot["model_config"] = _operator_feedback_model_config(rewrite_snapshot.get("model_config"))
+        input_payload.update(rewrite_snapshot)
         executor_code = await self._executor_code_for_item(item)
         orchestrator = ContentAgentOrchestrator(
             self.db,
@@ -471,11 +480,49 @@ def _selected_keywords_from_item(item: ContentBatchItem) -> list[Any]:
 
 def _operator_rewrite_instructions(feedback_text: str | None) -> list[str]:
     feedback = (feedback_text or "").strip()
-    return [
-        f"根据运营修改意见调整内容：{feedback}",
-        "只改必要位置，保留原业务规则、语气和内容类型",
-        "不要解释改写过程，只返回改写后的内容",
+    instructions = [
+        "这是运营反馈改写，不是违禁词替换；先理解反馈意图，再重写相关短句。",
+        f"运营反馈原文：{feedback}",
+        "不要只做同义替换、调换语序或把生硬表达换成另一句生硬表达。",
+        "这里的“只改必要位置”指被反馈影响的一整句或相邻短句，不是词级替换。",
+        "保留原业务规则、内容类型和评论区语气；改完要像真实妈妈顺手说的话。",
     ]
+    quoted_terms = _quoted_feedback_terms(feedback)
+    if quoted_terms:
+        instructions.append(
+            "运营点名不满意的表达："
+            + "、".join(quoted_terms)
+            + "；不要原样保留，也不要换成同样书面或别扭的近义句。"
+        )
+    if re.search(r"生硬|不自然|太硬|别扭|不像人话|机器味|AI味", feedback):
+        instructions.append("反馈指向自然度问题：优先把相关句子改成更口语、更轻、更像评论区的表达。")
+    if re.search(r"太长|啰嗦|冗长|字数", feedback):
+        instructions.append("反馈指向长度问题：在不丢核心信息的前提下压缩句子，少用解释性铺垫。")
+    if re.search(r"广告|营销|口播|种草感|推销", feedback):
+        instructions.append("反馈指向营销感问题：降低推荐口吻，改成个人观察或轻交流。")
+    instructions.append("不要解释改写过程，只返回改写后的内容。")
+    return instructions
+
+
+def _quoted_feedback_terms(feedback: str) -> list[str]:
+    terms = []
+    for match in re.finditer(r"[\"'“”‘’「」『』](.{1,80}?)[\"'“”‘’「」『』]", feedback):
+        value = match.group(1).strip()
+        if value and value not in terms:
+            terms.append(value)
+    return terms
+
+
+def _operator_feedback_model_config(model_config: Any) -> dict[str, Any]:
+    result = dict(model_config or {}) if isinstance(model_config, dict) else {}
+    try:
+        temperature = float(result.get("temperature"))
+    except (TypeError, ValueError):
+        temperature = 0.0
+    # 运营反馈常是风格和自然度问题，温度太低会倾向机械保守替换；违禁词改写不走这里。
+    if temperature < 0.55:
+        result["temperature"] = 0.55
+    return result
 
 
 def _current_rewrite_round(item: ContentBatchItem) -> int:

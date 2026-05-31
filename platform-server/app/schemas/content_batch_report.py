@@ -41,6 +41,28 @@ class ContentBatchSimilarityWarning(BaseSchema):
     scope: str = "current_batch"
 
 
+class ContentBatchVersionSnapshot(BaseSchema):
+    version_id: int | None = None
+    version_no: int | None = None
+    source_action: str
+    review_status: str | None = None
+    title: str | None = None
+    body: str | None = None
+    feedback_text: str | None = None
+    created_by: str | None = None
+    create_time: str | None = None
+
+
+class ContentBatchVersionCompare(BaseSchema):
+    compare_type: str
+    before: ContentBatchVersionSnapshot
+    after: ContentBatchVersionSnapshot
+    title_changed: bool = False
+    body_changed: bool = False
+    body_before_chars: int = 0
+    body_after_chars: int = 0
+
+
 class ContentBatchReportSummary(BaseSchema):
     total_count: int = 0
     generated_count: int = 0
@@ -80,6 +102,7 @@ class ContentBatchReportItem(BaseSchema):
     feedback_count: int = 0
     reject_reasons: list[ContentBatchRejectReason] = Field(default_factory=list)
     similarity_warnings: list[ContentBatchSimilarityWarning] = Field(default_factory=list)
+    version_compare: ContentBatchVersionCompare | None = None
     runtime_mode: str | None = None
     generation_duration_ms: int | None = None
     total_duration_ms: int | None = None
