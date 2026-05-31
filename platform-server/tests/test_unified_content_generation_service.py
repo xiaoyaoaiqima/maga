@@ -118,6 +118,43 @@ async def test_unified_generation_handles_extensible_keyword_categories(unified_
 
 
 @pytest.mark.asyncio
+async def test_unified_generation_respects_fixed_keyword_selection(unified_session_factory):
+    async with unified_session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type=SYSTEM_KEYWORD_ASSET_TYPE,
+                asset_key=DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+                display_name="固定关键词",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "categories": [
+                        {
+                            **_category("persona", "人设", ["经验妈妈", "观察妈妈"]),
+                            "selection_mode": "fixed",
+                            "selected_keyword_code": "persona_2",
+                        }
+                    ]
+                },
+            )
+        )
+        await session.commit()
+
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="comment",
+            business_rule={"rule_type": "comment_angle", "comment_angle": "互动提问"},
+            item_no=1,
+            output_fields=["comment"],
+        )
+
+    selected = snapshot.input_snapshot["selected_keywords"]
+    assert selected[0]["keyword_code"] == "persona_2"
+    assert selected[0]["keyword_name"] == "观察妈妈"
+    assert "观察妈妈语料" in snapshot.input_snapshot["rendered_prompt"]
+
+
+@pytest.mark.asyncio
 async def test_unified_generation_uses_expert_template_and_model_config(unified_session_factory):
     async with unified_session_factory() as session:
         session.add(

@@ -336,6 +336,7 @@ def keyword_rows_to_content(rows: list[dict[str, str]]) -> dict[str, Any]:
                 "required": _as_bool(_row_value(row, "必选", "required"), default=False),
                 "sort_order": _as_int(_row_value(row, "类别顺序", "顺序", "sort_order"), default=(len(categories_by_code) + 1) * 10),
                 "selection_mode": _clean_text(_row_value(row, "选择模式", "selection_mode")) or "one",
+                "selected_keyword_code": _clean_text(_row_value(row, "固定子关键词Code", "固定子关键词", "selected_keyword_code")),
                 "applicable_content_types": _content_types_from_text(
                     _row_value(row, "适用内容", "适用内容类型", "applicable_content_types")
                 ),
@@ -388,6 +389,7 @@ def export_keywords_csv(content_json: dict[str, Any]) -> str:
             "必选",
             "类别顺序",
             "选择模式",
+            "固定子关键词Code",
             "适用内容",
             "子关键词Code",
             "子关键词名称",
@@ -410,6 +412,7 @@ def export_keywords_csv(content_json: dict[str, Any]) -> str:
                         "必选": "是" if _as_bool(category.get("required"), default=False) else "否",
                         "类别顺序": category.get("sort_order"),
                         "选择模式": category.get("selection_mode") or "one",
+                        "固定子关键词Code": category.get("selected_keyword_code") or "",
                         "适用内容": ",".join(category.get("applicable_content_types") or []),
                         "子关键词Code": keyword.get("keyword_code"),
                         "子关键词名称": keyword.get("keyword_name"),
@@ -457,6 +460,18 @@ def _normalize_categories(raw_categories: Any, *, strict: bool) -> list[dict[str
         enabled = _as_bool(item.get("enabled"), default=True)
         if strict and enabled and not any(_as_bool(sub.get("enabled"), default=True) for sub in sub_keywords):
             raise ValueError(f"关键词类别「{name}」至少需要一个启用的子关键词")
+        selection_mode = _clean_text(item.get("selection_mode")) or "one"
+        selected_keyword_code = _clean_text(item.get("selected_keyword_code"))
+        if strict and enabled and selection_mode == "fixed":
+            if not selected_keyword_code:
+                raise ValueError(f"关键词类别「{name}」固定选择时必须指定子关键词")
+            enabled_codes = {
+                sub.get("keyword_code")
+                for sub in sub_keywords
+                if _as_bool(sub.get("enabled"), default=True)
+            }
+            if selected_keyword_code not in enabled_codes:
+                raise ValueError(f"关键词类别「{name}」固定选择的子关键词不存在或未启用")
 
         categories.append(
             {
@@ -466,7 +481,8 @@ def _normalize_categories(raw_categories: Any, *, strict: bool) -> list[dict[str
                 "enabled": enabled,
                 "required": _as_bool(item.get("required"), default=False),
                 "sort_order": _as_int(item.get("sort_order"), default=(index + 1) * 10),
-                "selection_mode": _clean_text(item.get("selection_mode")) or "one",
+                "selection_mode": selection_mode,
+                "selected_keyword_code": selected_keyword_code,
                 "applicable_content_types": _normalize_content_types(item.get("applicable_content_types")),
                 "sub_keywords": sub_keywords,
             }

@@ -363,6 +363,23 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
         ],
     }
 
+    invalid_fixed_payload = {
+        **payload,
+        "categories": [
+            {
+                **payload["categories"][0],
+                "selection_mode": "fixed",
+                "selected_keyword_code": "",
+            }
+        ],
+    }
+    invalid_fixed_response = await asset_client.put(
+        "/api/v1/assets/content-generation-keywords",
+        json=invalid_fixed_payload,
+    )
+    assert invalid_fixed_response.status_code == 400
+    assert "固定选择时必须指定子关键词" in invalid_fixed_response.json()["detail"]
+
     first_save = await asset_client.put("/api/v1/assets/content-generation-keywords", json=payload)
     assert first_save.status_code == 200
     first_asset = first_save.json()["data"]
@@ -424,10 +441,10 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
 async def test_import_and_preview_content_generation_keywords(asset_client):
     csv_content = "\n".join(
         [
-            "类别Code,类别名称,类别说明,类别启用,必选,类别顺序,选择模式,适用内容,子关键词Code,子关键词名称,子关键词启用,权重,语料",
-            "persona,人设,表达身份,是,否,10,one,\"article,comment\",experienced_mom,经验型妈妈,是,1,像真实妈妈在评论区说话。",
-            "persona,人设,表达身份,是,否,10,one,\"article,comment\",experienced_mom,经验型妈妈,是,1,不要端着讲课。",
-            "rhythm,句式节奏,控制节奏,是,否,20,one,comment,short_sentence,短句,是,1,短句表达，像顺手评论。",
+            "类别Code,类别名称,类别说明,类别启用,必选,类别顺序,选择模式,固定子关键词Code,适用内容,子关键词Code,子关键词名称,子关键词启用,权重,语料",
+            "persona,人设,表达身份,是,否,10,fixed,experienced_mom,\"article,comment\",experienced_mom,经验型妈妈,是,1,像真实妈妈在评论区说话。",
+            "persona,人设,表达身份,是,否,10,fixed,experienced_mom,\"article,comment\",experienced_mom,经验型妈妈,是,1,不要端着讲课。",
+            "rhythm,句式节奏,控制节奏,是,否,20,one,,comment,short_sentence,短句,是,1,短句表达，像顺手评论。",
         ]
     )
 
@@ -442,6 +459,10 @@ async def test_import_and_preview_content_generation_keywords(asset_client):
     assert ["content_generation_keywords", "default_content_generation_keywords"] in imported["asset_keys"]
     assert imported["summary_json"]["category_count"] == 2
     assert imported["summary_json"]["corpus_count"] == 3
+    detail_response = await asset_client.get("/api/v1/assets/content-generation-keywords")
+    persona_category = detail_response.json()["data"]["content_json"]["categories"][0]
+    assert persona_category["selection_mode"] == "fixed"
+    assert persona_category["selected_keyword_code"] == "experienced_mom"
 
     preview_response = await asset_client.post(
         "/api/v1/assets/content-generation-keywords/preview",

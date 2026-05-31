@@ -114,6 +114,7 @@ export namespace AssetsApi {
     description?: string;
     enabled: boolean;
     required: boolean;
+    selected_keyword_code?: string;
     selection_mode: string;
     sort_order: number;
     sub_keywords: SystemPromptSubKeyword[];

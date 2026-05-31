@@ -169,7 +169,7 @@ def _select_keyword_bundle(content_json: dict[str, Any], *, content_type: str, i
         sub_keywords = [item for item in sub_keywords if item.get("enabled") is not False]
         if not sub_keywords:
             continue
-        item = sub_keywords[(base + offset) % len(sub_keywords)]
+        item = _select_sub_keyword(category, sub_keywords, index=(base + offset))
         corpus = item.get("corpus") or item.get("语料") or item.get("rules") or []
         if isinstance(corpus, str):
             corpus = [corpus]
@@ -183,6 +183,17 @@ def _select_keyword_bundle(content_json: dict[str, Any], *, content_type: str, i
             }
         )
     return selected
+
+
+def _select_sub_keyword(category: dict[str, Any], sub_keywords: list[dict[str, Any]], *, index: int) -> dict[str, Any]:
+    # 固定选择用于 Demo/活动需要稳定命中某个子关键词的场景；未配置时继续沿用自动轮换。
+    if category.get("selection_mode") == "fixed" and category.get("selected_keyword_code"):
+        selected_keyword_code = str(category.get("selected_keyword_code"))
+        for item in sub_keywords:
+            keyword_code = item.get("keyword_code") or item.get("code") or item.get("子关键词")
+            if str(keyword_code) == selected_keyword_code:
+                return item
+    return sub_keywords[index % len(sub_keywords)]
 
 
 def _categories_from_content(content_json: dict[str, Any]) -> list[dict[str, Any]]:

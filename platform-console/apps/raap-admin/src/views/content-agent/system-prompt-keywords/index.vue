@@ -81,6 +81,15 @@ const selectedCategory = computed(() =>
   ),
 );
 
+const selectedCategoryKeywordOptions = computed(() =>
+  (selectedCategory.value?.sub_keywords || [])
+    .filter((item) => item.enabled !== false)
+    .map((item) => ({
+      label: item.keyword_name,
+      value: item.keyword_code,
+    })),
+);
+
 const categoryRows = computed(() =>
   [...categories.value].sort(
     (a, b) =>
@@ -208,6 +217,7 @@ function addCategory() {
     description: '',
     enabled: true,
     required: false,
+    selected_keyword_code: '',
     selection_mode: 'one',
     sort_order: sortOrder,
     sub_keywords: [],
@@ -259,6 +269,10 @@ function normalizeBeforeSave() {
     category.category_name = category.category_name?.trim();
     category.description = category.description?.trim() || '';
     category.selection_mode = category.selection_mode || 'one';
+    category.selected_keyword_code =
+      category.selection_mode === 'fixed'
+        ? category.selected_keyword_code?.trim() || ''
+        : '';
     category.applicable_content_types =
       category.applicable_content_types?.length > 0
         ? category.applicable_content_types
@@ -292,6 +306,14 @@ function normalizeBeforeSave() {
       !(category.sub_keywords || []).some((item) => item.enabled)
     ) {
       throw new Error(`启用的类别「${category.category_name}」至少需要一个启用的子关键词`);
+    }
+    if (category.enabled && category.selection_mode === 'fixed') {
+      const fixedKeyword = (category.sub_keywords || []).find(
+        (item) => item.keyword_code === category.selected_keyword_code && item.enabled !== false,
+      );
+      if (!fixedKeyword) {
+        throw new Error(`类别「${category.category_name}」需要选择一个启用的固定子关键词`);
+      }
     }
   }
 }
@@ -604,7 +626,19 @@ onMounted(loadKeywords);
                 <FormItem label="选择模式">
                   <Select
                     v-model:value="selectedCategory.selection_mode"
-                    :options="[{ label: '每次选一个', value: 'one' }]"
+                    :options="[
+                      { label: '自动轮换', value: 'one' },
+                      { label: '固定选择', value: 'fixed' },
+                    ]"
+                  />
+                </FormItem>
+              </Col>
+              <Col v-if="selectedCategory.selection_mode === 'fixed'" :lg="8" :xs="24">
+                <FormItem label="固定子关键词">
+                  <Select
+                    v-model:value="selectedCategory.selected_keyword_code"
+                    :options="selectedCategoryKeywordOptions"
+                    placeholder="选择一个子关键词"
                   />
                 </FormItem>
               </Col>
