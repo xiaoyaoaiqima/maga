@@ -10,6 +10,7 @@ from app.schemas.base import ResponseData
 from app.schemas.content_batch_report import (
     ContentCommentBatchStartRequest,
     ContentBatchExecutionSummary,
+    ContentBatchFeedbackInsightResponse,
     ContentBatchItemFeedbackRequest,
     ContentBatchItemFeedbackResponse,
     ContentBatchListResponse,
@@ -307,6 +308,19 @@ async def get_batch_report(
     except ValueError as exc:
         raise _map_protocol_error(exc) from exc
     return ResponseData(data=report)
+
+
+@router.get("/batches/{batch_id}/feedback-insights", response_model=ResponseData[ContentBatchFeedbackInsightResponse])
+async def get_batch_feedback_insights(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchFeedbackInsightResponse]:
+    service = ContentBatchReportService(db)
+    try:
+        insights = await service.build_feedback_insights(batch_id)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    return ResponseData(data=insights)
 
 
 @router.get("/training/feedback-samples", response_model=ResponseData[ContentTrainingFeedbackSampleListResponse])

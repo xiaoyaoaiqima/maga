@@ -271,6 +271,51 @@ export namespace ContentAgentApi {
     items: TrainingFeedbackSample[];
   }
 
+  export interface BatchFeedbackStat {
+    code: string;
+    label: string;
+    count: number;
+  }
+
+  export interface BatchFeedbackSample {
+    action: string;
+    comment?: null | string;
+    create_time?: null | string;
+    feedback_categories: string[];
+    feedback_id: number;
+    item_id: number;
+    item_no: number;
+    quoted_text?: null | string;
+    review_status: string;
+  }
+
+  export interface BatchFeedbackOptimizationSuggestion {
+    evidence: string[];
+    priority: 'high' | 'low' | 'medium';
+    reason: string;
+    suggestion_type:
+      | 'business_forbidden_term'
+      | 'business_rule'
+      | 'expert_prompt'
+      | 'system_keyword';
+    target: string;
+    title: string;
+  }
+
+  export interface BatchFeedbackInsight {
+    action_stats: BatchFeedbackStat[];
+    asset_key: string;
+    batch_code?: null | string;
+    batch_id: number;
+    category_stats: BatchFeedbackStat[];
+    product_topic: string;
+    review_status_stats: BatchFeedbackStat[];
+    rewrite_decision_stats: BatchFeedbackStat[];
+    samples: BatchFeedbackSample[];
+    suggestions: BatchFeedbackOptimizationSuggestion[];
+    total_feedback_count: number;
+  }
+
   export interface AssetGenerationOptionsResponse {
     asset_key?: null | string;
     asset_keys: string[];
@@ -360,6 +405,12 @@ export async function getContentBatchListApi(params?: {
 export async function getContentBatchReportApi(batchId: number) {
   return requestClient.get<ContentAgentApi.BatchReport>(
     `/v1/content-agent/batches/${batchId}/report`,
+  );
+}
+
+export async function getContentBatchFeedbackInsightsApi(batchId: number) {
+  return requestClient.get<ContentAgentApi.BatchFeedbackInsight>(
+    `/v1/content-agent/batches/${batchId}/feedback-insights`,
   );
 }
 

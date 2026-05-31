@@ -467,6 +467,46 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
 
 
 @pytest.mark.asyncio
+async def test_batch_feedback_insights_summarize_operator_feedback(content_agent_workbench_client):
+    client, _session_factory = content_agent_workbench_client
+    start_response = await client.post(
+        "/api/v1/content-agent/comment-batches/start",
+        json={"asset_key": "yuanyue_comment_activity", "created_by": "ops"},
+    )
+    item = start_response.json()["data"]["report"]["items"][0]
+
+    feedback_response = await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={
+            "action": "request_revision",
+            "feedback_text": "这句有点像广告口吻，不够像真实评论。",
+            "quoted_text": "想蹲蹲真实反馈",
+            "feedback_categories": ["too_ad_like", "unnatural", "unknown"],
+            "created_by": "reviewer-a",
+        },
+    )
+    assert feedback_response.status_code == 200
+
+    insight_response = await client.get(
+        f"/api/v1/content-agent/batches/{start_response.json()['data']['batch_id']}/feedback-insights"
+    )
+
+    assert insight_response.status_code == 200
+    insights = insight_response.json()["data"]
+    assert insights["total_feedback_count"] == 1
+    assert insights["category_stats"] == [
+        {"code": "unnatural", "label": "不自然/生硬", "count": 1},
+        {"code": "too_ad_like", "label": "广告感太强", "count": 1},
+    ]
+    assert insights["action_stats"] == [{"code": "request_revision", "label": "要求修改", "count": 1}]
+    assert insights["samples"][0]["quoted_text"] == "想蹲蹲真实反馈"
+    assert insights["samples"][0]["feedback_categories"] == ["too_ad_like", "unnatural"]
+    assert insights["suggestions"][0]["suggestion_type"] == "system_keyword"
+    assert insights["suggestions"][0]["target"] == "系统关键词 / 生评论指令"
+    assert "广告口吻" in insights["suggestions"][0]["evidence"][0]
+
+
+@pytest.mark.asyncio
 async def test_batch_feedback_can_accept_auto_rewrite(content_agent_workbench_client):
     client, _session_factory = content_agent_workbench_client
     start_response = await client.post(

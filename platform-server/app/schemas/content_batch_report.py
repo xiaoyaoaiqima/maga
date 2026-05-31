@@ -246,6 +246,47 @@ class ContentTrainingFeedbackSampleListResponse(BaseSchema):
     items: list[ContentTrainingFeedbackSample]
 
 
+class ContentBatchFeedbackStat(BaseSchema):
+    code: str
+    label: str
+    count: int
+
+
+class ContentBatchFeedbackSample(BaseSchema):
+    feedback_id: int
+    item_id: int
+    item_no: int
+    action: str
+    review_status: str
+    comment: str | None = None
+    quoted_text: str | None = None
+    feedback_categories: list[str] = Field(default_factory=list)
+    create_time: str | None = None
+
+
+class ContentBatchFeedbackOptimizationSuggestion(BaseSchema):
+    suggestion_type: Literal["business_rule", "system_keyword", "business_forbidden_term", "expert_prompt"]
+    target: str
+    title: str
+    reason: str
+    evidence: list[str] = Field(default_factory=list)
+    priority: Literal["high", "medium", "low"] = "medium"
+
+
+class ContentBatchFeedbackInsightResponse(BaseSchema):
+    batch_id: int
+    batch_code: str | None = None
+    asset_key: str
+    product_topic: str
+    total_feedback_count: int = 0
+    category_stats: list[ContentBatchFeedbackStat] = Field(default_factory=list)
+    action_stats: list[ContentBatchFeedbackStat] = Field(default_factory=list)
+    review_status_stats: list[ContentBatchFeedbackStat] = Field(default_factory=list)
+    rewrite_decision_stats: list[ContentBatchFeedbackStat] = Field(default_factory=list)
+    samples: list[ContentBatchFeedbackSample] = Field(default_factory=list)
+    suggestions: list[ContentBatchFeedbackOptimizationSuggestion] = Field(default_factory=list)
+
+
 class ContentBatchItemFeedbackRequest(BaseSchema):
     action: Literal["approve", "request_revision", "manual_edit", "accept_rewrite", "reject_rewrite"]
     feedback_text: str | None = Field(default=None, max_length=4000)

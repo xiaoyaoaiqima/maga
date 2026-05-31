@@ -25,6 +25,7 @@ import {
 } from 'ant-design-vue';
 
 import {
+  getContentBatchFeedbackInsightsApi,
   getContentBatchListApi,
   getContentBatchReportApi,
   getTrainingFeedbackSamplesApi,
@@ -39,10 +40,12 @@ const route = useRoute();
 const userStore = useUserStore();
 
 const batchLoading = ref(false);
+const feedbackInsightLoading = ref(false);
 const reportLoading = ref(false);
 const trainingFeedbackLoading = ref(false);
 const reviewingItemId = ref<null | number>(null);
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
+const feedbackInsight = ref<ContentAgentApi.BatchFeedbackInsight | null>(null);
 const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
 const batchTotal = ref(0);
 const trainingFeedbackSamples = ref<ContentAgentApi.TrainingFeedbackSample[]>(
@@ -117,6 +120,12 @@ const passColor = (value?: boolean | null) => {
   return 'default';
 };
 
+const priorityColor = (priority?: string) => {
+  if (priority === 'high') return 'red';
+  if (priority === 'medium') return 'orange';
+  return 'blue';
+};
+
 const reviewStatusLabel = (status?: null | string) => {
   if (status === 'approved') return '已通过';
   if (status === 'needs_revision') return '待修改';
@@ -131,6 +140,14 @@ const actionLabel = (action?: string) => {
   if (action === 'reject_rewrite') return '不采纳改写';
   if (action === 'request_revision') return '要求修改';
   return action || '-';
+};
+
+const suggestionTypeLabel = (type?: string) => {
+  if (type === 'business_forbidden_term') return '业务违禁词';
+  if (type === 'business_rule') return '业务规则';
+  if (type === 'expert_prompt') return 'Expert';
+  if (type === 'system_keyword') return '系统关键词';
+  return type || '-';
 };
 
 const formatDuration = (durationMs?: null | number) => {
@@ -273,10 +290,20 @@ const showQuality = (item: ContentAgentApi.BatchReportItem) => {
   });
 };
 
+const loadFeedbackInsights = async (batchId: number) => {
+  feedbackInsightLoading.value = true;
+  try {
+    feedbackInsight.value = await getContentBatchFeedbackInsightsApi(batchId);
+  } finally {
+    feedbackInsightLoading.value = false;
+  }
+};
+
 const openReport = async (batchId: number, showLoading = true) => {
   if (showLoading) reportLoading.value = true;
   try {
     selectedReport.value = await getContentBatchReportApi(batchId);
+    await loadFeedbackInsights(batchId);
   } finally {
     if (showLoading) reportLoading.value = false;
   }
@@ -321,9 +348,9 @@ const replaceReportItem = (updated: ContentAgentApi.BatchReportItem) => {
 
 const refreshSelectedReport = async () => {
   if (!selectedReport.value) return;
-  selectedReport.value = await getContentBatchReportApi(
-    selectedReport.value.batch_id,
-  );
+  const batchId = selectedReport.value.batch_id;
+  selectedReport.value = await getContentBatchReportApi(batchId);
+  await loadFeedbackInsights(batchId);
 };
 
 const submitFeedback = async (
@@ -667,6 +694,166 @@ watch(
               show-icon
               type="info"
             />
+
+            <div class="feedback-insight-panel mt-4">
+              <div class="feedback-insight-header">
+                <Space wrap>
+                  <strong>本批次问题汇总</strong>
+                  <Tag>只读建议</Tag>
+                  <Tag v-if="feedbackInsight">
+                    {{ feedbackInsight.total_feedback_count }} 条反馈
+                  </Tag>
+                </Space>
+                <Button
+                  size="small"
+                  :loading="feedbackInsightLoading"
+                  @click="loadFeedbackInsights(selectedReport.batch_id)"
+                >
+                  刷新建议
+                </Button>
+              </div>
+              <Spin :spinning="feedbackInsightLoading">
+                <Empty
+                  v-if="
+                    !feedbackInsight ||
+                    feedbackInsight.total_feedback_count === 0
+                  "
+                  image="simple"
+                  description="暂无反馈汇总"
+                />
+                <template v-else>
+                  <div class="insight-stat-grid">
+                    <div class="insight-stat-block">
+                      <div class="insight-block-title">问题类型</div>
+                      <Space wrap>
+                        <Tag
+                          v-for="stat in feedbackInsight.category_stats"
+                          :key="stat.code"
+                          color="blue"
+                        >
+                          {{ stat.label }} {{ stat.count }}
+                        </Tag>
+                        <span
+                          v-if="feedbackInsight.category_stats.length === 0"
+                          class="insight-empty-text"
+                        >
+                          暂无结构化问题
+                        </span>
+                      </Space>
+                    </div>
+                    <div class="insight-stat-block">
+                      <div class="insight-block-title">处理动作</div>
+                      <Space wrap>
+                        <Tag
+                          v-for="stat in feedbackInsight.action_stats"
+                          :key="stat.code"
+                        >
+                          {{ stat.label }} {{ stat.count }}
+                        </Tag>
+                      </Space>
+                    </div>
+                    <div class="insight-stat-block">
+                      <div class="insight-block-title">改写采纳</div>
+                      <Space wrap>
+                        <Tag
+                          v-for="stat in feedbackInsight.rewrite_decision_stats"
+                          :key="stat.code"
+                          color="purple"
+                        >
+                          {{ stat.label }} {{ stat.count }}
+                        </Tag>
+                        <span
+                          v-if="
+                            feedbackInsight.rewrite_decision_stats.length === 0
+                          "
+                          class="insight-empty-text"
+                        >
+                          暂无改写决策
+                        </span>
+                      </Space>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="feedbackInsight.suggestions.length > 0"
+                    class="suggestion-list mt-3"
+                  >
+                    <div
+                      v-for="suggestion in feedbackInsight.suggestions"
+                      :key="`${suggestion.suggestion_type}-${suggestion.target}`"
+                      class="suggestion-item"
+                    >
+                      <div class="suggestion-title-row">
+                        <Space wrap>
+                          <Tag :color="priorityColor(suggestion.priority)">
+                            {{ suggestion.priority }}
+                          </Tag>
+                          <Tag>
+                            {{
+                              suggestionTypeLabel(suggestion.suggestion_type)
+                            }}
+                          </Tag>
+                          <strong>{{ suggestion.title }}</strong>
+                        </Space>
+                        <span class="suggestion-target">
+                          {{ suggestion.target }}
+                        </span>
+                      </div>
+                      <div class="suggestion-reason">
+                        {{ suggestion.reason }}
+                      </div>
+                      <div
+                        v-if="suggestion.evidence.length > 0"
+                        class="suggestion-evidence"
+                      >
+                        <div
+                          v-for="evidence in suggestion.evidence"
+                          :key="evidence"
+                        >
+                          {{ evidence }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="feedbackInsight.samples.length > 0"
+                    class="insight-sample-list mt-3"
+                  >
+                    <div class="insight-block-title">反馈样例</div>
+                    <div
+                      v-for="sample in feedbackInsight.samples"
+                      :key="sample.feedback_id"
+                      class="insight-sample-item"
+                    >
+                      <Space wrap>
+                        <Tag>{{ actionLabel(sample.action) }}</Tag>
+                        <span>第 {{ sample.item_no }} 条</span>
+                        <Tag
+                          v-for="category in sample.feedback_categories"
+                          :key="category"
+                        >
+                          {{
+                            feedbackCategoryOptions.find(
+                              (option) => option.code === category,
+                            )?.label || category
+                          }}
+                        </Tag>
+                      </Space>
+                      <div
+                        v-if="sample.quoted_text"
+                        class="insight-sample-text"
+                      >
+                        片段：{{ sample.quoted_text }}
+                      </div>
+                      <div v-if="sample.comment" class="insight-sample-text">
+                        反馈：{{ sample.comment }}
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </Spin>
+            </div>
 
             <List
               class="mt-4"
@@ -1014,6 +1201,73 @@ watch(
   color: #262626;
 }
 
+.feedback-insight-panel {
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.feedback-insight-header,
+.suggestion-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.insight-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.insight-stat-block,
+.suggestion-item,
+.insight-sample-item {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fafafa;
+}
+
+.insight-block-title {
+  margin-bottom: 8px;
+  color: #595959;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.insight-empty-text,
+.suggestion-target,
+.suggestion-reason,
+.suggestion-evidence,
+.insight-sample-text {
+  color: #595959;
+  font-size: 12px;
+}
+
+.suggestion-list,
+.insight-sample-list,
+.suggestion-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.suggestion-reason {
+  margin-top: 8px;
+}
+
+.suggestion-evidence {
+  margin-top: 8px;
+}
+
+.insight-sample-text {
+  margin-top: 6px;
+}
+
 .feedback-tools {
   display: flex;
   flex-direction: column;
@@ -1065,5 +1319,17 @@ watch(
   border: 1px solid #f0f0f0;
   border-radius: 8px;
   padding: 8px 10px;
+}
+
+@media (max-width: 960px) {
+  .feedback-insight-header,
+  .suggestion-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .insight-stat-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

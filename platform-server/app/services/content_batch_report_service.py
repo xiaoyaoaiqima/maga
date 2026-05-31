@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Any
 
 from sqlalchemy import func, select
@@ -17,6 +18,10 @@ from app.models.content_agent import (
 )
 from app.schemas.content_batch_report import (
     ContentBatchListItem,
+    ContentBatchFeedbackInsightResponse,
+    ContentBatchFeedbackOptimizationSuggestion,
+    ContentBatchFeedbackSample,
+    ContentBatchFeedbackStat,
     ContentBatchRejectReason,
     ContentBatchListResponse,
     ContentBatchReportItem,
@@ -32,6 +37,33 @@ from app.schemas.content_batch_report import (
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService, find_forbidden_hits
 
 SIMILARITY_WARNING_THRESHOLD = 0.42
+
+_FEEDBACK_CATEGORY_LABELS = {
+    "unnatural": "不自然/生硬",
+    "too_long": "太长/啰嗦",
+    "too_ad_like": "广告感太强",
+    "fact_issue": "信息不准确",
+    "tone_mismatch": "语气不对",
+    "forbidden_term": "有违禁词",
+    "rule_mismatch": "不符合业务规则",
+}
+_FEEDBACK_ACTION_LABELS = {
+    "approve": "通过",
+    "request_revision": "要求修改",
+    "manual_edit": "人工编辑",
+    "accept_rewrite": "采纳改写",
+    "reject_rewrite": "不采纳改写",
+}
+_FEEDBACK_REVIEW_STATUS_LABELS = {
+    "approved": "已通过",
+    "needs_revision": "待修改",
+    "manual_edited": "人工编辑",
+}
+_REWRITE_DECISION_LABELS = {
+    "auto_rewrite_requested": "触发系统改写",
+    "accept_rewrite": "采纳改写",
+    "reject_rewrite": "不采纳改写",
+}
 
 
 class ContentBatchReportService:
@@ -153,6 +185,70 @@ class ContentBatchReportService:
                 self._training_feedback_sample(feedback, item, job)
                 for feedback, item, job in result.all()
             ],
+        )
+
+    async def build_feedback_insights(self, batch_id: int) -> ContentBatchFeedbackInsightResponse:
+        job = await self._require_job(batch_id)
+        items = await self._batch_items(batch_id)
+        item_by_id = {item.id: item for item in items}
+        feedbacks = await self._feedbacks_for_items(items)
+        category_counter: Counter[str] = Counter()
+        action_counter: Counter[str] = Counter()
+        review_status_counter: Counter[str] = Counter()
+        rewrite_decision_counter: Counter[str] = Counter()
+        evidence_by_category: dict[str, list[str]] = {}
+        samples: list[ContentBatchFeedbackSample] = []
+
+        for feedback in feedbacks:
+            metadata = feedback.metadata_json if isinstance(feedback.metadata_json, dict) else {}
+            categories = _feedback_categories(metadata)
+            category_counter.update(categories)
+            action_counter.update([feedback.action])
+            review_status_counter.update([feedback.review_status])
+            if metadata.get("auto_rewrite") is True:
+                rewrite_decision_counter.update(["auto_rewrite_requested"])
+            if feedback.action in {"accept_rewrite", "reject_rewrite"}:
+                rewrite_decision_counter.update([feedback.action])
+
+            item = item_by_id.get(feedback.item_id)
+            evidence = _feedback_evidence(feedback, item)
+            if evidence:
+                for category in categories:
+                    evidence_by_category.setdefault(category, []).append(evidence)
+            if len(samples) < 8 and (feedback.comment or feedback.quoted_text or categories):
+                samples.append(
+                    ContentBatchFeedbackSample(
+                        feedback_id=feedback.id,
+                        item_id=feedback.item_id,
+                        item_no=item.item_no if item else 0,
+                        action=feedback.action,
+                        review_status=feedback.review_status,
+                        comment=feedback.comment,
+                        quoted_text=feedback.quoted_text,
+                        feedback_categories=categories,
+                        create_time=self._format_time(feedback.create_time),
+                    )
+                )
+
+        # 这里仅生成只读建议单，不写回规则资产，也不触发自动学习。
+        return ContentBatchFeedbackInsightResponse(
+            batch_id=job.id,
+            batch_code=job.batch_code,
+            asset_key=job.asset_key,
+            product_topic=job.product_topic,
+            total_feedback_count=len(feedbacks),
+            category_stats=_counter_stats(category_counter, _FEEDBACK_CATEGORY_LABELS),
+            action_stats=_counter_stats(action_counter, _FEEDBACK_ACTION_LABELS),
+            review_status_stats=_counter_stats(review_status_counter, _FEEDBACK_REVIEW_STATUS_LABELS),
+            rewrite_decision_stats=_counter_stats(rewrite_decision_counter, _REWRITE_DECISION_LABELS),
+            samples=samples,
+            suggestions=self._feedback_optimization_suggestions(
+                category_counter=category_counter,
+                rewrite_decision_counter=rewrite_decision_counter,
+                evidence_by_category=evidence_by_category,
+                content_type=_batch_content_type(items),
+                total_feedback_count=len(feedbacks),
+            ),
         )
 
     async def build_item_report(self, item: ContentBatchItem) -> ContentBatchReportItem:
@@ -285,6 +381,83 @@ class ContentBatchReportService:
             .group_by(ContentFeedback.item_id)
         )
         return {int(item_id): int(count or 0) for item_id, count in result.all()}
+
+    async def _feedbacks_for_items(self, items: list[ContentBatchItem]) -> list[ContentFeedback]:
+        item_ids = [item.id for item in items if item.id]
+        if not item_ids:
+            return []
+        result = await self.db.execute(
+            select(ContentFeedback)
+            .where(ContentFeedback.item_id.in_(item_ids))
+            .order_by(ContentFeedback.create_time.desc(), ContentFeedback.id.desc())
+        )
+        return list(result.scalars().all())
+
+    def _feedback_optimization_suggestions(
+        self,
+        *,
+        category_counter: Counter[str],
+        rewrite_decision_counter: Counter[str],
+        evidence_by_category: dict[str, list[str]],
+        content_type: str,
+        total_feedback_count: int,
+    ) -> list[ContentBatchFeedbackOptimizationSuggestion]:
+        suggestions: list[ContentBatchFeedbackOptimizationSuggestion] = []
+        if total_feedback_count <= 0:
+            return suggestions
+
+        if category_counter.get("forbidden_term", 0):
+            suggestions.append(
+                ContentBatchFeedbackOptimizationSuggestion(
+                    suggestion_type="business_forbidden_term",
+                    target="业务违禁词",
+                    title="把运营明确不希望出现的表达收敛到业务违禁词",
+                    reason="本批次存在违禁词类反馈，适合走确定性审核闸口，不建议塞回生文提示词。",
+                    evidence=_evidence_for_categories(evidence_by_category, ["forbidden_term"]),
+                    priority=_suggestion_priority(category_counter["forbidden_term"], total_feedback_count),
+                )
+            )
+
+        fact_rule_count = category_counter.get("fact_issue", 0) + category_counter.get("rule_mismatch", 0)
+        if fact_rule_count:
+            suggestions.append(
+                ContentBatchFeedbackOptimizationSuggestion(
+                    suggestion_type="business_rule",
+                    target="业务规则包",
+                    title="补充事实边界或业务规则约束",
+                    reason="反馈指向信息准确性或业务规则不匹配，应由业务规则包承载，保持生成链路可追溯。",
+                    evidence=_evidence_for_categories(evidence_by_category, ["fact_issue", "rule_mismatch"]),
+                    priority=_suggestion_priority(fact_rule_count, total_feedback_count),
+                )
+            )
+
+        expression_categories = ["unnatural", "too_ad_like", "too_long", "tone_mismatch"]
+        expression_count = sum(category_counter.get(category, 0) for category in expression_categories)
+        if expression_count:
+            suggestions.append(
+                ContentBatchFeedbackOptimizationSuggestion(
+                    suggestion_type="system_keyword",
+                    target=_system_keyword_target(category_counter, content_type),
+                    title="补强表达类系统关键词语料",
+                    reason="反馈集中在自然度、广告感、篇幅或语气，适合补系统关键词的语料示例，不应增加很硬的业务规则。",
+                    evidence=_evidence_for_categories(evidence_by_category, expression_categories),
+                    priority=_suggestion_priority(expression_count, total_feedback_count),
+                )
+            )
+
+        if rewrite_decision_counter.get("reject_rewrite", 0):
+            suggestions.append(
+                ContentBatchFeedbackOptimizationSuggestion(
+                    suggestion_type="expert_prompt",
+                    target="审核改写 Expert",
+                    title="复盘被拒绝的系统改写",
+                    reason="存在不采纳系统改写，说明改写 Expert 可能仍在做机械替换，需要用被拒样例调整改写指令。",
+                    evidence=[],
+                    priority=_suggestion_priority(rewrite_decision_counter["reject_rewrite"], total_feedback_count),
+                )
+            )
+
+        return suggestions
 
     def _group_stages_by_run(self, stage_calls: list[ContentAgentStageCall]) -> dict[int, list[ContentAgentStageCall]]:
         grouped: dict[int, list[ContentAgentStageCall]] = {}
@@ -817,3 +990,79 @@ class ContentBatchReportService:
                         scope="history",
                     )
                 )
+
+
+def _feedback_categories(metadata: dict[str, Any]) -> list[str]:
+    values = metadata.get("feedback_categories")
+    if not isinstance(values, list):
+        return []
+    categories: list[str] = []
+    for value in values:
+        code = str(value or "").strip()
+        if code in _FEEDBACK_CATEGORY_LABELS and code not in categories:
+            categories.append(code)
+    return categories
+
+
+def _feedback_evidence(feedback: ContentFeedback, item: ContentBatchItem | None) -> str | None:
+    parts: list[str] = []
+    if item is not None:
+        parts.append(f"第 {item.item_no} 条")
+    if feedback.quoted_text:
+        parts.append(f"片段：{_truncate(feedback.quoted_text, 80)}")
+    if feedback.comment:
+        parts.append(f"反馈：{_truncate(feedback.comment, 100)}")
+    return "；".join(parts) if parts else None
+
+
+def _counter_stats(counter: Counter[str], labels: dict[str, str]) -> list[ContentBatchFeedbackStat]:
+    label_order = {code: index for index, code in enumerate(labels)}
+    return [
+        ContentBatchFeedbackStat(code=code, label=labels.get(code, code), count=count)
+        for code, count in sorted(
+            counter.items(),
+            key=lambda item: (-item[1], label_order.get(item[0], len(label_order)), labels.get(item[0], item[0])),
+        )
+        if count > 0
+    ]
+
+
+def _evidence_for_categories(evidence_by_category: dict[str, list[str]], categories: list[str]) -> list[str]:
+    evidence: list[str] = []
+    for category in categories:
+        for item in evidence_by_category.get(category, []):
+            if item not in evidence:
+                evidence.append(item)
+            if len(evidence) >= 4:
+                return evidence
+    return evidence
+
+
+def _batch_content_type(items: list[ContentBatchItem]) -> str:
+    for item in items:
+        plan = item.plan_json or {}
+        if plan.get("output_fields") == ["comment"] or plan.get("rule_type") == "comment_angle":
+            return "comment"
+    return "article"
+
+
+def _system_keyword_target(category_counter: Counter[str], content_type: str) -> str:
+    if category_counter.get("too_long", 0):
+        return "系统关键词 / 格式控制"
+    if content_type == "comment":
+        return "系统关键词 / 生评论指令"
+    return "系统关键词 / 写作手法"
+
+
+def _suggestion_priority(count: int, total: int) -> str:
+    ratio = count / max(total, 1)
+    if count >= 3 or ratio >= 0.5:
+        return "high"
+    if count >= 2 or ratio >= 0.25:
+        return "medium"
+    return "low"
+
+
+def _truncate(value: str, limit: int) -> str:
+    text = str(value or "").strip()
+    return text if len(text) <= limit else f"{text[:limit]}..."
