@@ -355,8 +355,11 @@ def _stable_rewrite_from_previous(
     output_fields: list[Any],
     input_payload: dict[str, Any],
 ) -> dict[str, str]:
+    operator_feedback = _operator_feedback(input_payload)
     if content_type == "comment" or output_fields == ["comment"]:
         comment = _remove_terms_from_text(previous.get("comment") or previous.get("body") or "", forbidden_hits)
+        if operator_feedback and comment:
+            comment = f"{comment} 我会按这个方向再具体一点。"
         comment = _normalize_comment_text(comment) or "这个点我也在关注，想看看大家真实反馈。"
         return {"comment": comment}
 
@@ -367,7 +370,14 @@ def _stable_rewrite_from_previous(
         return {"title": "降重后的标题", "body": body, "final": {"title": "降重后的标题", "body": body}}
     title = _remove_terms_from_text(previous.get("title") or "", forbidden_hits) or "真实体验分享"
     body = _remove_terms_from_text(previous.get("body") or "", forbidden_hits) or "围绕真实使用感受自然表达，保持克制，不夸大。"
+    if operator_feedback:
+        body = f"{body}\n\n按运营反馈调整：{operator_feedback}"
     return {"title": title, "body": body, "final": {"title": title, "body": body}}
+
+
+def _operator_feedback(input_payload: dict[str, Any]) -> str:
+    value = input_payload.get("operator_feedback") or (input_payload.get("review_report") or {}).get("operator_feedback")
+    return str(value or "").strip()
 
 
 def _remove_terms_from_text(value: str, forbidden_hits: list[str]) -> str:

@@ -263,6 +263,7 @@ export namespace ContentAgentApi {
     body?: null | string;
     created_by?: null | string;
     business_forbidden_terms?: string[];
+    auto_rewrite?: boolean;
   }
 
   export interface BatchItemFeedbackResponse {

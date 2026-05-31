@@ -524,6 +524,34 @@ def test_content_rewrite_fake_mode_removes_forbidden_terms(monkeypatch):
     assert data["output"]["runtime_result"]["mode"] == "content_rewrite_fake"
 
 
+def test_content_rewrite_fake_mode_uses_operator_feedback(monkeypatch):
+    monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/invoke",
+        json=_envelope(
+            "content.rewrite",
+            {
+                "content_type": "article",
+                "output_fields": ["title", "body"],
+                "previous_content": {"title": "原标题", "body": "原正文比较总结。"},
+                "operator_feedback": "开头再具体一点，少一点总结腔。",
+                "rewrite_instructions": ["根据运营修改意见调整内容"],
+            },
+            stage_call_id="stage-content-rewrite-feedback",
+        ),
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "succeeded"
+    assert data["output"]["title"] == "原标题"
+    assert "按运营反馈调整：开头再具体一点" in data["output"]["body"]
+    assert data["output"]["runtime_result"]["mode"] == "content_rewrite_fake"
+
+
 def test_run_ae_review_returns_structured_review_report(monkeypatch):
     client = _client(monkeypatch)
 

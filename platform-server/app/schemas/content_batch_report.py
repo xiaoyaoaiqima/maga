@@ -230,6 +230,7 @@ class ContentBatchItemFeedbackRequest(BaseSchema):
     body: str | None = Field(default=None, max_length=20000)
     created_by: str | None = Field(default=None, max_length=100)
     business_forbidden_terms: list[str] = Field(default_factory=list)
+    auto_rewrite: bool = False
 
 
 class ContentBatchItemFeedbackResponse(BaseSchema):

@@ -249,10 +249,7 @@ const loadBatches = async () => {
     batchList.value = data?.items || [];
     batchTotal.value = data?.total || 0;
     const queryBatchId = Number(route.query.batch_id || 0);
-    if (
-      queryBatchId > 0 &&
-      selectedReport.value?.batch_id !== queryBatchId
-    ) {
+    if (queryBatchId > 0 && selectedReport.value?.batch_id !== queryBatchId) {
       await openReport(queryBatchId, false);
       return;
     }
@@ -292,6 +289,7 @@ const refreshSelectedReport = async () => {
 const submitFeedback = async (
   item: ContentAgentApi.BatchReportItem,
   action: ContentAgentApi.BatchItemFeedbackAction,
+  options: { autoRewrite?: boolean } = {},
 ) => {
   const feedbackText = feedbackDrafts[item.item_id] || '';
   if (action === 'request_revision' && !feedbackText.trim()) {
@@ -308,11 +306,16 @@ const submitFeedback = async (
       feedback_text:
         feedbackText || (action === 'approve' ? '可发布' : undefined),
       created_by: currentOperator.value,
+      auto_rewrite: options.autoRewrite,
     });
     replaceReportItem(response.item);
     await refreshSelectedReport();
     await loadTrainingFeedbackSamples();
-    message.success(`${feedbackActionLabel(action)}已保存`);
+    message.success(
+      options.autoRewrite
+        ? '修改意见已提交，系统已自动改写一版'
+        : `${feedbackActionLabel(action)}已保存`,
+    );
   } finally {
     reviewingItemId.value = null;
   }
@@ -356,7 +359,7 @@ const openBusinessForbiddenTermModal = (
       const term = state.term.trim();
       if (!term) {
         message.warning('请先输入业务违禁词');
-        return Promise.reject(new Error('empty business forbidden term'));
+        throw new Error('empty business forbidden term');
       }
       reviewingItemId.value = item.item_id;
       try {
@@ -419,7 +422,7 @@ const openManualEdit = (item: ContentAgentApi.BatchReportItem) => {
     async onOk() {
       if (!state.title.trim() || !state.body.trim()) {
         message.warning('标题和正文不能为空');
-        return Promise.reject(new Error('empty manual edit'));
+        throw new Error('empty manual edit');
       }
       reviewingItemId.value = item.item_id;
       try {
@@ -557,20 +560,23 @@ watch(
               </Space>
             </template>
             <template #extra>
-              <Button
-                size="small"
-                @click="openReport(selectedReport.batch_id)"
-              >
+              <Button size="small" @click="openReport(selectedReport.batch_id)">
                 刷新报告
               </Button>
             </template>
 
             <Row :gutter="12">
               <Col :span="4">
-                <Statistic title="未评价" :value="feedbackSummary.pending_count" />
+                <Statistic
+                  title="未评价"
+                  :value="feedbackSummary.pending_count"
+                />
               </Col>
               <Col :span="4">
-                <Statistic title="已通过" :value="feedbackSummary.approved_count" />
+                <Statistic
+                  title="已通过"
+                  :value="feedbackSummary.approved_count"
+                />
               </Col>
               <Col :span="4">
                 <Statistic
@@ -588,7 +594,10 @@ watch(
                 <Statistic title="风险项" :value="feedbackSummary.risk_count" />
               </Col>
               <Col :span="4">
-                <Statistic title="反馈数" :value="feedbackSummary.feedback_count" />
+                <Statistic
+                  title="反馈数"
+                  :value="feedbackSummary.feedback_count"
+                />
               </Col>
             </Row>
 
@@ -599,7 +608,11 @@ watch(
               type="info"
             />
 
-            <List class="mt-4" :data-source="reviewItems" item-layout="vertical">
+            <List
+              class="mt-4"
+              :data-source="reviewItems"
+              item-layout="vertical"
+            >
               <template #renderItem="{ item }">
                 <ListItem :key="item.item_id">
                   <Card class="feedback-card" :bordered="true">
@@ -621,10 +634,13 @@ watch(
                         <Tag :color="statusColor(item.review_status || '')">
                           {{ reviewStatusLabel(item.review_status) }}
                         </Tag>
-                        <Tag v-if="item.forbidden_hits.length" color="red">
+                        <Tag v-if="item.forbidden_hits.length > 0" color="red">
                           禁用词 {{ item.forbidden_hits.join('、') }}
                         </Tag>
-                        <Tag v-if="item.similarity_warnings?.length" color="orange">
+                        <Tag
+                          v-if="item.similarity_warnings?.length"
+                          color="orange"
+                        >
                           疑似趋同 {{ item.similarity_warnings.length }}
                         </Tag>
                       </Space>
@@ -682,7 +698,9 @@ watch(
                     <Alert
                       v-if="forbiddenReviewOf(item)?.initial_hits?.length"
                       class="mt-3"
-                      :type="forbiddenReviewOf(item)?.pass ? 'success' : 'error'"
+                      :type="
+                        forbiddenReviewOf(item)?.pass ? 'success' : 'error'
+                      "
                       show-icon
                     >
                       <template #message>
@@ -700,7 +718,9 @@ watch(
                           </Tag>
                           <span>
                             初始命中：{{
-                              forbiddenReviewHits(item, 'initial_hits').join('、')
+                              forbiddenReviewHits(item, 'initial_hits').join(
+                                '、',
+                              )
                             }}
                           </span>
                           <span>
@@ -708,10 +728,16 @@ watch(
                               forbiddenRewriteMethodLabel(
                                 forbiddenReviewOf(item)?.rewrite_method,
                               )
-                            }}，{{ forbiddenReviewOf(item)?.rewrite_rounds || 0 }}
+                            }}，{{
+                              forbiddenReviewOf(item)?.rewrite_rounds || 0
+                            }}
                             轮
                           </span>
-                          <span v-if="forbiddenReviewHits(item, 'final_hits').length">
+                          <span
+                            v-if="
+                              forbiddenReviewHits(item, 'final_hits').length > 0
+                            "
+                          >
                             仍命中：{{
                               forbiddenReviewHits(item, 'final_hits').join('、')
                             }}
@@ -749,6 +775,17 @@ watch(
                         @click="submitFeedback(item, 'request_revision')"
                       >
                         提交修改意见
+                      </Button>
+                      <Button
+                        size="small"
+                        :loading="reviewingItemId === item.item_id"
+                        @click="
+                          submitFeedback(item, 'request_revision', {
+                            autoRewrite: true,
+                          })
+                        "
+                      >
+                        提交并改写
                       </Button>
                       <Button
                         size="small"

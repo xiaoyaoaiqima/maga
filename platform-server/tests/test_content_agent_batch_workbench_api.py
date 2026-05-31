@@ -10,7 +10,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.api.v1.endpoints.content_agent import router
 from app.core.database import get_db
 from app.models.base import Base
-from app.models.content_agent import ContentAgentStageCall, ContentBatchItem, ContentFeedback, ExecutorRegistry
+from app.models.content_agent import (
+    ContentAgentStageCall,
+    ContentBatchItem,
+    ContentBatchItemVersion,
+    ContentFeedback,
+    ExecutorRegistry,
+)
 from app.models.llm_provider_config import LLMProviderConfig
 from app.models.maga_assets import AssetChangeRequest, AssetRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
@@ -377,6 +383,62 @@ async def test_batch_workbench_can_record_operator_feedback_and_manual_edit(cont
     assert report_item["latest_version_no"] == 3
     assert report_item["human_feedback_text"] == "可发布"
     assert report_item["feedback_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    start_response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "count": 1,
+            "created_by": "ops",
+        },
+    )
+    item = start_response.json()["data"]["report"]["items"][0]
+    original_body = item["body"]
+
+    feedback_response = await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={
+            "action": "request_revision",
+            "feedback_text": "开头再具体一点，少一点总结腔。",
+            "auto_rewrite": True,
+            "created_by": "reviewer-a",
+        },
+    )
+
+    assert feedback_response.status_code == 200
+    feedback_data = feedback_response.json()["data"]
+    assert feedback_data["review_status"] == "needs_revision"
+    assert feedback_data["version_no"] == 2
+    rewritten = feedback_data["item"]
+    assert rewritten["status"] == "needs_revision"
+    assert rewritten["body"] != original_body
+    assert "按运营反馈调整：开头再具体一点" in rewritten["body"]
+    assert rewritten["quality"]["human_review"]["auto_rewrite"]["source"] == "operator_feedback"
+    assert rewritten["quality"]["review_report"]["rewrite_reason"] == "operator_feedback"
+    assert rewritten["generation_snapshot"]["rewrite_records"][-1]["capability"] == "content.rewrite"
+
+    async with session_factory() as session:
+        versions = (
+            await session.execute(
+                select(ContentBatchItemVersion)
+                .where(ContentBatchItemVersion.item_id == item["item_id"])
+                .order_by(ContentBatchItemVersion.version_no)
+            )
+        ).scalars().all()
+        feedback = (await session.execute(select(ContentFeedback))).scalar_one()
+        stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
+
+    assert [version.source_action for version in versions] == ["request_revision", "auto_rewrite"]
+    assert feedback.metadata_json["auto_rewrite"] is True
+    assert feedback.metadata_json["auto_rewrite_version_id"] == versions[-1].id
+    assert any(stage.capability == "content.rewrite" for stage in stage_calls)
 
 
 @pytest.mark.asyncio

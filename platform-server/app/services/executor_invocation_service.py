@@ -318,9 +318,16 @@ def _mock_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(previous, dict):
         previous = {}
     hits = [str(value).strip() for value in input_payload.get("forbidden_hits") or [] if str(value).strip()]
+    operator_feedback = str(
+        input_payload.get("operator_feedback")
+        or (input_payload.get("review_report") or {}).get("operator_feedback")
+        or ""
+    ).strip()
     output_fields = input_payload.get("output_fields") or []
     if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
         comment = _mock_remove_terms(str(previous.get("comment") or previous.get("body") or ""), hits)
+        if operator_feedback and comment:
+            comment = f"{comment} 我会按这个方向再具体一点。"
         return {
             "comment": comment or "这个点我也在关注，想看看大家真实反馈。",
             "runtime_result": {
@@ -344,6 +351,8 @@ def _mock_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
         }
     title = _mock_remove_terms(str(previous.get("title") or ""), hits) or "改写后标题"
     body = _mock_remove_terms(str(previous.get("body") or ""), hits) or "改写后正文"
+    if operator_feedback:
+        body = f"{body}\n\n按运营反馈调整：{operator_feedback}"
     return {
         "title": title,
         "body": body,
