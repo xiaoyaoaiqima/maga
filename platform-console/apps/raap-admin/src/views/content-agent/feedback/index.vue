@@ -113,8 +113,10 @@ const reviewStatusLabel = (status?: null | string) => {
 };
 
 const actionLabel = (action?: string) => {
+  if (action === 'accept_rewrite') return '采纳改写';
   if (action === 'approve') return '通过';
   if (action === 'manual_edit') return '人工改写';
+  if (action === 'reject_rewrite') return '不采纳改写';
   if (action === 'request_revision') return '要求修改';
   return action || '-';
 };
@@ -128,10 +130,24 @@ const formatDuration = (durationMs?: null | number) => {
 const feedbackActionLabel = (
   action: ContentAgentApi.BatchItemFeedbackAction,
 ) => {
+  if (action === 'accept_rewrite') return '采纳改写';
   if (action === 'approve') return '通过';
   if (action === 'manual_edit') return '人工编辑保存';
+  if (action === 'reject_rewrite') return '不采纳改写';
   return '提交修改意见';
 };
+
+const defaultFeedbackText = (
+  action: ContentAgentApi.BatchItemFeedbackAction,
+) => {
+  if (action === 'accept_rewrite') return '采纳系统改写版本';
+  if (action === 'approve') return '可发布';
+  if (action === 'reject_rewrite') return '不采纳系统改写，回到修改前版本';
+  return undefined;
+};
+
+const hasPendingAutoRewrite = (item: ContentAgentApi.BatchReportItem) =>
+  item.version_compare?.compare_type === 'auto_rewrite';
 
 const rejectSourceLabel = (source?: string) => {
   if (source === 'hard_review') return '硬性审核';
@@ -305,8 +321,7 @@ const submitFeedback = async (
       action,
       title: item.title,
       body: item.body,
-      feedback_text:
-        feedbackText || (action === 'approve' ? '可发布' : undefined),
+      feedback_text: feedbackText || defaultFeedbackText(action),
       created_by: currentOperator.value,
       auto_rewrite: options.autoRewrite,
     });
@@ -315,7 +330,7 @@ const submitFeedback = async (
     await loadTrainingFeedbackSamples();
     message.success(
       options.autoRewrite
-        ? '修改意见已提交，系统已自动改写一版'
+        ? '系统已自动改写一版'
         : `${feedbackActionLabel(action)}已保存`,
     );
   } finally {
@@ -760,6 +775,37 @@ watch(
                       v-if="item.version_compare"
                       :item="item"
                     />
+                    <Space
+                      v-if="hasPendingAutoRewrite(item)"
+                      class="rewrite-decision-actions mt-2"
+                    >
+                      <Button
+                        size="small"
+                        type="primary"
+                        :loading="reviewingItemId === item.item_id"
+                        @click="submitFeedback(item, 'accept_rewrite')"
+                      >
+                        采纳改写
+                      </Button>
+                      <Button
+                        size="small"
+                        :loading="reviewingItemId === item.item_id"
+                        @click="submitFeedback(item, 'reject_rewrite')"
+                      >
+                        不采纳，回到修改前
+                      </Button>
+                      <Button
+                        size="small"
+                        :loading="reviewingItemId === item.item_id"
+                        @click="
+                          submitFeedback(item, 'request_revision', {
+                            autoRewrite: true,
+                          })
+                        "
+                      >
+                        再改一版
+                      </Button>
+                    </Space>
 
                     <TextArea
                       v-model:value="feedbackDrafts[item.item_id]"

@@ -15,8 +15,10 @@ const props = defineProps<{
 const compare = computed(() => props.item.version_compare || null);
 
 const compareTypeLabel = computed(() => {
+  if (compare.value?.compare_type === 'accept_rewrite') return '采纳改写';
   if (compare.value?.compare_type === 'auto_rewrite') return '系统改写';
   if (compare.value?.compare_type === 'manual_edit') return '人工编辑';
+  if (compare.value?.compare_type === 'reject_rewrite') return '不采纳改写';
   return compare.value?.compare_type || '修改';
 });
 

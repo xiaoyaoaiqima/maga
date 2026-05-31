@@ -34,6 +34,8 @@ from app.services.forbidden_term_review_service import ForbiddenTermReviewServic
 
 _ACTION_STATUS = {
     "approve": "approved",
+    "accept_rewrite": "approved",
+    "reject_rewrite": "needs_revision",
     "request_revision": "needs_revision",
     "manual_edit": "manual_edited",
 }
@@ -81,6 +83,9 @@ class ContentBatchReviewService:
         request: ContentBatchItemFeedbackRequest,
     ) -> ContentBatchItemFeedbackResponse:
         item = await self._require_item(item_id)
+        if request.action in {"accept_rewrite", "reject_rewrite"}:
+            return await self._submit_rewrite_decision(item=item, request=request)
+
         previous_title = item.title
         previous_body = item.body
         review_status = _ACTION_STATUS[request.action]
@@ -233,6 +238,99 @@ class ContentBatchReviewService:
             item=report_item,
         )
 
+    async def _submit_rewrite_decision(
+        self,
+        *,
+        item: ContentBatchItem,
+        request: ContentBatchItemFeedbackRequest,
+    ) -> ContentBatchItemFeedbackResponse:
+        rewrite_version = await self._latest_auto_rewrite_version(item.id)
+        if rewrite_version is None:
+            raise ValueError("no auto rewrite version to decide")
+
+        review_status = _ACTION_STATUS[request.action]
+        metadata: dict[str, Any] = {
+            "batch_id": item.batch_id,
+            "item_no": item.item_no,
+            "decision_for_version_id": rewrite_version.id,
+            "decision_for_version_no": rewrite_version.version_no,
+        }
+        feedback_text = (request.feedback_text or "").strip()
+        if request.action == "accept_rewrite":
+            feedback_text = feedback_text or "采纳系统改写版本"
+            item.status = review_status
+            metadata["decision"] = "accepted"
+        else:
+            source_version = await self._source_version_for_auto_rewrite(rewrite_version)
+            if source_version is None:
+                raise ValueError("auto rewrite source version not found")
+            item.title = source_version.title
+            item.body = source_version.body
+            item.status = review_status
+            feedback_text = feedback_text or "不采纳系统改写，回到修改前版本"
+            metadata.update(
+                {
+                    "decision": "rejected",
+                    "restored_source_version_id": source_version.id,
+                    "restored_source_version_no": source_version.version_no,
+                }
+            )
+
+        quality = dict(item.quality_json or {})
+        human_review = dict(quality.get("human_review") or {})
+        human_review.update(
+            {
+                "action": request.action,
+                "review_status": review_status,
+                "feedback_text": feedback_text,
+                "created_by": request.created_by,
+                "rewrite_decision": metadata,
+            }
+        )
+        quality["human_review"] = human_review
+        item.quality_json = quality
+
+        version = ContentBatchItemVersion(
+            item_id=item.id,
+            version_no=await self._next_version_no(item.id),
+            source_action=request.action,
+            review_status=review_status,
+            title=item.title,
+            body=item.body,
+            feedback_text=feedback_text,
+            created_by=request.created_by,
+            metadata_json=metadata,
+        )
+        self.db.add(version)
+        await self.db.flush()
+        feedback = ContentFeedback(
+            batch_id=item.batch_id,
+            item_id=item.id,
+            version_id=version.id,
+            task_id=item.task_id,
+            run_id=item.run_id,
+            action=request.action,
+            review_status=review_status,
+            comment=feedback_text,
+            submitter=request.created_by,
+            metadata_json={
+                **metadata,
+                "source": "content_batch_workbench",
+                "rewrite_decision": True,
+            },
+        )
+        self.db.add(feedback)
+        await self.db.flush()
+
+        report_item = await ContentBatchReportService(self.db).build_item_report(item)
+        return ContentBatchItemFeedbackResponse(
+            item_id=item.id,
+            version_id=version.id,
+            version_no=version.version_no,
+            review_status=review_status,
+            item=report_item,
+        )
+
     async def _auto_rewrite_from_feedback(
         self,
         *,
@@ -348,6 +446,37 @@ class ContentBatchReviewService:
         if item is None:
             raise ValueError("batch item not found")
         return item
+
+    async def _latest_auto_rewrite_version(self, item_id: int) -> ContentBatchItemVersion | None:
+        result = await self.db.execute(
+            select(ContentBatchItemVersion)
+            .where(
+                ContentBatchItemVersion.item_id == item_id,
+                ContentBatchItemVersion.source_action == "auto_rewrite",
+            )
+            .order_by(ContentBatchItemVersion.version_no.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def _source_version_for_auto_rewrite(
+        self,
+        version: ContentBatchItemVersion,
+    ) -> ContentBatchItemVersion | None:
+        metadata = version.metadata_json if isinstance(version.metadata_json, dict) else {}
+        source_version_id = metadata.get("source_version_id")
+        if source_version_id:
+            return await self.db.get(ContentBatchItemVersion, source_version_id)
+        result = await self.db.execute(
+            select(ContentBatchItemVersion)
+            .where(
+                ContentBatchItemVersion.item_id == version.item_id,
+                ContentBatchItemVersion.version_no < version.version_no,
+            )
+            .order_by(ContentBatchItemVersion.version_no.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
 
     async def _maybe_create_asset_change_request(
         self,

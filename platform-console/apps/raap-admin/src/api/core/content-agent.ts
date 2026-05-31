@@ -281,8 +281,10 @@ export namespace ContentAgentApi {
   }
 
   export type BatchItemFeedbackAction =
+    | 'accept_rewrite'
     | 'approve'
     | 'manual_edit'
+    | 'reject_rewrite'
     | 'request_revision';
 
   export interface BatchItemFeedbackRequest {

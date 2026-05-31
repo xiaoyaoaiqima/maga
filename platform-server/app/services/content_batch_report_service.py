@@ -369,7 +369,7 @@ class ContentBatchReportService:
         if not candidate_versions:
             return None
         for version in candidate_versions:
-            if version.source_action not in {"auto_rewrite", "manual_edit"}:
+            if version.source_action not in {"accept_rewrite", "auto_rewrite", "manual_edit", "reject_rewrite"}:
                 continue
             before = self._compare_before_snapshot(version, versions)
             if before is None:
@@ -396,6 +396,14 @@ class ContentBatchReportService:
         versions: list[ContentBatchItemVersion],
     ) -> ContentBatchVersionSnapshot | None:
         metadata = latest_version.metadata_json if isinstance(latest_version.metadata_json, dict) else {}
+        decision_version_id = metadata.get("decision_for_version_id")
+        if decision_version_id is not None:
+            for version in versions:
+                if version.id == decision_version_id:
+                    if latest_version.source_action == "accept_rewrite":
+                        return self._compare_before_snapshot(version, versions)
+                    return self._version_snapshot(version)
+
         source_version_id = metadata.get("source_version_id")
         if source_version_id is not None:
             for version in versions:
@@ -417,7 +425,7 @@ class ContentBatchReportService:
                     create_time=self._format_time(latest_version.create_time),
                 )
 
-        if latest_version.source_action not in {"auto_rewrite", "manual_edit"}:
+        if latest_version.source_action not in {"accept_rewrite", "auto_rewrite", "manual_edit", "reject_rewrite"}:
             return None
         previous_versions = [version for version in versions if version.version_no < latest_version.version_no]
         if not previous_versions:

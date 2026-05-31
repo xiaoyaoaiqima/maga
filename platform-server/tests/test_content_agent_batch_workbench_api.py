@@ -459,6 +459,90 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
 
 
 @pytest.mark.asyncio
+async def test_batch_feedback_can_accept_auto_rewrite(content_agent_workbench_client):
+    client, _session_factory = content_agent_workbench_client
+    start_response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "count": 1,
+            "created_by": "ops",
+        },
+    )
+    item = start_response.json()["data"]["report"]["items"][0]
+
+    rewrite_response = await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={
+            "action": "request_revision",
+            "feedback_text": "开头再具体一点，少一点总结腔。",
+            "auto_rewrite": True,
+            "created_by": "reviewer-a",
+        },
+    )
+    rewritten = rewrite_response.json()["data"]["item"]
+
+    accept_response = await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={"action": "accept_rewrite", "created_by": "reviewer-a"},
+    )
+
+    assert accept_response.status_code == 200
+    accepted = accept_response.json()["data"]["item"]
+    assert accepted["status"] == "approved"
+    assert accepted["review_status"] == "approved"
+    assert accepted["body"] == rewritten["body"]
+    assert accepted["version_compare"]["compare_type"] == "accept_rewrite"
+    assert accepted["version_compare"]["after"]["body"] == rewritten["body"]
+
+
+@pytest.mark.asyncio
+async def test_batch_feedback_can_reject_auto_rewrite_and_restore_source(content_agent_workbench_client):
+    client, _session_factory = content_agent_workbench_client
+    start_response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "count": 1,
+            "created_by": "ops",
+        },
+    )
+    item = start_response.json()["data"]["report"]["items"][0]
+    original_body = item["body"]
+
+    rewrite_response = await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={
+            "action": "request_revision",
+            "feedback_text": "开头再具体一点，少一点总结腔。",
+            "auto_rewrite": True,
+            "created_by": "reviewer-a",
+        },
+    )
+    rewritten_body = rewrite_response.json()["data"]["item"]["body"]
+
+    reject_response = await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={"action": "reject_rewrite", "created_by": "reviewer-a"},
+    )
+
+    assert reject_response.status_code == 200
+    rejected = reject_response.json()["data"]["item"]
+    assert rejected["status"] == "needs_revision"
+    assert rejected["review_status"] == "needs_revision"
+    assert rejected["body"] == original_body
+    assert rejected["version_compare"]["compare_type"] == "reject_rewrite"
+    assert rejected["version_compare"]["before"]["body"] == rewritten_body
+    assert rejected["version_compare"]["after"]["body"] == original_body
+
+
+@pytest.mark.asyncio
 async def test_batch_feedback_is_persisted_for_training(content_agent_workbench_client):
     client, session_factory = content_agent_workbench_client
     start_response = await client.post(
