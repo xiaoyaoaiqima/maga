@@ -79,17 +79,16 @@ def load_env_file(path: Path = Path(".env")) -> None:
         os.environ.setdefault(key, value)
 
 
-def make_user_prompt(records: list[dict[str, Any]], label_mode: str) -> str:
+def make_user_prompt(records: list[dict[str, Any]], label_mode: str, no_reason: bool) -> str:
     labels = ["正向", "负向"] if label_mode == "binary" else ["正向", "负向", "中性"]
     binary_note = ""
     if label_mode == "binary":
         binary_note = "- 二分类模式下，即使评论较弱，也必须在正向/负向中选择更接近的一类。\n"
+    reason_note = "- reason 固定输出空字符串，减少输出 token。\n" if no_reason else "- reason 用中文，控制在 30 字以内。\n"
+    reason_example = "" if no_reason else "简短原因"
     compact_records = [
         {
             "row_index": item["row_index"],
-            "comment_type": item.get("comment_type", ""),
-            "parent_comment_id": item.get("parent_comment_id", ""),
-            "comment_id": item.get("comment_id", ""),
             "comment_text": item.get("comment_text", ""),
         }
         for item in records
@@ -99,12 +98,12 @@ def make_user_prompt(records: list[dict[str, Any]], label_mode: str) -> str:
         f"允许的 sentiment_label 只能是：{', '.join(labels)}。\n"
         "输出 JSON 格式如下：\n"
         "{"
-        '"results":[{"row_index":1,"sentiment_label":"正向","confidence":0.92,"reason":"简短原因"}]'
+        f'"results":[{{"row_index":1,"sentiment_label":"正向","confidence":0.92,"reason":"{reason_example}"}}]'
         "}\n"
         "要求：\n"
         "- results 数量必须等于输入数量，不能漏行。\n"
         "- confidence 是 0 到 1 的数字。\n"
-        "- reason 用中文，控制在 30 字以内。\n"
+        f"{reason_note}"
         "- 纯询问安全、召回、批次、名单、能否继续使用，判负向。\n"
         "- A2/a2/至初/紫白金/a2紫白金/A2紫白金 是目标产品；转到这些产品且体验好，判正向。\n"
         "- 转到悦白/爱他美/领熠/澳爱/皇家/美素/蓝臻/山羊奶等非目标产品，判负向。\n"
@@ -235,13 +234,15 @@ async def call_llm_batch(
     async with semaphore:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": make_user_prompt(batch, args.label_mode)},
+            {"role": "user", "content": make_user_prompt(batch, args.label_mode, args.no_reason)},
         ]
         body: dict[str, Any] = {
             "model": args.model,
             "messages": messages,
             "temperature": 0,
         }
+        if args.max_tokens:
+            body["max_tokens"] = args.max_tokens
         if not args.no_response_format:
             body["response_format"] = {"type": "json_object"}
 
@@ -353,8 +354,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-url", default=os.getenv("LLM_API_URL"), help="full chat completions URL; overrides --api-base")
     parser.add_argument("--model", default=os.getenv("LLM_MODEL", "deepseek-v4-flash"))
     parser.add_argument("--label-mode", choices=["binary", "ternary"], default="ternary")
-    parser.add_argument("--batch-size", type=int, default=20)
+    parser.add_argument("--batch-size", type=int, default=50)
     parser.add_argument("--concurrency", type=int, default=8)
+    parser.add_argument("--max-tokens", type=int, default=0, help="optional max completion tokens per batch; 0 means provider default")
+    parser.add_argument("--no-reason", action="store_true", help="write empty sentiment_reason to reduce output tokens and improve speed")
     parser.add_argument("--timeout", type=float, default=90)
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--retry-base-sleep", type=float, default=1.5)
