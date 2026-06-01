@@ -328,30 +328,61 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                     ],
                 },
                 {
-                    "category_code": "format_control",
-                    "category_name": "格式控制",
-                    "description": "统一控制篇幅、emoji 和段落排版，不是类别上限。",
+                    "category_code": "article_format_control",
+                    "category_name": "帖子格式控制",
+                    "description": "控制帖子篇幅、emoji 和段落排版，不是评论规则。",
                     "sort_order": 50,
+                    "applicable_content_types": ["article"],
                     "sub_keywords": [
                         {
-                            "keyword_code": "compact_clean",
-                            "keyword_name": "短平干净",
+                            "keyword_code": "article_compact_clean",
+                            "keyword_name": "短帖干净",
                             "corpus": [
-                                "评论控制在20到50字，尽量一句话，不用emoji，不刻意分段；文章控制在150到250字，分2到3个短段，段落之间空行，不用emoji。"
+                                "文章控制在150到250字，分2到3个短段，段落之间空行，不用emoji。"
                             ],
                         },
                         {
-                            "keyword_code": "light_emoji",
-                            "keyword_name": "少量表情",
+                            "keyword_code": "article_light_emoji",
+                            "keyword_name": "帖子少量表情",
                             "corpus": [
-                                "评论控制在30到80字，最多1个emoji，不连续堆表情；文章控制在180到300字，分2到4段，可用1到2个emoji并自然分散。"
+                                "文章控制在180到300字，分2到4段，可用1到2个emoji并自然分散。"
                             ],
                         },
                         {
-                            "keyword_code": "rich_layout",
-                            "keyword_name": "分段清楚",
+                            "keyword_code": "article_clear_layout",
+                            "keyword_name": "帖子分段清楚",
                             "corpus": [
-                                "评论控制在50到100字，最多两句话，少用或不用emoji；文章控制在250到400字，分3到5段，避免超过100字的长段，emoji最多3个且不能连续出现。"
+                                "文章控制在250到400字，分3到5段，避免超过100字的长段，emoji最多3个且不能连续出现。"
+                            ],
+                        },
+                    ],
+                },
+                {
+                    "category_code": "comment_format_control",
+                    "category_name": "评论格式控制",
+                    "description": "控制评论篇幅和 emoji，不使用帖子段落规则。",
+                    "sort_order": 55,
+                    "applicable_content_types": ["comment"],
+                    "sub_keywords": [
+                        {
+                            "keyword_code": "comment_short_clean",
+                            "keyword_name": "0-5字",
+                            "corpus": [
+                                "评论控制在0到5字，极短回应，不用emoji，不分段。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "comment_light_emoji",
+                            "keyword_name": "6-15字",
+                            "corpus": [
+                                "评论控制在6到15字，尽量一句话，可不用emoji，不写成完整科普。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "comment_two_sentence",
+                            "keyword_name": "15-25字",
+                            "corpus": [
+                                "评论控制在15到25字，最多两句话，少用或不用emoji，保留真实互动感。"
                             ],
                         },
                     ],

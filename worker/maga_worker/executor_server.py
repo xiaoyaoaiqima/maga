@@ -265,11 +265,13 @@ def _handle_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
     content_type = str(input_payload.get("content_type") or ("comment" if previous.get("comment") else "article"))
     output_fields = input_payload.get("output_fields") or (["comment"] if content_type == "comment" else ["title", "body"])
     forbidden_hits = _rewrite_forbidden_hits(input_payload)
+    forbidden_replacements = _rewrite_forbidden_replacements(input_payload)
 
     if os.environ.get("MAGA_WORKER_RUNTIME_FAST_FAKE") == "1":
         output = _stable_rewrite_from_previous(
             previous,
             forbidden_hits,
+            forbidden_replacements,
             content_type=content_type,
             output_fields=output_fields,
             input_payload=input_payload,
@@ -299,6 +301,7 @@ def _handle_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
             input_payload,
             previous=previous,
             forbidden_hits=forbidden_hits,
+            forbidden_replacements=forbidden_replacements,
             content_type=content_type,
         )
     raw = call_model(
@@ -347,9 +350,21 @@ def _rewrite_forbidden_hits(input_payload: dict[str, Any]) -> list[str]:
     return [str(value).strip() for value in values or [] if str(value).strip()]
 
 
+def _rewrite_forbidden_replacements(input_payload: dict[str, Any]) -> dict[str, str]:
+    raw = input_payload.get("forbidden_replacements") or input_payload.get("replacement_map") or {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(term).strip(): str(replacement).strip()
+        for term, replacement in raw.items()
+        if str(term).strip() and str(replacement).strip()
+    }
+
+
 def _stable_rewrite_from_previous(
     previous: dict[str, str],
     forbidden_hits: list[str],
+    forbidden_replacements: dict[str, str],
     *,
     content_type: str,
     output_fields: list[Any],
@@ -357,7 +372,11 @@ def _stable_rewrite_from_previous(
 ) -> dict[str, str]:
     operator_feedback = _operator_feedback(input_payload)
     if content_type == "comment" or output_fields == ["comment"]:
-        comment = _remove_terms_from_text(previous.get("comment") or previous.get("body") or "", forbidden_hits)
+        comment = _remove_or_replace_terms_from_text(
+            previous.get("comment") or previous.get("body") or "",
+            forbidden_hits,
+            forbidden_replacements,
+        )
         if operator_feedback and comment:
             comment = f"{comment} 我会按这个方向再具体一点。"
         comment = _normalize_comment_text(comment) or "这个点我也在关注，想看看大家真实反馈。"
@@ -368,8 +387,8 @@ def _stable_rewrite_from_previous(
         reason = str((input_payload.get("review_report") or {}).get("rewrite_reason") or similarity.get("reason") or "")
         body = f"换一个开头和结构来写。触发原因：{reason}"
         return {"title": "降重后的标题", "body": body, "final": {"title": "降重后的标题", "body": body}}
-    title = _remove_terms_from_text(previous.get("title") or "", forbidden_hits) or "真实体验分享"
-    body = _remove_terms_from_text(previous.get("body") or "", forbidden_hits) or "围绕真实使用感受自然表达，保持克制，不夸大。"
+    title = _remove_or_replace_terms_from_text(previous.get("title") or "", forbidden_hits, forbidden_replacements) or "真实体验分享"
+    body = _remove_or_replace_terms_from_text(previous.get("body") or "", forbidden_hits, forbidden_replacements) or "围绕真实使用感受自然表达，保持克制，不夸大。"
     if operator_feedback:
         body = f"{body}\n\n按运营反馈调整：{operator_feedback}"
     return {"title": title, "body": body, "final": {"title": title, "body": body}}
@@ -380,10 +399,10 @@ def _operator_feedback(input_payload: dict[str, Any]) -> str:
     return str(value or "").strip()
 
 
-def _remove_terms_from_text(value: str, forbidden_hits: list[str]) -> str:
+def _remove_or_replace_terms_from_text(value: str, forbidden_hits: list[str], forbidden_replacements: dict[str, str]) -> str:
     text = str(value or "")
     for term in forbidden_hits:
-        text = text.replace(term, "")
+        text = text.replace(term, forbidden_replacements.get(term, ""))
     while "  " in text:
         text = text.replace("  ", " ")
     for duplicate in ["、、", "，，", "。。", "；；"]:
@@ -397,6 +416,7 @@ def _rewrite_prompt(
     *,
     previous: dict[str, str],
     forbidden_hits: list[str],
+    forbidden_replacements: dict[str, str],
     content_type: str,
 ) -> str:
     output_instruction = (
@@ -408,6 +428,12 @@ def _rewrite_prompt(
         f"内容类型：{content_type}",
         "原内容：\n" + json.dumps(previous, ensure_ascii=False, indent=2),
         f"必须删除或自然替换的违禁词：{'、'.join(forbidden_hits) if forbidden_hits else '无'}",
+        "指定替换映射：\n"
+        + (
+            "\n".join(f"- {term} -> {replacement}" for term, replacement in forbidden_replacements.items())
+            if forbidden_replacements
+            else "无"
+        ),
         "改写原则：只改命中词和相关句子，尽量保留原意、语气、结构和业务规则；不得新增功效承诺、医疗诊断或绝对化表达。",
         output_instruction,
     ]

@@ -186,7 +186,7 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
         "comment_writing_instruction",
         "perturbation_rule",
         "writing_method",
-        "format_control",
+        "comment_format_control",
     ]
 
 
@@ -225,7 +225,7 @@ async def test_article_batch_can_start_from_product_experience_rule_asset_key_on
         "writing_instruction",
         "perturbation_rule",
         "writing_method",
-        "format_control",
+        "article_format_control",
     ]
 
 

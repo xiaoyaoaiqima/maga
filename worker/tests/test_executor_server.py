@@ -524,6 +524,34 @@ def test_content_rewrite_fake_mode_removes_forbidden_terms(monkeypatch):
     assert data["output"]["runtime_result"]["mode"] == "content_rewrite_fake"
 
 
+def test_content_rewrite_fake_mode_applies_forbidden_replacements(monkeypatch):
+    monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/invoke",
+        json=_envelope(
+            "content.rewrite",
+            {
+                "content_type": "comment",
+                "output_fields": ["comment"],
+                "previous_content": {"comment": "🍼接受度比之前稳定，想蹲蹲真实反馈"},
+                "forbidden_hits": ["🍼"],
+                "forbidden_replacements": {"🍼": "奶瓶"},
+                "rewrite_instructions": ["指定替换映射：🍼 -> 奶瓶"],
+            },
+            stage_call_id="stage-content-rewrite-replacement",
+        ),
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "succeeded"
+    assert data["output"]["comment"] == "奶瓶接受度比之前稳定，想蹲蹲真实反馈"
+    assert "🍼" not in data["output"]["comment"]
+
+
 def test_content_rewrite_fake_mode_uses_operator_feedback(monkeypatch):
     monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
     client = _client(monkeypatch)

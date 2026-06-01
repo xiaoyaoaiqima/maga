@@ -1048,7 +1048,7 @@ def _batch_content_type(items: list[ContentBatchItem]) -> str:
 
 def _system_keyword_target(category_counter: Counter[str], content_type: str) -> str:
     if category_counter.get("too_long", 0):
-        return "系统关键词 / 格式控制"
+        return "系统关键词 / 评论格式控制" if content_type == "comment" else "系统关键词 / 帖子格式控制"
     if content_type == "comment":
         return "系统关键词 / 生评论指令"
     return "系统关键词 / 写作手法"

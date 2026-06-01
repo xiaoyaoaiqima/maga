@@ -11,7 +11,16 @@ from app.services.business_forbidden_term_service import BusinessForbiddenTermSe
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.content_generation_expert_service import ContentGenerationExpertService
 
-STATIC_FORBIDDEN_TERMS = ["治疗便秘", "治好便秘", "改善便秘", "解决便秘", "根治", "疗效"]
+STATIC_FORBIDDEN_REPLACEMENTS = {"肠胃": "肚肚"}
+STATIC_FORBIDDEN_TERMS = [
+    "治疗便秘",
+    "治好便秘",
+    "改善便秘",
+    "解决便秘",
+    "根治",
+    "疗效",
+    *STATIC_FORBIDDEN_REPLACEMENTS.keys(),
+]
 MAX_FORBIDDEN_TERM_REWRITE_ROUNDS = 2
 
 
@@ -19,6 +28,7 @@ MAX_FORBIDDEN_TERM_REWRITE_ROUNDS = 2
 class ForbiddenTermAuditResult:
     terms: list[str]
     hits: list[str]
+    replacements: dict[str, str]
 
 
 class ForbiddenTermReviewService:
@@ -44,8 +54,18 @@ class ForbiddenTermReviewService:
         title: str | None,
         body: str | None,
     ) -> ForbiddenTermAuditResult:
+        term_service = BusinessForbiddenTermService(self.db)
         terms = await self.list_terms(asset_key=asset_key)
-        return ForbiddenTermAuditResult(terms=terms, hits=find_forbidden_hits(_text(title, body), terms))
+        replacements = {
+            **STATIC_FORBIDDEN_REPLACEMENTS,
+            **(await term_service.list_replacements(asset_key=asset_key)),
+        }
+        hits = find_forbidden_hits(_text(title, body), terms)
+        return ForbiddenTermAuditResult(
+            terms=terms,
+            hits=hits,
+            replacements={hit: replacements[hit] for hit in hits if replacements.get(hit)},
+        )
 
     async def review_and_rewrite_item(
         self,
@@ -81,6 +101,7 @@ class ForbiddenTermReviewService:
                     input_payload = _rewrite_input_payload(
                         item,
                         hits=current_hits,
+                        replacements={hit: audit.replacements[hit] for hit in current_hits if audit.replacements.get(hit)},
                         content_type=content_type,
                         rewrite_round=round_no,
                     )
@@ -93,6 +114,7 @@ class ForbiddenTermReviewService:
                             business_rule=input_payload["business_rule"],
                             selected_keywords=input_payload["selected_keywords"],
                             forbidden_hits=current_hits,
+                            forbidden_replacements=input_payload["forbidden_replacements"],
                             rewrite_instructions=input_payload["rewrite_instructions"],
                             output_fields=input_payload["output_fields"],
                         )
@@ -113,10 +135,11 @@ class ForbiddenTermReviewService:
             post_audit = ForbiddenTermAuditResult(
                 terms=audit.terms,
                 hits=find_forbidden_hits(_text(item.title, item.body), audit.terms),
+                replacements={},
             )
             if post_audit.hits:
-                item.title = _remove_forbidden_terms(item.title or "", post_audit.hits)
-                item.body = _remove_forbidden_terms(item.body or "", post_audit.hits)
+                item.title = _remove_or_replace_forbidden_terms(item.title or "", post_audit.hits, audit.replacements)
+                item.body = _remove_or_replace_forbidden_terms(item.body or "", post_audit.hits, audit.replacements)
                 rewrite_method = (
                     f"{rewrite_method}+deterministic_sanitize"
                     if "deterministic_sanitize" not in rewrite_method
@@ -125,6 +148,7 @@ class ForbiddenTermReviewService:
                 post_audit = ForbiddenTermAuditResult(
                     terms=audit.terms,
                     hits=find_forbidden_hits(_text(item.title, item.body), audit.terms),
+                    replacements={},
                 )
             current_hits = post_audit.hits
             if not current_hits:
@@ -225,6 +249,7 @@ def _rewrite_input_payload(
     item: ContentBatchItem,
     *,
     hits: list[str],
+    replacements: dict[str, str],
     content_type: str,
     rewrite_round: int,
 ) -> dict[str, Any]:
@@ -233,6 +258,19 @@ def _rewrite_input_payload(
         if content_type == "comment"
         else {"title": item.title or "", "body": item.body or ""}
     )
+    instructions = [
+        f"必须删除或替换这些违禁词：{'、'.join(hits)}",
+        "只处理命中的词和相关句子，尽量保留原意、语气和业务规则",
+        "改写后不得再次出现上述违禁词",
+        "不要解释改写过程，只返回改写后的内容",
+    ]
+    if replacements:
+        # 重要逻辑：把符号/emoji 这类模型易忽略的替换规则从长生文 prompt 中拆出来，
+        # 在短改写 prompt 里用明确映射约束，提升 🍼 -> 奶瓶 这类替换稳定性。
+        instructions.insert(
+            1,
+            "指定替换映射：" + "；".join(f"{term} -> {replacement}" for term, replacement in replacements.items()),
+        )
     return {
         "previous_content": previous_content,
         "content_type": content_type,
@@ -240,6 +278,7 @@ def _rewrite_input_payload(
         "business_rule": dict(item.plan_json or {}),
         "selected_keywords": _selected_keywords_from_item(item),
         "forbidden_hits": hits,
+        "forbidden_replacements": replacements,
         "review_report": {
             "hard_results": [
                 {
@@ -257,12 +296,7 @@ def _rewrite_input_payload(
             "rewrite_reason": f"删除或替换违禁词：{'、'.join(hits)}",
         },
         "rewrite_round": rewrite_round,
-        "rewrite_instructions": [
-            f"必须删除或替换这些违禁词：{'、'.join(hits)}",
-            "只处理命中的词和相关句子，尽量保留原意、语气和业务规则",
-            "改写后不得再次出现上述违禁词",
-            "不要解释改写过程，只返回改写后的内容",
-        ],
+        "rewrite_instructions": instructions,
     }
 
 
@@ -296,10 +330,10 @@ def _selected_keywords_from_item(item: ContentBatchItem) -> list[Any]:
     return []
 
 
-def _remove_forbidden_terms(value: str, hits: list[str]) -> str:
+def _remove_or_replace_forbidden_terms(value: str, hits: list[str], replacements: dict[str, str]) -> str:
     text = value
     for term in hits:
-        text = text.replace(term, "")
+        text = text.replace(term, replacements.get(term, ""))
     return _normalize_text_after_removal(text)
 
 

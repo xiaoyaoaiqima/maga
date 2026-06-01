@@ -21,6 +21,7 @@ from app.models.maga_assets import AssetRegistry
 from app.models.prompt_optimizer import PromptAsset, PromptVersion
 from app.services.content_batch_execution_service import ContentBatchExecutionService
 from app.services.executor_invocation_service import InvokeResult, MockExecutorInvocationClient
+from app.services.forbidden_term_review_service import ForbiddenTermReviewService
 
 
 def _execution_tables():
@@ -152,7 +153,7 @@ async def test_batch_execution_rewrites_business_forbidden_terms():
                 asset_stage="production",
                 content_json={
                     "schema_version": "1",
-                    "terms": [{"term": "宝宝", "enabled": True}],
+                    "terms": [{"term": "宝宝", "enabled": True, "replacement": "孩子"}],
                 },
             )
         )
@@ -183,7 +184,9 @@ async def test_batch_execution_rewrites_business_forbidden_terms():
         item = (await session.execute(select(ContentBatchItem))).scalar_one()
         stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
 
-    assert "宝宝" not in f"{item.title}\n{item.body}"
+    full_text = f"{item.title}\n{item.body}"
+    assert "宝宝" not in full_text
+    assert "孩子" in full_text
     forbidden_review = item.quality_json["forbidden_terms_review"]
     assert forbidden_review["initial_hits"] == ["宝宝"]
     assert forbidden_review["final_hits"] == []
@@ -191,6 +194,45 @@ async def test_batch_execution_rewrites_business_forbidden_terms():
     assert item.quality_json["review_report"]["hard_results"][-1]["ae_code"] == "forbidden_terms_guard"
     assert item.quality_json["review_report"]["hard_results"][-1]["pass"] is True
     assert any(stage.capability == "content.rewrite" for stage in stage_calls)
+    rewrite_stage = next(stage for stage in stage_calls if stage.capability == "content.rewrite")
+    assert (rewrite_stage.input_snapshot or {})["forbidden_replacements"] == {"宝宝": "孩子"}
+    assert "宝宝 -> 孩子" in "\n".join((rewrite_stage.input_snapshot or {})["rewrite_instructions"])
+
+
+@pytest.mark.asyncio
+async def test_forbidden_term_review_replaces_static_term_without_model():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        item = ContentBatchItem(
+            batch_id=1,
+            item_no=1,
+            status="generated",
+            title="肠胃状态记录",
+            body="这段时间先观察肠胃反应，表达要自然一点。",
+            quality_json={"review_report": {}, "hard_pass": True},
+            plan_json={},
+        )
+
+        review = await ForbiddenTermReviewService(session).review_and_rewrite_item(
+            item=item,
+            asset_key=None,
+            orchestrator=None,
+            executor_code=None,
+            content_type="article",
+        )
+
+    full_text = f"{item.title}\n{item.body}"
+    assert review["initial_hits"] == ["肠胃"]
+    assert review["final_hits"] == []
+    assert "肠胃" not in full_text
+    assert "肚肚" in full_text
 
 
 class RuntimeFastDraftReviewClient:

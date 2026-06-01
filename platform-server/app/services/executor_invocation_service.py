@@ -318,6 +318,7 @@ def _mock_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(previous, dict):
         previous = {}
     hits = [str(value).strip() for value in input_payload.get("forbidden_hits") or [] if str(value).strip()]
+    replacements = _mock_replacements(input_payload)
     operator_feedback = str(
         input_payload.get("operator_feedback")
         or (input_payload.get("review_report") or {}).get("operator_feedback")
@@ -325,7 +326,7 @@ def _mock_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
     ).strip()
     output_fields = input_payload.get("output_fields") or []
     if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
-        comment = _mock_remove_terms(str(previous.get("comment") or previous.get("body") or ""), hits)
+        comment = _mock_remove_or_replace_terms(str(previous.get("comment") or previous.get("body") or ""), hits, replacements)
         if operator_feedback and comment:
             comment = f"{comment} 我会按这个方向再具体一点。"
         return {
@@ -349,8 +350,8 @@ def _mock_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
                 "reason": "mock_executor",
             },
         }
-    title = _mock_remove_terms(str(previous.get("title") or ""), hits) or "改写后标题"
-    body = _mock_remove_terms(str(previous.get("body") or ""), hits) or "改写后正文"
+    title = _mock_remove_or_replace_terms(str(previous.get("title") or ""), hits, replacements) or "改写后标题"
+    body = _mock_remove_or_replace_terms(str(previous.get("body") or ""), hits, replacements) or "改写后正文"
     if operator_feedback:
         body = f"{body}\n\n按运营反馈调整：{operator_feedback}"
     return {
@@ -365,10 +366,21 @@ def _mock_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _mock_remove_terms(value: str, hits: list[str]) -> str:
+def _mock_replacements(input_payload: dict[str, Any]) -> dict[str, str]:
+    raw = input_payload.get("forbidden_replacements") or {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(term).strip(): str(replacement).strip()
+        for term, replacement in raw.items()
+        if str(term).strip() and str(replacement).strip()
+    }
+
+
+def _mock_remove_or_replace_terms(value: str, hits: list[str], replacements: dict[str, str]) -> str:
     text = value
     for term in hits:
-        text = text.replace(term, "")
+        text = text.replace(term, replacements.get(term, ""))
     while "  " in text:
         text = text.replace("  ", " ")
     for duplicate in ["、、", "，，", "。。", "；；"]:

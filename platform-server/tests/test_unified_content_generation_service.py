@@ -100,10 +100,12 @@ async def test_unified_generation_splits_article_and_comment_instructions(unifie
     ]
     assert "comment_writing_instruction" in comment_codes
     assert "writing_instruction" not in comment_codes
-    assert "format_control" in comment_codes
+    assert "comment_format_control" in comment_codes
+    assert "article_format_control" not in comment_codes
     assert "writing_instruction" in article_codes
     assert "comment_writing_instruction" not in article_codes
-    assert "format_control" in article_codes
+    assert "article_format_control" in article_codes
+    assert "comment_format_control" not in article_codes
 
 
 @pytest.mark.asyncio

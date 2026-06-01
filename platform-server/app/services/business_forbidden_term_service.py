@@ -41,6 +41,22 @@ class BusinessForbiddenTermService:
                     terms.append(term)
         return terms
 
+    async def list_replacements(self, *, asset_key: str | None = None, include_default: bool = True) -> dict[str, str]:
+        keys = _asset_keys_for_lookup(asset_key, include_default=include_default)
+        replacements: dict[str, str] = {}
+        for key in keys:
+            asset = await self._latest_asset(key)
+            if asset is None:
+                continue
+            for entry in _term_entries_from_content(asset.content_json or {}):
+                if entry.get("enabled") is False:
+                    continue
+                term = _term_from_entry(entry)
+                replacement = _replacement_from_entry(entry)
+                if term and replacement and term not in replacements:
+                    replacements[term] = replacement
+        return replacements
+
     async def add_terms(
         self,
         *,
@@ -200,7 +216,21 @@ def _terms_from_entries(entries: list[dict[str, Any]]) -> list[str]:
     for entry in entries:
         if entry.get("enabled") is False:
             continue
-        value = str(entry.get("term") or entry.get("word") or entry.get("name") or "").strip()
+        value = _term_from_entry(entry)
         if value and value not in terms:
             terms.append(value)
     return terms
+
+
+def _term_from_entry(entry: dict[str, Any]) -> str:
+    return str(entry.get("term") or entry.get("word") or entry.get("name") or "").strip()
+
+
+def _replacement_from_entry(entry: dict[str, Any]) -> str:
+    return str(
+        entry.get("replacement")
+        or entry.get("rewrite_to")
+        or entry.get("replace_with")
+        or entry.get("suggested_replacement")
+        or ""
+    ).strip()

@@ -87,6 +87,7 @@ CONTENT_FLOW_EXPERT_SPECS: tuple[ContentFlowExpertSpec, ...] = (
             "【内容类型】\n{{ content_type_label }}\n\n"
             "【原内容】\n{{ previous_content }}\n\n"
             "【必须删除或自然替换的违禁词】\n{{ forbidden_hits }}\n\n"
+            "【指定替换映射】\n{{ forbidden_replacements }}\n\n"
             "【业务规则】\n{{ business_rule }}\n\n"
             "【本次自动选中的系统关键词语料】\n{{ selected_keywords_json }}\n\n"
             "【改写指令】\n{{ rewrite_instructions }}\n\n"
@@ -97,6 +98,7 @@ CONTENT_FLOW_EXPERT_SPECS: tuple[ContentFlowExpertSpec, ...] = (
             "content_type_label",
             "previous_content",
             "forbidden_hits",
+            "forbidden_replacements",
             "business_rule",
             "selected_keywords_json",
             "rewrite_instructions",
@@ -181,6 +183,7 @@ class ContentGenerationExpertService:
         business_rule: dict[str, Any],
         selected_keywords: list[Any],
         forbidden_hits: list[str],
+        forbidden_replacements: dict[str, str] | None = None,
         rewrite_instructions: list[str],
         output_fields: list[str],
     ) -> dict[str, Any]:
@@ -191,6 +194,7 @@ class ContentGenerationExpertService:
             business_rule=business_rule,
             selected_keywords=selected_keywords,
             forbidden_hits=forbidden_hits,
+            forbidden_replacements=forbidden_replacements,
             rewrite_instructions=rewrite_instructions,
             output_fields=output_fields,
         )
@@ -220,6 +224,7 @@ class ContentGenerationExpertService:
                 business_rule=business_rule,
                 selected_keywords=selected_keywords,
                 forbidden_hits=forbidden_hits or ["示例违禁词"],
+                forbidden_replacements={},
                 rewrite_instructions=["只处理命中词和相关句子", "不要解释改写过程"],
                 output_fields=["comment"] if content_type == "comment" else ["title", "body"],
             )
@@ -309,6 +314,7 @@ def rewrite_template_variables(
     business_rule: dict[str, Any],
     selected_keywords: list[Any],
     forbidden_hits: list[str],
+    forbidden_replacements: dict[str, str] | None = None,
     rewrite_instructions: list[str],
     output_fields: list[str],
 ) -> dict[str, Any]:
@@ -320,6 +326,10 @@ def rewrite_template_variables(
         "business_rule": json.dumps(business_rule or {}, ensure_ascii=False, indent=2),
         "selected_keywords_json": json.dumps(selected_keywords or [], ensure_ascii=False, indent=2),
         "forbidden_hits": "、".join(forbidden_hits) if forbidden_hits else "无",
+        "forbidden_replacements": (
+            "\n".join(f"- {term} -> {replacement}" for term, replacement in (forbidden_replacements or {}).items())
+            or "无"
+        ),
         "rewrite_instructions": "\n".join(f"- {item}" for item in rewrite_instructions if str(item).strip()),
         "output_requirements": (
             "只输出改写后的评论正文，不要标题、编号、解释。"
