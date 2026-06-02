@@ -1,0 +1,8 @@
+interface:
+  display_name: "小红书舆情分析"
+  short_description: "采集小红书评论并生成情感与战场报告"
+  brand_color: "#D94841"
+  default_prompt: "Use $xhs-social-intelligence to collect XHS comments and summarize sentiment trends for a keyword battle."
+
+policy:
+  allow_implicit_invocation: true

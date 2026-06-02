@@ -20,6 +20,10 @@ node_modules/
 .env
 .env.local
 *.log
+*.ppt
+*.pptx
+*.xls
+*.xlsx
 local_data/*
 debug_log/
 critic_debug_log/

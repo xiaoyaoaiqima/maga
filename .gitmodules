@@ -1,0 +1,4 @@
+[submodule "skill_hub"]
+	path = skill_hub
+	url = git@ai-gitlab.sharpasshark.com:raap/skill_hub.git
+	branch = dev
