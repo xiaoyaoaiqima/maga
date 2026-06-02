@@ -191,49 +191,6 @@ async def asset_client():
 
 
 @pytest.mark.asyncio
-async def test_extract_reference_elements_preview(asset_client):
-    response = await asset_client.post(
-        "/api/v1/assets/reference-elements/extract",
-        json={"asset_key": "yuanyue", "limit": 1, "persist": False},
-    )
-
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["source_item_count"] == 1
-    assert data["extracted_count"] == 1
-    assert data["persisted_asset_id"] is None
-    item = data["items"][0]
-    assert item["source_example_id"] == "reference_example_1"
-    assert item["title_hook"]["hook_type"] in {"生活经验", "情绪困扰", "场景冲突"}
-    assert "奶量" in item["content_atoms"]["painpoint_signals"] or "便便" in item["content_atoms"]["painpoint_signals"]
-    assert item["writing_strategy"]["proof_style"]
-    assert item["safety"]["avoid_copy_phrases"]
-
-
-@pytest.mark.asyncio
-async def test_extract_reference_elements_persist_candidate_asset(asset_client):
-    response = await asset_client.post(
-        "/api/v1/assets/reference-elements/extract",
-        json={"asset_key": "yuanyue", "limit": 1, "persist": True, "created_by": "tester"},
-    )
-
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["persisted_asset_id"] is not None
-    assert data["persisted_asset_version"] == 1
-
-    detail_response = await asset_client.get(
-        "/api/v1/assets/reference_content_elements/yuanyue",
-        params={"asset_stage": "candidate"},
-    )
-    assert detail_response.status_code == 200
-    asset = detail_response.json()["data"]
-    assert asset["asset_stage"] == "candidate"
-    assert asset["asset_type"] == "reference_content_elements"
-    assert asset["content_json"]["items"][0]["element_source"] == "rules_v1"
-
-
-@pytest.mark.asyncio
 async def test_list_assets_and_get_latest_asset(asset_client):
     list_response = await asset_client.get("/api/v1/assets", params={"asset_key": "yuanyue"})
     assert list_response.status_code == 200
@@ -712,46 +669,6 @@ async def test_change_request_can_generate_and_apply_candidate_compliance_rule(a
     assert candidate["asset_stage"] == "candidate"
     assert candidate["content_json"]["items"][-1]["rule_type"] == "forbidden_product_fact"
     assert "a2蛋白" in candidate["content_json"]["items"][-1]["forbidden_terms"]
-
-
-@pytest.mark.asyncio
-async def test_upload_yuanyue_training_rules_imports_assets(asset_client, tmp_path):
-    from openpyxl import Workbook
-
-    workbook_path = tmp_path / "源悦种草活动-ai训练规则.xlsx"
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "品牌资料整理"
-    ws["C3"] = "好消化易吸收"
-    ws["C4"] = "高质量真实用户ugc"
-    ws["C9"] = "好消化易吸收"
-
-    ws2 = wb.create_sheet("内容模型")
-    ws2.append(["序号", "宝宝阶段", "核心痛点", "具体表现", "痛点描述", "对应卖点"])
-    ws2.append([None, None, "便便不规律", "羊屎蛋/干硬", "便便又干又硬", "好消化易吸收"])
-
-    ws3 = wb.create_sheet("ugc常规-卖点表述")
-    ws3.append(["序号", "对应卖点", "卖点描述", "负责人"])
-    ws3.append([None, "便便不规律", "常规表述", "东昕"])
-
-    ws4 = wb.create_sheet("审核规则")
-    ws4.append(["序号", "审核内容", "分类", "审核维度（问题分类）", "审核意见（返回给用户的）"])
-    ws4.append([1, "文案审核", "草稿审核", "夸大产品效果或虚构使用经历", "文本不符合活动要求"])
-    wb.save(workbook_path)
-
-    with workbook_path.open("rb") as file_obj:
-        response = await asset_client.post(
-            "/api/v1/assets/imports/yuanyue-training-rules",
-            data={"asset_key": "yuanyue", "created_by": "ops"},
-            files={"file": ("源悦种草活动-ai训练规则.xlsx", file_obj, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
-        )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["code"] == 200
-    data = payload["data"]
-    assert data["imported_assets"] >= 5
-    assert ["ugc_expression_corpus", "yuanyue"] in data["asset_keys"]
 
 
 @pytest.mark.asyncio

@@ -33,14 +33,14 @@ async def api_context():
 
     async with session_factory() as session:
         service = ContentAgentService(session)
-        task = await service.create_task(ContentAgentTaskCreate(task_type="xhs_generate"))
+        task = await service.create_task(ContentAgentTaskCreate(task_type="content_generate"))
         run, stage = await service.start_run_with_stage(
             task.id,
             executor_code="hermes_maga_worker",
             stage=ContentAgentStageCallCreate(
                 stage_call_id="stage-api-001",
-                capability="xhs.generate_draft",
-                input_snapshot={"structured_brief": {"topic": "美素佳儿源悦"}},
+                capability="content.generate",
+                input_snapshot={"content_type": "article", "rendered_prompt": "生成内容"},
             ),
         )
         await session.commit()
@@ -60,7 +60,7 @@ async def test_mvp_transition_endpoints_are_not_public_protocol(api_context):
 
     complete = await client.post(
         f"/api/v1/content-agent/runs/{run_id}/stage-calls/{stage_call_id}/complete",
-        json={"output": {"draft_artifact_id": "art-001"}},
+        json={"output": {"title": "标题", "body": "正文"}},
     )
     fail = await client.post(
         f"/api/v1/content-agent/runs/{run_id}/stage-calls/{stage_call_id}/fail",
@@ -85,16 +85,16 @@ async def test_human_review_endpoint_uses_stage_header_and_no_run_token_or_schem
         headers={"X-Stage-Call-Id": stage_call_id, "X-Maga-Protocol-Version": "0.1"},
         json={
             "stage_call_id": stage_call_id,
-            "reason": "hard_ae_failed",
-            "payload": {"draft_artifact_id": "art-001"},
+            "reason": "operator_review",
+            "payload": {"title": "标题", "body": "正文"},
         },
     )
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["reason"] == "hard_ae_failed"
+    assert data["reason"] == "operator_review"
     assert data["status"] == "pending"
-    assert data["payload_json"] == {"draft_artifact_id": "art-001"}
+    assert data["payload_json"] == {"title": "标题", "body": "正文"}
     assert data["response_schema_json"] is None
 
 

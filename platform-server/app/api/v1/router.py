@@ -34,7 +34,6 @@ from app.api.v1.endpoints import (
     metrics,
     plugin_contexts,
     plugins,
-    prompt_optimizer,
     publish,
     richness_analysis,
     test_cases,
@@ -84,7 +83,6 @@ api_router.include_router(expert_tasks.router, prefix="/expert-tasks", tags=["ex
 api_router.include_router(content_agent.router, prefix="/content-agent", tags=["content-agent"])
 api_router.include_router(content_generation_experts.router, prefix="/content-agent", tags=["content-generation-experts"])
 api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
-api_router.include_router(prompt_optimizer.router, prefix="/prompt-optimizer", tags=["prompt-optimizer"])
 
 # Snapshot management endpoints
 api_router.include_router(snapshots.router)

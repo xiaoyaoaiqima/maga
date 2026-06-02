@@ -36,10 +36,10 @@ async def test_mvp_invoke_envelope_excludes_transition_callback_urls_and_run_tok
         run_id=10,
         task_id=20,
         stage_call_id="stage-001",
-        capability="xhs.interpret_brief",
+        capability="content.generate",
         schema_version="1",
         run_token="rt-001",
-        input_payload={"brief": {"topic": "美素佳儿源悦"}},
+        input_payload={"content_type": "article", "rendered_prompt": "生成内容"},
         callback_base_url="https://maga.example.com/api/v1/content-agent",
         deadline_at=None,
     )
@@ -48,8 +48,8 @@ async def test_mvp_invoke_envelope_excludes_transition_callback_urls_and_run_tok
     assert envelope["run_id"] == 10
     assert envelope["task_id"] == 20
     assert envelope["stage_call_id"] == "stage-001"
-    assert envelope["capability"] == "xhs.interpret_brief"
-    assert envelope["input"] == {"brief": {"topic": "美素佳儿源悦"}}
+    assert envelope["capability"] == "content.generate"
+    assert envelope["input"] == {"content_type": "article", "rendered_prompt": "生成内容"}
     assert set(envelope["callback"]) == {"events_url", "artifacts_url", "human_review_url"}
     assert "complete_url" not in envelope["callback"]
     assert "fail_url" not in envelope["callback"]
@@ -65,7 +65,7 @@ async def test_mvp_invoke_sync_200_returns_succeeded_output_envelope():
             {
                 "stage_call_id": "stage-001",
                 "status": "succeeded",
-                "output": {"structured_brief": {"topic": "美素佳儿源悦"}},
+                "output": {"content": {"topic": "美素佳儿源悦"}},
                 "stats": {"total_latency_ms": 10},
             },
         )
@@ -74,7 +74,7 @@ async def test_mvp_invoke_sync_200_returns_succeeded_output_envelope():
 
     result = await client.invoke(
         invoke_url="https://executor.example.com/invoke",
-        envelope={"stage_call_id": "stage-001", "capability": "xhs.interpret_brief"},
+        envelope={"stage_call_id": "stage-001", "capability": "content.generate"},
         executor_token="test-token",
     )
 
@@ -82,7 +82,7 @@ async def test_mvp_invoke_sync_200_returns_succeeded_output_envelope():
         mode="sync",
         stage_call_id="stage-001",
         status="succeeded",
-        output={"structured_brief": {"topic": "美素佳儿源悦"}},
+        output={"content": {"topic": "美素佳儿源悦"}},
         stats={"total_latency_ms": 10},
         error_code=None,
         error_message=None,
@@ -107,7 +107,7 @@ async def test_executor_invoke_timeout_can_be_configured(monkeypatch):
 
     await client.invoke(
         invoke_url="https://executor.example.com/invoke",
-        envelope={"stage_call_id": "stage-timeout", "capability": "xhs.generate_draft"},
+        envelope={"stage_call_id": "stage-timeout", "capability": "content.generate"},
     )
 
     assert http_client.calls[0]["timeout"] == 240.0
@@ -125,7 +125,7 @@ async def test_mvp_invoke_omits_authorization_header_when_token_is_absent():
 
     await client.invoke(
         invoke_url="https://executor.example.com/invoke",
-        envelope={"stage_call_id": "stage-no-token", "capability": "xhs.interpret_brief"},
+        envelope={"stage_call_id": "stage-no-token", "capability": "content.generate"},
     )
 
     assert http_client.calls[0]["headers"] == {"X-Maga-Protocol-Version": "0.1"}
@@ -148,7 +148,7 @@ async def test_mvp_invoke_sync_200_can_return_failed_output_envelope():
 
     result = await client.invoke(
         invoke_url="https://executor.example.com/invoke",
-        envelope={"stage_call_id": "stage-002", "capability": "xhs.generate_draft"},
+        envelope={"stage_call_id": "stage-002", "capability": "content.generate"},
     )
 
     assert result.mode == "sync"
@@ -166,7 +166,7 @@ async def test_mvp_invoke_rejects_async_202_ack():
     with pytest.raises(RuntimeError, match="MVP protocol requires sync"):
         await client.invoke(
             invoke_url="https://executor.example.com/invoke",
-            envelope={"stage_call_id": "stage-003", "capability": "xhs.generate_draft"},
+            envelope={"stage_call_id": "stage-003", "capability": "content.generate"},
         )
 
 

@@ -1,4 +1,4 @@
-"""Tests for the minimal MAGA-side content-agent orchestrator."""
+"""Tests for the MAGA-side content-agent orchestrator."""
 
 import pytest
 import pytest_asyncio
@@ -41,13 +41,13 @@ async def db_session():
 
 
 @pytest.mark.asyncio
-async def test_start_generation_run_invokes_first_capability_and_completes_sync_stage(db_session):
+async def test_run_single_capability_invokes_content_generate_and_completes_run(db_session):
     db_session.add(
         ExecutorRegistry(
             executor_code="hermes_maga_worker",
             executor_type="hermes_profile",
             invoke_url="https://executor.example.com/invoke",
-            supported_capabilities_json=[{"capability": "xhs.interpret_brief", "schema_version": "1"}],
+            supported_capabilities_json=[{"capability": "content.generate", "schema_version": "1"}],
         )
     )
     await db_session.flush()
@@ -55,7 +55,7 @@ async def test_start_generation_run_invokes_first_capability_and_completes_sync_
         InvokeResult(
             mode="sync",
             stage_call_id="stage-fixed",
-            output={"structured_brief": {"topic": "美素佳儿源悦"}},
+            output={"title": "标题", "body": "正文"},
             stats={"duration_ms": 50},
         )
     )
@@ -65,63 +65,61 @@ async def test_start_generation_run_invokes_first_capability_and_completes_sync_
         callback_base_url="https://maga.example.com/api/v1/content-agent",
     )
 
-    result = await orchestrator.start_generation_run(
+    result = await orchestrator.run_single_capability(
         ContentAgentTaskCreate(
-            task_type="xhs_generate",
+            task_type="content_generate",
             executor_code="hermes_maga_worker",
-            input_snapshot={"brief": {"topic": "美素佳儿源悦"}},
-        )
+            input_snapshot={"content_type": "article", "rendered_prompt": "生成内容"},
+        ),
+        capability="content.generate",
     )
 
-    assert result.run.status == "running"
-    assert result.stage_call.status == "succeeded"
-    assert result.stage_call.capability == "xhs.interpret_brief"
-    assert result.stage_call.output_snapshot == {"structured_brief": {"topic": "美素佳儿源悦"}}
+    assert result.run.status == "succeeded"
+    assert result.output == {"title": "标题", "body": "正文"}
+    assert result.stage_calls[0].status == "succeeded"
+    assert result.stage_calls[0].capability == "content.generate"
     assert invocation_client.calls[0]["invoke_url"] == "https://executor.example.com/invoke"
-    assert invocation_client.calls[0]["envelope"]["capability"] == "xhs.interpret_brief"
-    assert invocation_client.calls[0]["envelope"]["input"] == {"brief": {"topic": "美素佳儿源悦"}}
+    assert invocation_client.calls[0]["envelope"]["capability"] == "content.generate"
+    assert invocation_client.calls[0]["envelope"]["input"] == {
+        "content_type": "article",
+        "rendered_prompt": "生成内容",
+    }
 
 
 @pytest.mark.asyncio
-async def test_start_generation_run_defaults_blank_executor_code_to_maga_worker(db_session):
+async def test_run_single_capability_defaults_blank_executor_code_to_maga_worker(db_session):
     db_session.add(
         ExecutorRegistry(
             executor_code="hermes_maga_worker",
             executor_type="hermes_profile",
             invoke_url="https://executor.example.com/invoke",
-            supported_capabilities_json=[{"capability": "xhs.interpret_brief", "schema_version": "1"}],
+            supported_capabilities_json=[{"capability": "content.generate", "schema_version": "1"}],
         )
     )
     await db_session.flush()
-    invocation_client = FakeInvocationClient(
-        InvokeResult(
-            mode="sync",
-            stage_call_id="stage-fixed",
-            output={"structured_brief": {"topic": "美素佳儿源悦"}},
-            stats={"duration_ms": 50},
-        )
-    )
     orchestrator = ContentAgentOrchestrator(
         db_session,
-        invocation_client=invocation_client,
+        invocation_client=FakeInvocationClient(
+            InvokeResult(mode="sync", stage_call_id="stage-fixed", output={"comment": "评论"})
+        ),
         callback_base_url="https://maga.example.com/api/v1/content-agent",
     )
 
-    result = await orchestrator.start_generation_run(
+    result = await orchestrator.run_single_capability(
         ContentAgentTaskCreate(
-            task_type="xhs_generate",
+            task_type="content_generate",
             executor_code="  ",
-            input_snapshot={"brief": {"topic": "美素佳儿源悦"}},
-        )
+            input_snapshot={"content_type": "comment"},
+        ),
+        capability="content.generate",
     )
 
     assert result.run.executor_code == "hermes_maga_worker"
-    assert result.stage_call.status == "succeeded"
-    assert invocation_client.calls[0]["invoke_url"] == "https://executor.example.com/invoke"
+    assert result.stage_calls[0].status == "succeeded"
 
 
 @pytest.mark.asyncio
-async def test_start_generation_run_marks_failed_sync_stage_failed(db_session):
+async def test_run_single_capability_marks_failed_sync_stage_failed(db_session):
     db_session.add(
         ExecutorRegistry(
             executor_code="hermes_maga_worker",
@@ -130,30 +128,33 @@ async def test_start_generation_run_marks_failed_sync_stage_failed(db_session):
         )
     )
     await db_session.flush()
-    invocation_client = FakeInvocationClient(
-        InvokeResult(
-            mode="sync",
-            stage_call_id="stage-fixed",
-            status="failed",
-            error_code="model_error",
-            error_message="provider 5xx",
-        )
-    )
     orchestrator = ContentAgentOrchestrator(
         db_session,
-        invocation_client=invocation_client,
+        invocation_client=FakeInvocationClient(
+            InvokeResult(
+                mode="sync",
+                stage_call_id="stage-fixed",
+                status="failed",
+                error_code="model_error",
+                error_message="provider 5xx",
+            )
+        ),
         callback_base_url="https://maga.example.com/api/v1/content-agent",
     )
 
-    result = await orchestrator.start_generation_run(ContentAgentTaskCreate(task_type="xhs_generate"))
+    with pytest.raises(ValueError, match="provider 5xx"):
+        await orchestrator.run_single_capability(
+            ContentAgentTaskCreate(task_type="content_generate"),
+            capability="content.generate",
+        )
 
-    assert result.stage_call.status == "failed"
-    assert result.invoke_result.status == "failed"
-    assert result.stage_call.error_code == "model_error"
+    stage = (await db_session.execute(select(ContentAgentStageCall))).scalar_one()
+    assert stage.status == "failed"
+    assert stage.error_code == "model_error"
 
 
 @pytest.mark.asyncio
-async def test_run_mvp_generation_chain_marks_stage_and_run_failed_when_executor_call_raises(db_session):
+async def test_run_single_capability_marks_stage_and_run_failed_when_executor_call_raises(db_session):
     db_session.add(
         ExecutorRegistry(
             executor_code="hermes_maga_worker",
@@ -168,13 +169,14 @@ async def test_run_mvp_generation_chain_marks_stage_and_run_failed_when_executor
         callback_base_url="https://maga.example.com/api/v1/content-agent",
     )
 
-    with pytest.raises(ContentAgentInvokeError, match="xhs.interpret_brief"):
-        await orchestrator.run_mvp_generation_chain(
+    with pytest.raises(ContentAgentInvokeError, match="content.generate"):
+        await orchestrator.run_single_capability(
             ContentAgentTaskCreate(
-                task_type="xhs_generate",
+                task_type="content_generate",
                 executor_code="hermes_maga_worker",
-                input_snapshot={"product_topic": "美素佳儿源悦"},
-            )
+                input_snapshot={"content_type": "article"},
+            ),
+            capability="content.generate",
         )
 
     task = (await db_session.execute(select(ContentAgentTask))).scalar_one()
@@ -182,7 +184,7 @@ async def test_run_mvp_generation_chain_marks_stage_and_run_failed_when_executor
     stage = (await db_session.execute(select(ContentAgentStageCall))).scalar_one()
 
     assert task.status == "failed"
-    assert task.error_message == "Executor invoke failed during xhs.interpret_brief: TimeoutError"
+    assert task.error_message == "Executor invoke failed during content.generate: TimeoutError"
     assert run.status == "failed"
     assert run.error_message == task.error_message
     assert stage.status == "failed"
@@ -191,7 +193,7 @@ async def test_run_mvp_generation_chain_marks_stage_and_run_failed_when_executor
 
 
 @pytest.mark.asyncio
-async def test_start_generation_run_requires_executor_invoke_url(db_session):
+async def test_run_single_capability_requires_executor_invoke_url(db_session):
     db_session.add(ExecutorRegistry(executor_code="hermes_maga_worker", executor_type="hermes_profile"))
     await db_session.flush()
     orchestrator = ContentAgentOrchestrator(
@@ -201,4 +203,7 @@ async def test_start_generation_run_requires_executor_invoke_url(db_session):
     )
 
     with pytest.raises(ValueError, match="invoke_url"):
-        await orchestrator.start_generation_run(ContentAgentTaskCreate(task_type="xhs_generate"))
+        await orchestrator.run_single_capability(
+            ContentAgentTaskCreate(task_type="content_generate"),
+            capability="content.generate",
+        )

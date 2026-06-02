@@ -170,7 +170,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
                 stage_call_id="stage-101-generate",
                 run_id=101,
                 sequence_no=3,
-                capability="xhs.generate_draft",
+                capability="content.generate",
                 status="succeeded",
                 stats_json={"total_latency_ms": 1200},
                 output_snapshot={

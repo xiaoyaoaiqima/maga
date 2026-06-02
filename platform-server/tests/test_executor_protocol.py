@@ -42,23 +42,23 @@ async def test_clean_schema_includes_stage_call_and_human_review_tables(db_sessi
 async def test_start_run_creates_run_token_and_current_stage_call(db_session):
     service = ContentAgentService(db_session)
     task = await service.create_task(
-        ContentAgentTaskCreate(task_type="xhs_generate", input_snapshot={"product_topic": "美素佳儿源悦"})
+        ContentAgentTaskCreate(task_type="content_generate", input_snapshot={"product_topic": "美素佳儿源悦"})
     )
 
     run, stage_call = await service.start_run_with_stage(
         task.id,
         executor_code="hermes_maga_worker",
         stage=ContentAgentStageCallCreate(
-            stage_call_id="stage-interpret-001",
-            capability="xhs.interpret_brief",
-            input_snapshot={"brief": {"version_id": "brief-v1"}},
+            stage_call_id="stage-generate-001",
+            capability="content.generate",
+            input_snapshot={"content_type": "article", "rendered_prompt": "生成内容"},
             deadline_at=None,
         ),
     )
 
     assert run.run_token
     assert run.status == "running"
-    assert run.current_stage_call_id == "stage-interpret-001"
+    assert run.current_stage_call_id == "stage-generate-001"
     assert stage_call.run_id == run.id
     assert stage_call.status == "running"
     assert stage_call.sequence_no == 1
@@ -67,13 +67,13 @@ async def test_start_run_creates_run_token_and_current_stage_call(db_session):
 @pytest.mark.asyncio
 async def test_stage_complete_requires_current_stage(db_session):
     service = ContentAgentService(db_session)
-    task = await service.create_task(ContentAgentTaskCreate(task_type="xhs_generate"))
+    task = await service.create_task(ContentAgentTaskCreate(task_type="content_generate"))
     run, _ = await service.start_run_with_stage(
         task.id,
         executor_code="hermes_maga_worker",
         stage=ContentAgentStageCallCreate(
             stage_call_id="stage-generate-001",
-            capability="xhs.generate_draft",
+            capability="content.generate",
             input_snapshot={},
         ),
     )
@@ -83,7 +83,7 @@ async def test_stage_complete_requires_current_stage(db_session):
             run.id,
             "stale-stage",
             ContentAgentStageCallCompleteRequest(
-                output={"draft_artifact_id": "art-001"},
+                output={"title": "标题", "body": "正文"},
                 stats={"total_latency_ms": 100},
             ),
         )
@@ -92,29 +92,29 @@ async def test_stage_complete_requires_current_stage(db_session):
         run.id,
         "stage-generate-001",
         ContentAgentStageCallCompleteRequest(
-            output={"draft_artifact_id": "art-001"},
+            output={"title": "标题", "body": "正文"},
             stats={"total_latency_ms": 100},
         ),
     )
 
     assert completed.status == "succeeded"
-    assert completed.output_snapshot == {"draft_artifact_id": "art-001"}
+    assert completed.output_snapshot == {"title": "标题", "body": "正文"}
     assert completed.stats_json == {"total_latency_ms": 100}
 
 
 @pytest.mark.asyncio
 async def test_stage_fail_marks_stage_failed_but_leaves_run_for_maga_decision(db_session):
     service = ContentAgentService(db_session)
-    task = await service.create_task(ContentAgentTaskCreate(task_type="xhs_generate"))
+    task = await service.create_task(ContentAgentTaskCreate(task_type="content_generate"))
     run, _ = await service.start_run_with_stage(
         task.id,
         executor_code="hermes_maga_worker",
-        stage=ContentAgentStageCallCreate(stage_call_id="stage-review-001", capability="xhs.run_ae_review"),
+        stage=ContentAgentStageCallCreate(stage_call_id="stage-rewrite-001", capability="content.rewrite"),
     )
 
     failed = await service.fail_stage_call(
         run.id,
-        "stage-review-001",
+        "stage-rewrite-001",
         ContentAgentStageCallFailRequest(
             error_code="model_error",
             error_message="provider 5xx",
@@ -132,16 +132,16 @@ async def test_stage_fail_marks_stage_failed_but_leaves_run_for_maga_decision(db
 @pytest.mark.asyncio
 async def test_event_and_artifact_are_idempotent_per_run_key_and_grouped_by_stage(db_session):
     service = ContentAgentService(db_session)
-    task = await service.create_task(ContentAgentTaskCreate(task_type="xhs_generate"))
+    task = await service.create_task(ContentAgentTaskCreate(task_type="content_generate"))
     run, _ = await service.start_run_with_stage(
         task.id,
         executor_code="hermes_maga_worker",
-        stage=ContentAgentStageCallCreate(stage_call_id="stage-ae-001", capability="xhs.run_ae_analysis"),
+        stage=ContentAgentStageCallCreate(stage_call_id="stage-generate-001", capability="content.generate"),
     )
 
     event_request = ContentAgentEventCreate(
-        stage_call_id="stage-ae-001",
-        step="ae_analysis",
+        stage_call_id="stage-generate-001",
+        step="content_generate",
         event_type="llm_call",
         idempotency_key="evt-001",
         otel_attributes={"gen_ai.request.model": "doubao-seed"},
@@ -151,7 +151,7 @@ async def test_event_and_artifact_are_idempotent_per_run_key_and_grouped_by_stag
     second_event = await service.create_event(run.id, event_request)
 
     artifact_request = ContentAgentArtifactCreate(
-        stage_call_id="stage-ae-001",
+        stage_call_id="stage-generate-001",
         artifact_code="art-001",
         artifact_type="score_report",
         idempotency_key="art-key-001",
@@ -164,10 +164,10 @@ async def test_event_and_artifact_are_idempotent_per_run_key_and_grouped_by_stag
     artifact_count = await db_session.scalar(select(func.count()).select_from(ContentAgentArtifact).where(ContentAgentArtifact.run_id == run.id))
 
     assert first_event.id == second_event.id
-    assert first_event.stage_call_id == "stage-ae-001"
+    assert first_event.stage_call_id == "stage-generate-001"
     assert first_event.otel_attributes_json == {"gen_ai.request.model": "doubao-seed"}
     assert first_artifact.id == second_artifact.id
-    assert first_artifact.stage_call_id == "stage-ae-001"
+    assert first_artifact.stage_call_id == "stage-generate-001"
     assert first_artifact.artifact_code == "art-001"
     assert event_count == 1
     assert artifact_count == 1

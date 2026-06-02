@@ -39,13 +39,7 @@ async def content_agent_workbench_client():
                 display_name="Hermes MAGA worker",
                 invoke_url="mock://maga-worker/invoke",
                 supported_capabilities_json=[
-                    {"capability": "xhs.interpret_brief", "schema_version": "1"},
-                    {"capability": "xhs.run_ae_analysis", "schema_version": "1"},
-                    {"capability": "xhs.generate_draft", "schema_version": "1"},
-                    {"capability": "xhs.review_and_rewrite", "schema_version": "1"},
-                    {"capability": "xhs.run_ae_review", "schema_version": "1"},
-                    {"capability": "xhs.rewrite_draft", "schema_version": "1"},
-                    {"capability": "comment.generate", "schema_version": "1"},
+                    {"capability": "asset.import", "schema_version": "1"},
                     {"capability": "content.generate", "schema_version": "1"},
                     {"capability": "content.rewrite", "schema_version": "1"},
                 ],
@@ -767,7 +761,7 @@ async def test_training_feedback_samples_list_returns_cross_batch_feedback(conte
         json={"action": "approve", "feedback_text": "修改后可发布", "created_by": "reviewer-b"},
     )
 
-    response = await client.get("/api/v1/content-agent/training/feedback-samples")
+    response = await client.get("/api/v1/content-agent/feedback-samples")
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["total"] == 2
@@ -777,7 +771,7 @@ async def test_training_feedback_samples_list_returns_cross_batch_feedback(conte
     assert data["items"][0]["body_preview"]
 
     filtered = await client.get(
-        "/api/v1/content-agent/training/feedback-samples",
+        "/api/v1/content-agent/feedback-samples",
         params={"review_status": "needs_revision"},
     )
     assert filtered.status_code == 200

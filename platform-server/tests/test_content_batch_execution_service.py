@@ -18,7 +18,6 @@ from app.models.content_agent import (
 )
 from app.models.expert_config import ExpertConfig
 from app.models.maga_assets import AssetRegistry
-from app.models.prompt_optimizer import PromptAsset, PromptVersion
 from app.services.content_batch_execution_service import ContentBatchExecutionService
 from app.services.executor_invocation_service import InvokeResult, MockExecutorInvocationClient
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService
@@ -32,8 +31,6 @@ def _execution_tables():
         ContentAgentTask.__table__,
         ContentAgentRun.__table__,
         ContentAgentStageCall.__table__,
-        PromptAsset.__table__,
-        PromptVersion.__table__,
         AssetRegistry.__table__,
         ExpertConfig.__table__,
     ]

@@ -59,14 +59,6 @@ from app.models.knowledge_base_file import KnowledgeBaseFile
 from app.models.base import Base
 from app.models.base_model import BaseModel
 from app.models.model_config import ModelConfig
-from app.models.prompt_optimizer import (
-    PromptAsset,
-    PromptEvaluation,
-    PromptIssue,
-    PromptOptimizerRun,
-    PromptPatch,
-    PromptVersion,
-)
 from app.models.content_agent import (
     ContentAgentArtifact,
     ContentAgentEvent,
@@ -137,12 +129,6 @@ __all__ = [
     "Base",
     "BaseModel",
     "ModelConfig",
-    "PromptAsset",
-    "PromptVersion",
-    "PromptIssue",
-    "PromptOptimizerRun",
-    "PromptPatch",
-    "PromptEvaluation",
     "ExecutorRegistry",
     "ContentBatchJob",
     "ContentBatchItem",

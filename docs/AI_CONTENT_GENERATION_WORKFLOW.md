@@ -287,5 +287,5 @@ content.rewrite
 - 源悦评论切角只走 `comment_angle_rule_set`。
 - 妈妈班活动规则包继续作为活动内容规则，不被评论生成读取。
 - 产品使用体验生文入口走 `/content-agent/batches/start`，主执行链路已经统一到 `content.generate`。
-- 旧 `xhs.*` chain 保留为兼容能力，不再作为文章/评论主生成链路。
+- 旧 `xhs.*` chain、`comment.generate`、单篇 `/generation/start` 已下线；文章和评论统一使用 `content.generate`，审核改写统一使用 `content.rewrite`。
 - 对外只讲 MAGA 自动调用 `maga-worker`，不把 Hermes 作为产品概念。

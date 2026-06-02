@@ -28,7 +28,7 @@ import {
   getContentBatchFeedbackInsightsApi,
   getContentBatchListApi,
   getContentBatchReportApi,
-  getTrainingFeedbackSamplesApi,
+  getFeedbackSamplesApi,
   submitBatchItemFeedbackApi,
 } from '#/api/core/content-agent';
 
@@ -42,16 +42,16 @@ const userStore = useUserStore();
 const batchLoading = ref(false);
 const feedbackInsightLoading = ref(false);
 const reportLoading = ref(false);
-const trainingFeedbackLoading = ref(false);
+const feedbackSamplesLoading = ref(false);
 const reviewingItemId = ref<null | number>(null);
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
 const feedbackInsight = ref<ContentAgentApi.BatchFeedbackInsight | null>(null);
 const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
 const batchTotal = ref(0);
-const trainingFeedbackSamples = ref<ContentAgentApi.TrainingFeedbackSample[]>(
+const feedbackSamples = ref<ContentAgentApi.FeedbackSample[]>(
   [],
 );
-const trainingFeedbackTotal = ref(0);
+const feedbackSamplesTotal = ref(0);
 const feedbackCategorySelections = reactive<Record<number, string[]>>({});
 const feedbackDrafts = reactive<Record<number, string>>({});
 const feedbackQuotedTexts = reactive<Record<number, string>>({});
@@ -328,14 +328,14 @@ const loadBatches = async () => {
   }
 };
 
-const loadTrainingFeedbackSamples = async () => {
-  trainingFeedbackLoading.value = true;
+const loadFeedbackSamples = async () => {
+  feedbackSamplesLoading.value = true;
   try {
-    const data = await getTrainingFeedbackSamplesApi({ limit: 30, offset: 0 });
-    trainingFeedbackSamples.value = data?.items || [];
-    trainingFeedbackTotal.value = data?.total || 0;
+    const data = await getFeedbackSamplesApi({ limit: 30, offset: 0 });
+    feedbackSamples.value = data?.items || [];
+    feedbackSamplesTotal.value = data?.total || 0;
   } finally {
-    trainingFeedbackLoading.value = false;
+    feedbackSamplesLoading.value = false;
   }
 };
 
@@ -383,7 +383,7 @@ const submitFeedback = async (
     });
     replaceReportItem(response.item);
     await refreshSelectedReport();
-    await loadTrainingFeedbackSamples();
+    await loadFeedbackSamples();
     message.success(
       options.autoRewrite
         ? '系统已自动改写一版'
@@ -460,7 +460,7 @@ const openBusinessForbiddenTermModal = (
         });
         replaceReportItem(response.item);
         await refreshSelectedReport();
-        await loadTrainingFeedbackSamples();
+        await loadFeedbackSamples();
         message.success(`已加入业务违禁词：${term}`);
       } finally {
         reviewingItemId.value = null;
@@ -522,7 +522,7 @@ const openManualEdit = (item: ContentAgentApi.BatchReportItem) => {
         });
         replaceReportItem(response.item);
         await refreshSelectedReport();
-        await loadTrainingFeedbackSamples();
+        await loadFeedbackSamples();
         message.success('人工编辑已保存');
       } finally {
         reviewingItemId.value = null;
@@ -533,7 +533,7 @@ const openManualEdit = (item: ContentAgentApi.BatchReportItem) => {
 
 onMounted(() => {
   loadBatches();
-  loadTrainingFeedbackSamples();
+  loadFeedbackSamples();
 });
 
 watch(
@@ -590,20 +590,20 @@ watch(
           <template #extra>
             <Button
               size="small"
-              :loading="trainingFeedbackLoading"
-              @click="loadTrainingFeedbackSamples"
+              :loading="feedbackSamplesLoading"
+              @click="loadFeedbackSamples"
             >
               刷新
             </Button>
           </template>
-          <Spin :spinning="trainingFeedbackLoading">
+          <Spin :spinning="feedbackSamplesLoading">
             <Empty
-              v-if="trainingFeedbackSamples.length === 0"
+              v-if="feedbackSamples.length === 0"
               description="暂无反馈"
             />
             <div v-else class="sample-list">
               <div
-                v-for="sample in trainingFeedbackSamples"
+                v-for="sample in feedbackSamples"
                 :key="sample.feedback_id"
                 class="sample-item"
               >
@@ -623,8 +623,8 @@ watch(
                 </div>
               </div>
             </div>
-            <div v-if="trainingFeedbackTotal" class="batch-total">
-              共 {{ trainingFeedbackTotal }} 条反馈
+            <div v-if="feedbackSamplesTotal" class="batch-total">
+              共 {{ feedbackSamplesTotal }} 条反馈
             </div>
           </Spin>
         </Card>

@@ -18,8 +18,6 @@ from app.schemas.assets import (
     AssetImportRunResponse,
     AssetRegistryResponse,
     AssetRegistrySummaryResponse,
-    ReferenceElementExtractRequest,
-    ReferenceElementExtractResponse,
     SystemPromptKeywordAssetResponse,
     SystemPromptKeywordExportResponse,
     SystemPromptKeywordPreviewRequest,
@@ -28,7 +26,6 @@ from app.schemas.assets import (
     SystemPromptKeywordUpdate,
 )
 from app.services.asset_service import AssetService, normalize_asset_content
-from app.services.asset_import_service import import_yuanyue_training_rules
 from app.services.comment_angle_rule_service import (
     COMMENT_ANGLE_RULE_ASSET_TYPE,
     DEFAULT_COMMENT_ANGLE_ASSET_KEY,
@@ -41,7 +38,6 @@ from app.services.product_experience_rule_service import (
     import_product_experience_rule_set,
     product_experience_import_summary,
 )
-from app.services.reference_element_extraction_service import ReferenceElementExtractionService
 from app.services.system_prompt_keyword_service import (
     CONTENT_GENERATION_KEYWORDS_ASSET_TYPE,
     DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
@@ -167,44 +163,6 @@ async def list_asset_change_proposals(
     )
 
 
-@router.post("/imports/yuanyue-training-rules", response_model=ResponseData)
-async def import_yuanyue_training_rules_endpoint(
-    file: UploadFile = File(...),
-    asset_key: str = Form(default="yuanyue"),
-    created_by: str = Form(default="maga-worker"),
-    executor_code: str = Form(default="hermes_maga_worker"),
-    db: AsyncSession = Depends(get_db),
-):
-    filename = file.filename or "源悦种草活动-ai训练规则.xlsx"
-    if not filename.endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="only .xlsx files are supported")
-
-    workbook_content = await file.read()
-    try:
-        result = await import_yuanyue_training_rules(
-            db,
-            workbook_content,
-            source_name=filename,
-            asset_key=asset_key,
-            created_by=created_by,
-            executor_code=executor_code,
-        )
-        await db.commit()
-        return ResponseData(
-            code=200,
-            message="success",
-            data=AssetImportResponse(
-                import_run_id=result.import_run_id,
-                imported_assets=result.imported_assets,
-                asset_keys=result.asset_keys,
-                source_hash=result.source_hash,
-            ).model_dump(mode="json"),
-        )
-    except ValueError as exc:
-        await db.rollback()
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
 @router.post("/imports/comment-angle-rule-set", response_model=ResponseData)
 async def import_comment_angle_rule_set_endpoint(
     file: UploadFile = File(...),
@@ -316,38 +274,6 @@ async def import_content_generation_keywords_endpoint(
                 asset_keys=[(CONTENT_GENERATION_KEYWORDS_ASSET_TYPE, asset.asset_key)],
                 source_hash=asset.source_hash or "",
                 summary_json=run.summary_json,
-            ).model_dump(mode="json"),
-        )
-    except ValueError as exc:
-        await db.rollback()
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post("/reference-elements/extract", response_model=ResponseData)
-async def extract_reference_elements(payload: ReferenceElementExtractRequest, db: AsyncSession = Depends(get_db)):
-    service = ReferenceElementExtractionService(db)
-    try:
-        result = await service.extract_from_latest_asset(
-            asset_key=payload.asset_key,
-            limit=payload.limit,
-            persist=payload.persist,
-            created_by=payload.created_by or "reference-element-extractor",
-        )
-        if payload.persist:
-            await db.commit()
-            if result.asset is not None:
-                await db.refresh(result.asset)
-        return ResponseData(
-            code=200,
-            message="success",
-            data=ReferenceElementExtractResponse(
-                source_asset_id=result.source_asset_id,
-                source_asset_version=result.source_asset_version,
-                source_item_count=result.source_item_count,
-                extracted_count=len(result.items),
-                persisted_asset_id=result.asset.id if result.asset else None,
-                persisted_asset_version=result.asset.version_no if result.asset else None,
-                items=result.items,
             ).model_dump(mode="json"),
         )
     except ValueError as exc:

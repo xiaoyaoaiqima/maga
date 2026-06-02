@@ -19,7 +19,7 @@ from app.schemas.content_batch_report import (
     ContentBatchReportResponse,
     ContentBatchStartRequest,
     ContentBatchStartResponse,
-    ContentTrainingFeedbackSampleListResponse,
+    ContentFeedbackSampleListResponse,
 )
 from app.schemas.content_agent import (
     ContentAgentArtifactCreate,
@@ -34,12 +34,9 @@ from app.schemas.content_agent import (
     ContentAgentRunFailRequest,
     ContentAgentRunResponse,
     ContentAgentSnapshotResponse,
-    ContentAgentStartGenerationRequest,
-    ContentAgentStartGenerationResponse,
     ContentAgentTaskCreate,
     ContentAgentTaskResponse,
 )
-from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.content_agent_service import ContentAgentService
 from app.services.content_batch_execution_service import ContentBatchExecutionService
 from app.services.content_batch_planner import ContentBatchPlanner
@@ -48,7 +45,6 @@ from app.services.content_batch_review_service import ContentBatchReviewService
 from app.services.content_comment_batch_service import ContentCommentBatchService
 from app.services.executor_invocation_service import ExecutorInvocationClient, MockExecutorInvocationClient
 from app.services.content_generation_preflight_service import ContentGenerationPreflightService
-from app.services.unified_content_generation_service import CONTENT_GENERATE_CAPABILITY, UnifiedContentGenerationService
 
 router = APIRouter()
 
@@ -106,64 +102,6 @@ def _invocation_client_for_invoke_url(invoke_url: str | None):
     if invoke_url and invoke_url.startswith("mock://"):
         return MockExecutorInvocationClient()
     return ExecutorInvocationClient()
-
-
-@router.post("/generation/start", response_model=ResponseData[ContentAgentStartGenerationResponse])
-async def start_generation(
-    request: ContentAgentStartGenerationRequest,
-    db: AsyncSession = Depends(get_db),
-) -> ResponseData[ContentAgentStartGenerationResponse]:
-    service = ContentAgentService(db)
-    executor_code = _normalized_executor_code(request.executor_code)
-    executor = await service.get_executor(executor_code)
-    if not executor:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="executor not found")
-    invocation_client = _invocation_client_for_invoke_url(executor.invoke_url)
-    orchestrator = ContentAgentOrchestrator(
-        db,
-        invocation_client=invocation_client,
-        callback_base_url="/api/v1/content-agent",
-    )
-    try:
-        model_config = await _model_config_with_maga_defaults(
-            db, request.generation_model_config.model_dump(exclude_none=True)
-        )
-        unified = await UnifiedContentGenerationService(db).build_snapshot(
-            content_type="article",
-            business_rule={
-                "rule_type": "ad_hoc_article",
-                "product_topic": request.product_topic,
-                "target_audience": request.target_audience,
-                "persona_target": request.persona_target,
-                "style": request.style,
-            },
-            item_no=1,
-            output_fields=["title", "body"],
-            model_config=model_config,
-        )
-        task_request = ContentAgentTaskCreate(
-            task_type="content_generate",
-            priority=request.priority,
-            executor_code=executor_code,
-            input_snapshot=unified.input_snapshot,
-            asset_refs=unified.asset_refs,
-            created_by=request.created_by,
-        )
-        result = await orchestrator.run_single_capability(task_request, capability=CONTENT_GENERATE_CAPABILITY)
-    except ValueError as exc:
-        raise _map_protocol_error(exc) from exc
-    output = result.output or {}
-    title = str(output.get("title") or "").strip()
-    body = str(output.get("body") or "").strip()
-    if not title or not body:
-        raise _map_protocol_error(ValueError("content.generate returned empty article"))
-    response = ContentAgentStartGenerationResponse(
-        task_id=result.run.task_id,
-        run_id=result.run.id,
-        title=title,
-        body=body,
-    )
-    return ResponseData(message="Generation completed", data=response)
 
 
 @router.post("/batches/start", response_model=ResponseData[ContentBatchStartResponse])
@@ -323,14 +261,14 @@ async def get_batch_feedback_insights(
     return ResponseData(data=insights)
 
 
-@router.get("/training/feedback-samples", response_model=ResponseData[ContentTrainingFeedbackSampleListResponse])
-async def list_training_feedback_samples(
+@router.get("/feedback-samples", response_model=ResponseData[ContentFeedbackSampleListResponse])
+async def list_feedback_samples(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     review_status: str | None = Query(default=None, max_length=32),
     db: AsyncSession = Depends(get_db),
-) -> ResponseData[ContentTrainingFeedbackSampleListResponse]:
-    samples = await ContentBatchReportService(db).list_training_feedback_samples(
+) -> ResponseData[ContentFeedbackSampleListResponse]:
+    samples = await ContentBatchReportService(db).list_feedback_samples(
         limit=limit,
         offset=offset,
         review_status=review_status,

@@ -1,28 +1,6 @@
 import { requestClient } from '#/api/request';
 
 export namespace ContentAgentApi {
-  export interface StartGenerationRequest {
-    product_topic: string;
-    target_audience?: null | string;
-    persona_target?: null | string;
-    style?: null | string;
-    executor_code?: string;
-    model_config?: null | {
-      ae_model?: null | string;
-      ge_model?: null | string;
-    };
-    brief_type?: string;
-    priority?: number;
-    created_by?: null | string;
-  }
-
-  export interface StartGenerationResponse {
-    task_id: number;
-    run_id: number;
-    title: string;
-    body: string;
-  }
-
   export interface BatchStartRequest {
     asset_key?: string;
     product_topic?: null | string;
@@ -244,7 +222,7 @@ export namespace ContentAgentApi {
     items: BatchListItem[];
   }
 
-  export interface TrainingFeedbackSample {
+  export interface FeedbackSample {
     feedback_id: number;
     batch_id?: null | number;
     batch_code?: null | string;
@@ -266,9 +244,9 @@ export namespace ContentAgentApi {
     create_time?: null | string;
   }
 
-  export interface TrainingFeedbackSampleListResponse {
+  export interface FeedbackSampleListResponse {
     total: number;
-    items: TrainingFeedbackSample[];
+    items: FeedbackSample[];
   }
 
   export interface BatchFeedbackStat {
@@ -353,16 +331,6 @@ export namespace ContentAgentApi {
   }
 }
 
-export async function startContentGenerationApi(
-  data: ContentAgentApi.StartGenerationRequest,
-) {
-  return requestClient.post<ContentAgentApi.StartGenerationResponse>(
-    '/v1/content-agent/generation/start',
-    data,
-    { timeout: 180_000 },
-  );
-}
-
 export async function startContentBatchApi(
   data: ContentAgentApi.BatchStartRequest,
 ) {
@@ -414,13 +382,13 @@ export async function getContentBatchFeedbackInsightsApi(batchId: number) {
   );
 }
 
-export async function getTrainingFeedbackSamplesApi(params?: {
+export async function getFeedbackSamplesApi(params?: {
   limit?: number;
   offset?: number;
   review_status?: string;
 }) {
-  return requestClient.get<ContentAgentApi.TrainingFeedbackSampleListResponse>(
-    '/v1/content-agent/training/feedback-samples',
+  return requestClient.get<ContentAgentApi.FeedbackSampleListResponse>(
+    '/v1/content-agent/feedback-samples',
     { params },
   );
 }

@@ -74,11 +74,18 @@ describe('frontend controlled sidebar tabs', () => {
     expect(paths).not.toContain('/llm/stats');
   });
 
-  it('keeps direct legacy routes hidden from menus', () => {
+  it('removes obsolete direct legacy routes from core routes', () => {
     const rootRoute = coreRoutes.find((route) => route.path === '/');
-    const legacyAgentWorkbench = rootRoute?.children?.find(
-      (route) => route.path === 'agent/workbench',
-    );
+    const routePaths = rootRoute?.children?.map((route) => route.path) ?? [];
+
+    expect(routePaths).not.toContain('agent/workbench');
+    expect(routePaths).not.toContain('agent/:code/articles');
+    expect(routePaths).not.toContain('dashboard/:panelId');
+    expect(routePaths).not.toContain('job/agent/edit');
+  });
+
+  it('keeps configuration helper routes hidden from menus', () => {
+    const rootRoute = coreRoutes.find((route) => route.path === '/');
     const systemPromptKeywords = rootRoute?.children?.find(
       (route) => route.path === 'content-agent/system-prompt-keywords',
     );
@@ -94,16 +101,11 @@ describe('frontend controlled sidebar tabs', () => {
     const modelStats = rootRoute?.children?.find(
       (route) => route.path === 'llm/stats',
     );
-    const legacyDashboardPanel = rootRoute?.children?.find(
-      (route) => route.path === 'dashboard/:panelId',
-    );
 
-    expect(legacyAgentWorkbench?.meta?.hideInMenu).toBe(true);
     expect(systemPromptKeywords?.meta?.hideInMenu).toBe(true);
     expect(contentExperts?.meta?.hideInMenu).toBe(true);
     expect(modelManagement?.meta?.hideInMenu).toBe(true);
     expect(modelRoutes?.meta?.hideInMenu).toBe(true);
     expect(modelStats?.meta?.hideInMenu).toBe(true);
-    expect(legacyDashboardPanel?.meta?.hideInMenu).toBe(true);
   });
 });

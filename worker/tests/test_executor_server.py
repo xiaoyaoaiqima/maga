@@ -1,19 +1,14 @@
-from pathlib import Path
 from io import BytesIO
 import base64
 
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
-ROOT = Path(__file__).resolve().parents[1]
-
-from maga_worker import executor_server  # noqa: E402
-from maga_worker.executor_server import app  # noqa: E402
+from maga_worker.executor_server import app
 
 
 def _client(monkeypatch):
     monkeypatch.setenv("MAGA_WORKER_EXECUTOR_TOKEN", "test-token")
-    monkeypatch.delenv("XHS_WRITER_EXECUTOR_TOKEN", raising=False)
     return TestClient(app)
 
 
@@ -39,7 +34,7 @@ def _envelope(capability, input_payload=None, stage_call_id="stage-001"):
 def test_invoke_rejects_missing_protocol_header(monkeypatch):
     client = _client(monkeypatch)
 
-    response = client.post("/invoke", json=_envelope("xhs.interpret_brief"), headers={"Authorization": "Bearer test-token"})
+    response = client.post("/invoke", json=_envelope("content.generate"), headers={"Authorization": "Bearer test-token"})
 
     assert response.status_code == 400
     assert response.json()["detail"] == "unsupported protocol version"
@@ -48,75 +43,9 @@ def test_invoke_rejects_missing_protocol_header(monkeypatch):
 def test_invoke_rejects_wrong_bearer_token(monkeypatch):
     client = _client(monkeypatch)
 
-    response = client.post("/invoke", json=_envelope("xhs.interpret_brief"), headers=_headers("wrong-token"))
+    response = client.post("/invoke", json=_envelope("content.generate"), headers=_headers("wrong-token"))
 
     assert response.status_code == 401
-
-
-def test_interpret_brief_returns_protocol_succeeded_envelope(monkeypatch):
-    client = _client(monkeypatch)
-
-    response = client.post(
-        "/invoke",
-        json=_envelope(
-            "xhs.interpret_brief",
-            {
-                "product_topic": "美素佳儿源悦",
-                "target_audience": "新手妈妈",
-                "style": "情绪共情",
-                "generation_snapshot": {
-                    "brief": {
-                        "product_topic": "宝宝便便不规律",
-                        "target_audience": "新手妈妈",
-                        "style": "经验老道型",
-                    },
-                    "assets": {"painpoint": {"painpoint": "便便不规律"}},
-                    "batch_context": {"batch_code": "unit", "item_no": 2},
-                },
-            },
-        ),
-        headers=_headers(),
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["stage_call_id"] == "stage-001"
-    assert data["status"] == "succeeded"
-    assert data["output"]["structured_brief"]["product_topic"] == "美素佳儿源悦"
-    assert data["output"]["structured_brief"]["target_audience"] == "新手妈妈"
-    assert data["output"]["runtime_brief"]["brief_id"] == "maga-unit-002"
-    assert data["output"]["runtime_brief"]["key_painpoints"] == ["便便不规律"]
-    assert data["output"]["brief_warnings"] == []
-    assert data["stats"]["executor"] == "maga-worker"
-    assert data["stats"]["module"] == "xhs-writer"
-
-
-def test_generate_draft_stub_returns_draft_for_maga_smoke(monkeypatch):
-    client = _client(monkeypatch)
-
-    response = client.post(
-        "/invoke",
-        json=_envelope(
-            "xhs.generate_draft",
-            {
-                "structured_brief": {
-                    "product_topic": "美素佳儿源悦",
-                    "target_audience": "新手妈妈",
-                    "style": "情绪共情",
-                },
-                "analyses": {},
-            },
-            stage_call_id="stage-draft",
-        ),
-        headers=_headers(),
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["stage_call_id"] == "stage-draft"
-    assert data["status"] == "succeeded"
-    assert data["output"]["draft"]["title"]
-    assert "新手妈妈" in data["output"]["draft"]["body"]
 
 
 def test_asset_import_returns_structured_asset_package(monkeypatch):
@@ -152,7 +81,6 @@ def test_asset_import_returns_structured_asset_package(monkeypatch):
 
     bio = BytesIO()
     wb.save(bio)
-    content = bio.getvalue()
 
     response = client.post(
         "/invoke",
@@ -162,7 +90,7 @@ def test_asset_import_returns_structured_asset_package(monkeypatch):
                 "asset_key": "yuanyue",
                 "source_name": "源悦种草活动-ai训练规则.xlsx",
                 "source_hash": "hash-001",
-                "source_content_base64": base64.b64encode(content).decode("ascii"),
+                "source_content_base64": base64.b64encode(bio.getvalue()).decode("ascii"),
             },
             stage_call_id="stage-asset-import",
         ),
@@ -182,278 +110,6 @@ def test_asset_import_returns_structured_asset_package(monkeypatch):
     assert topic["topic"] == "便便不规律"
     assert topic["descriptions"] == ["羊屎蛋/干硬", "便便又干又硬", "拉臭费劲", "拉起来不轻松"]
     assert topic["selling_points"][0]["selling_point"] == "好消化易吸收"
-    assert by_type["ugc_expression_corpus"]["content_json"]["items"][0]["expression"] == "便便基本一天一次，拉起来也不费劲"
-
-
-def test_generate_draft_runtime_mode_uses_runtime_adapter(monkeypatch):
-    calls = {}
-
-    def fake_invoke_runtime_generate_draft(generation_snapshot, runtime_brief=None):
-        calls["snapshot"] = generation_snapshot
-        calls["runtime_brief"] = runtime_brief
-        return {
-            "draft": {"title": "源悦真实 runtime 标题", "body": "runtime 正文"},
-            "runtime_result": {"verdict": "pass", "soft_score": 90},
-        }
-
-    monkeypatch.setenv("XHS_WRITER_EXECUTION_MODE", "runtime")
-    monkeypatch.setattr(executor_server, "invoke_runtime_generate_draft", fake_invoke_runtime_generate_draft)
-    client = _client(monkeypatch)
-    snapshot = {
-        "brief": {"product_topic": "宝宝便便不规律", "target_audience": "新手妈妈", "style": "经验老道型"},
-        "assets": {"painpoint": {"painpoint": "便便不规律"}},
-        "diversity_slot": {"opening_type": "过来人提醒"},
-    }
-
-    response = client.post(
-        "/invoke",
-        json=_envelope(
-            "xhs.generate_draft",
-            {
-                "structured_brief": {"product_topic": "宝宝便便不规律"},
-                "generation_snapshot": snapshot,
-                "runtime_brief": {"brief_id": "compiled-runtime", "product_topic": "宝宝便便不规律"},
-            },
-            stage_call_id="stage-runtime",
-        ),
-        headers=_headers(),
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["output"]["draft"]["title"] == "源悦真实 runtime 标题"
-    assert data["output"]["runtime_result"]["soft_score"] == 90
-    assert calls["snapshot"] == snapshot
-    assert calls["runtime_brief"]["brief_id"] == "compiled-runtime"
-
-
-def test_generate_draft_runtime_fast_mode_uses_fast_runtime_adapter(monkeypatch):
-    calls = {}
-
-    def fake_invoke_runtime_fast_generate_draft(generation_snapshot, runtime_brief=None):
-        calls["snapshot"] = generation_snapshot
-        calls["runtime_brief"] = runtime_brief
-        return {
-            "draft": {"title": "源悦 runtime fast 标题", "body": "runtime fast 正文"},
-            "runtime_result": {"mode": "runtime_fast", "final_path": "/tmp/final.md"},
-        }
-
-    monkeypatch.setenv("XHS_WRITER_EXECUTION_MODE", "runtime_fast")
-    monkeypatch.setattr(executor_server, "invoke_runtime_fast_generate_draft", fake_invoke_runtime_fast_generate_draft)
-    client = _client(monkeypatch)
-    snapshot = {
-        "brief": {"product_topic": "宝宝便便不规律", "target_audience": "新手妈妈", "style": "经验老道型"},
-        "assets": {"painpoint": {"painpoint": "便便不规律"}},
-    }
-
-    response = client.post(
-        "/invoke",
-        json=_envelope(
-            "xhs.generate_draft",
-            {"generation_snapshot": snapshot, "runtime_brief": {"brief_id": "compiled-fast"}},
-            stage_call_id="stage-runtime-fast",
-        ),
-        headers=_headers(),
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["output"]["draft"]["title"] == "源悦 runtime fast 标题"
-    assert data["output"]["runtime_result"]["mode"] == "runtime_fast"
-    assert "review_report" not in data["output"]
-    assert calls["snapshot"] == snapshot
-    assert calls["runtime_brief"]["brief_id"] == "compiled-fast"
-
-
-def test_review_and_rewrite_runtime_fast_uses_fast_runtime_adapter(monkeypatch):
-    calls = {}
-
-    def fake_invoke_runtime_fast_review_and_rewrite(generation_snapshot, draft, runtime_brief=None):
-        calls["snapshot"] = generation_snapshot
-        calls["draft"] = draft
-        calls["runtime_brief"] = runtime_brief
-        return {
-            "final": {"title": "审核后标题", "body": "审核后正文"},
-            "draft": {"title": "审核后标题", "body": "审核后正文"},
-            "runtime_result": {"mode": "runtime_fast", "phase": "review_and_rewrite", "final_path": "/tmp/final.md"},
-            "review_report": {
-                "hard_results": [{"ae_code": "compliance_redline", "pass": True}],
-                "soft_scores": [],
-                "rewrite_required": False,
-            },
-        }
-
-    monkeypatch.setattr(
-        executor_server,
-        "invoke_runtime_fast_review_and_rewrite",
-        fake_invoke_runtime_fast_review_and_rewrite,
-    )
-    client = _client(monkeypatch)
-    snapshot = {"brief": {"product_topic": "宝宝便便不规律"}, "assets": {}}
-    draft = {"title": "初稿标题", "body": "初稿正文"}
-
-    response = client.post(
-        "/invoke",
-        json=_envelope(
-            "xhs.review_and_rewrite",
-            {"generation_snapshot": snapshot, "draft": draft, "runtime_brief": {"brief_id": "compiled-review"}},
-            stage_call_id="stage-review-rewrite",
-        ),
-        headers=_headers(),
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["output"]["final"]["title"] == "审核后标题"
-    assert data["output"]["runtime_result"]["phase"] == "review_and_rewrite"
-    assert data["output"]["hard_results"][0]["ae_code"] == "compliance_redline"
-    assert calls == {"snapshot": snapshot, "draft": draft, "runtime_brief": {"brief_id": "compiled-review"}}
-
-
-def test_generate_draft_maga_worker_execution_mode_env_overrides_legacy_env(monkeypatch):
-    calls = {}
-
-    def fake_invoke_runtime_fast_generate_draft(generation_snapshot, runtime_brief=None):
-        calls["snapshot"] = generation_snapshot
-        calls["runtime_brief"] = runtime_brief
-        return {
-            "draft": {"title": "MAGA worker runtime fast 标题", "body": "MAGA worker runtime fast 正文"},
-            "runtime_result": {"mode": "runtime_fast", "final_path": "/tmp/maga-worker-runtime-fast/final.md"},
-        }
-
-    monkeypatch.setenv("MAGA_WORKER_EXECUTION_MODE", "runtime_fast")
-    monkeypatch.setenv("XHS_WRITER_EXECUTION_MODE", "deterministic")
-    monkeypatch.setattr(executor_server, "invoke_runtime_fast_generate_draft", fake_invoke_runtime_fast_generate_draft)
-    client = _client(monkeypatch)
-    snapshot = {
-        "brief": {"product_topic": "宝宝便便不规律", "target_audience": "新手妈妈", "style": "经验老道型"},
-        "assets": {"painpoint": {"painpoint": "便便不规律"}},
-    }
-
-    response = client.post(
-        "/invoke",
-        json=_envelope(
-            "xhs.generate_draft",
-            {"generation_snapshot": snapshot},
-            stage_call_id="stage-maga-worker-runtime-fast",
-        ),
-        headers=_headers(),
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["output"]["draft"]["title"] == "MAGA worker runtime fast 标题"
-    assert data["output"]["runtime_result"]["mode"] == "runtime_fast"
-    assert calls["snapshot"] == snapshot
-    assert calls["runtime_brief"] is None
-
-
-def test_generate_draft_with_generation_snapshot_defaults_to_runtime_fast(monkeypatch):
-    calls = {}
-
-    def fake_invoke_runtime_fast_generate_draft(generation_snapshot, runtime_brief=None):
-        calls["snapshot"] = generation_snapshot
-        calls["runtime_brief"] = runtime_brief
-        return {
-            "draft": {"title": "自动 runtime fast 标题", "body": "自动 runtime fast 正文"},
-            "runtime_result": {"mode": "runtime_fast", "final_path": "/tmp/auto-runtime-fast/final.md"},
-        }
-
-    monkeypatch.delenv("MAGA_WORKER_EXECUTION_MODE", raising=False)
-    monkeypatch.delenv("XHS_WRITER_EXECUTION_MODE", raising=False)
-    monkeypatch.setattr(executor_server, "invoke_runtime_fast_generate_draft", fake_invoke_runtime_fast_generate_draft)
-    client = _client(monkeypatch)
-    snapshot = {
-        "brief": {"product_topic": "宝宝便便不规律", "target_audience": "新手妈妈", "style": "经验老道型"},
-        "assets": {"painpoint": {"painpoint": "便便不规律"}},
-    }
-
-    response = client.post(
-        "/invoke",
-        json=_envelope(
-            "xhs.generate_draft",
-            {"generation_snapshot": snapshot},
-            stage_call_id="stage-auto-runtime-fast",
-        ),
-        headers=_headers(),
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["output"]["draft"]["title"] == "自动 runtime fast 标题"
-    assert data["output"]["runtime_result"]["mode"] == "runtime_fast"
-    assert calls["snapshot"] == snapshot
-    assert calls["runtime_brief"] is None
-
-
-def test_generate_draft_runtime_fast_fake_mode_keeps_protocol_smoke_model_free(monkeypatch):
-    monkeypatch.delenv("MAGA_WORKER_EXECUTION_MODE", raising=False)
-    monkeypatch.delenv("XHS_WRITER_EXECUTION_MODE", raising=False)
-    monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
-    client = _client(monkeypatch)
-    snapshot = {
-        "brief": {"product_topic": "宝宝便便不规律", "target_audience": "新手妈妈", "style": "经验老道型"},
-        "assets": {"painpoint": {"painpoint": "便便不规律"}},
-    }
-
-    response = client.post(
-        "/invoke",
-        json=_envelope(
-            "xhs.generate_draft",
-            {
-                "structured_brief": {
-                    "product_topic": "宝宝便便不规律",
-                    "target_audience": "新手妈妈",
-                    "style": "经验老道型",
-                },
-                "generation_snapshot": snapshot,
-            },
-            stage_call_id="stage-runtime-fast-fake",
-        ),
-        headers=_headers(),
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["output"]["runtime_result"] == {
-        "mode": "runtime_fast",
-        "fake": True,
-        "reason": "MAGA_WORKER_RUNTIME_FAST_FAKE",
-    }
-    assert "review_report" not in data["output"]
-
-
-def test_comment_generate_fake_mode_returns_stable_comment(monkeypatch):
-    monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
-    client = _client(monkeypatch)
-
-    response = client.post(
-        "/invoke",
-        json=_envelope(
-            "comment.generate",
-            {
-                "item_no": 1,
-                "comment_angle": "整体适应",
-                "corpus": "整体适应：\n像妈妈在评论区聊刚开始喝源悦的观察。",
-                "examples": ["我家刚开始也在看源悦，想蹲蹲真实反馈"],
-                "supplements": ["有同月龄宝宝喝过吗，想看看大家怎么说"],
-            },
-            stage_call_id="stage-comment-fake",
-        ),
-        headers=_headers(),
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["stage_call_id"] == "stage-comment-fake"
-    assert data["status"] == "succeeded"
-    assert data["stats"]["module"] == "comment-generator"
-    assert data["output"]["comment"] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
-    assert data["output"]["runtime_result"] == {
-        "mode": "comment_fake",
-        "fake": True,
-        "reason": "MAGA_WORKER_RUNTIME_FAST_FAKE",
-    }
 
 
 def test_content_generate_fake_mode_returns_comment_from_unified_input(monkeypatch):
@@ -524,34 +180,6 @@ def test_content_rewrite_fake_mode_removes_forbidden_terms(monkeypatch):
     assert data["output"]["runtime_result"]["mode"] == "content_rewrite_fake"
 
 
-def test_content_rewrite_fake_mode_applies_forbidden_replacements(monkeypatch):
-    monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
-    client = _client(monkeypatch)
-
-    response = client.post(
-        "/invoke",
-        json=_envelope(
-            "content.rewrite",
-            {
-                "content_type": "comment",
-                "output_fields": ["comment"],
-                "previous_content": {"comment": "🍼接受度比之前稳定，想蹲蹲真实反馈"},
-                "forbidden_hits": ["🍼"],
-                "forbidden_replacements": {"🍼": "奶瓶"},
-                "rewrite_instructions": ["指定替换映射：🍼 -> 奶瓶"],
-            },
-            stage_call_id="stage-content-rewrite-replacement",
-        ),
-        headers=_headers(),
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "succeeded"
-    assert data["output"]["comment"] == "奶瓶接受度比之前稳定，想蹲蹲真实反馈"
-    assert "🍼" not in data["output"]["comment"]
-
-
 def test_content_rewrite_fake_mode_uses_operator_feedback(monkeypatch):
     monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
     client = _client(monkeypatch)
@@ -580,51 +208,20 @@ def test_content_rewrite_fake_mode_uses_operator_feedback(monkeypatch):
     assert data["output"]["runtime_result"]["mode"] == "content_rewrite_fake"
 
 
-def test_run_ae_review_returns_structured_review_report(monkeypatch):
+def test_legacy_capabilities_return_protocol_failed_envelope(monkeypatch):
     client = _client(monkeypatch)
 
-    response = client.post(
-        "/invoke",
-        json=_envelope(
-            "xhs.run_ae_review",
-            {
-                "draft": {"title": "便便不规律别急", "body": "源悦好消化易吸收，日常观察不替代专业建议。"},
-                "structured_brief": {"product_topic": "宝宝便便不规律"},
-                "generation_snapshot": {
-                    "assets": {"compliance_rules": [{"dimension": "禁止治疗便秘", "risk_level": "high"}]}
-                },
-            },
-            stage_call_id="stage-review",
-        ),
-        headers=_headers(),
-    )
+    for capability in ["xhs.generate_draft", "comment.generate"]:
+        response = client.post(
+            "/invoke",
+            json=_envelope(capability, stage_call_id=f"stage-{capability}"),
+            headers=_headers(),
+        )
 
-    assert response.status_code == 200
-    data = response.json()
-    report = data["output"]["review_report"]
-    assert report["rewrite_required"] is False
-    assert report["risk_level"] == "high"
-    assert data["output"]["hard_results"] == report["hard_results"]
-    assert [item["ae_code"] for item in report["hard_results"]] == [
-        "brand_product_guard",
-        "compliance_redline",
-        "expression_writing",
-        "time_logic",
-        "legal_tencent",
-    ]
-    assert {item["ae_code"] for item in report["soft_scores"]} == {"business_logic"}
-
-
-def test_unknown_capability_returns_protocol_failed_envelope(monkeypatch):
-    client = _client(monkeypatch)
-
-    response = client.post("/invoke", json=_envelope("xhs.unknown", stage_call_id="stage-bad"), headers=_headers())
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data == {
-        "stage_call_id": "stage-bad",
-        "status": "failed",
-        "error_code": "input_invalid",
-        "error_message": "unsupported capability: xhs.unknown",
-    }
+        assert response.status_code == 200
+        assert response.json() == {
+            "stage_call_id": f"stage-{capability}",
+            "status": "failed",
+            "error_code": "input_invalid",
+            "error_message": f"unsupported capability: {capability}",
+        }

@@ -10,11 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
 from app.models.content_agent import ContentBatchItem, ContentBatchJob
 from app.models.maga_assets import AssetRegistry
-from app.services.content_batch_snapshot_adapter import DEFAULT_XHS_EMOJI, DEFAULT_XHS_WORD_COUNT
 from app.services.product_experience_rule_service import (
     DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME,
     PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
 )
+
+DEFAULT_CONTENT_WORD_COUNT = "150-250"
+DEFAULT_CONTENT_EMOJI = "少量"
 
 
 OPENING_TYPES = [
@@ -334,8 +336,8 @@ class ContentBatchPlanner:
                 "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
             },
             "brief_constraints": {
-                "word_count": DEFAULT_XHS_WORD_COUNT,
-                "emoji": DEFAULT_XHS_EMOJI,
+                "word_count": DEFAULT_CONTENT_WORD_COUNT,
+                "emoji": DEFAULT_CONTENT_EMOJI,
                 "must_use_painpoint": True,
                 "must_reference_example_without_copying": True,
                 "output_fields": ["title", "body"],
@@ -404,8 +406,8 @@ class ContentBatchPlanner:
                 "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
             },
             "brief_constraints": {
-                "word_count": DEFAULT_XHS_WORD_COUNT,
-                "emoji": DEFAULT_XHS_EMOJI,
+                "word_count": DEFAULT_CONTENT_WORD_COUNT,
+                "emoji": DEFAULT_CONTENT_EMOJI,
                 "output_fields": ["title", "body"],
             },
             "model_config": model_config or {},
@@ -501,8 +503,8 @@ def _topic_to_plan_item(topic: dict[str, Any]) -> dict[str, Any]:
         if isinstance(item, dict) and (item.get("selling_point") or item.get("name"))
     ]
     selling_point_names = [item.get("selling_point") or item.get("name") for item in selling_points]
-    # Keep legacy snapshot fields so xhs-writer prompts can consume the upgraded
-    # topic tree without needing a simultaneous runtime contract migration.
+    # Keep flattened fields because rule packages may use either topic-tree
+    # names or direct rule-row names for the same business concept.
     return {
         **topic,
         "painpoint": topic.get("painpoint") or topic.get("topic"),

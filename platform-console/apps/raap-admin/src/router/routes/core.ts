@@ -45,31 +45,6 @@ const coreRoutes: RouteRecordRaw[] = [
           title: $t('page.auth.profile'),
         },
       },
-      // Legacy hidden routes: kept for direct debugging/backward compatibility,
-      // but intentionally excluded from the MAGA MVP sidebar.
-      {
-        name: 'AgentWorkbench',
-        path: 'agent/workbench',
-        component: () => import('#/views/agent/workbench/index.vue'),
-        meta: {
-          title: 'Agent 工作台',
-          icon: 'RobotOutlined',
-          hideInMenu: true,
-          order: -100,
-          activeMenu: '/agent/workbench',
-        },
-      },
-      {
-        name: 'AgentArticles',
-        path: 'agent/:code/articles',
-        component: () => import('#/views/job/agent/articles.vue'),
-        meta: {
-          title: 'Agent 文章详情',
-          hideInMenu: true,
-          hideInTab: false,
-          fullPathKey: false, // 使用 path 而不是 fullPath 作为 tab key
-        },
-      },
       {
         name: 'ContentAgentWorkbench',
         path: 'content-agent/workbench',
@@ -155,28 +130,6 @@ const coreRoutes: RouteRecordRaw[] = [
           hideInMenu: true,
           hideInTab: false,
           activeMenu: '/llm/provider',
-        },
-      },
-      {
-        name: 'DashboardPanel',
-        path: 'dashboard/:panelId',
-        component: () => import('#/views/dashboard/ai-dashboard/index.vue'),
-        meta: {
-          title: 'AI 可视化',
-          hideInMenu: true,
-          hideInTab: false,
-          activeMenu: '/dashboard/ai-dashboard',
-        },
-      },
-      {
-        name: 'AgentEdit',
-        path: 'job/agent/edit',
-        component: () => import('#/views/job/agent/edit/index.vue'),
-        meta: {
-          title: '修改 Agent',
-          hideInMenu: true,
-          hideInTab: false,
-          fullPathKey: false,
         },
       },
     ],

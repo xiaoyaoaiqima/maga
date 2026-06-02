@@ -220,7 +220,7 @@ class ContentBatchListResponse(BaseSchema):
     items: list[ContentBatchListItem]
 
 
-class ContentTrainingFeedbackSample(BaseSchema):
+class ContentFeedbackSample(BaseSchema):
     feedback_id: int
     batch_id: int | None = None
     batch_code: str | None = None
@@ -241,9 +241,9 @@ class ContentTrainingFeedbackSample(BaseSchema):
     create_time: str | None = None
 
 
-class ContentTrainingFeedbackSampleListResponse(BaseSchema):
+class ContentFeedbackSampleListResponse(BaseSchema):
     total: int
-    items: list[ContentTrainingFeedbackSample]
+    items: list[ContentFeedbackSample]
 
 
 class ContentBatchFeedbackStat(BaseSchema):

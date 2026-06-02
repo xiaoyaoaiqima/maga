@@ -17,7 +17,7 @@ MAGA 当前 `platform-server` 是从老系统演化来的，仓库里同时存�
 - 不修历史 migration 链。
 - 不为了旧表继续扩展新功能。
 - 新开发优先走 clean schema。
-- 老系统模型先标记 legacy，不急于物理删除。
+- 老系统模型不再默认保留；确认不在当前运行路径后可以物理删除，历史表由 migration 记录保留，不额外 drop。
 - 生产边界仍是 MAGA API，不让 Hermes `maga-worker` 或历史 `xhs-writer` runtime 直连 MAGA DB。
 - 本地开发库可以 drop/create；需要保留旧数据时另建库，不在同一库里混迁移。
 
@@ -127,7 +127,6 @@ make init-clean-schema
 该命令会创建/补齐 MAGA clean schema，并 seed 默认执行器：
 
 - `hermes_maga_worker`：统一的 Hermes `maga-worker` 执行器。
-- `hermes_xhs_writer`：历史兼容别名，仍指向 `maga-worker`。
 
 默认 `MAGA_WORKER_INVOKE_URL` 为 `http://host.docker.internal:8765/invoke`，适合 Docker 后端调用宿主机上运行的 `maga-worker` HTTP 服务。如果只想先跑平台内置 mock，可以显式切回：
 
@@ -165,7 +164,7 @@ MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
 
 只导入新 MAGA 核心模型。clean schema 脚本只使用这个 registry。
 
-不要马上删除旧模型文件，因为旧 router/service 还可能 import 它们。
+旧模型文件不再作为默认保护对象。只要没有当前 router/service/test/import 依赖，就应该从运行代码移除；历史 migration 可以继续保留对应表结构信息。
 
 ## 对第一阶段执行层的影响
 
@@ -174,7 +173,6 @@ MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
 - content-agent API
 - content-agent service
 - content-agent clean models
-- snapshot adapter
 - `maga-worker` `/invoke` HTTP 服务
 
 不要依赖：
@@ -186,7 +184,7 @@ MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
 - `ExpertCallTrace`
 - 老 `Agent` / `ExpertConfig` 编排表
 
-AE registry、brief type strategy、score rubric 应从历史 `xhs-writer` 文件资产逐步迁入新的 `ExpertDefinition` / `ExpertRuleSet` / `ScoreRubric`，并由 `maga-worker` 的 `xhs.*` 能力使用，而不是绑定旧 `ExpertConfig`。
+当前内容生成配置以业务规则包、系统关键词和生文 Expert 为 source of truth，不再维护历史 `xhs.*` 执行链。
 
 ## 下一步代码调整建议
 
@@ -194,12 +192,12 @@ AE registry、brief type strategy、score rubric 应从历史 `xhs-writer` 文�
    - clean：只注册新 MAGA 路由。
    - legacy：保持当前全量 router。
 2. 继续收敛 `/invoke` push 链路：
-   - `generation/start` 和 `batches/start` 都由 MAGA 构造 `generation_snapshot`。
+   - 批量文章和评论都由 MAGA 构造 unified generation input。
    - MAGA 按 `executor_registry.invoke_url` 调 `maga-worker`。
    - `mock://...` 只作为显式 smoke/mock 模式。
    - `http(s)://...` 作为本地和服务器推荐执行模式。
-3. 补齐资产、反馈和 Prompt 优化外循环：
+3. 补齐资产和反馈治理：
    - `asset_registry` 继续作为资料 source of truth。
    - `content_feedback` 记录通过、要求修改、人工改写等反馈。
-   - 后续由 `maga-worker` 的 `feedback.*` / `prompt.*` capability 生成资产或 Prompt patch 提案。
+   - 反馈只产出人工可读建议，不做自动学习和自动改规则。
 4. 中期再把模型命名从 `ContentAgent*` 收敛为更稳定的业务名。

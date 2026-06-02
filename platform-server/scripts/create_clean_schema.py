@@ -33,14 +33,12 @@ async def seed_clean_schema(
     conn: AsyncConnection,
     *,
     maga_worker_invoke_url: str = MAGA_WORKER_INVOKE_URL,
-    xhs_writer_invoke_url: str | None = None,
     executor_token: str | None = "test-token",
 ) -> None:
     """Seed baseline executor registry rows for the clean schema."""
     await seed_default_content_agent_executors(
         conn,
         maga_worker_invoke_url=maga_worker_invoke_url,
-        xhs_writer_invoke_url=xhs_writer_invoke_url,
         executor_token=executor_token,
         overwrite=True,
     )
@@ -52,7 +50,6 @@ async def create_clean_schema(
     drop: bool = False,
     seed: bool = False,
     maga_worker_invoke_url: str = MAGA_WORKER_INVOKE_URL,
-    xhs_writer_invoke_url: str | None = None,
     executor_token: str | None = "test-token",
 ) -> None:
     """Create the clean MAGA core schema using current SQLAlchemy model metadata."""
@@ -65,7 +62,6 @@ async def create_clean_schema(
             await seed_clean_schema(
                 conn,
                 maga_worker_invoke_url=maga_worker_invoke_url,
-                xhs_writer_invoke_url=xhs_writer_invoke_url,
                 executor_token=executor_token,
             )
 
@@ -81,11 +77,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="test-token",
         help="Local dev executor token written to executor_registry.config_json; pass an empty string to omit",
     )
-    parser.add_argument(
-        "--xhs-writer-invoke-url",
-        default=None,
-        help="Deprecated legacy alias invoke URL; defaults to --maga-worker-invoke-url",
-    )
     return parser
 
 
@@ -99,7 +90,6 @@ async def _amain(argv: Iterable[str] | None = None) -> None:
             drop=args.drop,
             seed=args.seed,
             maga_worker_invoke_url=args.maga_worker_invoke_url,
-            xhs_writer_invoke_url=args.xhs_writer_invoke_url,
             executor_token=args.executor_token or None,
         )
     finally:

@@ -31,8 +31,8 @@ from app.schemas.content_batch_report import (
     ContentBatchStageTrace,
     ContentBatchVersionCompare,
     ContentBatchVersionSnapshot,
-    ContentTrainingFeedbackSample,
-    ContentTrainingFeedbackSampleListResponse,
+    ContentFeedbackSample,
+    ContentFeedbackSampleListResponse,
 )
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService, find_forbidden_hits
 
@@ -150,13 +150,13 @@ class ContentBatchReportService:
             items=report_items,
         )
 
-    async def list_training_feedback_samples(
+    async def list_feedback_samples(
         self,
         *,
         limit: int = 50,
         offset: int = 0,
         review_status: str | None = None,
-    ) -> ContentTrainingFeedbackSampleListResponse:
+    ) -> ContentFeedbackSampleListResponse:
         conditions = []
         if review_status:
             conditions.append(ContentFeedback.review_status == review_status)
@@ -179,10 +179,10 @@ class ContentBatchReportService:
             query = query.where(*conditions)
         total_result = await self.db.execute(total_query)
         result = await self.db.execute(query)
-        return ContentTrainingFeedbackSampleListResponse(
+        return ContentFeedbackSampleListResponse(
             total=int(total_result.scalar_one() or 0),
             items=[
-                self._training_feedback_sample(feedback, item, job)
+                self._feedback_sample(feedback, item, job)
                 for feedback, item, job in result.all()
             ],
         )
@@ -267,13 +267,13 @@ class ContentBatchReportService:
             forbidden_terms=forbidden_terms,
         )
 
-    def _training_feedback_sample(
+    def _feedback_sample(
         self,
         feedback: ContentFeedback,
         item: ContentBatchItem,
         job: ContentBatchJob | None,
-    ) -> ContentTrainingFeedbackSample:
-        return ContentTrainingFeedbackSample(
+    ) -> ContentFeedbackSample:
+        return ContentFeedbackSample(
             feedback_id=feedback.id,
             batch_id=feedback.batch_id,
             batch_code=job.batch_code if job else None,
@@ -625,7 +625,7 @@ class ContentBatchReportService:
 
     def _runtime_result(self, stage_calls: list[ContentAgentStageCall]) -> dict[str, Any]:
         for stage in stage_calls:
-            if stage.capability not in {"xhs.generate_draft", "content.generate"}:
+            if stage.capability != "content.generate":
                 continue
             output = stage.output_snapshot or {}
             runtime_result = output.get("runtime_result")
@@ -634,7 +634,7 @@ class ContentBatchReportService:
         return {}
 
     def _generation_stage(self, stage_calls: list[ContentAgentStageCall]) -> ContentAgentStageCall | None:
-        return next((stage for stage in stage_calls if stage.capability in {"xhs.generate_draft", "content.generate"}), None)
+        return next((stage for stage in stage_calls if stage.capability == "content.generate"), None)
 
     def _generation_snapshot(
         self,
@@ -726,7 +726,7 @@ class ContentBatchReportService:
     def _rewrite_records(self, stage_calls: list[ContentAgentStageCall]) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
         for stage in stage_calls:
-            if stage.capability not in {"content.rewrite", "xhs.rewrite_draft"}:
+            if stage.capability != "content.rewrite":
                 continue
             input_payload = stage.input_snapshot or {}
             output_payload = stage.output_snapshot or {}
@@ -812,7 +812,7 @@ class ContentBatchReportService:
         forbidden_hits: list[str],
     ) -> list[ContentBatchRejectReason]:
         reasons: list[ContentBatchRejectReason] = []
-        # 把 xhs-writer 的结构化审核结果转成运营能直接看到的驳回原因。
+        # 把结构化审核结果转成运营能直接看到的驳回原因。
         for hard_result in review.get("hard_results") or []:
             if not isinstance(hard_result, dict) or hard_result.get("pass") is not False:
                 continue

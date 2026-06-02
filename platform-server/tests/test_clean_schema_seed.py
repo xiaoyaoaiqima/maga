@@ -35,15 +35,7 @@ async def test_seed_clean_schema_registers_hermes_maga_worker_executor():
     assert executor.invoke_url == "http://127.0.0.1:8765/invoke"
     assert executor.config_json == {"executor_token": "test-token"}
     capabilities = {item["capability"] for item in executor.supported_capabilities_json}
-    assert capabilities >= {
-        "xhs.interpret_brief",
-        "xhs.run_ae_analysis",
-        "xhs.generate_draft",
-        "xhs.review_and_rewrite",
-        "xhs.run_ae_review",
-        "xhs.rewrite_draft",
-        "asset.import",
-    }
+    assert capabilities == {"asset.import", "content.generate", "content.rewrite"}
     assert "asset.query" not in capabilities
     assert "feedback.collect" not in capabilities
 
