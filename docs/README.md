@@ -18,5 +18,6 @@
 - [AI 生文流水线协作流程](./AI_CONTENT_GENERATION_WORKFLOW.md)
 - [MAGA Worker Executor Protocol](./EXECUTOR_PROTOCOL.md)
 - [小红书真人感语料资产说明](./XHS_REAL_USER_CORPUS_ASSET.md)
+- [小红书爬取评论/帖子复用筛选结论](./XHS_CRAWLED_COMMENT_REUSE_GUIDE.md)
 
 旧的部署与微服务材料已逐步归档，阅读时优先参考当前目录下的最新文档。

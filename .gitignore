@@ -7,6 +7,7 @@
 .logs/
 .pids/
 .playwright-mcp/
+.codex_deps/
 .pnpm-store/
 .pytest_cache/
 node_modules/
@@ -33,3 +34,12 @@ critic_prompt_optimize_results/
 worker/profiles/*/experts/*/lessons/
 批量生成/*
 *.csv
+
+# 需要版本化的 CSV 配置/源语料；批量生成和原始数据继续忽略。
+!platform-console/apps/raap-admin/data/关键词语料 - 人设.csv
+!platform-console/apps/raap-admin/data/关键词语料 - 卖点.csv
+!platform-console/apps/raap-admin/data/关键词语料 - 场景-痛点-卖点.csv
+!关键词语料/
+!关键词语料/评论切角_子关键词导出.csv
+!关键词语料/产品使用体验_子关键词导出.csv
+!关键词语料/标题要求_UGC_子关键词导出.csv

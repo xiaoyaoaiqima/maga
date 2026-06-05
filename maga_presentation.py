@@ -199,7 +199,7 @@ add_textbox(slide2, col1_x + Inches(0.3), Inches(1.85), col_width - Inches(0.6),
 
 problems = [
     "写手成本高，质量不稳定",
-    "审核周期长，反复修改",
+    "规则越写越重，维护困难",
     "风格不统一，品牌感弱",
     "反馈无法沉淀，经验流失"
 ]
@@ -217,9 +217,9 @@ add_textbox(slide2, col2_x + Inches(0.3), Inches(1.85), col_width - Inches(0.6),
 
 solutions = [
     "AI 一键生成，7×24 产出",
-    "内置质量评估 + 自动改写",
+    "轻规则 + 多示例，运营好维护",
     "规则包驱动，风格可控",
-    "反馈闭环，持续优化 Prompt"
+    "反馈闭环，持续优化规则和示例"
 ]
 for i, s in enumerate(solutions):
     y = Inches(2.5 + i * 0.9)
@@ -280,8 +280,8 @@ layers = [
     ("后台：智能生成引擎", "意图理解 → 策略补全 → 内容生成 → 风格优化 → 审核改写", ACCENT_GREEN, [
         "业务规则包驱动", "系统关键词自动补齐", "Expert 配置管理"
     ]),
-    ("闭环：资产 & 质量", "业务规则 · 语料系统 · Prompt 优化 · 反馈训练", ACCENT, [
-        "违禁词审核", "人工反馈", "Prompt 外循环优化"
+    ("闭环：资产 & 质量", "业务规则 · 系统关键词 · 违禁词 · 反馈记录", ACCENT, [
+        "违禁词审核", "人工反馈", "质量看板"
     ]),
 ]
 
@@ -380,7 +380,7 @@ steps = [
     ("生成", "业务规则包\n+ 系统关键词\n+ Expert 配置", ACCENT_BLUE, "01"),
     ("审核", "违禁词扫描\n自动改写\n二次扫描兜底", ACCENT_GREEN, "02"),
     ("反馈", "通过 / 要求修改\n人工改写 / 批注\n沉淀训练素材", ACCENT, "03"),
-    ("优化", "反馈聚合\nPrompt 自动优化\n新版本生效", ACCENT_RED, "04"),
+    ("治理", "反馈聚合\n规则/示例调整\n质量看板跟踪", ACCENT_RED, "04"),
 ]
 
 step_w = Inches(2.8)
@@ -412,7 +412,7 @@ for i, (title, desc, color, num) in enumerate(steps):
 # 底部飞轮说明
 add_shape(slide6, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.6), Inches(5.4), Inches(12), Inches(1.0), BG_CARD_ALT)
 add_textbox(slide6, Inches(1.0), Inches(5.6), Inches(11), Inches(0.7),
-            "核心逻辑：生成质量 → 人工反馈 → 数据沉淀 → Prompt 优化 → 更高质量的下一轮生成",
+            "核心逻辑：生成质量 → 人工反馈 → 规则/示例调整 → 质量看板跟踪 → 更高质量的下一轮生成",
             font_size=16, font_color=TEXT_WHITE, bold=True, align=PP_ALIGN.CENTER)
 
 # ============================================================
@@ -426,8 +426,8 @@ add_textbox(slide7, MARGIN_LEFT, Inches(0.4), Inches(6), Inches(0.6),
 
 # 2x2 网格
 capabilities = [
-    ("业务规则包", "运营拆解上传业务规则，系统自动规划生成任务", ACCENT_BLUE,
-     ["评论切角规则", "产品体验规则", "活动规则", "独立管理、独立生成"]),
+    ("业务规则包", "一种方向 = 一段轻规则 + 一组多示例", ACCENT_BLUE,
+     ["规则只定方向、边界、不要做什么", "否定式规则比强制约束更有效", "示例教表达、供多样性、当语料", "整个语料块 = 给模型的提示词"]),
     ("系统提示词关键词", "版本化管理，自动从启用类别中选择子关键词", ACCENT_GREEN,
      ["人设 / 生文指令", "扰动规则 / 写作手法", "格式控制", "支持固定或轮换模式"]),
     ("Expert 配置", "提示词模板 + 模型参数的一次执行配置单元", ACCENT,
@@ -469,18 +469,21 @@ add_textbox(slide8, MARGIN_LEFT, Inches(0.4), Inches(6), Inches(0.6),
 phases = [
     ("Phase 1\n已完成", [
         "Clean Schema 完成",
-        "内容生成链路跑通",
-        "单篇 + 批量生成",
+        "统一生成链路跑通",
+        "规则包批量生成",
+        "历史能力大清理",
     ], ACCENT_GREEN, Inches(1.5)),
-    ("Phase 2\n进行中", [
-        "业务规则包导入",
-        "系统提示词关键词管理",
-        "Expert 配置 & 违禁词审核改写",
+    ("Phase 2\n基础版已完成\n体验优化中", [
+        "业务规则包管理",
+        "系统关键词管理",
+        "Expert + 模型配置",
+        "违禁词审核改写",
     ], ACCENT, Inches(5.5)),
-    ("Phase 3\n规划中", [
-        "人工反馈闭环",
-        "Prompt 优化外循环",
-        "质量评估体系完善",
+    ("Phase 3\n后续规划", [
+        "改写质量与对比",
+        "评价反馈工作台",
+        "批次质量看板",
+        "多活动规则包",
     ], ACCENT_BLUE, Inches(9.5)),
 ]
 
@@ -491,54 +494,121 @@ for title, items, color, x in phases:
     # 节点圆
     add_shape(slide8, MSO_SHAPE.OVAL, x - Inches(0.2), Inches(3.65), Inches(0.4), Inches(0.4), color)
     # 阶段标题
-    add_textbox(slide8, x - Inches(1.0), Inches(2.3), Inches(2.0), Inches(0.8),
-                title, font_size=16, font_color=color, bold=True, align=PP_ALIGN.CENTER)
+    add_textbox(slide8, x - Inches(1.15), Inches(2.15), Inches(2.3), Inches(1.0),
+                title, font_size=15, font_color=color, bold=True, align=PP_ALIGN.CENTER)
     # 详情列表
     for j, item in enumerate(items):
-        y = Inches(4.3 + j * 0.55)
-        add_textbox(slide8, x - Inches(1.0), y, Inches(2.0), Inches(0.5),
-                    "• " + item, font_size=13, font_color=TEXT_GRAY, align=PP_ALIGN.CENTER)
+        y = Inches(4.15 + j * 0.45)
+        add_textbox(slide8, x - Inches(1.2), y, Inches(2.4), Inches(0.4),
+                    "• " + item, font_size=12, font_color=TEXT_GRAY, align=PP_ALIGN.CENTER)
 
 # 底部说明
 add_shape(slide8, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.6), Inches(6.0), Inches(12), Inches(0.8), BG_CARD_ALT)
 add_textbox(slide8, Inches(1.0), Inches(6.15), Inches(11), Inches(0.5),
-            "当前目标：验证「工作台 + Agent Worker」闭环，让 MAGA 成为营销内容生成的 Source of Truth",
+            "当前目标：从 Demo 跑通推进到运营可持续使用，重点打磨改写质量、反馈工作台和批次质量治理",
             font_size=14, font_color=TEXT_WHITE, align=PP_ALIGN.CENTER)
 
 # ============================================================
-# 第9页：核心竞争力
+# 第9页：核心竞争力 — 轻规则 + 多示例
 # ============================================================
 slide9 = prs.slides.add_slide(blank_layout)
 set_slide_bg(slide9, BG_DARK)
 
-add_textbox(slide9, MARGIN_LEFT, Inches(0.4), Inches(6), Inches(0.6),
+add_textbox(slide9, MARGIN_LEFT, Inches(0.3), Inches(6), Inches(0.5),
             "08  核心竞争力", font_size=28, font_color=ACCENT, bold=True)
+add_textbox(slide9, MARGIN_LEFT, Inches(0.75), Inches(8), Inches(0.4),
+            "轻规则 + 多示例：让模型听得懂，让运营维护得了", font_size=16, font_color=TEXT_GRAY)
 
-# 三个大数字
-core_values = [
-    ("稳定", "业务规则包驱动，生成结果可控可预期", ACCENT_BLUE),
-    ("可控", "前台极简，后台复杂，复杂度全部下沉", ACCENT_GREEN),
-    ("持续优化", "反馈闭环 → Prompt 优化 → 质量螺旋上升", ACCENT),
+# === 顶部：走过的弯路 → 验证的解法 ===
+# 左侧：弯路
+add_shape(slide9, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.4), Inches(1.2), Inches(3.8), Inches(2.2), BG_CARD)
+add_textbox(slide9, Inches(0.6), Inches(1.3), Inches(3.4), Inches(0.35),
+            "❌ 走过的弯路", font_size=16, font_color=ACCENT_RED, bold=True)
+wrong_pts = [
+    "规则越写越重",
+    "约束层层堆叠",
+    "维护成本爆炸",
+    "模型学得死板",
 ]
+for j, txt in enumerate(wrong_pts):
+    add_textbox(slide9, Inches(0.6), Inches(1.7 + j * 0.4), Inches(3.4), Inches(0.35),
+                "• " + txt, font_size=12, font_color=TEXT_GRAY)
 
-for i, (title, desc, color) in enumerate(core_values):
-    x = Inches(0.5 + i * 4.3)
-    # 大数字背景
-    add_shape(slide9, MSO_SHAPE.ROUNDED_RECTANGLE, x, Inches(1.4), Inches(4.0), Inches(4.0), BG_CARD)
-    # 大号标题
-    add_textbox(slide9, x, Inches(1.8), Inches(4.0), Inches(1.0),
-                title, font_size=48, font_color=color, bold=True, align=PP_ALIGN.CENTER)
-    # 分隔线
-    add_shape(slide9, MSO_SHAPE.RECTANGLE, x + Inches(1.0), Inches(3.0), Inches(2.0), Pt(2), color)
-    # 描述
-    add_textbox(slide9, x + Inches(0.2), Inches(3.3), Inches(3.6), Inches(1.5),
-                desc, font_size=15, font_color=TEXT_GRAY, align=PP_ALIGN.CENTER)
+# 中间箭头
+add_shape(slide9, MSO_SHAPE.RIGHT_ARROW, Inches(4.3), Inches(2.0), Inches(0.5), Inches(0.4), ACCENT)
 
-# 底部金句
-add_shape(slide9, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.5), Inches(5.8), Inches(12.3), Inches(1.0), BG_CARD_ALT)
-add_textbox(slide9, Inches(0.8), Inches(6.0), Inches(11.7), Inches(0.7),
-            "MAGA 不做通用 AI 写作工具，只做营销内容生成领域最稳定、最可控、最可持续优化的业务工作台",
-            font_size=15, font_color=TEXT_WHITE, bold=True, align=PP_ALIGN.CENTER)
+# 中间：核心解法
+add_shape(slide9, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(4.9), Inches(1.2), Inches(3.5), Inches(2.2), BG_CARD_ALT)
+add_textbox(slide9, Inches(5.1), Inches(1.3), Inches(3.1), Inches(0.35),
+            "核心解法", font_size=16, font_color=ACCENT, bold=True)
+add_textbox(slide9, Inches(5.1), Inches(1.7), Inches(3.1), Inches(0.35),
+            "一种方向", font_size=20, font_color=TEXT_WHITE, bold=True, align=PP_ALIGN.CENTER)
+add_textbox(slide9, Inches(5.1), Inches(2.05), Inches(3.1), Inches(0.35),
+            "一段轻规则", font_size=20, font_color=ACCENT_BLUE, bold=True, align=PP_ALIGN.CENTER)
+add_textbox(slide9, Inches(5.1), Inches(2.4), Inches(3.1), Inches(0.35),
+            "一组多示例", font_size=20, font_color=ACCENT_GREEN, bold=True, align=PP_ALIGN.CENTER)
+
+# 右侧箭头
+add_shape(slide9, MSO_SHAPE.RIGHT_ARROW, Inches(8.5), Inches(2.0), Inches(0.5), Inches(0.4), ACCENT)
+
+# 右侧：结果
+add_shape(slide9, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(9.1), Inches(1.2), Inches(3.8), Inches(2.2), BG_CARD)
+add_textbox(slide9, Inches(9.3), Inches(1.3), Inches(3.4), Inches(0.35),
+            "✓ 验证的结果", font_size=16, font_color=ACCENT_GREEN, bold=True)
+right_pts = [
+    "运营问题在哪改哪",
+    "模型从示例学模式",
+    "生成自然不模板",
+    "风格可控可预期",
+]
+for j, txt in enumerate(right_pts):
+    add_textbox(slide9, Inches(9.3), Inches(1.7 + j * 0.4), Inches(3.4), Inches(0.35),
+                "• " + txt, font_size=12, font_color=TEXT_GRAY)
+
+# === 中间下半：轻规则 vs 多示例 详解 ===
+# 左侧：轻规则
+add_shape(slide9, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.4), Inches(3.6), Inches(6.0), Inches(2.8), BG_CARD)
+add_shape(slide9, MSO_SHAPE.RECTANGLE, Inches(0.4), Inches(3.6), Inches(6.0), Pt(4), ACCENT_BLUE)
+add_textbox(slide9, Inches(0.6), Inches(3.7), Inches(5.6), Inches(0.35),
+            "轻规则：只定三件事", font_size=16, font_color=ACCENT_BLUE, bold=True)
+
+rule_items = [
+    ("方向", "这个切角在聊什么"),
+    ("边界", "别写成什么、别超出什么阶段"),
+    ("否定式", "\"不要写成...\"比\"必须包含...\"更有效"),
+]
+for j, (label, desc) in enumerate(rule_items):
+    y = Inches(4.15 + j * 0.55)
+    add_shape(slide9, MSO_SHAPE.OVAL, Inches(0.6), y, Inches(0.35), Inches(0.35), ACCENT_BLUE)
+    add_textbox(slide9, Inches(0.6), Inches(4.2 + j * 0.55), Inches(0.35), Inches(0.25),
+                str(j+1), font_size=12, font_color=TEXT_WHITE, bold=True, align=PP_ALIGN.CENTER)
+    add_textbox(slide9, Inches(1.05), Inches(4.15 + j * 0.55), Inches(1.2), Inches(0.3),
+                label, font_size=13, font_color=ACCENT_BLUE, bold=True)
+    add_textbox(slide9, Inches(2.2), Inches(4.15 + j * 0.55), Inches(4.0), Inches(0.3),
+                desc, font_size=13, font_color=TEXT_GRAY)
+
+# 右侧：多示例
+add_shape(slide9, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(6.7), Inches(3.6), Inches(6.2), Inches(2.8), BG_CARD)
+add_shape(slide9, MSO_SHAPE.RECTANGLE, Inches(6.7), Inches(3.6), Inches(6.2), Pt(4), ACCENT_GREEN)
+add_textbox(slide9, Inches(6.9), Inches(3.7), Inches(5.8), Inches(0.35),
+            "多示例：一组示例承担三个角色", font_size=16, font_color=ACCENT_GREEN, bold=True)
+
+example_items = [
+    ("① 教自然表达", "模型从真实评论/素材中学口语化写法"),
+    ("② 供多样性", "不同角度、不同场景，避免千篇一律"),
+    ("③ 当语义语料", "整个语料块 = 给模型的完整提示词"),
+]
+for j, (label, desc) in enumerate(example_items):
+    add_textbox(slide9, Inches(6.9), Inches(4.15 + j * 0.55), Inches(1.8), Inches(0.3),
+                label, font_size=13, font_color=ACCENT_GREEN, bold=True)
+    add_textbox(slide9, Inches(8.6), Inches(4.15 + j * 0.55), Inches(4.0), Inches(0.3),
+                desc, font_size=13, font_color=TEXT_GRAY)
+
+# === 底部：运营工作流 ===
+add_shape(slide9, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.4), Inches(6.55), Inches(12.3), Inches(0.75), BG_CARD_ALT)
+add_textbox(slide9, Inches(0.6), Inches(6.65), Inches(12), Inches(0.5),
+            "运营的工作流：结果不好 → 分析问题在哪 → 规则问题改规则 / 示例问题改示例 / 多样性问题加示例",
+            font_size=14, font_color=TEXT_WHITE, bold=True, align=PP_ALIGN.CENTER)
 
 # ============================================================
 # 第10页：总结 & 下一步
@@ -559,9 +629,9 @@ add_textbox(slide10, MARGIN_LEFT, Inches(1.1), Inches(12), Inches(0.5),
 
 # 下一步行动项
 actions = [
-    ("Q2 重点", "完成人工反馈闭环，打通「生成-审核-反馈-优化」全链路", ACCENT_BLUE),
-    ("Q3 目标", "Prompt 优化外循环上线，实现质量自增强", ACCENT_GREEN),
-    ("长期愿景", "成为营销内容生成领域最稳定、最可控、最易持续优化的业务工作台", ACCENT),
+    ("Q2 重点", "打磨改写质量和修改对比，让运营能判断系统改得好不好", ACCENT_BLUE),
+    ("Q3 目标", "完善评价反馈工作台、批次质量看板和多活动规则包扩展", ACCENT_GREEN),
+    ("长期愿景", "成为营销内容生成领域最稳定、最可控、最易运营维护的业务工作台", ACCENT),
 ]
 
 for i, (title, desc, color) in enumerate(actions):

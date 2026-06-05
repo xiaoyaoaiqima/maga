@@ -1,5 +1,7 @@
 """API tests for the operator-facing content-agent workbench batch flow."""
 
+from types import SimpleNamespace
+
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
@@ -20,6 +22,7 @@ from app.models.content_agent import (
 from app.models.llm_provider_config import LLMProviderConfig
 from app.models.maga_assets import AssetChangeRequest, AssetRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
+from app.services.content_comment_batch_service import ContentCommentBatchService
 
 
 @pytest_asyncio.fixture
@@ -67,6 +70,143 @@ async def content_agent_workbench_client():
         yield client, session_factory
 
     await engine.dispose()
+
+
+def test_comment_rule_selection_balances_angles_when_rule_pool_is_large():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rules = [
+        {
+            "comment_angle": angle,
+            "corpus": f"{angle} corpus {index}",
+            "source_row_no": index,
+        }
+        for angle, start in [("便便问题", 1), ("奶量补充", 11), ("生长发育", 21)]
+        for index in range(start, start + 10)
+    ]
+
+    selected = service._select_rules(rules, 6)
+
+    assert len(selected) == 6
+    assert {rule["comment_angle"] for rule in selected} == {"便便问题", "奶量补充", "生长发育"}
+    assert [rule["source_row_no"] for rule in selected] != list(range(1, 7))
+
+
+def test_comment_length_fallback_keeps_short_natural_clause():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+
+    comment = service._fit_comment_length("从旧奶转源悦，我家娃皮肤敏感，先少量掺着喝。")
+
+    assert comment == "从旧奶转源悦，我家娃皮肤敏感"
+    assert len(comment) <= 20
+
+
+def test_comment_length_fallback_leaves_short_comment_unchanged():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+
+    assert service._fit_comment_length("纸尿裤里不吓人") == "纸尿裤里不吓人"
+
+
+@pytest.mark.asyncio
+async def test_comment_similarity_rewrite_updates_quality_metadata():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    service.executor_code = "hermes_maga_worker"
+    item = ContentBatchItem(
+        batch_id=1,
+        item_no=2,
+        status="generated",
+        run_id=11,
+        body="你们都在哪买的，多少钱一罐",
+        quality_json={"hard_pass": True, "stage_call_count": 1, "run_status": "succeeded"},
+        plan_json={"unified_generation": {"selected_keywords": []}},
+    )
+    similar_item = {
+        "batch_id": 1,
+        "item_no": 1,
+        "body": "姐妹们都在哪买的，多少钱一罐呀",
+        "score": 0.72,
+        "scope": "current_batch",
+    }
+    orchestrator = _CommentRewriteOrchestrator("先问正品渠道，别急着囤。")
+
+    await service._rewrite_item_for_similarity(item=item, similar_item=similar_item, orchestrator=orchestrator)
+
+    assert item.body == "先问正品渠道，别急着囤。"
+    rewrite = item.quality_json["similarity_rewrites"][0]
+    assert rewrite["similar_item_no"] == 1
+    assert rewrite["pre_rewrite_similarity_score"] == 0.72
+    assert rewrite["similarity_rewrite_passed"] is True
+    assert item.quality_json["review_report"]["rewrite_required"] is False
+    assert orchestrator.input_payload["content_type"] == "comment"
+    assert "避开相似评论" in " ".join(orchestrator.input_payload["rewrite_instructions"])
+
+
+@pytest.mark.asyncio
+async def test_comment_similarity_rewrite_rechecks_candidates_after_rewrite():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    service.executor_code = "hermes_maga_worker"
+    item = ContentBatchItem(
+        batch_id=1,
+        item_no=3,
+        status="generated",
+        run_id=11,
+        body="一直喝这款，家里省心少折腾。",
+        quality_json={"hard_pass": True, "stage_call_count": 1, "run_status": "succeeded"},
+        plan_json={"unified_generation": {"selected_keywords": []}},
+    )
+    previous_items = [
+        ContentBatchItem(batch_id=1, item_no=1, status="generated", body="一直喝这款，没折腾换奶。"),
+        ContentBatchItem(batch_id=1, item_no=2, status="generated", body="半夜冲奶就拿这罐，不用想"),
+    ]
+
+    async def fake_previous_items(db, current_item):  # noqa: ANN001
+        return previous_items
+
+    async def fake_history_items(db, current_item):  # noqa: ANN001
+        return []
+
+    service._previous_generated_items = fake_previous_items
+    service._history_items_for_similarity = fake_history_items
+    orchestrator = _CommentRewriteSequenceOrchestrator(
+        [
+            "半夜冲奶还拿这罐",
+            "临睡那顿肯喝，我就放心。",
+        ]
+    )
+
+    await service._review_and_rewrite_similarity(db=None, item=item, orchestrator=orchestrator)
+
+    assert item.body == "临睡那顿肯喝，我就放心。"
+    assert len(item.quality_json["similarity_rewrites"]) == 2
+    assert item.quality_json["review_report"]["rewrite_required"] is False
+    assert item.quality_json["hard_pass"] is True
+
+
+class _CommentRewriteOrchestrator:
+    def __init__(self, comment: str):
+        self.comment = comment
+        self.input_payload = None
+
+    async def run_content_rewrite_stage(self, *, run_id, executor_code, input_payload):  # noqa: ANN001
+        self.input_payload = input_payload
+        return SimpleNamespace(
+            output={"comment": self.comment},
+            stage_calls=[object()],
+            run=SimpleNamespace(status="succeeded"),
+        )
+
+
+class _CommentRewriteSequenceOrchestrator:
+    def __init__(self, comments: list[str]):
+        self.comments = list(comments)
+        self.input_payloads = []
+
+    async def run_content_rewrite_stage(self, *, run_id, executor_code, input_payload):  # noqa: ANN001
+        self.input_payloads.append(input_payload)
+        return SimpleNamespace(
+            output={"comment": self.comments.pop(0)},
+            stage_calls=[object()],
+            run=SimpleNamespace(status="succeeded"),
+        )
 
 
 @pytest.mark.asyncio

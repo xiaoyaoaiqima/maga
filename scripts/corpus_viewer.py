@@ -5,16 +5,20 @@ from __future__ import annotations
 
 import argparse
 import csv
-import html
+import datetime as dt
+import io
 import json
+import shutil
 import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_SCAN_ROOT = ROOT / "关键词语料"
 DEFAULT_PORT = 8788
+MAX_BACKUPS_PER_CSV = 10
 EXCLUDED_DIRS = {
     ".git",
     ".venv",
@@ -97,7 +101,7 @@ HTML = r"""<!doctype html>
       color: var(--muted);
       font-size: 13px;
     }
-    input, select, button {
+    input, select, button, textarea {
       min-height: 36px;
       border: 1px solid var(--line);
       background: var(--panel);
@@ -117,6 +121,11 @@ HTML = r"""<!doctype html>
     button.primary {
       border-color: var(--accent);
       background: var(--accent);
+      color: #fff;
+    }
+    button.danger {
+      border-color: #b91c1c;
+      background: #b91c1c;
       color: #fff;
     }
     button:disabled {
@@ -228,6 +237,32 @@ HTML = r"""<!doctype html>
       color: var(--text);
       font-weight: 550;
     }
+    .editor {
+      display: grid;
+      gap: 10px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 420px;
+      padding: 12px;
+      border-radius: 8px;
+      resize: vertical;
+      white-space: pre-wrap;
+      line-height: 1.62;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+    }
+    .editor-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .readonly-note {
+      margin: 0 0 10px;
+      color: var(--warn);
+      font-size: 13px;
+    }
     pre {
       margin: 0;
       padding: 14px;
@@ -309,6 +344,8 @@ HTML = r"""<!doctype html>
       files: [],
       selectedId: null,
       visible: [],
+      editing: false,
+      editValue: "",
     };
     const els = {
       stats: document.querySelector("#stats"),
@@ -366,6 +403,20 @@ HTML = r"""<!doctype html>
 
     const selectedRow = () => state.rows.find((row) => row.id === state.selectedId);
 
+    const editorValue = () => document.querySelector("#corpusEditor")?.value ?? state.editValue;
+    const hasUnsavedEdit = () => {
+      const row = selectedRow();
+      return Boolean(state.editing && row && editorValue() !== (row.corpus || ""));
+    };
+    const confirmDiscardEdit = () => {
+      if (!hasUnsavedEdit()) return true;
+      return window.confirm("当前语料有未保存修改，要放弃吗？");
+    };
+    const stopEditing = () => {
+      state.editing = false;
+      state.editValue = "";
+    };
+
     const applyFilters = () => {
       const q = terms();
       const file = els.fileFilter.value;
@@ -413,35 +464,60 @@ HTML = r"""<!doctype html>
       const row = selectedRow();
       els.copyLocation.disabled = !row;
       if (!row) {
+        stopEditing();
         els.detail.innerHTML = '<div class="empty">没有选中的语料。</div>';
         return;
       }
       const location = `${row.file}:${row.line} · CSV第${row.csv_row}条`;
+      const editableActions = row.editable
+        ? '<button data-action="edit">编辑</button>'
+        : '<button disabled>只读</button>';
+      const body = state.editing
+        ? `
+          <div class="editor">
+            <textarea id="corpusEditor" spellcheck="false">${escapeHtml(state.editValue)}</textarea>
+            <div class="editor-actions">
+              <button data-action="cancel-edit">取消</button>
+              <button data-action="save-edit" class="primary">保存</button>
+            </div>
+          </div>
+        `
+        : `
+          ${row.editable ? "" : '<p class="readonly-note">这条没有可编辑的语料列，只能预览。</p>'}
+          <pre>${highlight(row.corpus || row.full_text)}</pre>
+        `;
       els.detail.innerHTML = `
         <div class="detail-head">
           <h2 class="detail-title">${highlight(row.title || row.key || "(空标题)")}</h2>
           <div class="actions">
+            ${editableActions}
             <button data-action="copy-key">复制关键词</button>
             <button data-action="copy-corpus">复制语料</button>
             <button data-action="copy-row">复制整行</button>
+            <button data-action="delete-row" class="danger">删除整行</button>
           </div>
         </div>
         <div class="info">
           <span>关键词</span><strong>${highlight(row.key)}</strong>
           <span>文件</span><strong>${escapeHtml(row.file)}</strong>
           <span>位置</span><strong>${escapeHtml(location)}</strong>
+          <span>编辑列</span><strong>${escapeHtml(row.corpus_column || "无")}</strong>
           <span>列</span><strong>${escapeHtml(row.columns.join("、"))}</strong>
         </div>
-        <pre>${highlight(row.corpus || row.full_text)}</pre>
+        ${body}
       `;
     };
 
-    const loadRows = async () => {
+    const loadRows = async (preferredRow = selectedRow()) => {
       els.stats.textContent = "正在扫描 CSV...";
       const response = await fetch("/api/rows");
       const payload = await response.json();
       state.rows = payload.rows;
       state.files = payload.files;
+      if (preferredRow) {
+        const next = state.rows.find((row) => row.file === preferredRow.file && row.csv_row === preferredRow.csv_row);
+        state.selectedId = next?.id ?? state.selectedId;
+      }
       renderFileFilter();
       els.stats.innerHTML = `已加载 ${payload.rows.length} 条 · ${payload.files.length} 个文件 · ${escapeHtml(payload.updated_at)}`;
       applyFilters();
@@ -450,6 +526,8 @@ HTML = r"""<!doctype html>
     els.results.addEventListener("click", (event) => {
       const button = event.target.closest(".row");
       if (!button) return;
+      if (!confirmDiscardEdit()) return;
+      stopEditing();
       state.selectedId = button.dataset.id;
       renderResults();
       renderDetail();
@@ -460,8 +538,79 @@ HTML = r"""<!doctype html>
       if (!action) return;
       const row = selectedRow();
       if (!row) return;
+      if (action === "edit") {
+        state.editing = true;
+        state.editValue = row.corpus || "";
+        renderDetail();
+      }
+      if (action === "cancel-edit" && confirmDiscardEdit()) {
+        stopEditing();
+        renderDetail();
+      }
+      if (action === "save-edit") {
+        const nextValue = editorValue();
+        let response;
+        try {
+          response = await fetch("/api/rows/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              file: row.file,
+              csv_row: row.csv_row,
+              corpus_column: row.corpus_column,
+              old_value: row.corpus || "",
+              new_value: nextValue,
+            }),
+          });
+        } catch (error) {
+          showToast("保存失败：本地服务未连接，请刷新页面后重试");
+          return;
+        }
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message = payload.error || payload.message || "保存失败";
+          showToast(message);
+          if (response.status === 409) window.alert(`${message}。请先重新扫描后再编辑。`);
+          return;
+        }
+        stopEditing();
+        const cleanupText = payload.deleted_backup_count ? `，清理旧备份 ${payload.deleted_backup_count} 个` : "";
+        showToast(`已保存，备份：${payload.backup_file}${cleanupText}`);
+        await loadRows(row);
+      }
+      if (action === "delete-row") {
+        if (hasUnsavedEdit() && !confirmDiscardEdit()) return;
+        const label = row.title || row.key || `CSV第${row.csv_row}条`;
+        if (!window.confirm(`确认删除这一整行吗？\n\n${row.file} · ${label}\n\n会先自动备份 CSV。`)) return;
+        let response;
+        try {
+          response = await fetch("/api/rows/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              file: row.file,
+              csv_row: row.csv_row,
+              old_values: row.values || [],
+            }),
+          });
+        } catch (error) {
+          showToast("删除失败：本地服务未连接，请刷新页面后重试");
+          return;
+        }
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message = payload.error || payload.message || "删除失败";
+          showToast(message);
+          if (response.status === 409) window.alert(`${message}。请先重新扫描后再删除。`);
+          return;
+        }
+        stopEditing();
+        const cleanupText = payload.deleted_backup_count ? `，清理旧备份 ${payload.deleted_backup_count} 个` : "";
+        showToast(`已删除，备份：${payload.backup_file}${cleanupText}`);
+        await loadRows(null);
+      }
       if (action === "copy-key") await copyText(row.key, "关键词");
-      if (action === "copy-corpus") await copyText(row.corpus || row.full_text, "语料");
+      if (action === "copy-corpus") await copyText(state.editing ? editorValue() : row.corpus || row.full_text, "语料");
       if (action === "copy-row") await copyText(row.raw_joined, "整行");
     });
 
@@ -470,9 +619,26 @@ HTML = r"""<!doctype html>
       if (!row) return;
       await copyText(`${row.file}:${row.line}`, "定位");
     });
-    els.query.addEventListener("input", applyFilters);
-    els.fileFilter.addEventListener("change", applyFilters);
-    els.reload.addEventListener("click", loadRows);
+    els.query.addEventListener("input", () => {
+      if (!confirmDiscardEdit()) return;
+      stopEditing();
+      applyFilters();
+    });
+    els.fileFilter.addEventListener("change", () => {
+      if (!confirmDiscardEdit()) return;
+      stopEditing();
+      applyFilters();
+    });
+    els.reload.addEventListener("click", () => {
+      if (!confirmDiscardEdit()) return;
+      stopEditing();
+      loadRows();
+    });
+    window.addEventListener("beforeunload", (event) => {
+      if (!hasUnsavedEdit()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    });
     window.addEventListener("keydown", (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -563,11 +729,14 @@ def read_csv_rows(path: Path, root: Path, start_id: int) -> tuple[list[dict], in
                     "key_column": key_col,
                     "title": title,
                     "corpus": corpus,
+                    "corpus_column": corpus_col,
                     "corpus_preview": corpus.replace("\n", " ")[:180],
                     "extra_text": extra_text,
                     "full_text": full_text,
                     "raw_joined": ",".join(raw),
+                    "values": raw,
                     "columns": headers,
+                    "editable": bool(corpus_col),
                 }
             )
     return rows, start_id
@@ -596,6 +765,15 @@ def json_response(handler: BaseHTTPRequestHandler, payload: dict) -> None:
     handler.wfile.write(body)
 
 
+def json_error(handler: BaseHTTPRequestHandler, status: int, message: str) -> None:
+    body = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
 def html_response(handler: BaseHTTPRequestHandler) -> None:
     body = HTML.encode("utf-8")
     handler.send_response(200)
@@ -603,6 +781,151 @@ def html_response(handler: BaseHTTPRequestHandler) -> None:
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def resolve_csv_path(root: Path, file_value: str) -> Path:
+    root = root.resolve()
+    path = (root / file_value).resolve()
+    if path.suffix.lower() != ".csv":
+        raise ValueError("只能保存 CSV 文件")
+    if not path.is_relative_to(root):
+        raise ValueError("文件不在当前扫描目录内")
+    if should_skip(path.relative_to(root)):
+        raise ValueError("该目录不允许编辑")
+    if not path.exists():
+        raise ValueError("文件不存在")
+    return path
+
+
+def split_opening_comments(text: str) -> tuple[str, str]:
+    prefix: list[str] = []
+    lines = text.splitlines(keepends=True)
+    data_start = 0
+    for index, line in enumerate(lines):
+        stripped = line.lstrip("\ufeff")
+        if stripped.startswith("#") or not stripped.strip():
+            prefix.append(line)
+            data_start = index + 1
+            continue
+        data_start = index
+        break
+    return "".join(prefix), "".join(lines[data_start:])
+
+
+def prune_csv_backups(path: Path, keep: int = MAX_BACKUPS_PER_CSV) -> list[Path]:
+    """Keep the newest backups for this CSV and delete older siblings."""
+    backup_prefix = f"{path.name}.bak-"
+    backup_paths = sorted(
+        (candidate for candidate in path.parent.iterdir() if candidate.name.startswith(backup_prefix)),
+        key=lambda backup_path: (backup_path.name.rsplit(".bak-", 1)[-1], backup_path.name),
+        reverse=True,
+    )
+    stale_paths = backup_paths[keep:]
+    for stale_path in stale_paths:
+        stale_path.unlink()
+    return stale_paths
+
+
+def save_csv_cell(
+    path: Path,
+    *,
+    csv_row: int,
+    corpus_column: str,
+    old_value: str,
+    new_value: str,
+) -> tuple[Path, list[Path]]:
+    raw_bytes = path.read_bytes()
+    had_bom = raw_bytes.startswith(b"\xef\xbb\xbf")
+    text = raw_bytes.decode("utf-8-sig")
+    prefix, data_text = split_opening_comments(text)
+    reader = list(csv.reader(io.StringIO(data_text)))
+    if not reader:
+        raise ValueError("CSV 缺少表头")
+
+    headers = reader[0]
+    header_map = {header.strip(): index for index, header in enumerate(headers)}
+    if corpus_column not in header_map:
+        raise ValueError(f"找不到可编辑列：{corpus_column}")
+
+    target_index = header_map[corpus_column]
+    current_data_row = 0
+    target_reader_index: int | None = None
+    for index, raw in enumerate(reader[1:], start=1):
+        if not raw:
+            continue
+        if raw[0].startswith("#"):
+            continue
+        current_data_row += 1
+        if current_data_row == csv_row:
+            target_reader_index = index
+            break
+    if target_reader_index is None:
+        raise ValueError(f"找不到 CSV 第 {csv_row} 条")
+
+    row = reader[target_reader_index]
+    if len(row) <= target_index:
+        row.extend([""] * (target_index + 1 - len(row)))
+    current_value = row[target_index]
+    if current_value != old_value:
+        raise RuntimeError("内容已变化，不能覆盖保存")
+
+    row[target_index] = new_value
+    timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup_path = path.with_name(f"{path.name}.bak-{timestamp}")
+    shutil.copy2(path, backup_path)
+
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerows(reader)
+    next_text = prefix + output.getvalue()
+    path.write_text(next_text, encoding="utf-8-sig" if had_bom else "utf-8", newline="")
+    return backup_path, prune_csv_backups(path)
+
+
+def delete_csv_row(
+    path: Path,
+    *,
+    csv_row: int,
+    old_values: list[str],
+) -> tuple[Path, list[Path]]:
+    raw_bytes = path.read_bytes()
+    had_bom = raw_bytes.startswith(b"\xef\xbb\xbf")
+    text = raw_bytes.decode("utf-8-sig")
+    prefix, data_text = split_opening_comments(text)
+    reader = list(csv.reader(io.StringIO(data_text)))
+    if not reader:
+        raise ValueError("CSV 缺少表头")
+
+    current_data_row = 0
+    target_reader_index: int | None = None
+    for index, raw in enumerate(reader[1:], start=1):
+        if not raw:
+            continue
+        if raw[0].startswith("#"):
+            continue
+        current_data_row += 1
+        if current_data_row == csv_row:
+            target_reader_index = index
+            break
+    if target_reader_index is None:
+        raise ValueError(f"找不到 CSV 第 {csv_row} 条")
+
+    row = reader[target_reader_index]
+    if row != old_values:
+        raise RuntimeError("内容已变化，不能删除")
+
+    timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup_path = path.with_name(f"{path.name}.bak-{timestamp}")
+    # 删除整行前先备份原 CSV，便于误删后手动恢复。
+    shutil.copy2(path, backup_path)
+    del reader[target_reader_index]
+
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerows(reader)
+    next_text = prefix + output.getvalue()
+    path.write_text(next_text, encoding="utf-8-sig" if had_bom else "utf-8", newline="")
+    return backup_path, prune_csv_backups(path)
 
 
 class CorpusViewerHandler(BaseHTTPRequestHandler):
@@ -614,8 +937,8 @@ class CorpusViewerHandler(BaseHTTPRequestHandler):
             html_response(self)
             return
         if parsed.path == "/api/rows":
-            query = parse_qs(parsed.query)
-            root = Path(query.get("root", [str(self.root)])[0]).resolve()
+            # 列表和保存必须使用同一个 root；否则前端拿到的相对路径保存时会解析到另一个目录。
+            root = self.root.resolve()
             rows = scan_rows(root)
             files = sorted({row["file"] for row in rows})
             json_response(
@@ -629,6 +952,57 @@ class CorpusViewerHandler(BaseHTTPRequestHandler):
             )
             return
         self.send_error(404)
+
+    def do_POST(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        if parsed.path not in {"/api/rows/save", "/api/rows/delete"}:
+            self.send_error(404)
+            return
+
+        try:
+            body_size = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(body_size).decode("utf-8"))
+            path = resolve_csv_path(self.root, str(payload.get("file") or ""))
+            csv_row = int(payload.get("csv_row") or 0)
+            if csv_row <= 0:
+                raise ValueError("CSV 行号无效")
+            if parsed.path == "/api/rows/save":
+                corpus_column = str(payload.get("corpus_column") or "")
+                if not corpus_column:
+                    raise ValueError("缺少可编辑列")
+                backup_path, deleted_backups = save_csv_cell(
+                    path,
+                    csv_row=csv_row,
+                    corpus_column=corpus_column,
+                    old_value=str(payload.get("old_value") or ""),
+                    new_value=str(payload.get("new_value") or ""),
+                )
+            else:
+                old_values = payload.get("old_values")
+                if not isinstance(old_values, list):
+                    raise ValueError("缺少整行旧值")
+                backup_path, deleted_backups = delete_csv_row(
+                    path,
+                    csv_row=csv_row,
+                    old_values=[str(value) for value in old_values],
+                )
+        except RuntimeError as exc:
+            json_error(self, 409, str(exc))
+            return
+        except (ValueError, OSError, csv.Error, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            json_error(self, 400, str(exc))
+            return
+
+        json_response(
+            self,
+            {
+                "ok": True,
+                "backup_file": backup_path.name,
+                "deleted_backup_count": len(deleted_backups),
+                "deleted_backup_files": [backup.name for backup in deleted_backups],
+                "file": path.relative_to(self.root).as_posix(),
+            },
+        )
 
     def log_message(self, format: str, *args: object) -> None:
         return
@@ -647,7 +1021,7 @@ def find_port(host: str, preferred: int) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Start local CSV corpus viewer.")
-    parser.add_argument("--root", default=str(ROOT), help="repo root to scan")
+    parser.add_argument("--root", default=str(DEFAULT_SCAN_ROOT), help="CSV root to scan")
     parser.add_argument("--host", default="127.0.0.1", help="server host")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="server port")
     args = parser.parse_args()

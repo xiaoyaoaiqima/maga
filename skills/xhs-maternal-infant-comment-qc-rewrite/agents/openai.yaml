@@ -1,0 +1,4 @@
+interface:
+  display_name: "母婴评论质检重写"
+  short_description: "根据源悦审核范本质检评论产出并给出逐条重写建议和风险归因"
+  default_prompt: "请按这批源悦评论产出做质检，并给出需要重写的评论和替换建议。"

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+import re
+from random import SystemRandom
 from typing import Any
 
 from sqlalchemy import select
@@ -24,6 +26,11 @@ from app.services.unified_content_generation_service import (
     CONTENT_GENERATE_CAPABILITY,
     UnifiedContentGenerationService,
 )
+
+COMMENT_SIMILARITY_REWRITE_THRESHOLD = 0.30
+MAX_COMMENT_SIMILARITY_REWRITE_ROUNDS = 2
+COMMENT_HISTORY_SIMILARITY_LOOKBACK_LIMIT = 80
+
 
 @dataclass(frozen=True)
 class CommentBatchExecutionResult:
@@ -67,7 +74,7 @@ class ContentCommentBatchService:
         asset = await self._require_rule_asset(asset_key)
         rules = self._rule_items(asset)
         limit = self._generation_limit(asset, rules)
-        selected_rules = rules[:limit]
+        selected_rules = self._select_rules(rules, limit)
         if not selected_rules:
             raise ValueError("comment angle rule set has no usable rules")
 
@@ -89,6 +96,8 @@ class ContentCommentBatchService:
                 "source": "comment_angle_rule_set",
                 "rule_count": len(rules),
                 "selected_count": len(selected_rules),
+                "selection_mode": "balanced_random" if len(rules) > limit else "all",
+                "selected_source_row_nos": [rule.get("source_row_no") for rule in selected_rules],
             },
             created_by=created_by,
         )
@@ -173,6 +182,35 @@ class ContentCommentBatchService:
             limit = DEFAULT_COMMENT_BATCH_LIMIT
         return max(1, min(limit, len(rules)))
 
+    def _select_rules(self, rules: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+        if len(rules) <= limit:
+            return list(rules)
+
+        rng = SystemRandom()
+        # Keep each batch spread across comment angles instead of repeatedly taking the first rows.
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for rule in rules:
+            key = str(rule.get("comment_angle") or "").strip() or str(rule.get("source_row_no") or "")
+            groups.setdefault(key, []).append(rule)
+
+        buckets = [list(bucket) for bucket in groups.values()]
+        for bucket in buckets:
+            rng.shuffle(bucket)
+        rng.shuffle(buckets)
+
+        selected: list[dict[str, Any]] = []
+        while buckets and len(selected) < limit:
+            next_round: list[list[dict[str, Any]]] = []
+            for bucket in buckets:
+                if len(selected) >= limit:
+                    break
+                selected.append(bucket.pop())
+                if bucket:
+                    next_round.append(bucket)
+            rng.shuffle(next_round)
+            buckets = next_round
+        return selected
+
     def _plan_from_rule(self, rule: dict[str, Any], *, asset: AssetRegistry, item_no: int) -> dict[str, Any]:
         return {
             "rule_type": "comment_angle",
@@ -236,6 +274,7 @@ class ContentCommentBatchService:
                 comment = str((result.output or {}).get("comment") or "").strip()
                 if not comment:
                     raise ValueError("content.generate returned empty comment")
+                comment = self._fit_comment_length(comment)
                 item.status = "generated"
                 item.task_id = result.run.task_id
                 item.run_id = result.run.id
@@ -256,6 +295,11 @@ class ContentCommentBatchService:
                     "comment_angle": (item.plan_json or {}).get("comment_angle"),
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                 }
+                await self._review_and_rewrite_similarity(
+                    db=db,
+                    item=item,
+                    orchestrator=orchestrator,
+                )
                 await ForbiddenTermReviewService(db).review_and_rewrite_item(
                     item=item,
                     asset_key=(item.plan_json or {}).get("asset_key"),
@@ -274,6 +318,242 @@ class ContentCommentBatchService:
                 await db.commit()
                 return False
 
+    async def _review_and_rewrite_similarity(
+        self,
+        *,
+        db: AsyncSession,
+        item: ContentBatchItem,
+        orchestrator: ContentAgentOrchestrator,
+    ) -> None:
+        if not item.body or not item.run_id:
+            return
+        while self._similarity_rewrite_rounds(item) < MAX_COMMENT_SIMILARITY_REWRITE_ROUNDS:
+            # 改写后的短评论可能避开了原命中句，却撞上另一条历史句；每轮都重新扫描候选池。
+            previous_items = await self._previous_generated_items(db, item)
+            history_items = await self._history_items_for_similarity(db, item)
+            match = self._most_similar_candidate(item, [*previous_items, *history_items])
+            if not match or match["score"] < COMMENT_SIMILARITY_REWRITE_THRESHOLD:
+                return
+            try:
+                await self._rewrite_item_for_similarity(item=item, similar_item=match, orchestrator=orchestrator)
+            except Exception as exc:  # noqa: BLE001 - keep generated comment if rewrite worker is flaky
+                quality = dict(item.quality_json or {})
+                failures = list(quality.get("similarity_rewrite_failures") or [])
+                failures.append({**self._similarity_rewrite_meta(item, match), "error_message": str(exc)})
+                quality["similarity_rewrite_failures"] = failures
+                item.quality_json = quality
+                return
+        previous_items = await self._previous_generated_items(db, item)
+        history_items = await self._history_items_for_similarity(db, item)
+        match = self._most_similar_candidate(item, [*previous_items, *history_items])
+        if not match or match["score"] < COMMENT_SIMILARITY_REWRITE_THRESHOLD:
+            return
+        quality = dict(item.quality_json or {})
+        review_report = dict(quality.get("review_report") or {})
+        reason = f"{self._similarity_rewrite_meta(item, match)['reason']}，已达到相似度改写轮次上限"
+        review_report.update(
+            {
+                "rewrite_required": True,
+                "rewrite_reason": reason,
+                "post_rewrite_similarity_score": round(float(match.get("score") or 0), 4),
+                "similarity_rewrite_passed": False,
+            }
+        )
+        quality.update({"review_report": review_report, "hard_pass": False})
+        item.quality_json = quality
+
+    async def _previous_generated_items(self, db: AsyncSession, item: ContentBatchItem) -> list[ContentBatchItem]:
+        result = await db.execute(
+            select(ContentBatchItem)
+            .where(
+                ContentBatchItem.batch_id == item.batch_id,
+                ContentBatchItem.status == "generated",
+                ContentBatchItem.item_no < item.item_no,
+                ContentBatchItem.body.is_not(None),
+            )
+            .order_by(ContentBatchItem.item_no)
+        )
+        return list(result.scalars().all())
+
+    async def _history_items_for_similarity(self, db: AsyncSession, item: ContentBatchItem) -> list[ContentBatchItem]:
+        result = await db.execute(select(ContentBatchJob).where(ContentBatchJob.id == item.batch_id))
+        job = result.scalar_one_or_none()
+        if job is None:
+            return []
+        history_result = await db.execute(
+            select(ContentBatchItem, ContentBatchJob)
+            .join(ContentBatchJob, ContentBatchJob.id == ContentBatchItem.batch_id)
+            .where(
+                ContentBatchItem.batch_id != item.batch_id,
+                ContentBatchItem.status == "generated",
+                ContentBatchItem.body.is_not(None),
+                ContentBatchJob.asset_key == job.asset_key,
+                ContentBatchJob.product_topic == job.product_topic,
+            )
+            .order_by(ContentBatchItem.create_time.desc(), ContentBatchItem.id.desc())
+            .limit(COMMENT_HISTORY_SIMILARITY_LOOKBACK_LIMIT)
+        )
+        history_items: list[ContentBatchItem] = []
+        for previous, history_job in history_result.all():
+            setattr(previous, "_similarity_batch_code", history_job.batch_code)
+            history_items.append(previous)
+        return history_items
+
+    def _most_similar_candidate(self, item: ContentBatchItem, candidates: list[ContentBatchItem]) -> dict[str, Any] | None:
+        scored = [
+            {
+                "item_id": previous.id,
+                "batch_id": previous.batch_id,
+                "batch_code": self._batch_code_from_context(previous),
+                "item_no": previous.item_no,
+                "title": previous.title,
+                "body": previous.body,
+                "score": round(self._jaccard_2gram(item.body or "", previous.body or ""), 4),
+                "scope": "current_batch" if previous.batch_id == item.batch_id else "history",
+            }
+            for previous in candidates
+            if previous.body
+        ]
+        if not scored:
+            return None
+        return max(scored, key=lambda candidate: candidate["score"])
+
+    async def _rewrite_item_for_similarity(
+        self,
+        *,
+        item: ContentBatchItem,
+        similar_item: dict[str, Any],
+        orchestrator: ContentAgentOrchestrator,
+    ) -> None:
+        input_payload = self._similarity_rewrite_input(item, similar_item)
+        result = await orchestrator.run_content_rewrite_stage(
+            run_id=item.run_id,
+            executor_code=self.executor_code,
+            input_payload=input_payload,
+        )
+        final = result.output or {}
+        final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
+        comment = str(final.get("comment") or final_content.get("comment") or final.get("body") or final_content.get("body") or "").strip()
+        if not comment:
+            raise ValueError("content.rewrite returned empty comment")
+        item.body = self._fit_comment_length(comment)
+        post_score = round(self._jaccard_2gram(item.body or "", similar_item.get("body") or ""), 4)
+        passed = post_score < COMMENT_SIMILARITY_REWRITE_THRESHOLD
+        similarity_rewrite = {
+            **self._similarity_rewrite_meta(item, similar_item),
+            "pre_rewrite_similarity_score": round(float(similar_item.get("score") or 0), 4),
+            "post_rewrite_similarity_score": post_score,
+            "similarity_rewrite_passed": passed,
+        }
+        quality = dict(item.quality_json or {})
+        review_report = dict(quality.get("review_report") or {})
+        previous_rewrites = list(quality.get("similarity_rewrites") or [])
+        previous_rewrites.append(similarity_rewrite)
+        rewrite_reason = (
+            similarity_rewrite["reason"]
+            if passed
+            else f"{similarity_rewrite['reason']}，自动改写后仍为 {post_score:.2f}，需要人工处理"
+        )
+        review_report.update(
+            {
+                "rewrite_required": not passed,
+                "rewrite_reason": rewrite_reason,
+                "rewrite_rounds": max(int(review_report.get("rewrite_rounds") or 0), self._similarity_rewrite_rounds(item) + 1),
+                "post_rewrite_similarity_score": post_score,
+                "similarity_rewrite_passed": passed,
+            }
+        )
+        quality.update(
+            {
+                "review_report": review_report,
+                "similarity_rewrites": previous_rewrites,
+                "stage_call_count": int(quality.get("stage_call_count") or 0) + len(result.stage_calls),
+                "run_status": result.run.status,
+                "hard_pass": passed,
+            }
+        )
+        item.quality_json = quality
+
+    def _similarity_rewrite_input(self, item: ContentBatchItem, similar_item: dict[str, Any]) -> dict[str, Any]:
+        similarity_meta = self._similarity_rewrite_meta(item, similar_item)
+        unified_generation = (item.plan_json or {}).get("unified_generation") or {}
+        return {
+            "previous_content": {"comment": item.body or ""},
+            "content_type": "comment",
+            "output_fields": ["comment"],
+            "business_rule": dict(item.plan_json or {}),
+            "selected_keywords": unified_generation.get("selected_keywords") or [],
+            "forbidden_hits": [],
+            "review_report": {
+                "hard_results": [],
+                "soft_scores": [],
+                "failed_aes": [
+                    {
+                        "ae_code": "batch_comment_similarity",
+                        "feedback": similarity_meta["reason"],
+                        "evidence": [
+                            {
+                                "similar_item_no": similar_item.get("item_no"),
+                                "score": similar_item.get("score"),
+                            }
+                        ],
+                    }
+                ],
+                "rewrite_required": True,
+                "rewrite_reason": similarity_meta["reason"],
+                "similarity": similarity_meta,
+            },
+            "rewrite_round": self._similarity_rewrite_rounds(item) + 1,
+            "rewrite_instructions": [
+                "只输出一条20字以内的评论正文",
+                "避开相似评论的开头、核心短语和句式",
+                "换一个生活细节或提问入口，不要只做同义词替换",
+                "保留当前评论切角和合规边界，不扩大功效表达",
+            ],
+        }
+
+    def _similarity_rewrite_meta(self, item: ContentBatchItem, similar_item: dict[str, Any]) -> dict[str, Any]:
+        score = float(similar_item.get("score") or 0)
+        reason = (
+            f"评论与历史批次第{similar_item.get('item_no')}条 2-gram 相似度 {score:.2f}，已触发自动改写"
+            if similar_item.get("scope") == "history"
+            else f"评论与第{similar_item.get('item_no')}条 2-gram 相似度 {score:.2f}，已触发自动改写"
+        )
+        return {
+            "item_no": item.item_no,
+            "similar_item_no": similar_item.get("item_no"),
+            "similar_batch_id": similar_item.get("batch_id"),
+            "similar_batch_code": similar_item.get("batch_code"),
+            "scope": similar_item.get("scope") or "current_batch",
+            "similarity_score": round(score, 4),
+            "threshold": COMMENT_SIMILARITY_REWRITE_THRESHOLD,
+            "reason": reason,
+        }
+
+    def _similarity_rewrite_rounds(self, item: ContentBatchItem) -> int:
+        return len((item.quality_json or {}).get("similarity_rewrites") or [])
+
+    def _jaccard_2gram(self, left: str, right: str) -> float:
+        left_tokens = self._text_2grams(left)
+        right_tokens = self._text_2grams(right)
+        if not left_tokens or not right_tokens:
+            return 0.0
+        return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+    @staticmethod
+    def _text_2grams(text: str) -> set[str]:
+        clean = re.sub(r"[，。！？、,.!?\s]+", "", text or "")
+        return {clean[index : index + 2] for index in range(max(len(clean) - 1, 0)) if clean[index : index + 2].strip()}
+
+    @staticmethod
+    def _batch_code_from_context(item: ContentBatchItem) -> str | None:
+        transient_value = getattr(item, "_similarity_batch_code", None)
+        if isinstance(transient_value, str) and transient_value:
+            return transient_value
+        batch_context = ((item.plan_json or {}).get("batch_context") or {})
+        value = batch_context.get("batch_code")
+        return str(value) if value else None
+
     async def _require_item(self, db: AsyncSession, item_id: int) -> ContentBatchItem:
         result = await db.execute(select(ContentBatchItem).where(ContentBatchItem.id == item_id))
         item = result.scalar_one_or_none()
@@ -288,3 +568,21 @@ class ContentCommentBatchService:
             if runtime_mode:
                 return str(runtime_mode)
         return "content_generate"
+
+    def _fit_comment_length(self, comment: str, *, max_chars: int = 20) -> str:
+        comment = comment.strip()
+        if len(comment) <= max_chars:
+            return comment
+
+        # Keep the first natural clause(s) so long generations still read like a real short comment.
+        parts = [part.strip() for part in re.split(r"[，。！？,!?；;、]", comment) if part.strip()]
+        candidate = ""
+        for part in parts:
+            next_candidate = f"{candidate}，{part}" if candidate else part
+            if len(next_candidate) <= max_chars:
+                candidate = next_candidate
+                continue
+            if candidate:
+                break
+            return part[:max_chars].rstrip("，。！？,!?；;、 ")
+        return candidate or comment[:max_chars].rstrip("，。！？,!?；;、 ")
