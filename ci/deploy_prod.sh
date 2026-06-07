@@ -43,8 +43,9 @@ main() {
 
   mkdir -p "${DEPLOY_DIR}"
 
-  # 线上密钥、数据库卷、历史前端包都只保留在服务器，不随代码同步覆盖。
-  rsync -az --delete \
+  # 线上密钥、运营语料和临时数据可能没有进入 Git；代码同步不做 --delete，
+  # 避免部署时误删服务器上的业务数据。前端静态产物发布阶段会单独 --delete。
+  rsync -az \
     --exclude '.git/' \
     --exclude '.env' \
     --exclude '.env.local' \
