@@ -7,6 +7,8 @@ LOCK_FILE="${MAGA_DEPLOY_LOCK_FILE:-/tmp/maga-deploy.lock}"
 COMPOSE_FILE="${MAGA_COMPOSE_FILE:-docker-compose.prod.yml}"
 ENV_FILE="${MAGA_ENV_FILE:-.env.prod}"
 IMAGE_TAG="${MAGA_FRONTEND_IMAGE_TAG:-maga-console:deploy}"
+FRONTEND_CONTAINER_ID=""
+TMP_FRONTEND_DIR=""
 
 log() {
   printf '[maga-deploy] %s\n' "$*"
@@ -20,6 +22,16 @@ require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     log "missing required command: $1"
     exit 1
+  fi
+}
+
+cleanup_frontend_publish() {
+  # EXIT trap 会在 main 返回后执行，清理状态必须放在局部作用域外。
+  if [[ -n "${FRONTEND_CONTAINER_ID}" ]]; then
+    sudo -n docker rm -f "${FRONTEND_CONTAINER_ID}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${TMP_FRONTEND_DIR}" ]]; then
+    rm -rf "${TMP_FRONTEND_DIR}"
   fi
 }
 
@@ -74,17 +86,15 @@ main() {
     -t "${IMAGE_TAG}" \
     platform-console
 
-  local container_id
-  local tmp_frontend
-  container_id="$(sudo -n docker create "${IMAGE_TAG}")"
-  tmp_frontend="$(mktemp -d)"
-  trap 'sudo -n docker rm -f "${container_id}" >/dev/null 2>&1 || true; rm -rf "${tmp_frontend}"' EXIT
+  FRONTEND_CONTAINER_ID="$(sudo -n docker create "${IMAGE_TAG}")"
+  TMP_FRONTEND_DIR="$(mktemp -d)"
+  trap cleanup_frontend_publish EXIT
 
-  sudo -n docker cp "${container_id}:/usr/share/nginx/html/." "${tmp_frontend}/"
+  sudo -n docker cp "${FRONTEND_CONTAINER_ID}:/usr/share/nginx/html/." "${TMP_FRONTEND_DIR}/"
 
   log "publishing frontend to ${FRONTEND_DIR}"
   mkdir -p "${FRONTEND_DIR}"
-  rsync -az --delete "${tmp_frontend}/" "${FRONTEND_DIR}/"
+  rsync -az --delete "${TMP_FRONTEND_DIR}/" "${FRONTEND_DIR}/"
 
   log "checking backend readiness"
   for _ in $(seq 1 30); do
