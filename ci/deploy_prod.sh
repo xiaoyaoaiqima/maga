@@ -93,7 +93,8 @@ main() {
   sudo -n docker cp "${FRONTEND_CONTAINER_ID}:/usr/share/nginx/html/." "${TMP_FRONTEND_DIR}/"
 
   log "publishing frontend to ${FRONTEND_DIR}"
-  mkdir -p "${FRONTEND_DIR}"
+  # Nginx 以 www-data 读取静态目录，目录本身必须可进入，否则首页会变成 404。
+  sudo -n install -d -m 0755 -o "$(id -u)" -g "$(id -g)" "${FRONTEND_DIR}"
   rsync -az --delete "${TMP_FRONTEND_DIR}/" "${FRONTEND_DIR}/"
 
   log "checking backend readiness"
