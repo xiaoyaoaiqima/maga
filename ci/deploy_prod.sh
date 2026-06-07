@@ -31,7 +31,7 @@ cleanup_frontend_publish() {
     sudo -n docker rm -f "${FRONTEND_CONTAINER_ID}" >/dev/null 2>&1 || true
   fi
   if [[ -n "${TMP_FRONTEND_DIR}" ]]; then
-    rm -rf "${TMP_FRONTEND_DIR}"
+    sudo -n rm -rf "${TMP_FRONTEND_DIR}"
   fi
 }
 
