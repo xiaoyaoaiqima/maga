@@ -22,6 +22,7 @@ from app.services.comment_angle_rule_service import (
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.executor_invocation_service import ExecutorInvocationClient
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService
+from app.services.system_prompt_keyword_service import DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
 from app.services.unified_content_generation_service import (
     CONTENT_GENERATE_CAPABILITY,
     UnifiedContentGenerationService,
@@ -69,11 +70,13 @@ class ContentCommentBatchService:
         self,
         *,
         asset_key: str,
+        keyword_asset_key: str | None = None,
         created_by: str | None = None,
     ) -> CommentBatchExecutionResult:
         asset = await self._require_rule_asset(asset_key)
         rules = self._rule_items(asset)
         limit = self._generation_limit(asset, rules)
+        resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, asset)
         selected_rules = self._select_rules(rules, limit)
         if not selected_rules:
             raise ValueError("comment angle rule set has no usable rules")
@@ -90,6 +93,7 @@ class ContentCommentBatchService:
                 "mode": "comment_angle",
                 "rule_asset_id": asset.id,
                 "rule_asset_version": asset.version_no,
+                "keyword_asset_key": resolved_keyword_asset_key,
                 "executor": self.executor_code,
             },
             diversity_plan_json={
@@ -110,7 +114,12 @@ class ContentCommentBatchService:
                     batch_id=job.id,
                     item_no=item_no,
                     status="planned",
-                    plan_json=self._plan_from_rule(rule, asset=asset, item_no=item_no),
+                    plan_json=self._plan_from_rule(
+                        rule,
+                        asset=asset,
+                        item_no=item_no,
+                        keyword_asset_key=resolved_keyword_asset_key,
+                    ),
                 )
             )
         await self.db.flush()
@@ -211,20 +220,43 @@ class ContentCommentBatchService:
             buckets = next_round
         return selected
 
-    def _plan_from_rule(self, rule: dict[str, Any], *, asset: AssetRegistry, item_no: int) -> dict[str, Any]:
+    def _plan_from_rule(
+        self,
+        rule: dict[str, Any],
+        *,
+        asset: AssetRegistry,
+        item_no: int,
+        keyword_asset_key: str = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+    ) -> dict[str, Any]:
+        selected_examples, example_meta = self._selected_prompt_examples(rule)
         return {
             "rule_type": "comment_angle",
             "item_no": item_no,
             "asset_key": asset.asset_key,
+            "keyword_asset_key": keyword_asset_key,
             "rule_asset_id": asset.id,
             "rule_asset_version": asset.version_no,
             "rule_id": rule.get("rule_id"),
             "comment_angle": rule.get("comment_angle"),
             "corpus": rule.get("corpus"),
-            "examples": rule.get("examples") or [],
-            "supplements": rule.get("supplements") or [],
+            "examples": selected_examples,
+            "supplements": [],
+            **example_meta,
             "source_row_no": rule.get("source_row_no"),
             "output_fields": ["comment"],
+        }
+
+    def _selected_prompt_examples(self, rule: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+        examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
+        supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
+        pool = examples or supplements
+        selected = [SystemRandom().choice(pool)] if pool else []
+        # 重要逻辑：资产保留完整示例池，但单条生成只注入一条真人示例，
+        # 避免一次塞入过多示例后模型把评论区口语平均化。
+        return selected, {
+            "example_pool_count": len(examples),
+            "supplement_pool_count": len(supplements),
+            "selected_example_source": "examples" if examples else ("supplements" if supplements else "none"),
         }
 
     async def _execute_one_item(self, item_id: int, *, created_by: str | None = None) -> bool:
@@ -243,6 +275,7 @@ class ContentCommentBatchService:
                 business_rule=dict(item.plan_json or {}),
                 item_no=item.item_no,
                 output_fields=["comment"],
+                keyword_asset_key=(item.plan_json or {}).get("keyword_asset_key"),
             )
             item.plan_json = {
                 **(item.plan_json or {}),
@@ -586,3 +619,19 @@ class ContentCommentBatchService:
                 break
             return part[:max_chars].rstrip("，。！？,!?；;、 ")
         return candidate or comment[:max_chars].rstrip("，。！？,!?；;、 ")
+
+
+def _resolve_keyword_asset_key(explicit_key: str | None, asset: AssetRegistry | None) -> str:
+    normalized = _normalize_keyword_asset_key(explicit_key)
+    if normalized:
+        return normalized
+    for source in ((asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        normalized = _normalize_keyword_asset_key(source.get("keyword_asset_key"))
+        if normalized:
+            return normalized
+    return DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
+
+
+def _normalize_keyword_asset_key(value: Any) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None

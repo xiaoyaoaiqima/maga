@@ -9,6 +9,7 @@ import { $t } from '#/locales';
 const appName = computed(() => preferences.app.name);
 const logo = computed(() => preferences.logo.source);
 const logoDark = computed(() => preferences.logo.sourceDark);
+const sloganImage = '/maga-cover.svg';
 </script>
 
 <template>
@@ -18,6 +19,7 @@ const logoDark = computed(() => preferences.logo.sourceDark);
     :logo-dark="logoDark"
     :page-description="$t('authentication.pageDesc')"
     :page-title="$t('authentication.pageTitle')"
+    :slogan-image="sloganImage"
   >
     <!-- 自定义工具栏 -->
     <!-- <template #toolbar></template> -->

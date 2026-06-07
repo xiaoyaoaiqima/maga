@@ -1,7 +1,9 @@
 """API tests for the operator-facing content-agent workbench batch flow."""
 
+from io import BytesIO
 from types import SimpleNamespace
 
+from openpyxl import load_workbook
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
@@ -89,6 +91,28 @@ def test_comment_rule_selection_balances_angles_when_rule_pool_is_large():
     assert len(selected) == 6
     assert {rule["comment_angle"] for rule in selected} == {"便便问题", "奶量补充", "生长发育"}
     assert [rule["source_row_no"] for rule in selected] != list(range(1, 7))
+
+
+def test_comment_plan_injects_one_reference_example_from_pool():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rule = {
+        "rule_id": "comment_angle_001",
+        "comment_angle": "便便问题",
+        "corpus": "像评论区宝妈接话，聊便便频率和软硬。",
+        "examples": ["同款，崽崽都是香蕉软便便", "加一，现在固定一天一次"],
+        "supplements": ["我家拉得挺轻松的，没有那么费劲"],
+        "source_row_no": 1,
+    }
+    asset = SimpleNamespace(asset_key="yuanyue", id=7, version_no=3)
+
+    plan = service._plan_from_rule(rule, asset=asset, item_no=1)
+
+    assert len(plan["examples"]) == 1
+    assert plan["examples"][0] in rule["examples"]
+    assert plan["supplements"] == []
+    assert plan["example_pool_count"] == 2
+    assert plan["supplement_pool_count"] == 1
+    assert plan["selected_example_source"] == "examples"
 
 
 def test_comment_length_fallback_keeps_short_natural_clause():
@@ -322,6 +346,89 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
         "writing_method",
         "comment_format_control",
     ]
+
+
+@pytest.mark.asyncio
+async def test_comment_batch_can_use_dedicated_keyword_package(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    async with session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type="content_generation_keywords",
+                asset_key="a2_plot_discussion_comment_keywords",
+                display_name="A2剧情讨论评论语料包",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "categories": [
+                        {
+                            "category_code": "persona",
+                            "category_name": "人设",
+                            "sub_keywords": [
+                                {
+                                    "keyword_code": "plot_mom",
+                                    "keyword_name": "剧情接话妈妈",
+                                    "corpus": ["像妈妈在评论区接剧情，不从全局活动池里乱抽格式。"],
+                                }
+                            ],
+                        }
+                    ]
+                },
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/content-agent/comment-batches/start",
+        json={
+            "asset_key": "yuanyue_comment_activity",
+            "keyword_asset_key": "a2_plot_discussion_comment_keywords",
+            "created_by": "ops",
+        },
+    )
+
+    assert response.status_code == 200
+    first = response.json()["data"]["report"]["items"][0]
+    assert first["generation_snapshot"]["keyword_asset"]["asset_key"] == "a2_plot_discussion_comment_keywords"
+    assert first["generation_snapshot"]["selected_keywords"][0]["keyword_name"] == "剧情接话妈妈"
+
+    async with session_factory() as session:
+        item = (
+            await session.execute(select(ContentBatchItem).order_by(ContentBatchItem.item_no))
+        ).scalars().first()
+
+    assert item.plan_json["keyword_asset_key"] == "a2_plot_discussion_comment_keywords"
+    assert item.plan_json["unified_generation"]["keyword_asset"]["asset_key"] == "a2_plot_discussion_comment_keywords"
+
+
+@pytest.mark.asyncio
+async def test_batch_report_can_export_generated_results_excel(content_agent_workbench_client):
+    client, _session_factory = content_agent_workbench_client
+    start_response = await client.post(
+        "/api/v1/content-agent/comment-batches/start",
+        json={"asset_key": "yuanyue_comment_activity", "created_by": "ops"},
+    )
+    assert start_response.status_code == 200
+    batch_id = start_response.json()["data"]["batch_id"]
+
+    response = await client.get(f"/api/v1/content-agent/batches/{batch_id}/export.xlsx")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert "filename*=UTF-8''" in response.headers["content-disposition"]
+    workbook = load_workbook(BytesIO(response.content))
+    assert workbook.sheetnames == ["批次概览", "生文结果"]
+    overview = workbook["批次概览"]
+    result = workbook["生文结果"]
+    assert overview["A1"].value == "字段"
+    assert overview["B5"].value == "美素佳儿源悦活动评论"
+    assert result["A1"].value == "序号"
+    assert result["D1"].value == "正文"
+    assert result["D2"].value == "我家刚开始也在看源悦，想蹲蹲真实反馈"
+    assert result["R1"].value == "系统语料包"
 
 
 @pytest.mark.asyncio

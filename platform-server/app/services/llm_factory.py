@@ -15,6 +15,7 @@ from app.utils.model_config import (
     DEFAULT_MODEL,
     DEFAULT_TEMPERATURE,
     ensure_chat_completions_endpoint,
+    normalize_default_model,
 )
 from loguru import logger
 
@@ -97,7 +98,7 @@ class LLMFactory:
                 or LLMFactory.DEFAULT_FALLBACK_BASE_URL
             )
             base_url = ensure_chat_completions_endpoint(base_url_candidate)
-            model = config.get("model") or DEFAULT_MODEL
+            model = normalize_default_model(config.get("model") or DEFAULT_MODEL)
             temperature = config.get("temperature", DEFAULT_TEMPERATURE)
             max_tokens = config.get("max_tokens", DEFAULT_MAX_TOKENS)
             
@@ -113,7 +114,7 @@ class LLMFactory:
             # DeepSeek 配置
             api_key = config.get("api_key") or os.getenv("DEEPSEEK_API_KEY")
             base_url = config.get("endpoint") or config.get("base_url") or "https://api.deepseek.com/v1/chat/completions"
-            model = config.get("model", "deepseek-chat")
+            model = normalize_default_model(config.get("model") or "deepseek-v4-flash")
             
             return {
                 "provider": "deepseek",
@@ -155,7 +156,7 @@ class LLMFactory:
                 "provider": provider,
                 "api_key": api_key,
                 "base_url": base_url,
-                "model": config.get("model", os.getenv("OPENAI_MODEL", "gpt-4o")),
+                "model": normalize_default_model(config.get("model") or os.getenv("DEEPSEEK_MODEL")),
                 "temperature": config.get("temperature", 0.7),
                 "max_tokens": config.get("max_tokens", 1500),
             }
@@ -190,7 +191,7 @@ class LLMFactory:
             llm_config = LLMFactory.get_llm_config(config)
             api_key = llm_config.get("api_key")
             base_url = ensure_chat_completions_endpoint(llm_config.get("base_url") or llm_config.get("endpoint") or "")
-            model = llm_config.get("model") or config.get("model") or DEFAULT_MODEL
+            model = normalize_default_model(llm_config.get("model") or config.get("model") or DEFAULT_MODEL)
             temperature = config.get("temperature", llm_config.get("temperature", DEFAULT_TEMPERATURE))
             max_tokens = config.get("max_tokens", llm_config.get("max_tokens", DEFAULT_MAX_TOKENS))
 
@@ -249,7 +250,7 @@ class LLMFactory:
         llm_config = LLMFactory.get_llm_config(config)
         logger.info(f"[LLMFactory] 调用 LLM，模型: {llm_config['model']}, provider: {llm_config['provider']}")
         
-        model_code = config.get("model", os.getenv("OPENAI_MODEL", "gpt-4o"))
+        model_code = normalize_default_model(config.get("model") or os.getenv("DEEPSEEK_MODEL"))
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -319,7 +320,7 @@ async def invoke_llm(
     配置通过 Dapr 从 Orchestrator 获取
     
     Args:
-        model_code: 统一模型编码（如 gpt-4o, claude-3.5-sonnet）
+        model_code: 统一模型编码（如 deepseek-v4-flash）
         messages: 消息列表 [{"role": "user", "content": "..."}]
         context: 追踪上下文（trace_id, job_id, expert_config_code 等）
         temperature: 温度参数
@@ -348,6 +349,8 @@ async def invoke_llm(
             experiment_group=context.get("experiment_group"),
         )
     
+    model_code = normalize_default_model(model_code)
+
     response = await client.invoke(
         model_code=model_code,
         messages=messages,

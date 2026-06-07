@@ -1,0 +1,31 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="maga-bg" x1="18" y1="14" x2="112" y2="118" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#07111F"/>
+      <stop offset="0.52" stop-color="#102A4D"/>
+      <stop offset="1" stop-color="#1A0B35"/>
+    </linearGradient>
+    <linearGradient id="maga-ring" x1="15" y1="23" x2="113" y2="105" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3DE8FF"/>
+      <stop offset="0.45" stop-color="#4F7CFF"/>
+      <stop offset="1" stop-color="#FF4FD8"/>
+    </linearGradient>
+    <linearGradient id="maga-letter" x1="33" y1="38" x2="95" y2="92" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.52" stop-color="#DDF7FF"/>
+      <stop offset="1" stop-color="#A7C4FF"/>
+    </linearGradient>
+    <filter id="maga-glow" x="-8" y="-8" width="144" height="144" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.25 0 0 0 0 0.82 0 0 0 0 1 0 0 0 0.8 0"/>
+      <feBlend in2="BackgroundImageFix" mode="screen"/>
+      <feBlend in="SourceGraphic" mode="normal"/>
+    </filter>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#maga-bg)"/>
+  <path d="M64 14L107.3 39V89L64 114L20.7 89V39L64 14Z" stroke="url(#maga-ring)" stroke-width="6" filter="url(#maga-glow)"/>
+  <path d="M32 88V43H44L64 70L84 43H96V88H82V65L68 84H60L46 65V88H32Z" fill="url(#maga-letter)"/>
+  <path d="M31 31C42 22 53 18 64 18C75 18 86 22 99 31" stroke="#FFFFFF" stroke-opacity="0.38" stroke-width="3" stroke-linecap="round"/>
+  <path d="M25 96C36 106 49 112 64 112C79 112 92 106 103 96" stroke="#3DE8FF" stroke-opacity="0.35" stroke-width="3" stroke-linecap="round"/>
+</svg>

@@ -14,28 +14,36 @@ const project_dir = dirname(fileURLToPath(import.meta.url));
  * 加载顺序: .env -> .env.local -> .env.{mode} -> .env.{mode}.local
  * 后者覆盖前者
  */
-function loadProxyTarget(mode: string): string {
-  const envProxyTarget = process.env.VITE_PROXY_TARGET?.trim();
-  // make dev 会注入本地后端地址，命令行环境变量应优先于 .env 文件。
-  if (envProxyTarget) {
-    return envProxyTarget;
+function loadEnvValue(mode: string, key: string): undefined | string {
+  const envValue = process.env[key]?.trim();
+  // make dev 或本地命令行注入的环境变量应优先于 .env 文件。
+  if (envValue) {
+    return envValue;
   }
 
   const cwd = process.cwd();
   const files = ['.env', '.env.local', `.env.${mode}`, `.env.${mode}.local`];
-  let proxyTarget = 'http://localhost:5100'; // 默认值
+  let value: undefined | string;
 
   for (const file of files) {
     const filePath = join(cwd, file);
     if (existsSync(filePath)) {
       const content = readFileSync(filePath, 'utf8');
-      const match = content.match(/^VITE_PROXY_TARGET=(.+)$/m);
+      const match = content.match(new RegExp(`^${key}=(.+)$`, 'm'));
       if (match && match[1]) {
-        proxyTarget = match[1].trim();
+        value = match[1].trim();
       }
     }
   }
-  return proxyTarget;
+  return value;
+}
+
+function loadProxyTarget(mode: string): string {
+  return loadEnvValue(mode, 'VITE_PROXY_TARGET') || 'http://localhost:5100';
+}
+
+function loadDevPort(mode: string): number {
+  return Number(loadEnvValue(mode, 'VITE_PORT') || 3102);
 }
 
 const vite_config: UserConfigExport = defineConfig(async () => {
@@ -132,7 +140,7 @@ const vite_config: UserConfigExport = defineConfig(async () => {
         format: 'es',
       },
       server: {
-        port: Number(process.env.VITE_PORT || 3102),
+        port: loadDevPort('development'),
         allowedHosts: ['raap.realshark.com', 'localhost', '.realshark.com'],
         proxy: {
           '/api': {

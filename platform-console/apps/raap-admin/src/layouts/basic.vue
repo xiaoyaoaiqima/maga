@@ -49,6 +49,10 @@ const { formattedRemainingTime, isAboutToExpire, remainingMinutes } =
   });
 
 const appEnv = computed(() => authStore.appEnv || 'production');
+// MAGA clean 部署不暴露旧 RAAP 消息中心 API，通知轮询默认关闭以避免全局控制台噪声。
+const notificationsEnabled = computed(
+  () => import.meta.env.VITE_ENABLE_LEGACY_NOTIFICATIONS === 'true',
+);
 const envName = computed(() => {
   switch (appEnv.value) {
     case 'development': {
@@ -63,7 +67,9 @@ const envName = computed(() => {
   }
 });
 
-const showDot = computed(() => unreadCount.value > 0);
+const showDot = computed(
+  () => notificationsEnabled.value && unreadCount.value > 0,
+);
 
 const menus = computed(() => [
   {
@@ -85,10 +91,11 @@ async function handleLogout() {
 
 function get_notification_avatar(): string {
   // 使用本地静态资源，避免依赖外网
-  return '/logo-128.png';
+  return '/maga-logo.svg';
 }
 
 async function refresh_notifications(): Promise<void> {
+  if (!notificationsEnabled.value) return;
   if (isLoadingNotifications.value) return;
   isLoadingNotifications.value = true;
   try {
@@ -112,12 +119,14 @@ async function refresh_notifications(): Promise<void> {
 }
 
 async function handleNoticeClear() {
+  if (!notificationsEnabled.value) return;
   await clearAllMessagesApi();
   unreadCount.value = 0;
   notifications.value = [];
 }
 
 async function markRead(id: number | string) {
+  if (!notificationsEnabled.value) return;
   if (typeof id !== 'number') return;
   await markMessageReadApi(id);
   const item = notifications.value.find((n) => n.id === id);
@@ -126,6 +135,7 @@ async function markRead(id: number | string) {
 }
 
 async function remove(id: number | string) {
+  if (!notificationsEnabled.value) return;
   if (typeof id !== 'number') return;
   await removeMessageApi(id);
   notifications.value = notifications.value.filter((n) => n.id !== id);
@@ -133,16 +143,19 @@ async function remove(id: number | string) {
 }
 
 async function handleMakeAll() {
+  if (!notificationsEnabled.value) return;
   await markAllMessagesReadApi();
   notifications.value.forEach((item) => (item.isRead = true));
   await refresh_notifications();
 }
 
 function handleViewAll() {
+  if (!notificationsEnabled.value) return;
   router.push({ path: '/message/center' });
 }
 
 onMounted(async () => {
+  if (!notificationsEnabled.value) return;
   await refresh_notifications();
   pollTimer = window.setInterval(() => {
     refresh_notifications().catch(() => undefined);
@@ -237,6 +250,7 @@ watch(
     </template>
     <template #notification>
       <Notification
+        v-if="notificationsEnabled"
         :dot="showDot"
         :notifications="notifications"
         @clear="handleNoticeClear"

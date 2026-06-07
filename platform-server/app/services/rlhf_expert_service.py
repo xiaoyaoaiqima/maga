@@ -12,7 +12,7 @@ class RLHFExpertService:
     async def summarize_tags(
         annotations: List[Dict[str, Any]], 
         comment: Optional[str] = None,
-        model_code: str = "gpt-4o"
+        model_code: str = "deepseek-v4-flash"
     ) -> List[str]:
         """根据划词评论和人工意见，利用 AI 总结问题标签"""
         
@@ -62,7 +62,7 @@ class RLHFExpertService:
         original_content: str,
         annotations: List[Dict[str, Any]],
         refined_content: Optional[str] = None,
-        model_code: str = "gpt-4o"
+        model_code: str = "deepseek-v4-flash"
     ) -> str:
         """根据原文内容和划词评论/精修内容，利用 AI 生成修改意见/问题描述
         

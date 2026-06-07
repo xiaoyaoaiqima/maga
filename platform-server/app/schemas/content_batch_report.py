@@ -143,6 +143,7 @@ class ContentBatchModelConfig(BaseSchema):
 
 class ContentBatchStartRequest(BaseSchema):
     asset_key: str = Field(default=DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY, max_length=128)
+    keyword_asset_key: str | None = Field(default=None, max_length=128)
     product_topic: str | None = Field(default=None, max_length=255)
     target_audience: str | None = Field(default=None, max_length=255)
     persona_target: str | None = Field(default=None, max_length=255)
@@ -158,6 +159,7 @@ class ContentBatchStartRequest(BaseSchema):
 
 class ContentCommentBatchStartRequest(BaseSchema):
     asset_key: str = Field(default="yuanyue_comment_activity", max_length=128)
+    keyword_asset_key: str | None = Field(default=None, max_length=128)
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     created_by: str | None = Field(default=None, max_length=100)
 

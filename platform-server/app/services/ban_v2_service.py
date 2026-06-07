@@ -253,7 +253,7 @@ async def run_ban_v2(request_data: Dict[str, Any]) -> Dict[str, Any]:
             {
                 "content": "待审核内容",
                 "prompt": "由 orchestrator 拼接好的 prompt（包含 $content$ 占位符）",
-                "model_code": "gemini-2.5-flash",
+                "model_code": "deepseek-v4-flash",
                 "model_config": {"temperature": 0, "max_tokens": 2000}
             }
     

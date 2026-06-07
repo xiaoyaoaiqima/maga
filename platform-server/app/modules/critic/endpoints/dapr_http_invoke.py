@@ -23,7 +23,7 @@ class ModelCfg(BaseModel):
 class RLHFTagSummarizeReq(BaseModel):
     annotations: List[Dict[str, Any]]
     comment: Optional[str] = None
-    model_code: str = "gpt-4o"
+    model_code: str = "deepseek-v4-flash"
 
 
 class RLHFCommentSummarizeReq(BaseModel):
@@ -39,7 +39,7 @@ class RLHFCommentSummarizeReq(BaseModel):
     annotations: Optional[List[Dict[str, Any]]] = None  # 划词评论列表
     original_content: Optional[str] = None  # 原文内容（用于精修对比）
     refined_content: Optional[str] = None  # 精修后内容
-    model_code: str = "gpt-4o"
+    model_code: str = "deepseek-v4-flash"
 
 
 class CriticReq(BaseModel):
@@ -52,7 +52,7 @@ class CriticReq(BaseModel):
     expert_service: str = "critic.CriticService"
     expert_func: str = "CriticIllegal"
     prompt: str
-    model_code: str = "gemini-2.5-pro"
+    model_code: str = "deepseek-v4-flash"
     model_cfg: ModelCfg = Field(alias="model_config")
     tenant_code: str = "default"  # 租户编码（用于多租户隔离，如违禁词过滤）
 
@@ -440,11 +440,11 @@ async def http_critic_ai_extra_content_check(req: CriticReq):
 @router.post("/critic.CriticService/AiContentDetector")
 async def http_ai_content_detector(req: CriticReq):
     """
-    使用 Ollama 的 qwen2:7b 模型进行 AI 内容检测评分
+    使用配置的 deepseek-v4-flash 模型进行 AI 内容检测评分
 
     特点：
     - 使用本地 Ollama 服务，无需 API key
-    - 模型：qwen2:7b
+    - 模型：deepseek-v4-flash
     - 支持自定义 prompt 和 model_config
     """
     payload = {
@@ -457,7 +457,7 @@ async def http_ai_content_detector(req: CriticReq):
         "expert_service": req.expert_service,
         "expert_func": req.expert_func,
         "prompt": req.prompt,
-        "model_code": "qwen2:7b",  # 固定使用 qwen2:7b
+        "model_code": "deepseek-v4-flash",
         "model_config": {
             "temperature": req.model_cfg.temperature,
             "max_tokens": req.model_cfg.max_tokens,

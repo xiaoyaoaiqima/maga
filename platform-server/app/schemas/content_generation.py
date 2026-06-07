@@ -14,7 +14,7 @@ class TaskGenerateRequest(BaseModel):
     expert_task_id: int
     expert_config_code: str
     prompt: str
-    model_code: str = "gemini-2.5-pro"
+    model_code: str = "deepseek-v4-flash"
     model_cfg: ModelConfig = Field(default_factory=ModelConfig, alias="model_config")
     content: Optional[str] = None
     brand_id: Optional[int] = None

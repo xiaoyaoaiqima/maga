@@ -20,7 +20,7 @@ from app.models.expert_config import ExpertConfig
 from app.models.maga_assets import AssetRegistry
 from app.services.content_batch_execution_service import ContentBatchExecutionService
 from app.services.executor_invocation_service import InvokeResult, MockExecutorInvocationClient
-from app.services.forbidden_term_review_service import ForbiddenTermReviewService
+from app.services.forbidden_term_review_service import ForbiddenTermReviewService, find_forbidden_hits
 
 
 def _execution_tables():
@@ -34,6 +34,16 @@ def _execution_tables():
         AssetRegistry.__table__,
         ExpertConfig.__table__,
     ]
+
+
+def test_forbidden_hits_prefer_longer_overlapping_terms():
+    hits = find_forbidden_hits(
+        "娃倒没抗拒，价格也能接受。",
+        ["没抗拒", "倒没抗拒", "能接", "能接受"],
+    )
+
+    assert hits.index("倒没抗拒") < hits.index("没抗拒")
+    assert hits.index("能接受") < hits.index("能接")
 
 
 @pytest.mark.asyncio

@@ -116,8 +116,8 @@ env.update(
         "MAGA_WORKER_OUTPUT_DIR": worker_output_dir,
         "XHS_RUNTIME_API_KEY": env.get("XHS_RUNTIME_API_KEY") or env.get("OPENAI_API_KEY", ""),
         "XHS_RUNTIME_BASE_URL": env.get("XHS_RUNTIME_BASE_URL") or env.get("OPENAI_BASE_URL", ""),
-        "XHS_RUNTIME_MODEL_GE": env.get("XHS_RUNTIME_MODEL_GE") or env.get("OPENAI_MODEL", ""),
-        "XHS_RUNTIME_MODEL_AE": env.get("XHS_RUNTIME_MODEL_AE") or env.get("OPENAI_MODEL", ""),
+        "XHS_RUNTIME_MODEL_GE": env.get("XHS_RUNTIME_MODEL_GE") or env.get("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+        "XHS_RUNTIME_MODEL_AE": env.get("XHS_RUNTIME_MODEL_AE") or env.get("DEEPSEEK_MODEL", "deepseek-v4-flash"),
     }
 )
 log_path = pathlib.Path(worker_log)

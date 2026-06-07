@@ -25,7 +25,7 @@ class DocumentParseReq(BaseModel):
     category_type: str = Field(..., description="分类类型")
     template_fields: List[Dict[str, Any]] = Field(..., description="语料模板字段定义")
     tenant_code: str = "default"
-    model_code: str = "gpt-4o"
+    model_code: str = "deepseek-v4-flash"
     model_cfg: ModelCfg = Field(alias="model_config")
 
     # 可选：如果已经有文本内容，直接使用

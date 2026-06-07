@@ -18,6 +18,8 @@ import { router } from './router';
 
 // 引入自定义动画样式
 import '#/styles/animations.css';
+// MAGA 内部业务页暗色主题兼容样式
+import '#/styles/maga-dark.css';
 
 // Monaco Editor 延迟加载配置：仅在 MonacoEditor 组件内初始化
 // 这样可以避免首屏加载约 2MB 的 Monaco 代码

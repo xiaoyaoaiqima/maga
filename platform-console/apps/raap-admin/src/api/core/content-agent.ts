@@ -376,6 +376,12 @@ export async function getContentBatchReportApi(batchId: number) {
   );
 }
 
+export async function downloadContentBatchReportExcelApi(batchId: number) {
+  return requestClient.download<Blob>(
+    `/v1/content-agent/batches/${batchId}/export.xlsx`,
+  );
+}
+
 export async function getContentBatchFeedbackInsightsApi(batchId: number) {
   return requestClient.get<ContentAgentApi.BatchFeedbackInsight>(
     `/v1/content-agent/batches/${batchId}/feedback-insights`,

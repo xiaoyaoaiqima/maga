@@ -6,7 +6,18 @@ from typing import Any, Dict, Optional
 
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_MAX_TOKENS = 1500
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
+DEFAULT_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+
+
+def normalize_default_model(model_code: Optional[str]) -> str:
+    value = str(model_code or "").strip()
+    if not value:
+        return DEFAULT_MODEL
+    compact = value.lower().replace("_", "-").replace(" ", "-")
+    # 生成链路统一走 DeepSeek，避免残留 GPT 路由从历史配置或环境变量穿透。
+    if compact.startswith("gpt"):
+        return DEFAULT_MODEL
+    return value
 
 
 def normalize_model_config(
@@ -82,10 +93,11 @@ def build_llm_config(
     """
     Build a unified LLM config using request overrides and environment defaults.
     """
-    model = model_code or os.getenv("LLM_MODEL", DEFAULT_MODEL)
+    # 生成链路统一走 DeepSeek 默认模型，避免历史环境变量覆盖到 GPT 路由。
+    model = normalize_default_model(model_code or os.getenv("LLM_MODEL") or os.getenv("DEEPSEEK_MODEL"))
     temperature = model_config.get("temperature", DEFAULT_TEMPERATURE)
     max_tokens = model_config.get("max_tokens", DEFAULT_MAX_TOKENS)
-    provider = provider_env or os.getenv("LLM_PROVIDER", "openai")
+    provider = provider_env or os.getenv("LLM_PROVIDER", "deepseek")
     api_key = api_key_env or os.getenv("OPENAI_API_KEY")
     base_url_raw = base_url_env or os.getenv("OPENAI_BASE_URL") or os.getenv("AIHUBMIX_API_URL")
     base_url = ensure_chat_completions_endpoint(base_url_raw) if base_url_raw else None

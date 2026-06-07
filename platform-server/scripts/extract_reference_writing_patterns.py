@@ -165,7 +165,7 @@ async def resolve_model_config(session: AsyncSession, *, model: str | None = Non
         return ModelConfig(
             api_key=provider.api_key or "",
             base_url=provider.base_url,
-            model=model or provider.default_model or os.getenv("OPENAI_MODEL") or "deepseek-v4-flash",
+            model=model or provider.default_model or os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash",
             timeout=provider.timeout or 120,
         )
 
@@ -176,7 +176,7 @@ async def resolve_model_config(session: AsyncSession, *, model: str | None = Non
     return ModelConfig(
         api_key=api_key,
         base_url=base_url,
-        model=model or os.getenv("OPENAI_MODEL") or "deepseek-v4-flash",
+        model=model or os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash",
     )
 
 

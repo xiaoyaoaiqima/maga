@@ -2,6 +2,7 @@
 
 > 筛选日期：2026-06-04  
 > 目的：把本地已经爬过的评论和帖子一次性筛完，后续优化 `评论切角_子关键词导出.csv` 时优先看本文档，不再反复回看原始大表。  
+> 迁移后资产根目录：`/Users/luxifa/rs-crawler-analysis/legacy/xhs_legacy`。
 > 边界：原始评论不直接照搬进语料；只抽象成源悦可用的真人感入口、问法、观察维度和避雷规则。
 
 ## 一、总判断
@@ -17,23 +18,23 @@
 
 1. 先看本文档的“可用口吻”和“可改写方向”。
 2. 再看当前 `关键词语料/评论切角_子关键词导出.csv` 里的已有示例。
-3. 只有出现本文档没有覆盖的新业务切角时，才回到清洗后的 `local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.csv`，不要直接翻带用户信息和 raw JSON 的原始采集表。
+3. 只有出现本文档没有覆盖的新业务切角时，才回到清洗后的 `data/local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.csv`，不要直接翻带用户信息和 raw JSON 的原始采集表。
 
 ## 二、来源盘点和使用评级
 
 | 来源 | 规模 | 结论 | 使用评级 |
 |---|---:|---|---|
 | `xhs_紧急转奶_comments_full.csv` | 1,578 行 | 最干净，适合抽象转奶问法、混合喂、按顿/按勺、怕不接受、求反馈。 | A，可优先用 |
-| `local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.csv` | 28,929 行 | 去重后的可消费语料，适合快速看真实评论短句形态，但仍有竞品和负面，需要二次过滤。 | A-，可查证 |
-| `xhs_转奶争夺战场_top20x200_fast_comments_with_body.csv` | 26,773 行 | 量大，带帖子上下文；适合看转奶场景和帖子语境，原句噪音多。 | B，只抽象 |
-| `xhs_品类信任教育战场_top20x200_detail_comments_with_body.csv` | 25,336 行 | 适合看选奶纠结、成分/奶源/段数讨论、好不好消化的问法。 | B，只抽象 |
+| `data/local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.csv` | 28,929 行 | 去重后的可消费语料，适合快速看真实评论短句形态，但仍有竞品和负面，需要二次过滤。 | A-，可查证 |
+| `data/source/xhs_转奶争夺战场_top20x200_fast_comments_with_body.csv` | 26,773 行 | 量大，带帖子上下文；适合看转奶场景和帖子语境，原句噪音多。 | B，只抽象 |
+| `data/source/xhs_品类信任教育战场_top20x200_detail_comments_with_body.csv` | 25,336 行 | 适合看选奶纠结、成分/奶源/段数讨论、好不好消化的问法。 | B，只抽象 |
 | 两张不带 `_with_body` 的战场评论表 | 52,109 行 | 轻量评论分析可用，但不如带正文版本。 | B-，必要时用 |
 | `xhs_a2至初_comments_full.csv` | 562 行 | 竞品和断货语境重，有少量便便/消化/渠道问法可抽象。 | C，谨慎用 |
-| `A2 评论数据表 - 安全求证类.csv` | 30,094 行 | 召回、批次、安全焦虑、竞品负面太重，不适合进源悦评论示例。 | D，不进语料 |
-| `A2 评论数据表 - 缺货断货类.csv` | 27,730 行 | 渠道、囤货、转卖、断货焦虑多，不适合当前评论切角。 | D，除非做渠道 |
-| `local_data/xhs_comment_analysis_transfer_0601_lexicon/xhs_comments_enriched_full.csv` | 15,661 行 | 情感/主题标签后的中间产物，可看统计，不建议当示例源。 | C，统计参考 |
-| `local_data/xhs_comment_analysis_trust_0601_lexicon/xhs_comments_enriched_full.csv` | 17,872 行 | 同上，适合看“看得头大”等选择焦虑，不直接进语料。 | C，统计参考 |
-| `local_data/llm_comment_sentiment_safety_question_full/a2_safety_question_comments_llm_deepseek_v4_flash_fast.csv` | 29,909 行 | 安全求证 LLM 标注结果，负向舆情用途，不用于源悦正向评论。 | D，不进语料 |
+| `data/source/A2 评论数据表 - 安全求证类.csv` | 30,094 行 | 召回、批次、安全焦虑、竞品负面太重，不适合进源悦评论示例。 | D，不进语料 |
+| `data/source/A2 评论数据表 - 缺货断货类.csv` | 27,730 行 | 渠道、囤货、转卖、断货焦虑多，不适合当前评论切角。 | D，除非做渠道 |
+| `data/local_data/xhs_comment_analysis_transfer_0601_lexicon/xhs_comments_enriched_full.csv` | 15,661 行 | 情感/主题标签后的中间产物，可看统计，不建议当示例源。 | C，统计参考 |
+| `data/local_data/xhs_comment_analysis_trust_0601_lexicon/xhs_comments_enriched_full.csv` | 17,872 行 | 同上，适合看“看得头大”等选择焦虑，不直接进语料。 | C，统计参考 |
+| `data/local_data/llm_comment_sentiment_safety_question_full/a2_safety_question_comments_llm_deepseek_v4_flash_fast.csv` | 29,909 行 | 安全求证 LLM 标注结果，负向舆情用途，不用于源悦正向评论。 | D，不进语料 |
 
 ## 三、全局排除规则
 
@@ -387,6 +388,6 @@
 
 - 本文档已经完成对本地爬取评论和帖子的大筛，不要为了普通评论切角优化再回看原始 CSV。
 - 如果要找真人感，先用本文档的可用方向，再看当前评论切角 CSV。
-- 如果必须回查原始材料，优先查 `local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.csv`。
+- 如果必须回查原始材料，优先查 `data/local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.csv`。
 - 原始大表只保留给新战场分析、舆情分析、渠道/库存专题、或完全新增的业务切角。
 - 每次把本地评论口吻写入评论切角后，还要跑现有质检脚本，确保竞品、负面喝后结果、医疗化、AI 安全总结、高频重复都被清掉。

@@ -1,0 +1,128 @@
+html.dark {
+  --maga-page-bg: #020617;
+  --maga-surface: #050b18;
+  --maga-surface-soft: #08111f;
+  --maga-surface-active: rgba(15, 139, 255, 0.16);
+  --maga-border: rgba(148, 163, 184, 0.18);
+  --maga-border-strong: rgba(148, 163, 184, 0.28);
+  --maga-text: rgba(248, 250, 252, 0.92);
+  --maga-text-muted: rgba(203, 213, 225, 0.68);
+  --maga-text-faint: rgba(148, 163, 184, 0.62);
+}
+
+html.dark body {
+  background: var(--maga-page-bg);
+}
+
+html.dark .business-rule-page,
+html.dark .content-agent-result-page,
+html.dark .content-agent-feedback-page,
+html.dark .system-prompt-keywords-page,
+html.dark .content-flow-experts {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(14, 165, 233, 0.08), transparent 30%),
+    var(--maga-page-bg) !important;
+  color: var(--maga-text);
+}
+
+html.dark .page-toolbar,
+html.dark .panel,
+html.dark .empty-panel,
+html.dark .save-bar,
+html.dark .confirm-file,
+html.dark .feedback-insight-panel,
+html.dark .insight-stat-block,
+html.dark .suggestion-item,
+html.dark .insight-sample-item,
+html.dark .feedback-tools,
+html.dark .route-hint,
+html.dark .preview-box,
+html.dark .snapshot-section,
+html.dark .snapshot-keyword,
+html.dark .snapshot-pre,
+html.dark .trace-modal-stage {
+  color: var(--maga-text);
+  background: var(--maga-surface-soft) !important;
+  border-color: var(--maga-border) !important;
+}
+
+html.dark .batch-list-item,
+html.dark .sample-item {
+  color: var(--maga-text);
+  background: transparent;
+  border-color: var(--maga-border) !important;
+}
+
+html.dark .batch-list-item:hover,
+html.dark .batch-list-item.active,
+html.dark .sample-item:hover,
+html.dark .sample-item.active {
+  color: var(--maga-text);
+  background: var(--maga-surface-active) !important;
+  border-color: rgba(56, 189, 248, 0.62) !important;
+}
+
+html.dark .content-body,
+html.dark .sample-comment,
+html.dark .snapshot-section-title,
+html.dark .snapshot-pre,
+html.dark .table-main,
+html.dark .panel-title,
+html.dark .expert-name,
+html.dark .term-title,
+html.dark .confirm-file strong {
+  color: var(--maga-text) !important;
+}
+
+html.dark .batch-meta,
+html.dark .batch-total,
+html.dark .content-meta,
+html.dark .table-sub,
+html.dark .field-label,
+html.dark .muted,
+html.dark .route-meta,
+html.dark .expert-code,
+html.dark .page-header p,
+html.dark .snapshot-line,
+html.dark .snapshot-keyword-corpus,
+html.dark .sample-meta,
+html.dark .insight-block-title,
+html.dark .insight-empty-text,
+html.dark .suggestion-target,
+html.dark .suggestion-reason,
+html.dark .suggestion-evidence,
+html.dark .insight-sample-text,
+html.dark .feedback-tool-label,
+html.dark .trace-stage-list,
+html.dark .confirm-file span {
+  color: var(--maga-text-muted) !important;
+}
+
+html.dark .reason-code {
+  color: #fda4af;
+}
+
+html.dark body .active-row > td,
+html.dark body tr.active-row > td,
+html.dark body .ant-table-tbody > tr.active-row > td,
+html.dark .ant-table-row.active-row > td,
+html.dark body .selected-row > td,
+html.dark body tr.selected-row > td,
+html.dark body .ant-table-tbody > tr.selected-row > td,
+html.dark .ant-table-row.selected-row > td {
+  background: var(--maga-surface-active) !important;
+}
+
+html.dark .ant-card,
+html.dark .ant-table-wrapper,
+html.dark .ant-descriptions-view,
+html.dark .ant-list,
+html.dark .ant-modal-content,
+html.dark .ant-drawer-content {
+  border-color: var(--maga-border);
+}
+
+html.dark .ant-card {
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.18);
+}

@@ -6,8 +6,19 @@ from typing import Any
 
 from openai import OpenAI
 
-DEFAULT_CONTENT_MODEL = "deepseek-v3-2-251201"
+DEFAULT_CONTENT_MODEL = "deepseek-v4-flash"
 DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3"
+
+
+def normalize_content_model(model: str | None) -> str:
+    value = str(model or "").strip()
+    if not value:
+        return DEFAULT_CONTENT_MODEL
+    compact = value.lower().replace("_", "-").replace(" ", "-")
+    # worker 生成链路禁止继续使用历史 GPT 配置，统一回落 DeepSeek。
+    if compact.startswith("gpt"):
+        return DEFAULT_CONTENT_MODEL
+    return value
 
 
 def runtime_base_url() -> str:
@@ -30,7 +41,7 @@ def runtime_api_key() -> str | None:
 
 
 def default_content_model() -> str:
-    return os.environ.get("MAGA_WORKER_CONTENT_MODEL") or DEFAULT_CONTENT_MODEL
+    return normalize_content_model(os.environ.get("MAGA_WORKER_CONTENT_MODEL"))
 
 
 def openai_client_kwargs() -> dict[str, Any]:
@@ -53,6 +64,7 @@ def _client() -> OpenAI:
 
 
 def call_model(model: str, system: str, user: str, temperature: float = 0.7, max_tokens: int | None = None) -> str:
+    model = normalize_content_model(model)
     last_err: Exception | None = None
     for _ in range(3):
         try:

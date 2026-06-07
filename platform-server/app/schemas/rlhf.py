@@ -199,7 +199,7 @@ class RLHFSummaryResponse(BaseModel):
 
 class RLHFSummarizeCommentRequest(BaseModel):
     """AI 总结意见请求"""
-    model_code: str = Field("gpt-4o", description="使用的模型编码")
+    model_code: str = Field("deepseek-v4-flash", description="使用的模型编码")
 
     model_config = ConfigDict(protected_namespaces=())
 
@@ -242,4 +242,3 @@ class RLHFDailyStatsOut(BaseModel):
     avg_content_score: float
     
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
-

@@ -1,0 +1,106 @@
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-maga}
+      MYSQL_USER: ${MYSQL_USER:-maga}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - maga_mysql_prod:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u$${MYSQL_USER} -p$${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["sh", "-c", "redis-server --requirepass \"$${REDIS_PASSWORD}\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - maga_redis_prod:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    build:
+      context: ./platform-server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_NAME: maga_platform_server
+      APP_ENV: production
+      MAGA_APP_MODE: ${MAGA_APP_MODE:-clean}
+      APP_DEBUG: "false"
+      APP_PORT: 5100
+      PORT: 5100
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-maga}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-maga}
+      MYSQL_ANALYTICS_ENABLED: "false"
+      MYSQL_ANALYTICS_HOST: mysql
+      MYSQL_ANALYTICS_PORT: 3306
+      MYSQL_ANALYTICS_USER: ${MYSQL_USER:-maga}
+      MYSQL_ANALYTICS_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+      MYSQL_ANALYTICS_DATABASE: ${MYSQL_DATABASE:-maga}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      REDIS_DB: 0
+      ORCHESTRATOR_BASE_URL: http://backend:5100
+      INTERNAL_SERVICE_HOST: backend
+      INTERNAL_SERVICE_PORT: 5100
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    ports:
+      - "127.0.0.1:5100:5100"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5100/api/v1/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  maga-worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      MAGA_WORKER_EXECUTOR_TOKEN: ${MAGA_WORKER_EXECUTOR_TOKEN:?MAGA_WORKER_EXECUTOR_TOKEN is required}
+      MAGA_WORKER_RUNTIME_FAST_FAKE: "0"
+      MAGA_WORKER_MODEL_BASE_URL: ${MAGA_WORKER_MODEL_BASE_URL:?MAGA_WORKER_MODEL_BASE_URL is required}
+      MAGA_WORKER_MODEL_API_KEY: ${MAGA_WORKER_MODEL_API_KEY:?MAGA_WORKER_MODEL_API_KEY is required}
+      MAGA_WORKER_CONTENT_MODEL: ${MAGA_WORKER_CONTENT_MODEL:-deepseek-v4-flash}
+      MAGA_WORKER_MODEL_TIMEOUT: ${MAGA_WORKER_MODEL_TIMEOUT:-90}
+      WORKER_WORKSPACE: /app/profiles/maga-worker
+      MAGA_WORKER_OUTPUT_DIR: /app/outputs
+    volumes:
+      - maga_worker_outputs_prod:/app/outputs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8765/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  maga_mysql_prod:
+  maga_redis_prod:
+  maga_worker_outputs_prod:

@@ -452,14 +452,14 @@ onMounted(() => {
           <FormItem label="模型编码" :rules="[{ required: true }]">
             <Input
               v-model:value="formState.model_code"
-              placeholder="如: gpt-4o, deepseek-chat"
+              placeholder="如: deepseek-v4-flash"
               :disabled="!!editingRoute"
             />
           </FormItem>
           <FormItem label="模型名称" :rules="[{ required: true }]">
             <Input
               v-model:value="formState.model_name"
-              placeholder="如: GPT-4o"
+              placeholder="如: DeepSeek V4 Flash"
             />
           </FormItem>
         </div>

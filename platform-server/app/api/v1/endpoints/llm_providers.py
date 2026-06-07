@@ -308,7 +308,7 @@ async def test_connection(
         raise HTTPException(status_code=404, detail=f"Provider '{code}' not found")
     
     # 确定要测试的模型
-    test_model = config.get("default_model") or "gpt-3.5-turbo"
+    test_model = config.get("default_model") or "deepseek-v4-flash"
     base_url = config['base_url']
     api_key = config['api_key']
     
@@ -1135,7 +1135,7 @@ async def get_model_stats(
 
     result = await db.execute(
         select(
-            func.coalesce(ExpertCallTrace.model_code, "deepseek-v3.2").label("model_code"),
+            func.coalesce(ExpertCallTrace.model_code, "deepseek-v4-flash").label("model_code"),
             func.coalesce(LLMModelRoute.currency, ExpertCallTrace.currency, "USD").label("currency"),
             func.count().label("total_calls"),
             func.sum(ExpertCallTrace.total_tokens).label("total_tokens"),
@@ -1151,7 +1151,7 @@ async def get_model_stats(
             ExpertCallTrace.start_time <= end_datetime,
         )
         .group_by(
-            func.coalesce(ExpertCallTrace.model_code, "deepseek-v3.2"),
+            func.coalesce(ExpertCallTrace.model_code, "deepseek-v4-flash"),
             LLMModelRoute.currency,
             ExpertCallTrace.currency,
         )
@@ -1210,7 +1210,7 @@ async def get_daily_trend(
     if provider_code:
         conditions.append(ExpertCallTrace.provider_code == provider_code)
     if model_code:
-        conditions.append(func.coalesce(ExpertCallTrace.model_code, "deepseek-v3.2") == model_code)
+        conditions.append(func.coalesce(ExpertCallTrace.model_code, "deepseek-v4-flash") == model_code)
 
     # 从 ExpertCallTrace 原始表查询并关联 LLMModelRoute 获取币种
     result = await db.execute(

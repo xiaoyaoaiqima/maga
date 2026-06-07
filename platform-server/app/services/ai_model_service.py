@@ -8,6 +8,7 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 from app.utils.llm_parse import parse_function_calls
+from app.utils.model_config import normalize_default_model
 from loguru import logger
 
 
@@ -45,9 +46,8 @@ class AIModelService:
                 raise ValueError("API Key 未配置，请在上游提供或设置环境变量")
             if not base_url:
                 raise ValueError("Base URL 未配置，请在上游提供或设置环境变量")
-            
-            # gpt-5 系列不支持 max_tokens，需改用 max_completion_tokens
-            use_max_completion = ai_model.startswith("gpt-5")
+
+            ai_model = normalize_default_model(ai_model)
 
             payload = {
                 "model": ai_model,
@@ -56,18 +56,8 @@ class AIModelService:
                     {"role": "user", "content": user_prompt},
                 ],
                 "temperature": temperature,
+                "max_tokens": max_tokens,
             }
-
-            if use_max_completion:
-                payload["max_completion_tokens"] = max_tokens
-                logger.debug(
-                    "Using max_completion_tokens for model %s, value=%s",
-                    ai_model,
-                    max_tokens,
-                )
-            else:
-                # 仅设置一个 max_tokens，避免与 max_completion_tokens 冲突
-                payload["max_tokens"] = max_tokens
             
             # 如果提供了 functions，添加到 payload（OpenAI 新协议使用 tools）
             if functions:
@@ -130,4 +120,3 @@ class AIModelService:
         except Exception as e:
             logger.error(f"AI 模型调用异常: {str(e)}")
             raise RuntimeError(f"AI 模型调用失败: {str(e)}") from e
-

@@ -70,7 +70,7 @@ const pricingAuditForm = reactive({
 
 const fieldRepairForm = reactive({
   default_provider_code: 'aihubmix',
-  default_model_code: 'gemini-2.5-flash',
+  default_model_code: 'deepseek-v4-flash',
 });
 
 const routeUpsertForm = reactive({

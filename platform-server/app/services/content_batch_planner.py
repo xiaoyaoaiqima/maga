@@ -14,6 +14,7 @@ from app.services.product_experience_rule_service import (
     DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME,
     PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
 )
+from app.services.system_prompt_keyword_service import DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
 
 DEFAULT_CONTENT_WORD_COUNT = "150-250"
 DEFAULT_CONTENT_EMOJI = "少量"
@@ -83,6 +84,7 @@ class ContentBatchPlanner:
         persona_target: str | None = None,
         style: str | None,
         count: int,
+        keyword_asset_key: str | None = None,
         model_config: dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> ContentBatchJob:
@@ -94,6 +96,7 @@ class ContentBatchPlanner:
             return await self._create_product_experience_rule_plan(
                 rule_asset,
                 requested_count=count,
+                keyword_asset_key=keyword_asset_key,
                 model_config=model_config,
                 created_by=created_by,
             )
@@ -154,6 +157,7 @@ class ContentBatchPlanner:
                 target_audience=target_audience,
                 persona_target=persona_target,
                 style=style,
+                keyword_asset_key=_normalize_keyword_asset_key(keyword_asset_key),
                 painpoints=painpoints,
                 selling_points=selling_points,
                 examples=examples,
@@ -186,6 +190,7 @@ class ContentBatchPlanner:
         asset: AssetRegistry,
         *,
         requested_count: int,
+        keyword_asset_key: str | None,
         model_config: dict[str, Any] | None,
         created_by: str | None,
     ) -> ContentBatchJob:
@@ -194,6 +199,7 @@ class ContentBatchPlanner:
             raise ValueError(f"product_experience_rule_set is empty for {asset.asset_key}")
         limit = self._product_experience_generation_limit(asset, rules, requested_count=requested_count)
         product_topic = (asset.content_json or {}).get("activity_name") or DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME
+        resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, asset)
         job = ContentBatchJob(
             batch_code=f"batch_{uuid.uuid4().hex[:12]}",
             asset_key=asset.asset_key,
@@ -208,6 +214,7 @@ class ContentBatchPlanner:
                 "rule_asset_version": asset.version_no,
                 "executor": DEFAULT_EXECUTOR_CODE,
                 "generation_mode": "unified_content_generate",
+                "keyword_asset_key": resolved_keyword_asset_key,
             },
             diversity_plan_json={
                 "opening_types": OPENING_TYPES,
@@ -231,6 +238,7 @@ class ContentBatchPlanner:
                         rule,
                         asset=asset,
                         item_no=index + 1,
+                        keyword_asset_key=resolved_keyword_asset_key,
                         model_config=model_config,
                     ),
                 )
@@ -262,6 +270,7 @@ class ContentBatchPlanner:
         target_audience: str | None,
         persona_target: str | None = None,
         style: str | None,
+        keyword_asset_key: str | None,
         painpoints: list[dict[str, Any]],
         selling_points: list[dict[str, Any]],
         examples: list[dict[str, Any]],
@@ -305,6 +314,7 @@ class ContentBatchPlanner:
             "target_audience": target_audience,
             "persona_target": persona_target,
             "style": style,
+            "keyword_asset_key": keyword_asset_key,
             "asset_combo_key": asset_combo_key,
             "asset_reuse_reason": asset_reuse_reason,
             "painpoint_ref": self._ref("painpoint_model", asset_key, pain_idx, painpoints[pain_idx]),
@@ -375,6 +385,7 @@ class ContentBatchPlanner:
         *,
         asset: AssetRegistry,
         item_no: int,
+        keyword_asset_key: str,
         model_config: dict[str, Any] | None,
     ) -> dict[str, Any]:
         zero = item_no - 1
@@ -382,6 +393,7 @@ class ContentBatchPlanner:
             "rule_type": "product_experience",
             "item_no": item_no,
             "asset_key": asset.asset_key,
+            "keyword_asset_key": keyword_asset_key,
             "rule_asset_id": asset.id,
             "rule_asset_version": asset.version_no,
             "rule_id": rule.get("rule_id"),
@@ -545,3 +557,19 @@ def _has_overlap(left: str, right: str) -> bool:
     left_terms = {left[index : index + 2] for index in range(max(len(left) - 1, 0))}
     right_terms = {right[index : index + 2] for index in range(max(len(right) - 1, 0))}
     return bool(left_terms & right_terms)
+
+
+def _resolve_keyword_asset_key(explicit_key: str | None, asset: AssetRegistry | None) -> str:
+    normalized = _normalize_keyword_asset_key(explicit_key)
+    if normalized:
+        return normalized
+    for source in ((asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        normalized = _normalize_keyword_asset_key(source.get("keyword_asset_key"))
+        if normalized:
+            return normalized
+    return DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
+
+
+def _normalize_keyword_asset_key(value: Any) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None

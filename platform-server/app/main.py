@@ -19,19 +19,15 @@ from app.middleware.metrics_middleware import MetricsMiddleware
 setup_logging()
 logger = get_logger()
 
-# 导入调度器相关组件
-from app.scheduler import get_scheduler_manager
-from app.scheduler.expert_task_executor import execute_expert_task_sync, set_main_event_loop
-from app.core.database import async_session_factory
 from app.services.auth_service import AuthService
 from app.services.sys_menu_service import SysMenuService
-from app.services.trace_service import TraceService
 from datetime import datetime, timedelta
 
 # 定义一个独立的任务函数（不依赖请求上下文）
 async def run_daily_stats_aggregation():
     """执行每日统计聚合任务"""
     from app.core.logger import logger
+    from app.services.trace_service import TraceService
 
     async with async_session_factory() as db:
         try:
@@ -63,6 +59,7 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {settings.APP_NAME} service...")
     logger.info(f"Environment: {settings.APP_ENV}, Debug: {settings.APP_DEBUG}")
+    logger.info(f"MAGA app mode: {settings.MAGA_APP_MODE}")
     logger.info(f"Log format: {settings.effective_log_format}, Level: {settings.LOG_LEVEL}")
 
     await init_db()
@@ -77,76 +74,87 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Default bootstrap initialization failed: {e}")
 
-    # 初始化并启动调度器
-    try:
-        # 保存主事件循环引用，供调度任务使用
-        main_loop = asyncio.get_event_loop()
-        set_main_event_loop(main_loop)
-        
-        scheduler_manager = get_scheduler_manager()
-        scheduler_manager.init_scheduler()
-        scheduler_manager.start()
-        logger.info("Scheduler started")
-        
-        # 加载已部署的任务
-        await _load_deployed_tasks(scheduler_manager)
+    if settings.is_maga_clean_mode:
+        logger.info("MAGA clean mode: legacy scheduler bootstrap skipped")
+    else:
+        # 初始化并启动旧 Job/ExpertTask 调度器；clean 模式不注册这些历史运行面。
+        try:
+            from app.scheduler import get_scheduler_manager
+            from app.scheduler.expert_task_executor import set_main_event_loop
 
-        # 注册聚合任务：每小时执行一次 (分=0)
-        scheduler_manager.add_cron_job(
-            func=run_daily_stats_aggregation,
-            job_id="trace_daily_aggregation",
-            cron_expression="0 * * * *", # 每小时第0分钟执行
-            replace_existing=True
-        )
+            # 保存主事件循环引用，供调度任务使用
+            main_loop = asyncio.get_event_loop()
+            set_main_event_loop(main_loop)
 
-        # ✅ Phase 9: 注册缓存刷新任务：每分钟执行一次（仅 Master 节点执行）
-        scheduler_manager.add_cron_job(
-            func=run_cache_refresh,
-            job_id="dashboard_cache_refresh",
-            cron_expression="* * * * *",  # 每分钟执行
-            replace_existing=True
-        )
-        logger.info("✅ Dashboard cache refresh job registered (every minute, Master only)")
+            scheduler_manager = get_scheduler_manager()
+            scheduler_manager.init_scheduler()
+            scheduler_manager.start()
+            logger.info("Scheduler started")
 
-        # ✅ Phase 10: 启动时缓存预热（使用分布式锁协调）
-        import os
-        cache_warmup_enabled = os.getenv("CACHE_WARMUP_ON_STARTUP", "false").lower() == "true"
-        if cache_warmup_enabled:
-            try:
-                from app.services.cache_warmup_service import CacheWarmupService
+            # 加载已部署的任务
+            await _load_deployed_tasks(scheduler_manager)
 
-                async with async_session_factory() as db:
-                    warmup_service = CacheWarmupService(db)
+            # 注册聚合任务：每小时执行一次 (分=0)
+            scheduler_manager.add_cron_job(
+                func=run_daily_stats_aggregation,
+                job_id="trace_daily_aggregation",
+                cron_expression="0 * * * *",  # 每小时第0分钟执行
+                replace_existing=True,
+            )
 
-                    # 注册查询函数（示例：dashboard stats）
-                    async def warmup_dashboard_stats():
-                        from app.api.v1.endpoints.dashboard import _get_dashboard_stats_impl
-                        return await _get_dashboard_stats_impl(db)
+            # ✅ Phase 9: 注册缓存刷新任务：每分钟执行一次（仅 Master 节点执行）
+            scheduler_manager.add_cron_job(
+                func=run_cache_refresh,
+                job_id="dashboard_cache_refresh",
+                cron_expression="* * * * *",  # 每分钟执行
+                replace_existing=True,
+            )
+            logger.info("✅ Dashboard cache refresh job registered (every minute, Master only)")
 
-                    warmup_service.register_query_function("/api/v1/dashboard/stats", warmup_dashboard_stats)
+            # ✅ Phase 10: 启动时缓存预热（使用分布式锁协调）
+            import os
+            cache_warmup_enabled = os.getenv("CACHE_WARMUP_ON_STARTUP", "false").lower() == "true"
+            if cache_warmup_enabled:
+                try:
+                    from app.services.cache_warmup_service import CacheWarmupService
 
-                    # 执行预热
-                    logger.info("🔥 Starting cache warmup...")
-                    stats = await warmup_service.warmup_all()
-                    logger.info(f"✅ Cache warmup completed: {stats}")
-            except Exception as e:
-                logger.warning(f"Cache warmup failed (non-critical): {e}")
-        else:
-            logger.info("Cache warmup disabled (CACHE_WARMUP_ON_STARTUP=false)")
+                    async with async_session_factory() as db:
+                        warmup_service = CacheWarmupService(db)
 
-    except Exception as e:
-        logger.error(f"Failed to start scheduler: {e}")
+                        # 注册查询函数（示例：dashboard stats）
+                        async def warmup_dashboard_stats():
+                            from app.api.v1.endpoints.dashboard import _get_dashboard_stats_impl
+                            return await _get_dashboard_stats_impl(db)
+
+                        warmup_service.register_query_function("/api/v1/dashboard/stats", warmup_dashboard_stats)
+
+                        # 执行预热
+                        logger.info("🔥 Starting cache warmup...")
+                        stats = await warmup_service.warmup_all()
+                        logger.info(f"✅ Cache warmup completed: {stats}")
+                except Exception as e:
+                    logger.warning(f"Cache warmup failed (non-critical): {e}")
+            else:
+                logger.info("Cache warmup disabled (CACHE_WARMUP_ON_STARTUP=false)")
+
+        except Exception as e:
+            logger.error(f"Failed to start scheduler: {e}")
     
     yield
     
     # Shutdown
     # 关闭调度器
-    try:
-        scheduler_manager = get_scheduler_manager()
-        scheduler_manager.shutdown()
-        logger.info("Scheduler stopped")
-    except Exception as e:
-        logger.error(f"Failed to stop scheduler: {e}")
+    if settings.is_maga_clean_mode:
+        logger.info("MAGA clean mode: no legacy scheduler shutdown required")
+    else:
+        try:
+            from app.scheduler import get_scheduler_manager
+
+            scheduler_manager = get_scheduler_manager()
+            scheduler_manager.shutdown()
+            logger.info("Scheduler stopped")
+        except Exception as e:
+            logger.error(f"Failed to stop scheduler: {e}")
 
     logger.info(f"Shutting down {settings.APP_NAME} service...")
 
@@ -156,6 +164,7 @@ async def _load_deployed_tasks(scheduler_manager) -> None:
     from sqlalchemy import select
     from app.models.expert_task import ExpertTask
     from app.models.job import Job
+    from app.scheduler.expert_task_executor import execute_expert_task_sync
     from app.services.expert_config_service import ExpertConfigService
     
     logger.info("[Scheduler] Loading deployed tasks...")

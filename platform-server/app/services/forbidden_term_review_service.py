@@ -171,7 +171,8 @@ def find_forbidden_hits(text: str, terms: list[str] | None = None) -> list[str]:
     for term in terms or STATIC_FORBIDDEN_TERMS:
         if term and term in text and term not in hits:
             hits.append(term)
-    return hits
+    # 重叠禁词需要先处理长词，避免兜底清理时短词先删掉后留下怪碎片。
+    return sorted(hits, key=len, reverse=True)
 
 
 def _quality_with_forbidden_review(quality_json: dict[str, Any], review_payload: dict[str, Any]) -> dict[str, Any]:

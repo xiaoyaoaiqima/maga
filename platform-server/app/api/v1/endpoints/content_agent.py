@@ -1,5 +1,7 @@
 """Content-agent execution-layer endpoints."""
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,6 +125,7 @@ async def start_batch_generation(
             persona_target=request.persona_target,
             style=request.style,
             count=request.count,
+            keyword_asset_key=request.keyword_asset_key,
             model_config=await _model_config_with_maga_defaults(
                 db,
                 request.generation_model_config.model_dump(exclude_none=True),
@@ -175,6 +178,7 @@ async def start_comment_batch_generation(
             executor_code=executor_code,
         ).create_and_execute_batch(
             asset_key=request.asset_key,
+            keyword_asset_key=request.keyword_asset_key,
             created_by=request.created_by,
         )
         db.expire_all()
@@ -246,6 +250,26 @@ async def get_batch_report(
     except ValueError as exc:
         raise _map_protocol_error(exc) from exc
     return ResponseData(data=report)
+
+
+@router.get("/batches/{batch_id}/export.xlsx")
+async def export_batch_report_excel(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    service = ContentBatchReportService(db)
+    try:
+        filename, content = await service.export_batch_report_excel(batch_id)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    quoted_filename = quote(filename)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
+        },
+    )
 
 
 @router.get("/batches/{batch_id}/feedback-insights", response_model=ResponseData[ContentBatchFeedbackInsightResponse])

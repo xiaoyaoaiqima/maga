@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # Application
     APP_NAME: str = "maga_platform_server"
     APP_ENV: Literal["development", "staging", "production"] = "development"
+    MAGA_APP_MODE: Literal["full", "clean"] = "full"
     APP_DEBUG: bool = True
     APP_PORT: int = 5100
 
@@ -179,6 +180,11 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production environment"""
         return self.APP_ENV == "production"
+
+    @property
+    def is_maga_clean_mode(self) -> bool:
+        """Whether the server should expose only the MAGA content-production surface."""
+        return self.MAGA_APP_MODE == "clean"
 
     @property
     def effective_log_format(self) -> str:

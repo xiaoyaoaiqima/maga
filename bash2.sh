@@ -23,10 +23,10 @@ python3 "$ROOT_DIR/scripts/optimize_prompt_from_txts.py" \
   --content-file "$ROOT_DIR/local_data/content.txt" \
   --problem-file "$ROOT_DIR/local_data/problem.txt" \
   --output "$ROOT_DIR/local_data/prompt_optimize_result.json" \
-  --model deepseek-chat \
+  --model deepseek-v4-flash \
   --base-url "${DEEPSEEK_API_BASE:-https://api.deepseek.com}" \
   --api-key "$DEEPSEEK_API_KEY" \
-  --generation-model deepseek-chat \
+  --generation-model deepseek-v4-flash \
   --generation-base-url "${DEEPSEEK_API_BASE:-https://api.deepseek.com}" \
   --generation-api-key "$DEEPSEEK_API_KEY" \
   --new-prompt-output "$ROOT_DIR/local_data/new_prompt.txt" \

@@ -1135,7 +1135,7 @@ watch(
           </Card>
 
           <Card v-else :bordered="false">
-            <Empty description="暂无可评价批次，请先在业务规则页生成内容" />
+            <Empty description="暂无可评价批次，请先在生产工作台生成内容" />
           </Card>
         </Spin>
       </Col>

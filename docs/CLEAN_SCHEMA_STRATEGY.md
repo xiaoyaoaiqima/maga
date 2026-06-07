@@ -104,6 +104,23 @@ MAGA 当前 `platform-server` 是从老系统演化来的，仓库里同时存�
 
 ## Clean schema 开发策略
 
+## Clean API 运行模式
+
+生产环境优先启用：
+
+```bash
+MAGA_APP_MODE=clean
+```
+
+clean 模式先收敛运行面，不删除旧代码和旧表：
+
+- 只注册 MAGA 当前生产工作台需要的 API：`auth`、`health`、`content-agent`、`assets`、`content-generation-experts`、`llm-providers`、`files`、`system/info`。
+- 不注册旧 RAAP 的 `jobs`、`expert-tasks`、`rlhf`、`ab-tests`、`plugins`、`plugin-contexts`、`dashboard`、`critic/generation internal` 等路由。
+- 启动时跳过旧 Job / ExpertTask / dashboard cache scheduler，不再把历史定时任务放进生产运行面。
+- 默认管理员初始化仍保留，确保控制台可以正常登录。
+
+`MAGA_APP_MODE=full` 保留完整历史路由，适合本地排查旧功能或迁移数据。生产 compose 默认使用 clean 模式。
+
 ### 本地开发库
 
 建议保留两个库：

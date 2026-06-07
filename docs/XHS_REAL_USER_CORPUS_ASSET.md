@@ -2,13 +2,14 @@
 
 > 生成时间：2026-06-01  
 > 资产定位：把昨晚采集的小红书帖子、评论、正文/tag、情感和战场评分整理成 MAGA 可复用的真人感语料来源。  
-> 操作边界：本说明不移动、不删除数据文件；只明确主产物、使用口径和后续资产化方向。
+> 迁移后资产根目录：`/Users/luxifa/rs-crawler-analysis/legacy/xhs_legacy`。
+> 操作边界：MAGA 只保留本文档作为索引；实际脚本和数据文件在 `rs-crawler-analysis`，下文路径默认相对迁移后资产根目录。
 
 ## 一、资产结论
 
 这批数据应作为 MAGA 的高价值真人感语料底座保留。它不是普通评论样本，而是同时带有：
 
-- 真实搜索词：来自 `小红书完整词包_综合排序_强意图降权版.xlsx` 的战场关键词。
+- 真实搜索词：来自 `assets/小红书完整词包_综合排序_强意图降权版.xlsx` 的战场关键词。
 - 真实帖子上下文：标题、作者、正文、互动数据、发布时间、tag。
 - 真实评论表达：评论正文、评论用户、点赞、评论时间。
 - 真实业务战场：`转奶争夺战场`、`品类信任教育战场`。
@@ -22,21 +23,21 @@
 
 | 层级 | 用途 | 文件 |
 |------|------|------|
-| 输入词包 | 搜索词、战场来源 | `小红书完整词包_综合排序_强意图降权版.xlsx` |
-| 转奶全量评论+正文 | 真人评论、原帖上下文、tag 分析主入口 | `xhs_转奶争夺战场_top20x200_fast_comments_with_body.csv` |
-| 品类信任全量评论+正文 | 真人评论、原帖上下文、tag 分析主入口 | `xhs_品类信任教育战场_top20x200_detail_comments_with_body.csv` |
-| 转奶评论原表 | 不需要正文/tag 时的轻量评论分析 | `xhs_转奶争夺战场_top20x200_fast_comments.csv` |
-| 品类信任评论原表 | 不需要正文/tag 时的轻量评论分析 | `xhs_品类信任教育战场_top20x200_detail_comments.csv` |
-| 转奶逐帖正文/tag | 帖子级正文和话题分析 | `local_data/xhs_note_body_transfer_full/note_tags.csv` |
-| 品类信任逐帖正文/tag | 帖子级正文和话题分析 | `local_data/xhs_note_body_trust_full/note_tags.csv` |
-| 转奶情感增强评论 | 情感、主题、风险标签后的评论结果 | `local_data/xhs_comment_analysis_transfer_0601_lexicon/xhs_comments_enriched_full.csv` |
-| 品类信任情感增强评论 | 情感、主题、风险标签后的评论结果 | `local_data/xhs_comment_analysis_trust_0601_lexicon/xhs_comments_enriched_full.csv` |
-| 一图一战场词云 | 快速看真人表达高频词 | `local_data/xhs_wordcloud_one_per_battle_0601/` |
-| 关键词情感评分 | 按关键词 TopN 评论计算情感 | `local_data/xhs_keyword_topn_sentiment_0601/keyword_topn_sentiment_scores.csv` |
-| 战场评分报告 | 汇报口径和战场对比 | `local_data/xhs_battle_report_format_0601_note_tuned_negative_total/` |
-| 真人感评论语料 | 去重后的可消费真人评论样本，不含用户昵称/profile/raw JSON | `local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.csv` |
-| 真人感语料摘要 | 语料生成口径、去重口径、分战场数量 | `local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.summary.json` |
-| 全量清单 | 文件状态、行数、大小、使用口径 | `local_data/collection_outputs_manifest.csv` |
+| 输入词包 | 搜索词、战场来源 | `assets/小红书完整词包_综合排序_强意图降权版.xlsx` |
+| 转奶全量评论+正文 | 真人评论、原帖上下文、tag 分析主入口 | `data/source/xhs_转奶争夺战场_top20x200_fast_comments_with_body.csv` |
+| 品类信任全量评论+正文 | 真人评论、原帖上下文、tag 分析主入口 | `data/source/xhs_品类信任教育战场_top20x200_detail_comments_with_body.csv` |
+| 转奶评论原表 | 不需要正文/tag 时的轻量评论分析 | `data/source/xhs_转奶争夺战场_top20x200_fast_comments.csv` |
+| 品类信任评论原表 | 不需要正文/tag 时的轻量评论分析 | `data/source/xhs_品类信任教育战场_top20x200_detail_comments.csv` |
+| 转奶逐帖正文/tag | 帖子级正文和话题分析 | `data/local_data/xhs_note_body_transfer_full/note_tags.csv` |
+| 品类信任逐帖正文/tag | 帖子级正文和话题分析 | `data/local_data/xhs_note_body_trust_full/note_tags.csv` |
+| 转奶情感增强评论 | 情感、主题、风险标签后的评论结果 | `data/local_data/xhs_comment_analysis_transfer_0601_lexicon/xhs_comments_enriched_full.csv` |
+| 品类信任情感增强评论 | 情感、主题、风险标签后的评论结果 | `data/local_data/xhs_comment_analysis_trust_0601_lexicon/xhs_comments_enriched_full.csv` |
+| 一图一战场词云 | 快速看真人表达高频词 | `data/local_data/xhs_wordcloud_one_per_battle_0601/` |
+| 关键词情感评分 | 按关键词 TopN 评论计算情感 | `data/local_data/xhs_keyword_topn_sentiment_0601/keyword_topn_sentiment_scores.csv` |
+| 战场评分报告 | 汇报口径和战场对比 | `data/local_data/xhs_battle_report_format_0601_note_tuned_negative_total/` |
+| 真人感评论语料 | 去重后的可消费真人评论样本，不含用户昵称/profile/raw JSON | `data/local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.csv` |
+| 真人感语料摘要 | 语料生成口径、去重口径、分战场数量 | `data/local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.summary.json` |
+| 全量清单 | 文件状态、行数、大小、使用口径 | `data/local_data/collection_outputs_manifest.csv` |
 
 ## 三、数据规模
 
@@ -59,9 +60,9 @@
 
 主入口：
 
-- `local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.csv`
-- `xhs_转奶争夺战场_top20x200_fast_comments_with_body.csv`
-- `xhs_品类信任教育战场_top20x200_detail_comments_with_body.csv`
+- `data/local_data/xhs_real_user_corpus_0601/real_user_comment_corpus_0601.csv`
+- `data/source/xhs_转奶争夺战场_top20x200_fast_comments_with_body.csv`
+- `data/source/xhs_品类信任教育战场_top20x200_detail_comments_with_body.csv`
 
 建议抽取字段：
 
@@ -82,10 +83,10 @@
 
 主入口：
 
-- `local_data/xhs_comment_analysis_transfer_0601_lexicon/xhs_comment_analysis_report_full.md`
-- `local_data/xhs_comment_analysis_trust_0601_lexicon/xhs_comment_analysis_report_full.md`
-- `local_data/xhs_keyword_topn_sentiment_0601/keyword_topn_sentiment_scores.csv`
-- `local_data/xhs_battle_report_format_0601_note_tuned_negative_total/battle_report_format_negative_total.md`
+- `data/local_data/xhs_comment_analysis_transfer_0601_lexicon/xhs_comment_analysis_report_full.md`
+- `data/local_data/xhs_comment_analysis_trust_0601_lexicon/xhs_comment_analysis_report_full.md`
+- `data/local_data/xhs_keyword_topn_sentiment_0601/keyword_topn_sentiment_scores.csv`
+- `data/local_data/xhs_battle_report_format_0601_note_tuned_negative_total/battle_report_format_negative_total.md`
 
 适合产出：
 
@@ -99,8 +100,8 @@
 主入口：
 
 - 两张 `_with_body.csv`
-- `local_data/xhs_wordcloud_one_per_battle_0601/transfer_word_frequencies_top200.csv`
-- `local_data/xhs_wordcloud_one_per_battle_0601/trust_word_frequencies_top200.csv`
+- `data/local_data/xhs_wordcloud_one_per_battle_0601/transfer_word_frequencies_top200.csv`
+- `data/local_data/xhs_wordcloud_one_per_battle_0601/trust_word_frequencies_top200.csv`
 
 适合产出：
 
@@ -111,13 +112,13 @@
 
 ## 五、分层保存建议
 
-当前不建议移动文件，先以文档和 manifest 作为入口。后续如果要真正资产化，可以按下面分层：
+当前已迁移到 `rs-crawler-analysis/legacy/xhs_legacy`，先以本文档和 `data/local_data/collection_outputs_manifest.csv` 作为入口。后续如果要继续资产化，可以按下面分层：
 
 | 资产层 | 内容 | 当前来源 | 目标形态 |
 |--------|------|----------|----------|
-| 原始采集层 | 主评论表、state、retry 记录 | 根目录主 CSV、state、`local_data/retry_*` | 冷存，不直接给业务改 |
+| 原始采集层 | 主评论表、state、retry 记录 | `data/source/` 主 CSV、state、`data/local_data/retry_*` | 冷存，不直接给业务改 |
 | 清洗全量层 | 评论+正文/tag 合并表 | 两张 `_with_body.csv` | 业务分析默认入口 |
-| 汇报分析层 | 情感、词云、评分、战场报告 | `local_data/xhs_*_0601*` | 给业务直接阅读 |
+| 汇报分析层 | 情感、词云、评分、战场报告 | `data/local_data/xhs_*_0601*` | 给业务直接阅读 |
 | 语料资产层 | 真人句式、疑虑表达、自然评论样本 | 从 `_with_body.csv` 抽取 | 后续生成 `real_user_corpus_*` |
 | 训练/提示词层 | 可喂给 MAGA 的 few-shot、规则反例、质检样本 | 从语料资产层筛选 | 进入 `prompts/` 或业务规则资产 |
 

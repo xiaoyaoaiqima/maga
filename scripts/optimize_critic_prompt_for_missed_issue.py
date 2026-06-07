@@ -104,7 +104,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_DEBUG_DIR,
         help=f"Directory for model input debug logs. Defaults to {DEFAULT_DEBUG_DIR}.",
     )
-    parser.add_argument("--model", default=os.getenv("OPENAI_MODEL", DEFAULT_MODEL), help="Model name.")
+    parser.add_argument("--model", default=os.getenv("DEEPSEEK_MODEL", DEFAULT_MODEL), help="Model name.")
     parser.add_argument(
         "--base-url",
         default=os.getenv("OPENAI_BASE_URL") or os.getenv("AIHUBMIX_API_URL") or DEFAULT_BASE_URL,

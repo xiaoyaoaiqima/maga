@@ -25,10 +25,15 @@ export const overridesPreferences = defineOverridesPreferences({
     enable: true, // 确保侧边栏始终启用
     hidden: false, // 确保侧边栏不隐藏
   },
+  copyright: {
+    companyName: 'MAGA',
+    companySiteLink: '',
+    date: '2026',
+  },
   // Logo 配置
   logo: {
-    source: '/logo.png', // 亮色主题 logo (48x48)
-    // sourceDark: '/logo.png', // 暗色主题 logo（当前使用相同 logo）
+    source: '/maga-logo.svg',
+    sourceDark: '/maga-logo.svg',
   },
   // 功能配置
   widget: {

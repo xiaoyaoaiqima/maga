@@ -1198,7 +1198,7 @@ class RLHFService:
         payload = {
             "annotations": feedback.annotations or [],
             "comment": data.comment,
-            "model_code": "gpt-4o"
+            "model_code": "deepseek-v4-flash"
         }
         
         # 2. 调用 AG 专家系统
@@ -1533,4 +1533,3 @@ class RLHFService:
             })
             
         return stats
-

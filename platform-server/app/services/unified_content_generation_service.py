@@ -49,11 +49,16 @@ class UnifiedContentGenerationService:
         item_no: int,
         output_fields: list[str],
         expert_config_code: str | None = None,
-        keyword_asset_key: str = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+        keyword_asset_key: str | None = None,
         keyword_content_override: dict[str, Any] | None = None,
         model_config: dict[str, Any] | None = None,
     ) -> UnifiedGenerationSnapshot:
-        keyword_asset = None if keyword_content_override is not None else await self._latest_keyword_asset(keyword_asset_key)
+        resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, business_rule)
+        keyword_asset = (
+            None
+            if keyword_content_override is not None
+            else await self._latest_keyword_asset(resolved_keyword_asset_key)
+        )
         keyword_content = normalize_system_prompt_keyword_content(
             keyword_content_override
             if keyword_content_override is not None
@@ -83,7 +88,7 @@ class UnifiedContentGenerationService:
             "selected_keywords": selected_keywords,
             "keyword_asset": _keyword_asset_ref(
                 keyword_asset,
-                keyword_asset_key,
+                resolved_keyword_asset_key,
                 inline=keyword_content_override is not None,
             ),
             "expert": expert,
@@ -95,7 +100,11 @@ class UnifiedContentGenerationService:
             input_snapshot=input_snapshot,
             asset_refs={
                 "business_rule": _business_rule_ref(business_rule),
-                "keyword_asset": _keyword_asset_ref(keyword_asset, keyword_asset_key, inline=keyword_content_override is not None),
+                "keyword_asset": _keyword_asset_ref(
+                    keyword_asset,
+                    resolved_keyword_asset_key,
+                    inline=keyword_content_override is not None,
+                ),
                 "expert_config": {
                     "expert_config_code": expert["expert_config_code"],
                     "source": expert["source"],
@@ -183,6 +192,18 @@ def _select_keyword_bundle(content_json: dict[str, Any], *, content_type: str, i
             }
         )
     return selected
+
+
+def _resolve_keyword_asset_key(explicit_key: str | None, business_rule: dict[str, Any]) -> str:
+    for value in (
+        explicit_key,
+        business_rule.get("keyword_asset_key") if isinstance(business_rule, dict) else None,
+        business_rule.get("system_keyword_asset_key") if isinstance(business_rule, dict) else None,
+    ):
+        normalized = str(value or "").strip()
+        if normalized:
+            return normalized
+    return DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
 
 
 def _select_sub_keyword(category: dict[str, Any], sub_keywords: list[dict[str, Any]], *, index: int) -> dict[str, Any]:

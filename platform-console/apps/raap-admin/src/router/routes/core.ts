@@ -50,10 +50,11 @@ const coreRoutes: RouteRecordRaw[] = [
         path: 'content-agent/workbench',
         component: () => import('#/views/content-agent/workbench/index.vue'),
         meta: {
-          title: '生成结果',
+          title: '生成历史',
           icon: 'RobotOutlined',
+          hideInMenu: true,
           order: -99,
-          activeMenu: '/content-agent/workbench',
+          activeMenu: '/business-rules',
         },
       },
       {
@@ -61,7 +62,7 @@ const coreRoutes: RouteRecordRaw[] = [
         path: 'business-rules',
         component: () => import('#/views/business-rules/index.vue'),
         meta: {
-          title: '业务规则',
+          title: '生产工作台',
           icon: 'DatabaseOutlined',
           activeMenu: '/business-rules',
         },

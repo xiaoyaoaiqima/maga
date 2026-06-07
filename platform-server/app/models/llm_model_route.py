@@ -2,7 +2,7 @@
 LLM Model Route model - 模型路由表
 
 核心设计：
-- 业务侧使用统一的 model_code（如 gpt-4o）
+- 业务侧使用统一的 model_code（如 deepseek-v4-flash）
 - 通过路由表映射到具体的 Provider + 实际模型名
 - 支持自动 failover（按优先级排序，失败时切换到下一个）
 - 记录成本信息用于统计
@@ -34,7 +34,7 @@ class LLMModelRoute(Base):
     model_code: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
-        comment="统一模型编码（业务使用，如 gpt-4o）"
+        comment="统一模型编码（业务使用，如 deepseek-v4-flash）"
     )
 
     model_name: Mapped[str] = mapped_column(
@@ -173,4 +173,3 @@ class LLMModelRoute(Base):
             output_cost = (Decimal(output_tokens) / 1000) * self.cost_per_1k_output
         
         return input_cost + output_cost
-

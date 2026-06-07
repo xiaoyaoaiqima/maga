@@ -161,6 +161,7 @@ class ContentBatchExecutionService:
                 business_rule=dict(item.plan_json or {}),
                 item_no=item.item_no,
                 output_fields=["title", "body"],
+                keyword_asset_key=(item.plan_json or {}).get("keyword_asset_key"),
                 model_config=(item.plan_json or {}).get("model_config") or {},
             )
             item.plan_json = {

@@ -47,7 +47,7 @@ class GenerateByTaskReq(BaseModel):
     expert_task_id: int
     expert_config_code: str
     prompt: str
-    model_code: str = "gemini-2.5-pro"
+    model_code: str = "deepseek-v4-flash"
     model_cfg: ModelCfg = Field(alias="model_config")
     content: Optional[str] = None
     brand_id: Optional[int] = None
@@ -120,4 +120,3 @@ async def http_generate_by_task(req: GenerateByTaskReq):
         "provider": provider,
         "error": getattr(resp, "error", ""),
     }
-

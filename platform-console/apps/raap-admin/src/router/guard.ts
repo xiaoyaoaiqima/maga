@@ -161,9 +161,13 @@ function setupAccessGuard(router: Router) {
       return to;
     }
 
-    // 是否已经生成过动态路由
-    if (accessStore.isAccessChecked) {
+    // 是否已经生成过动态路由。MAGA 菜单由前端路由生成，若持久化状态里菜单为空，
+    // 必须重新生成，否则侧栏会渲染成空白。
+    if (accessStore.isAccessChecked && accessStore.accessMenus.length > 0) {
       return true;
+    }
+    if (accessStore.isAccessChecked && accessStore.accessMenus.length === 0) {
+      accessStore.setIsAccessChecked(false);
     }
 
     // 生成路由表

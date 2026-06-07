@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import re
+from io import BytesIO
 from collections import Counter
 from typing import Any
 
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -149,6 +152,21 @@ class ContentBatchReportService:
             summary=self._summary(report_items),
             items=report_items,
         )
+
+    async def export_batch_report_excel(self, batch_id: int) -> tuple[str, bytes]:
+        report = await self.get_batch_report(batch_id)
+        workbook = Workbook()
+        overview_sheet = workbook.active
+        overview_sheet.title = "批次概览"
+        result_sheet = workbook.create_sheet("生文结果")
+
+        _write_overview_sheet(overview_sheet, report)
+        _write_result_sheet(result_sheet, report)
+
+        output = BytesIO()
+        workbook.save(output)
+        filename = _excel_filename(report)
+        return filename, output.getvalue()
 
     async def list_feedback_samples(
         self,
@@ -1066,3 +1084,196 @@ def _suggestion_priority(count: int, total: int) -> str:
 def _truncate(value: str, limit: int) -> str:
     text = str(value or "").strip()
     return text if len(text) <= limit else f"{text[:limit]}..."
+
+
+def _write_overview_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
+    summary = report.summary
+    rows = [
+        ("批次ID", report.batch_id),
+        ("批次Code", report.batch_code or ""),
+        ("资产Key", report.asset_key),
+        ("主题", report.product_topic),
+        ("人群", report.target_audience or "-"),
+        ("人设/对象", report.persona_target or "-"),
+        ("风格", report.style or "-"),
+        ("状态", report.status),
+        ("总数", summary.total_count),
+        ("已生成", summary.generated_count),
+        ("失败", summary.failed_count),
+        ("红线通过", summary.hard_pass_count),
+        ("自动改写", summary.rewrite_item_count),
+        ("仍需处理", summary.remaining_rewrite_required_count),
+        ("禁用词命中", summary.forbidden_hit_count),
+        ("相似提醒", summary.similarity_warning_count),
+        ("平均字数", summary.avg_body_chars if summary.avg_body_chars is not None else "-"),
+    ]
+    sheet.append(["字段", "值"])
+    for row in rows:
+        sheet.append(list(row))
+    _style_table_header(sheet, header_row=1, column_count=2)
+    sheet.column_dimensions["A"].width = 18
+    sheet.column_dimensions["B"].width = 48
+    sheet.freeze_panes = "A2"
+
+
+def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
+    headers = [
+        "序号",
+        "状态",
+        "标题/切角",
+        "正文",
+        "字数",
+        "红线通过",
+        "审核状态",
+        "改写轮次",
+        "改写原因",
+        "禁用词",
+        "相似提醒",
+        "运行模式",
+        "生文耗时ms",
+        "总耗时ms",
+        "Run ID",
+        "Task ID",
+        "业务规则",
+        "系统语料包",
+        "Expert",
+        "模型",
+        "错误信息",
+    ]
+    sheet.append(headers)
+    for item in report.items:
+        snapshot = item.generation_snapshot or {}
+        sheet.append(
+            [
+                item.item_no,
+                item.status,
+                item.title or "",
+                item.body or "",
+                item.body_chars,
+                _bool_label(item.hard_pass),
+                item.review_status or "",
+                item.rewrite_rounds or 0,
+                item.rewrite_reason or "",
+                "、".join(item.forbidden_hits or []),
+                _similarity_text(item.similarity_warnings),
+                item.runtime_mode or "",
+                item.generation_duration_ms if item.generation_duration_ms is not None else "",
+                item.total_duration_ms if item.total_duration_ms is not None else "",
+                item.trace_run_id or item.run_id or "",
+                item.task_id or "",
+                _business_rule_label(snapshot.get("business_rule")),
+                _keyword_asset_label(snapshot.get("keyword_asset")),
+                _expert_label(snapshot.get("expert")),
+                _model_label(snapshot),
+                item.error_message or "",
+            ]
+        )
+    _style_table_header(sheet, header_row=1, column_count=len(headers))
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    widths = {
+        "A": 8,
+        "B": 12,
+        "C": 24,
+        "D": 58,
+        "E": 8,
+        "F": 12,
+        "G": 12,
+        "H": 10,
+        "I": 36,
+        "J": 18,
+        "K": 28,
+        "L": 16,
+        "M": 12,
+        "N": 12,
+        "O": 12,
+        "P": 12,
+        "Q": 30,
+        "R": 28,
+        "S": 26,
+        "T": 24,
+        "U": 36,
+    }
+    for column, width in widths.items():
+        sheet.column_dimensions[column].width = width
+    for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+    for row_index in range(2, sheet.max_row + 1):
+        sheet.row_dimensions[row_index].height = 42
+
+
+def _style_table_header(sheet: Any, *, header_row: int, column_count: int) -> None:
+    fill = PatternFill("solid", fgColor="1F2937")
+    font = Font(color="FFFFFF", bold=True)
+    side = Side(style="thin", color="D9D9D9")
+    border = Border(left=side, right=side, top=side, bottom=side)
+    for row in sheet.iter_rows(min_row=header_row, max_row=sheet.max_row, max_col=column_count):
+        for cell in row:
+            cell.border = border
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+    for cell in sheet[header_row]:
+        cell.fill = fill
+        cell.font = font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+
+def _bool_label(value: bool | None) -> str:
+    if value is True:
+        return "通过"
+    if value is False:
+        return "未通过"
+    return "未知"
+
+
+def _similarity_text(warnings: list[ContentBatchSimilarityWarning]) -> str:
+    if not warnings:
+        return ""
+    return "；".join(
+        f"与第{warning.item_no}条 {round(warning.score * 100)}%"
+        + (f"（{warning.batch_code}）" if warning.batch_code else "")
+        for warning in warnings
+    )
+
+
+def _business_rule_label(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    for key in ("comment_angle", "product_experience", "topic", "rule_id"):
+        text = str(value.get(key) or "").strip()
+        if text:
+            return text
+    return str(value.get("rule_type") or "")
+
+
+def _keyword_asset_label(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    asset_key = str(value.get("asset_key") or "").strip()
+    source = str(value.get("source") or "").strip()
+    return f"{asset_key}（{source}）" if source else asset_key
+
+
+def _expert_label(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    code = str(value.get("expert_config_code") or "").strip()
+    source = str(value.get("source") or "").strip()
+    return f"{code}（{source}）" if source else code
+
+
+def _model_label(snapshot: dict[str, Any]) -> str:
+    route = snapshot.get("model_route") if isinstance(snapshot.get("model_route"), dict) else {}
+    expert = snapshot.get("expert") if isinstance(snapshot.get("expert"), dict) else {}
+    model_config = snapshot.get("model_config") if isinstance(snapshot.get("model_config"), dict) else {}
+    for source in (route, model_config, expert.get("model_config") if isinstance(expert.get("model_config"), dict) else {}):
+        for key in ("model_code", "ge_model", "model"):
+            text = str(source.get(key) or "").strip()
+            if text:
+                return text
+    return ""
+
+
+def _excel_filename(report: ContentBatchReportResponse) -> str:
+    batch_code = re.sub(r"[^0-9A-Za-z_-]+", "_", report.batch_code or f"batch_{report.batch_id}").strip("_")
+    return f"生文结果_{batch_code or report.batch_id}.xlsx"

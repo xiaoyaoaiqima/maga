@@ -694,7 +694,7 @@ async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
 
     response = await asset_client.post(
         "/api/v1/assets/imports/comment-angle-rule-set",
-        data={"created_by": "ops"},
+        data={"created_by": "ops", "keyword_asset_key": "a2_plot_discussion_comment_keywords"},
         files={"file": ("评论切角_子关键词导出.csv", csv_content.encode("utf-8-sig"), "text/csv")},
     )
 
@@ -707,6 +707,7 @@ async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
     assert data["summary_json"]["rule_count"] == 2
     assert data["summary_json"]["example_count"] == 3
     assert data["summary_json"]["default_generation_count"] == 10
+    assert data["summary_json"]["keyword_asset_key"] == "a2_plot_discussion_comment_keywords"
 
     detail_response = await asset_client.get(
         "/api/v1/assets/comment_angle_rule_set/yuanyue_comment_activity"
@@ -714,6 +715,8 @@ async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
     assert detail_response.status_code == 200
     asset = detail_response.json()["data"]
     assert asset["asset_type"] == "comment_angle_rule_set"
+    assert asset["content_json"]["keyword_asset_key"] == "a2_plot_discussion_comment_keywords"
+    assert asset["metadata_json"]["keyword_asset_key"] == "a2_plot_discussion_comment_keywords"
     assert asset["content_json"]["rule_type"] == "comment_angle"
     assert asset["content_json"]["items"][0]["comment_angle"] == "整体适应"
     assert asset["content_json"]["items"][0]["examples"][0] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
@@ -755,7 +758,11 @@ async def test_upload_product_experience_rule_set_imports_rule_asset(asset_clien
 
     response = await asset_client.post(
         "/api/v1/assets/imports/product-experience-rule-set",
-        data={"created_by": "ops", "display_name": "源悦-生文"},
+        data={
+            "created_by": "ops",
+            "display_name": "源悦-生文",
+            "keyword_asset_key": "yuanyue_product_experience_keywords",
+        },
         files={"file": ("产品使用体验_子关键词导出.csv", csv_content.encode("utf-8-sig"), "text/csv")},
     )
 
@@ -767,6 +774,7 @@ async def test_upload_product_experience_rule_set_imports_rule_asset(asset_clien
     assert ["product_experience_rule_set", "yuanyue_product_experience"] in data["asset_keys"]
     assert data["summary_json"]["rule_count"] == 2
     assert data["summary_json"]["example_count"] == 3
+    assert data["summary_json"]["keyword_asset_key"] == "yuanyue_product_experience_keywords"
 
     detail_response = await asset_client.get(
         "/api/v1/assets/product_experience_rule_set/yuanyue_product_experience"
@@ -775,6 +783,8 @@ async def test_upload_product_experience_rule_set_imports_rule_asset(asset_clien
     asset = detail_response.json()["data"]
     assert asset["asset_type"] == "product_experience_rule_set"
     assert asset["display_name"] == "源悦-生文"
+    assert asset["content_json"]["keyword_asset_key"] == "yuanyue_product_experience_keywords"
+    assert asset["metadata_json"]["keyword_asset_key"] == "yuanyue_product_experience_keywords"
     assert asset["content_json"]["rule_type"] == "product_experience"
     assert asset["content_json"]["items"][0]["product_experience"] == "0-6个月，3个月内，奶量补充"
     assert asset["content_json"]["items"][0]["baby_stage"] == "0-6个月"

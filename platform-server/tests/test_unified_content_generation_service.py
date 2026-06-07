@@ -144,6 +144,51 @@ async def test_unified_generation_does_not_put_business_forbidden_terms_in_promp
 
 
 @pytest.mark.asyncio
+async def test_unified_generation_uses_keyword_asset_key_from_business_rule(unified_session_factory):
+    async with unified_session_factory() as session:
+        session.add_all(
+            [
+                AssetRegistry(
+                    asset_type=SYSTEM_KEYWORD_ASSET_TYPE,
+                    asset_key=DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+                    display_name="默认关键词",
+                    version_no=1,
+                    status="active",
+                    asset_stage="production",
+                    content_json={"categories": [_category("persona", "人设", ["默认妈妈"])]},
+                ),
+                AssetRegistry(
+                    asset_type=SYSTEM_KEYWORD_ASSET_TYPE,
+                    asset_key="a2_plot_discussion_comment_keywords",
+                    display_name="A2剧情讨论评论语料包",
+                    version_no=1,
+                    status="active",
+                    asset_stage="production",
+                    content_json={"categories": [_category("persona", "人设", ["剧情妈妈"])]},
+                ),
+            ]
+        )
+        await session.commit()
+
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="comment",
+            business_rule={
+                "rule_type": "comment_angle",
+                "comment_angle": "剧情讨论",
+                "keyword_asset_key": "a2_plot_discussion_comment_keywords",
+            },
+            item_no=1,
+            output_fields=["comment"],
+        )
+
+    assert snapshot.input_snapshot["keyword_asset"]["asset_key"] == "a2_plot_discussion_comment_keywords"
+    assert snapshot.input_snapshot["keyword_asset"]["source"] == "asset_registry"
+    assert snapshot.input_snapshot["selected_keywords"][0]["keyword_name"] == "剧情妈妈"
+    assert "默认妈妈语料" not in snapshot.input_snapshot["rendered_prompt"]
+    assert "剧情妈妈语料" in snapshot.input_snapshot["rendered_prompt"]
+
+
+@pytest.mark.asyncio
 async def test_unified_generation_handles_extensible_keyword_categories(unified_session_factory):
     async with unified_session_factory() as session:
         session.add(

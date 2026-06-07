@@ -25,6 +25,7 @@ class ProductExperienceRuleSetImportResult:
     import_run_id: int
     asset_id: int
     asset_key: str
+    keyword_asset_key: str | None
     source_hash: str
     rule_count: int
     example_count: int
@@ -38,6 +39,7 @@ async def import_product_experience_rule_set(
     source_name: str,
     asset_key: str = DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY,
     display_name: str | None = None,
+    keyword_asset_key: str | None = None,
     created_by: str = "maga-operator",
 ) -> ProductExperienceRuleSetImportResult:
     """Persist 产品使用体验 CSV/XLSX as a versioned business-rule asset."""
@@ -61,6 +63,9 @@ async def import_product_experience_rule_set(
         "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
         "items": items,
     }
+    normalized_keyword_asset_key = _normalize_keyword_asset_key(keyword_asset_key)
+    if normalized_keyword_asset_key:
+        content_json["keyword_asset_key"] = normalized_keyword_asset_key
 
     await db.execute(
         update(AssetRegistry)
@@ -88,6 +93,7 @@ async def import_product_experience_rule_set(
             "business_rule_package": True,
             "rule_count": len(items),
             "example_count": example_count,
+            "keyword_asset_key": normalized_keyword_asset_key,
             "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
             "warnings": warnings,
         },
@@ -107,6 +113,7 @@ async def import_product_experience_rule_set(
             "asset_type": PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
             "rule_count": len(items),
             "example_count": example_count,
+            "keyword_asset_key": normalized_keyword_asset_key,
             "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
             "warnings": warnings,
         },
@@ -118,6 +125,7 @@ async def import_product_experience_rule_set(
         import_run_id=run.id,
         asset_id=asset.id,
         asset_key=normalized_asset_key,
+        keyword_asset_key=normalized_keyword_asset_key,
         source_hash=source_hash,
         rule_count=len(items),
         example_count=example_count,
@@ -129,11 +137,17 @@ def product_experience_import_summary(result: ProductExperienceRuleSetImportResu
     return {
         "asset_type": PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
         "asset_key": result.asset_key,
+        "keyword_asset_key": result.keyword_asset_key,
         "rule_count": result.rule_count,
         "example_count": result.example_count,
         "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
         "warnings": result.warnings,
     }
+
+
+def _normalize_keyword_asset_key(value: str | None) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None
 
 
 def _read_rule_rows(file_content: bytes, *, source_name: str) -> list[dict[str, str]]:

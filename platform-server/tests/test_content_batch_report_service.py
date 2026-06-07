@@ -79,7 +79,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
                                 "expert_config_name": "文章生成 Expert",
                                 "model_config": {
                                     "provider_code": "aihubmix",
-                                    "model_code": "gpt-5.1",
+                                    "model_code": "deepseek-v4-flash",
                                     "temperature": 0.8,
                                 },
                             },
@@ -252,7 +252,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
     assert first.generation_snapshot["business_rule"]["product_topic"] == "宝宝便便不规律"
     assert first.generation_snapshot["selected_keywords"][0]["keyword_name"] == "真实妈妈"
     assert first.generation_snapshot["expert"]["expert_config_code"] == "article_generator_v1"
-    assert first.generation_snapshot["model_route"]["model_code"] == "gpt-5.1"
+    assert first.generation_snapshot["model_route"]["model_code"] == "deepseek-v4-flash"
     assert "宝宝便便不规律" in first.generation_snapshot["rendered_prompt"]
     assert first.generation_snapshot["execution_stages"][0]["stage_call_id"] == "stage-101-generate"
     assert report.items[1].asset_reuse_reason == "素材组合池已用完，按轮换策略复用"

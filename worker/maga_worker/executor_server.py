@@ -114,10 +114,10 @@ def _handle_content_generate(input_payload: dict[str, Any]) -> dict[str, Any]:
         }
         return output
 
-    from maga_worker.llm_runtime import call_model, default_content_model
+    from maga_worker.llm_runtime import call_model, default_content_model, normalize_content_model
 
     model_config = input_payload.get("model_config") or {}
-    model = str(model_config.get("model_code") or model_config.get("ge_model") or default_content_model())
+    model = normalize_content_model(model_config.get("model_code") or model_config.get("ge_model") or default_content_model())
     temperature = _float_or_default(model_config.get("temperature"), 0.8)
     max_tokens = _int_or_none(model_config.get("max_tokens"))
     system = str(
@@ -127,14 +127,75 @@ def _handle_content_generate(input_payload: dict[str, Any]) -> dict[str, Any]:
     prompt = str(input_payload.get("rendered_prompt") or "").strip()
     if not prompt:
         prompt = _fallback_rendered_prompt(input_payload)
-    raw = call_model(model, system=system, user=prompt, temperature=temperature, max_tokens=max_tokens)
-    output = _normalize_unified_content_output(raw, input_payload)
+    output = _generate_content_with_runtime_fallback(
+        input_payload,
+        call_model=call_model,
+        model=model,
+        system=system,
+        prompt=prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
     output["runtime_result"] = {
         "mode": "content_runtime",
         "fake": False,
         "expert_config_code": (input_payload.get("expert") or {}).get("expert_config_code"),
         "provider_code": model_config.get("provider_code"),
         "model_code": model,
+        **(output.pop("_runtime_meta", {})),
+    }
+    return output
+
+
+def _generate_content_with_runtime_fallback(
+    input_payload: dict[str, Any],
+    *,
+    call_model,
+    model: str,
+    system: str,
+    prompt: str,
+    temperature: float,
+    max_tokens: int | None,
+) -> dict[str, Any]:
+    """Retry empty model outputs, then use rule examples so one blank response does not fail an item."""
+    attempts = [
+        prompt,
+        (
+            f"{prompt}\n\n"
+            "再次提醒：必须输出非空结果。评论只输出一条评论正文；文章输出标题和正文。"
+        ),
+    ]
+    last_raw = ""
+    last_error: ValueError | None = None
+    for attempt_no, attempt_prompt in enumerate(attempts, start=1):
+        raw = call_model(
+            model,
+            system=system,
+            user=attempt_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        last_raw = str(raw or "")
+        try:
+            output = _normalize_unified_content_output(last_raw, input_payload)
+        except ValueError as exc:
+            last_error = exc
+            if "empty" in str(exc):
+                continue
+            raise
+        output["_runtime_meta"] = {
+            "fallback": False,
+            "model_attempts": attempt_no,
+            "raw_output_length": len(last_raw),
+        }
+        return output
+
+    output = _stable_content_from_unified_input(input_payload)
+    output["_runtime_meta"] = {
+        "fallback": True,
+        "fallback_reason": str(last_error or "empty_model_output"),
+        "model_attempts": len(attempts),
+        "raw_output_length": len(last_raw),
     }
     return output
 
@@ -164,10 +225,10 @@ def _handle_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
         }
         return output
 
-    from maga_worker.llm_runtime import call_model, default_content_model
+    from maga_worker.llm_runtime import call_model, default_content_model, normalize_content_model
 
     model_config = input_payload.get("model_config") or input_payload.get("rewrite_model_config") or {}
-    model = str(
+    model = normalize_content_model(
         model_config.get("model_code")
         or model_config.get("ge_model")
         or os.environ.get("MAGA_WORKER_REWRITE_MODEL")

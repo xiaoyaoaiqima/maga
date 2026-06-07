@@ -7,7 +7,7 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 const getDefaultPwaOptions = (name: string): Partial<PwaPluginOptions> => ({
   manifest: {
     description:
-      'Vben Admin is a modern admin dashboard template based on Vue 3. ',
+      'MAGA Console is a content generation and operations management platform. ',
     icons: [
       {
         sizes: '192x192',

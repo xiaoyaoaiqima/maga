@@ -5,7 +5,7 @@ import { overridesPreferences } from '#/preferences';
 
 import { coreRoutes } from '../core';
 import { frontendTabRoutes } from '../frontend-tabs';
-import { accessRoutes } from '..';
+import { accessRoutes, coreRouteNames } from '..';
 
 function collectPaths(routes: typeof frontendTabRoutes): string[] {
   const paths: string[] = [];
@@ -30,15 +30,13 @@ describe('frontend controlled sidebar tabs', () => {
 
     expect(paths).toEqual([
       '/business-rules',
-      '/content-agent/workbench',
       '/content-agent/feedback',
       '/content-agent/system-prompt-keywords',
       '/content-agent/experts',
       '/llm/provider',
     ]);
     expect(titles).toEqual([
-      '业务规则',
-      '生成结果',
+      '生产工作台',
       '评价反馈',
       '系统关键词',
       '生文 Expert',
@@ -50,6 +48,14 @@ describe('frontend controlled sidebar tabs', () => {
     expect(accessRoutes).toEqual(frontendTabRoutes);
   });
 
+  it('does not treat frontend menu pages as core routes', () => {
+    const frontendRouteNames = frontendTabRoutes.map((route) => route.name);
+
+    expect(coreRouteNames).not.toEqual(
+      expect.arrayContaining(frontendRouteNames),
+    );
+  });
+
   it('defaults the console home to business rules', () => {
     expect(overridesPreferences.app?.defaultHomePath).toBe('/business-rules');
   });
@@ -58,6 +64,7 @@ describe('frontend controlled sidebar tabs', () => {
     const paths = collectPaths(frontendTabRoutes);
 
     expect(paths).not.toContain('/agent/workbench');
+    expect(paths).not.toContain('/content-agent/workbench');
   });
 
   it('does not expose legacy RAAP modules in the MVP sidebar', () => {
@@ -101,7 +108,11 @@ describe('frontend controlled sidebar tabs', () => {
     const modelStats = rootRoute?.children?.find(
       (route) => route.path === 'llm/stats',
     );
+    const contentWorkbench = rootRoute?.children?.find(
+      (route) => route.path === 'content-agent/workbench',
+    );
 
+    expect(contentWorkbench?.meta?.hideInMenu).toBe(true);
     expect(systemPromptKeywords?.meta?.hideInMenu).toBe(true);
     expect(contentExperts?.meta?.hideInMenu).toBe(true);
     expect(modelManagement?.meta?.hideInMenu).toBe(true);

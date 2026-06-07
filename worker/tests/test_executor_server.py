@@ -150,6 +150,52 @@ def test_content_generate_fake_mode_returns_comment_from_unified_input(monkeypat
     assert data["output"]["runtime_result"]["expert_config_code"] == "comment_generator_v1"
 
 
+def test_content_generate_runtime_falls_back_when_model_returns_empty_comment(monkeypatch):
+    monkeypatch.delenv("MAGA_WORKER_RUNTIME_FAST_FAKE", raising=False)
+
+    def empty_model(*args, **kwargs):
+        return ""
+
+    monkeypatch.setattr("maga_worker.llm_runtime.call_model", empty_model)
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/invoke",
+        json=_envelope(
+            "content.generate",
+            {
+                "content_type": "comment",
+                "output_fields": ["comment"],
+                "business_rule": {
+                    "item_no": 1,
+                    "comment_angle": "奶量补充",
+                    "examples": ["第一口愿意喝，我就放心点了"],
+                },
+                "model_config": {
+                    "model_code": "test-model",
+                    "provider_code": "test-provider",
+                    "temperature": 0.85,
+                    "max_tokens": 64,
+                },
+                "expert": {"expert_config_code": "comment_generator_v1"},
+                "rendered_prompt": "生成一条评论",
+            },
+            stage_call_id="stage-content-runtime-empty",
+        ),
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "succeeded"
+    assert data["output"]["comment"] == "第一口愿意喝，我就放心点了"
+    runtime = data["output"]["runtime_result"]
+    assert runtime["mode"] == "content_runtime"
+    assert runtime["fallback"] is True
+    assert runtime["fallback_reason"] == "content.generate produced empty comment"
+    assert runtime["model_attempts"] == 2
+
+
 def test_content_rewrite_fake_mode_removes_forbidden_terms(monkeypatch):
     monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
     client = _client(monkeypatch)

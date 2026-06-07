@@ -135,7 +135,7 @@ async def run_critic_tencent_http(*, request_data: dict, stage: str, service_met
 async def run_ai_content_detector_http(*, request_data: dict, stage: str, service_method: str) -> dict:
     """AI 内容检测 HTTP 入口。
     
-    使用 Ollama 的 qwen2:7b 模型进行 AI 内容检测评分
+    使用配置的 deepseek-v4-flash 模型进行 AI 内容检测评分
     
     - 对外：保持既定请求参数不变
     - 对内：调用 CriticService.run_ai_content_detector

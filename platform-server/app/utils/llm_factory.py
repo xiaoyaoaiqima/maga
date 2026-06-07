@@ -15,6 +15,7 @@ from typing import Optional, Dict, Any, List
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.core.logger import get_logger
+from app.utils.model_config import normalize_default_model
 
 logger = get_logger()
 
@@ -125,7 +126,7 @@ class LLMFactory:
                     return None
                 if prov in (None, "", "aihubmix", "openai"):
                     base_url = os.getenv("AIHUBMIX_BASE_URL") or os.getenv("OPENAI_API_BASE") or "https://api.openai.com/v1"
-                    default_model = os.getenv("OPENAI_MODEL") or "gpt-4o"
+                    default_model = normalize_default_model(os.getenv("DEEPSEEK_MODEL"))
                     return {
                         "provider_code": prov or "aihubmix",
                         "base_url": base_url,
@@ -136,7 +137,7 @@ class LLMFactory:
                     }
                 if prov == "deepseek":
                     base_url = os.getenv("DEEPSEEK_API_BASE") or "https://api.deepseek.com/v1"
-                    default_model = os.getenv("DEEPSEEK_MODEL") or "deepseek-chat"
+                    default_model = normalize_default_model(os.getenv("DEEPSEEK_MODEL"))
                     return {
                         "provider_code": "deepseek",
                         "base_url": base_url,
@@ -160,7 +161,7 @@ class LLMFactory:
                     "provider_code": prov or "aihubmix",
                     "base_url": os.getenv("OPENAI_API_BASE") or "https://api.openai.com/v1",
                     "api_key": api_key,
-                    "default_model": os.getenv("OPENAI_MODEL") or "gpt-4o",
+                    "default_model": normalize_default_model(os.getenv("DEEPSEEK_MODEL")),
                     "timeout": 120,
                     "default_params": {},
                 }
@@ -298,7 +299,7 @@ class LLMFactory:
             "provider_code": provider,
             "base_url": base_url,
             "api_key": api_key,
-            "default_model": model or os.getenv("OPENAI_MODEL", "gpt-4o"),
+            "default_model": normalize_default_model(model or os.getenv("DEEPSEEK_MODEL")),
         }
         
         llm = cls._create_llm_from_config(
@@ -334,7 +335,7 @@ class LLMFactory:
         except ImportError:
             raise ImportError("请安装 langchain-openai: pip install langchain-openai")
         
-        model_name = model or config.get("default_model", "gpt-4o")
+        model_name = normalize_default_model(model or config.get("default_model"))
         api_key = config.get("api_key")
         base_url = config.get("base_url")
         
@@ -459,6 +460,8 @@ async def invoke_llm(
     
     normalized_messages = _normalize_messages(messages)
     
+    model_code = normalize_default_model(model_code)
+
     response = await client.invoke(
         model_code=model_code,
         messages=normalized_messages,

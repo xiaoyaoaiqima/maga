@@ -35,7 +35,7 @@ async function initApplication() {
 
   // 存储结构版本（用于自动清理旧缓存，避免“改了默认首页/路由注入逻辑但用户还在用旧值”）
   // 只要涉及菜单/权限/默认首页/路由注入等变更，就应该 bump 这个版本号。
-  const storage_schema_version = '2026-05-10-frontend-tabs';
+  const storage_schema_version = '2026-06-06-maga-production-menu';
   const schema_key = `${namespace}-storage-schema-version`;
   const previous_version = localStorage.getItem(schema_key);
   if (previous_version !== storage_schema_version) {

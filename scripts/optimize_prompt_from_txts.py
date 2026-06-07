@@ -20,14 +20,14 @@ from typing import Any
 
 
 DEFAULT_BASE_URL = "https://aihubmix.com/v1"
-DEFAULT_MODEL = "gpt-5.5"
+DEFAULT_MODEL = "deepseek-v4-flash"
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MAX_TOKENS = 3000
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_OUTPUT_DIR = "prompt_optimize_results"
 DEFAULT_NEW_PROMPT_OUTPUT = "local_data/new_prompt.txt"
 DEFAULT_NEW_CONTENT_OUTPUT = "local_data/new_content.txt"
-DEFAULT_GENERATION_MODEL = "deepseek-chat"
+DEFAULT_GENERATION_MODEL = "deepseek-v4-flash"
 DEFAULT_GENERATION_BASE_URL = "https://api.deepseek.com"
 DEFAULT_GENERATION_TEMPERATURE = 0.7
 DEFAULT_GENERATION_MAX_TOKENS = 3000
@@ -121,7 +121,7 @@ def parse_args() -> argparse.Namespace:
         default="debug_log",
         help="Directory for model input debug logs. Defaults to debug_log.",
     )
-    parser.add_argument("--model", default=os.getenv("OPENAI_MODEL", DEFAULT_MODEL), help="Model name.")
+    parser.add_argument("--model", default=os.getenv("DEEPSEEK_MODEL", DEFAULT_MODEL), help="Model name.")
     parser.add_argument(
         "--base-url",
         default=os.getenv("OPENAI_BASE_URL") or os.getenv("AIHUBMIX_API_URL") or DEFAULT_BASE_URL,
@@ -241,8 +241,7 @@ def build_chat_payload(
         ],
         "temperature": temperature,
     }
-    token_param = "max_completion_tokens" if model.lower().startswith("gpt-5") else "max_tokens"
-    payload[token_param] = max_tokens
+    payload["max_tokens"] = max_tokens
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
     return payload

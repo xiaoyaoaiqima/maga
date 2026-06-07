@@ -25,6 +25,7 @@ import {
 } from 'ant-design-vue';
 
 import {
+  downloadContentBatchReportExcelApi,
   getContentBatchListApi,
   getContentBatchReportApi,
 } from '#/api/core/content-agent';
@@ -36,12 +37,25 @@ const router = useRouter();
 
 const batchLoading = ref(false);
 const reportLoading = ref(false);
+const exportLoading = ref(false);
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
 const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
 const batchTotal = ref(0);
 
 const selectedItems = computed(() => selectedReport.value?.items || []);
 const selectedSummary = computed(() => selectedReport.value?.summary || null);
+
+const statusLabel = (status?: string) => {
+  if (status === 'approved') return '已通过';
+  if (status === 'manual_edited') return '人工编辑';
+  if (status === 'needs_revision') return '待修改';
+  if (status === 'generated') return '已生成';
+  if (status === 'failed') return '失败';
+  if (status === 'running') return '生成中';
+  if (status === 'partially_generated') return '部分生成';
+  if (status === 'planned') return '待生成';
+  return status || '未知';
+};
 
 const statusColor = (status?: string) => {
   if (status === 'approved') return 'green';
@@ -53,6 +67,14 @@ const statusColor = (status?: string) => {
   if (status === 'partially_generated') return 'orange';
   if (status === 'planned') return 'default';
   return 'default';
+};
+
+const runtimeModeLabel = (runtimeMode?: string) => {
+  if (runtimeMode === 'content_runtime') return '真实模型';
+  if (runtimeMode === 'content_fake') return '模拟生成';
+  if (runtimeMode === 'content_rewrite_runtime') return '模型改写';
+  if (runtimeMode === 'content_rewrite_fake') return '模拟改写';
+  return runtimeMode || '';
 };
 
 const passColor = (value?: boolean | null) => {
@@ -67,11 +89,49 @@ const formatDuration = (durationMs?: null | number) => {
   return `${(durationMs / 1000).toFixed(durationMs < 10_000 ? 2 : 1)}s`;
 };
 
+const failedCountOf = (
+  summary?: ContentAgentApi.BatchReportSummary | null,
+) => {
+  if (!summary) return 0;
+  return Math.max(0, summary.total_count - summary.generated_count);
+};
+
+const hasGeneratedContent = (item: ContentAgentApi.BatchReportItem) =>
+  Boolean((item.title || '').trim() || (item.body || '').trim());
+
+const qualityAvailable = (item: ContentAgentApi.BatchReportItem) =>
+  item.quality && Object.keys(item.quality).length > 0;
+
+const visibleTotalDurationMs = (item: ContentAgentApi.BatchReportItem) => {
+  const total = item.total_duration_ms;
+  if (total === null || total === undefined) return null;
+  const generation = item.generation_duration_ms || 0;
+  // 旧失败记录补写 finished_at 后会把等待修复的时间算进 Run 总耗时，
+  // 失败卡片优先展示真实 stage 耗时，避免运营误读为 worker 执行了近一小时。
+  if (item.status === 'failed' && total > 600_000 && generation < 120_000) {
+    return null;
+  }
+  return total;
+};
+
+const displayErrorMessage = (message?: null | string) => {
+  if (!message) return '';
+  // 旧批次会保留 worker 的内部错误文案，列表页转成运营可理解的失败原因；
+  // 原始错误仍保留在 Trace / 链路快照里，方便排障。
+  if (message.includes('content.generate produced empty comment')) {
+    return '模型没有返回可用正文，请重新从生产工作台生成新批次。';
+  }
+  return message;
+};
+
 const itemFailureMessage = (item: ContentAgentApi.BatchReportItem) => {
   const stageError = item.trace_stage_calls?.find(
     (stage) => stage.status === 'failed' && stage.error_message,
   )?.error_message;
-  return item.error_message || stageError || '正文尚未生成，请查看执行链路。';
+  return (
+    displayErrorMessage(item.error_message || stageError) ||
+    '正文尚未生成，请查看执行链路。'
+  );
 };
 
 const rejectSourceLabel = (source?: string) => {
@@ -132,7 +192,32 @@ const copyText = async (text?: null | string) => {
 };
 
 const copyArticle = async (item: ContentAgentApi.BatchReportItem) => {
+  if (!hasGeneratedContent(item)) {
+    message.warning('这条还没有可复制的生成内容');
+    return;
+  }
   await copyText(`${item.title || ''}\n\n${item.body || ''}`.trim());
+};
+
+const exportExcel = async () => {
+  const report = selectedReport.value;
+  if (!report) return;
+  exportLoading.value = true;
+  try {
+    const blob = await downloadContentBatchReportExcelApi(report.batch_id);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const code = report.batch_code || `batch_${report.batch_id}`;
+    link.href = url;
+    link.download = `生文结果_${code}.xlsx`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    message.success('Excel 已导出');
+  } finally {
+    exportLoading.value = false;
+  }
 };
 
 const showTrace = (item: ContentAgentApi.BatchReportItem) => {
@@ -344,7 +429,7 @@ const loadBatches = async () => {
     const data = await getContentBatchListApi({ limit: 20, offset: 0 });
     batchList.value = data?.items || [];
     batchTotal.value = data?.total || 0;
-    // 从业务规则页跳转过来时，优先打开刚生成的批次报告。
+    // 从生产工作台跳转过来时，优先打开刚生成的批次报告。
     const queryBatchId = Number(route.query.batch_id || 0);
     if (queryBatchId > 0 && selectedReport.value?.batch_id !== queryBatchId) {
       await openReport(queryBatchId, false);
@@ -365,6 +450,10 @@ const goFeedback = () => {
       ? { batch_id: String(selectedReport.value.batch_id) }
       : {},
   });
+};
+
+const goBusinessRules = () => {
+  router.push('/business-rules');
 };
 
 onMounted(() => {
@@ -400,7 +489,7 @@ watch(
                 <div class="batch-title">
                   <span>{{ batch.product_topic }}</span>
                   <Tag :color="statusColor(batch.status)">
-                    {{ batch.status }}
+                    {{ statusLabel(batch.status) }}
                   </Tag>
                 </div>
                 <div class="batch-meta">
@@ -410,7 +499,8 @@ watch(
                   {{ batch.summary.generated_count }}/{{
                     batch.summary.total_count
                   }}
-                  条 · 红线通过 {{ batch.summary.hard_pass_count }} · 改写
+                  条 · 失败 {{ failedCountOf(batch.summary) }} · 红线通过
+                  {{ batch.summary.hard_pass_count }} · 改写
                   {{ batch.summary.rewrite_item_count }}
                 </div>
               </div>
@@ -427,20 +517,27 @@ watch(
           <Card v-if="selectedReport" :bordered="false">
             <template #title>
               <Space>
-                <span>生成结果</span>
+                <span>生成历史</span>
                 <Tag>
                   {{
                     selectedReport.batch_code || `#${selectedReport.batch_id}`
                   }}
                 </Tag>
                 <Tag :color="statusColor(selectedReport.status)">
-                  {{ selectedReport.status }}
+                  {{ statusLabel(selectedReport.status) }}
                 </Tag>
               </Space>
             </template>
             <template #extra>
               <Space>
                 <Button size="small" @click="goFeedback">去评价</Button>
+                <Button
+                  size="small"
+                  :loading="exportLoading"
+                  @click="exportExcel"
+                >
+                  导出 Excel
+                </Button>
                 <Button
                   size="small"
                   @click="openReport(selectedReport.batch_id)"
@@ -476,6 +573,9 @@ watch(
                 />
               </Col>
               <Col :span="4">
+                <Statistic title="失败" :value="failedCountOf(selectedSummary)" />
+              </Col>
+              <Col :span="4">
                 <Statistic
                   title="红线通过"
                   :value="selectedSummary.hard_pass_count"
@@ -485,12 +585,6 @@ watch(
                 <Statistic
                   title="自动改写"
                   :value="selectedSummary.rewrite_item_count"
-                />
-              </Col>
-              <Col :span="4">
-                <Statistic
-                  title="待继续改"
-                  :value="selectedSummary.remaining_rewrite_required_count"
                 />
               </Col>
               <Col :span="4">
@@ -505,13 +599,24 @@ watch(
               v-if="
                 selectedSummary?.forbidden_hit_count ||
                 selectedSummary?.remaining_rewrite_required_count ||
-                selectedSummary?.similarity_warning_count
+                selectedSummary?.similarity_warning_count ||
+                failedCountOf(selectedSummary)
               "
               class="mt-4"
-              message="这批内容仍有风险项或相似内容，请优先查看标红和标橙内容。"
+              :message="
+                failedCountOf(selectedSummary)
+                  ? `这批内容有 ${failedCountOf(selectedSummary)} 条失败项，失败项不进入红线审核；建议重新从生产工作台生成新批次。`
+                  : '这批内容仍有风险项或相似内容，请优先查看标红和标橙内容。'
+              "
               show-icon
               type="warning"
-            />
+            >
+              <template v-if="failedCountOf(selectedSummary)" #action>
+                <Button size="small" type="link" @click="goBusinessRules">
+                  回生产工作台
+                </Button>
+              </template>
+            </Alert>
 
             <Divider />
 
@@ -523,7 +628,7 @@ watch(
                       <Space wrap>
                         <span>第 {{ item.item_no }} 条</span>
                         <Tag :color="statusColor(item.status)">
-                          {{ item.status }}
+                          {{ statusLabel(item.status) }}
                         </Tag>
                         <Tag :color="passColor(item.hard_pass)">
                           红线{{
@@ -555,19 +660,23 @@ watch(
                           }}
                         </Tag>
                         <Tag v-if="item.runtime_mode" color="cyan">
-                          {{ item.runtime_mode }}
+                          {{ runtimeModeLabel(item.runtime_mode) }}
                         </Tag>
                         <Tag v-if="item.generation_duration_ms">
                           生文 {{ formatDuration(item.generation_duration_ms) }}
                         </Tag>
-                        <Tag v-if="item.total_duration_ms">
-                          总耗时 {{ formatDuration(item.total_duration_ms) }}
+                        <Tag v-if="visibleTotalDurationMs(item)">
+                          总耗时 {{ formatDuration(visibleTotalDurationMs(item)) }}
                         </Tag>
                       </Space>
                     </template>
                     <template #extra>
                       <Space>
-                        <Button size="small" @click="copyArticle(item)">
+                        <Button
+                          size="small"
+                          :disabled="!hasGeneratedContent(item)"
+                          @click="copyArticle(item)"
+                        >
                           复制
                         </Button>
                         <Button
@@ -584,13 +693,22 @@ watch(
                         >
                           链路快照
                         </Button>
-                        <Button size="small" @click="showQuality(item)">
+                        <Button
+                          v-if="qualityAvailable(item)"
+                          size="small"
+                          @click="showQuality(item)"
+                        >
                           质量报告
                         </Button>
                       </Space>
                     </template>
 
-                    <h3>{{ item.title || '未生成标题' }}</h3>
+                    <h3>
+                      {{
+                        item.title ||
+                        (item.status === 'failed' ? '生成失败' : '未生成标题')
+                      }}
+                    </h3>
                     <div v-if="item.body" class="content-body">
                       {{ item.body }}
                     </div>
@@ -624,7 +742,7 @@ watch(
                             <span v-if="reason.code" class="reason-code">
                               {{ reason.code }}
                             </span>
-                            <span>{{ reason.message }}</span>
+                            <span>{{ displayErrorMessage(reason.message) }}</span>
                             <span v-if="reason.evidence?.length">
                               证据：{{ reason.evidence.join('；') }}
                             </span>
@@ -765,7 +883,7 @@ watch(
 
           <Card v-else :bordered="false">
             <Empty
-              description="暂无生成结果，请先在业务规则页上传规则包并生成"
+              description="暂无生成结果，请先在生产工作台上传规则包并生成"
             />
           </Card>
         </Spin>

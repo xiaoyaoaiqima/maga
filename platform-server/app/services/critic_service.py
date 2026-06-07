@@ -316,14 +316,14 @@ class CriticService:
                     "expert_task_id": 123,
                     "expert_config_code": "finance_daily_gen_v1",
                     "prompt": "prompt text",
-                    "model_code": "gpt-4o-mini",
+                    "model_code": "deepseek-v4-flash",
                     "model_config": {
                         "temperature": 0.7,
                         "max_tokens": 2048
                     }
                 }
                 如果 prompt 为空，使用默认 prompt
-                如果 model_code 为空，使用环境变量 LLM_MODEL 或默认值 "gpt-4"
+                如果 model_code 为空，使用环境变量 LLM_MODEL 或默认值 "deepseek-v4-flash"
                 如果 model_config 为空，使用默认值 temperature=0.7, max_tokens=1500
             
         Returns:
@@ -563,7 +563,7 @@ class CriticService:
         request_data: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        使用 Ollama 的 qwen2:7b 模型进行 AI 内容检测评分
+        使用配置的 deepseek-v4-flash 模型进行 AI 内容检测评分
         
         Args:
             request_data: Orchestrator 服务请求数据，格式：
@@ -612,7 +612,7 @@ class CriticService:
             # Ollama 配置
             temperature = model_config.get("temperature", DEFAULT_TEMPERATURE)
             max_tokens = model_config.get("max_tokens", DEFAULT_MAX_TOKENS)
-            model = "qwen2:7b"
+            model = request_data.get("model_code") or "deepseek-v4-flash"
             
             # Ollama 默认地址和配置（优先使用环境变量，其次使用配置文件）
             settings = get_settings()
@@ -724,13 +724,13 @@ class CriticService:
             logger.bind(
                 error_type=error_type,
                 error_message=error_text,
-                model="qwen2:7b",
+                model=model,
                 base_url=base_url,
                 llm_http_timeout_s=timeout_s,
             ).opt(exception=True).error("使用 Ollama AI 内容检测失败")
 
             # 将技术错误转换为用户友好的错误信息
-            user_friendly_reason = self._format_user_friendly_error(error_type, error_text, "qwen2:7b")
+            user_friendly_reason = self._format_user_friendly_error(error_type, error_text, model)
 
             return {
                 "success": False,  # 模型调用失败

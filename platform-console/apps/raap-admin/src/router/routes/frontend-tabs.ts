@@ -12,21 +12,10 @@ const frontendTabRoutes: RouteRecordRaw[] = [
     path: '/business-rules',
     component: () => import('#/views/business-rules/index.vue'),
     meta: {
-      title: '业务规则',
-      icon: 'lucide:file-cog',
+      title: '生产工作台',
+      icon: 'lucide:factory',
       order: -100,
       activeMenu: '/business-rules',
-    },
-  },
-  {
-    name: 'ContentAgentWorkbench',
-    path: '/content-agent/workbench',
-    component: () => import('#/views/content-agent/workbench/index.vue'),
-    meta: {
-      title: '生成结果',
-      icon: 'lucide:pen-line',
-      order: -90,
-      activeMenu: '/content-agent/workbench',
     },
   },
   {

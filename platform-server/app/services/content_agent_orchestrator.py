@@ -25,7 +25,7 @@ CONTENT_AGENT_SCHEMA_VERSION = "1"
 CONTENT_REWRITE_CAPABILITY = "content.rewrite"
 
 
-class ContentAgentInvokeError(RuntimeError):
+class ContentAgentInvokeError(ValueError):
     """Raised when a live executor call fails before returning a protocol result."""
 
     def __init__(self, message: str, *, run_id: int, stage_call_id: str):
@@ -81,7 +81,11 @@ class ContentAgentOrchestrator:
         )
         stage_call, invoke_result = await self._invoke_and_record_stage(executor, run, stage_call)
         if invoke_result.status == "failed":
-            raise ValueError(invoke_result.error_message or f"stage failed: {capability}")
+            raise ContentAgentInvokeError(
+                invoke_result.error_message or f"stage failed: {capability}",
+                run_id=run.id,
+                stage_call_id=stage_call.stage_call_id,
+            )
         output = stage_call.output_snapshot or {}
         await self.service.complete_run(run.id, ContentAgentRunCompleteRequest(output_summary=output))
         await self.db.refresh(run)
@@ -202,6 +206,12 @@ class ContentAgentOrchestrator:
                     error_message=invoke_result.error_message or "Executor returned failed status",
                 ),
                 validate_transition=False,
+            )
+            await self.service.fail_run(
+                run.id,
+                ContentAgentRunFailRequest(
+                    error_message=invoke_result.error_message or "Executor returned failed status",
+                ),
             )
             await self.db.refresh(run)
         return stage_call, invoke_result

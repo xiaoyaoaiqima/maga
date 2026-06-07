@@ -44,6 +44,7 @@ class _RuleAssetContext:
     asset_type: str | None
     content_type: str | None
     usable_rule_count: int = 0
+    keyword_asset_key: str = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
 
 
 class ContentGenerationPreflightService:
@@ -67,7 +68,11 @@ class ContentGenerationPreflightService:
         )
         content_type = context.content_type or "article"
 
-        await self._check_system_keywords(content_type=content_type, checks=checks)
+        await self._check_system_keywords(
+            content_type=content_type,
+            keyword_asset_key=context.keyword_asset_key,
+            checks=checks,
+        )
         await self._check_experts_and_routes(content_type=content_type, checks=checks)
         await self._check_executor(executor_code=executor_code, checks=checks)
         await self._check_audit_flow(asset_key=asset_key, checks=checks)
@@ -119,6 +124,7 @@ class ContentGenerationPreflightService:
             return _RuleAssetContext(None, asset_key, resolved_type, content_type)
 
         usable_count = _usable_rule_count(asset)
+        keyword_asset_key = _resolve_keyword_asset_key(None, asset)
         if usable_count <= 0:
             checks.append(
                 _fail(
@@ -130,6 +136,7 @@ class ContentGenerationPreflightService:
                         "asset_key": asset.asset_key,
                         "asset_type": asset.asset_type,
                         "version_no": asset.version_no,
+                        "keyword_asset_key": keyword_asset_key,
                     },
                 )
             )
@@ -145,26 +152,28 @@ class ContentGenerationPreflightService:
                         "asset_type": asset.asset_type,
                         "version_no": asset.version_no,
                         "usable_rule_count": usable_count,
+                        "keyword_asset_key": keyword_asset_key,
                     },
                 )
             )
-        return _RuleAssetContext(asset, asset_key, resolved_type, content_type, usable_count)
+        return _RuleAssetContext(asset, asset_key, resolved_type, content_type, usable_count, keyword_asset_key)
 
     async def _check_system_keywords(
         self,
         *,
         content_type: str,
+        keyword_asset_key: str,
         checks: list[ContentGenerationPreflightCheck],
     ) -> None:
         service = SystemPromptKeywordService(self.db)
-        asset = await service.get_latest_asset(DEFAULT_SYSTEM_KEYWORD_ASSET_KEY)
+        asset = await service.get_latest_asset(keyword_asset_key)
         content = normalize_system_prompt_keyword_content(
             asset.content_json if asset else fallback_system_prompt_keyword_content()
         )
         selected = _select_keyword_bundle(content, content_type=content_type, item_no=1)
         enabled_category_count = _enabled_category_count(content, content_type=content_type)
         detail = {
-            "asset_key": DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+            "asset_key": keyword_asset_key,
             "source": "asset_registry" if asset else "fallback",
             "version_no": asset.version_no if asset else None,
             "enabled_category_count": enabled_category_count,
@@ -466,6 +475,22 @@ def _enabled_category_count(content: dict[str, Any], *, content_type: str) -> in
         if sub_keywords:
             count += 1
     return count
+
+
+def _resolve_keyword_asset_key(explicit_key: str | None, asset: AssetRegistry | None) -> str:
+    normalized = _normalize_keyword_asset_key(explicit_key)
+    if normalized:
+        return normalized
+    for source in ((asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        normalized = _normalize_keyword_asset_key(source.get("keyword_asset_key"))
+        if normalized:
+            return normalized
+    return DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
+
+
+def _normalize_keyword_asset_key(value: Any) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None
 
 
 def _capability_names(raw_capabilities: list[Any]) -> set[str]:
