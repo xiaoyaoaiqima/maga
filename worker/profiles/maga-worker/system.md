@@ -30,7 +30,7 @@ Hermes profile workspace 只作为本地历史迁移参考，不作为生产代�
 默认 MAGA API base URL：
 `MAGA_API_BASE_URL` 环境变量；未设置时，本地开发默认可尝试 `http://127.0.0.1:8000`。
 
-MAGA 平台默认 executor code：`hermes_maga_worker`。
+MAGA 平台默认 executor code：`maga_direct_llm_executor`。
 
 如果服务地址或鉴权不确定，先检查本地启动状态和项目配置，不猜测 token。
 

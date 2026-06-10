@@ -12,10 +12,11 @@ WORKER_LOG := .local/logs/maga-worker.log
 WORKER_PID := .local/pids/maga-worker.pid
 WORKER_ENV_FILE ?= .env
 DEV_MYSQL_URL ?= mysql+aiomysql://maga:maga123456@127.0.0.1:3306/maga
-MAGA_WORKER_INVOKE_URL ?= http://host.docker.internal:8765/invoke
+MAGA_WORKER_INVOKE_URL ?= llm://direct/content
 MAGA_WORKER_EXECUTOR_TOKEN ?= test-token
 MAGA_WORKER_EXECUTION_MODE ?= runtime_fast
 MAGA_WORKER_RUNTIME_FAST_FAKE ?= 0
+MAGA_START_WORKER ?= 0
 
 .PHONY: up init-clean-schema seed-dev-executors down build logs ps dev dev-restart dev-stop dev-status dev-logs frontend-start frontend-stop frontend-status frontend-logs worker-start worker-stop worker-status worker-logs local-dev local-dev-stop local-dev-status local-dev-logs
 
@@ -63,6 +64,7 @@ dev:
 		WORKER_LOG="$(abspath $(WORKER_LOG))" \
 		WORKER_PID="$(abspath $(WORKER_PID))" \
 		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
+		MAGA_START_WORKER="$(MAGA_START_WORKER)" \
 		./scripts/maga_dev.sh restart
 
 dev-restart:
@@ -73,6 +75,7 @@ dev-restart:
 		WORKER_LOG="$(abspath $(WORKER_LOG))" \
 		WORKER_PID="$(abspath $(WORKER_PID))" \
 		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
+		MAGA_START_WORKER="$(MAGA_START_WORKER)" \
 		./scripts/maga_dev.sh restart
 
 dev-stop:
@@ -83,6 +86,7 @@ dev-stop:
 		WORKER_LOG="$(abspath $(WORKER_LOG))" \
 		WORKER_PID="$(abspath $(WORKER_PID))" \
 		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
+		MAGA_START_WORKER="$(MAGA_START_WORKER)" \
 		./scripts/maga_dev.sh stop
 
 dev-status:
@@ -93,6 +97,7 @@ dev-status:
 		WORKER_LOG="$(abspath $(WORKER_LOG))" \
 		WORKER_PID="$(abspath $(WORKER_PID))" \
 		WORKER_ENV_FILE="$(abspath $(WORKER_ENV_FILE))" \
+		MAGA_START_WORKER="$(MAGA_START_WORKER)" \
 		./scripts/maga_dev.sh status
 
 dev-logs:

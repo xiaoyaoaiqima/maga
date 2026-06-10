@@ -9,23 +9,25 @@ MAGA_WORKER_OUTPUT_DIR="${MAGA_WORKER_OUTPUT_DIR:-$ROOT_DIR/.local/worker/output
 WORKER_LOG="${WORKER_LOG:-$ROOT_DIR/.local/logs/maga-worker.log}"
 WORKER_PID="${WORKER_PID:-$ROOT_DIR/.local/pids/maga-worker.pid}"
 WORKER_ENV_FILE="${WORKER_ENV_FILE:-$ROOT_DIR/.env}"
+MAGA_START_WORKER="${MAGA_START_WORKER:-0}"
 
 usage() {
   cat <<USAGE
 Usage: $0 [start|restart|stop|status|logs]
 
 Commands:
-  start    Start Docker MAGA stack, seed schema, start worker if absent.
-  restart  Restart worker with latest local code, start Docker MAGA stack, and seed schema.
-  stop     Stop worker and Docker MAGA stack.
-  status   Show Docker and worker status.
-  logs     Print log commands for Docker and worker.
+  start    Start Docker MAGA stack and seed schema; start worker only when MAGA_START_WORKER=1.
+  restart  Refresh Docker MAGA stack and seed schema; restart worker only when MAGA_START_WORKER=1.
+  stop     Stop Docker MAGA stack; stop worker only when MAGA_START_WORKER=1.
+  status   Show Docker status and optional worker status.
+  logs     Print log commands for Docker and optional worker.
 
 Common env:
   WORKER_PORT=$WORKER_PORT
   WORKER_CODE_PATH=$WORKER_CODE_PATH
   WORKER_WORKSPACE=$WORKER_WORKSPACE
   MAGA_WORKER_OUTPUT_DIR=$MAGA_WORKER_OUTPUT_DIR
+  MAGA_START_WORKER=$MAGA_START_WORKER
 USAGE
 }
 
@@ -95,25 +97,35 @@ status_worker() {
 
 status_all() {
   docker compose ps
-  status_worker
+  if [[ "$MAGA_START_WORKER" == "1" ]]; then
+    status_worker
+  fi
 }
 
 case "${1:-start}" in
   start)
     start_docker_stack
     seed_schema
-    start_worker
+    if [[ "$MAGA_START_WORKER" == "1" ]]; then
+      start_worker
+    fi
     status_all
     ;;
   restart)
-    stop_worker
+    if [[ "$MAGA_START_WORKER" == "1" ]]; then
+      stop_worker
+    fi
     start_docker_stack
     seed_schema
-    restart_worker
+    if [[ "$MAGA_START_WORKER" == "1" ]]; then
+      restart_worker
+    fi
     status_all
     ;;
   stop)
-    stop_worker
+    if [[ "$MAGA_START_WORKER" == "1" ]]; then
+      stop_worker
+    fi
     stop_docker_stack
     ;;
   status)
@@ -121,7 +133,9 @@ case "${1:-start}" in
     ;;
   logs)
     echo "Docker logs:   docker compose logs -f"
-    echo "Worker log:    tail -f $WORKER_LOG"
+    if [[ "$MAGA_START_WORKER" == "1" ]]; then
+      echo "Worker log:    tail -f $WORKER_LOG"
+    fi
     ;;
   -h|--help|help)
     usage
