@@ -1,10 +1,10 @@
 """Shared defaults for MAGA content-agent executor routing."""
 from __future__ import annotations
 
-DEFAULT_EXECUTOR_CODE = "hermes_maga_worker"
+DEFAULT_EXECUTOR_CODE = "maga_direct_llm_executor"
 MAGA_WORKER_PROFILE_NAME = "maga-worker"
-MAGA_WORKER_DISPLAY_NAME = "Hermes MAGA worker"
-MAGA_WORKER_INVOKE_URL = "mock://maga-worker/invoke"
+MAGA_WORKER_DISPLAY_NAME = "MAGA direct LLM executor"
+MAGA_WORKER_INVOKE_URL = "llm://direct/content"
 # MAGA only owns optional model overrides. Leave defaults empty so the worker
 # or provider can choose an available model unless the operator explicitly sets one.
 MAGA_WORKER_DEFAULT_GE_MODEL: str | None = None

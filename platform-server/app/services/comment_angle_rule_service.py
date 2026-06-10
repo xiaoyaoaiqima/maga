@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -26,6 +27,8 @@ class CommentAngleRuleSetImportResult:
     asset_id: int
     asset_key: str
     keyword_asset_key: str | None
+    quality_guard_profile_key: str | None
+    keyword_selection: dict[str, Any] | None
     source_hash: str
     rule_count: int
     example_count: int
@@ -40,6 +43,8 @@ async def import_comment_angle_rule_set(
     asset_key: str = DEFAULT_COMMENT_ANGLE_ASSET_KEY,
     display_name: str | None = None,
     keyword_asset_key: str | None = None,
+    quality_guard_profile_key: str | None = None,
+    keyword_selection: dict[str, Any] | str | None = None,
     created_by: str = "maga-operator",
 ) -> CommentAngleRuleSetImportResult:
     """Persist a source-yue comment-angle CSV/XLSX as one versioned rule asset."""
@@ -53,17 +58,24 @@ async def import_comment_angle_rule_set(
 
     example_count = sum(len(item.get("examples") or []) + len(item.get("supplements") or []) for item in items)
     warnings = _warnings_for_items(items)
+    activity_name = _activity_name_for_import(normalized_asset_key, display_name)
     content_json = {
         "rule_type": "comment_angle",
         "rule_package_type": "comment_angle",
         "business_rule_package": True,
-        "activity_name": DEFAULT_COMMENT_BATCH_TOPIC,
+        "activity_name": activity_name,
         "default_generation_count": DEFAULT_COMMENT_BATCH_LIMIT,
         "items": items,
     }
     normalized_keyword_asset_key = _normalize_keyword_asset_key(keyword_asset_key)
     if normalized_keyword_asset_key:
         content_json["keyword_asset_key"] = normalized_keyword_asset_key
+    normalized_quality_guard_profile_key = _normalize_keyword_asset_key(quality_guard_profile_key)
+    if normalized_quality_guard_profile_key:
+        content_json["quality_guard_profile_key"] = normalized_quality_guard_profile_key
+    normalized_keyword_selection = _normalize_keyword_selection(keyword_selection)
+    if normalized_keyword_selection:
+        content_json["keyword_selection"] = normalized_keyword_selection
 
     await db.execute(
         update(AssetRegistry)
@@ -89,10 +101,13 @@ async def import_comment_angle_rule_set(
             "rule_type": "comment_angle",
             "rule_package_type": "comment_angle",
             "business_rule_package": True,
+            "activity_name": activity_name,
             "default_generation_count": DEFAULT_COMMENT_BATCH_LIMIT,
             "rule_count": len(items),
             "example_count": example_count,
             "keyword_asset_key": normalized_keyword_asset_key,
+            "quality_guard_profile_key": normalized_quality_guard_profile_key,
+            "keyword_selection": normalized_keyword_selection,
             "warnings": warnings,
         },
         created_by=created_by,
@@ -112,6 +127,8 @@ async def import_comment_angle_rule_set(
             "rule_count": len(items),
             "example_count": example_count,
             "keyword_asset_key": normalized_keyword_asset_key,
+            "quality_guard_profile_key": normalized_quality_guard_profile_key,
+            "keyword_selection": normalized_keyword_selection,
             "warnings": warnings,
         },
         created_by=created_by,
@@ -123,6 +140,8 @@ async def import_comment_angle_rule_set(
         asset_id=asset.id,
         asset_key=normalized_asset_key,
         keyword_asset_key=normalized_keyword_asset_key,
+        quality_guard_profile_key=normalized_quality_guard_profile_key,
+        keyword_selection=normalized_keyword_selection,
         source_hash=source_hash,
         rule_count=len(items),
         example_count=example_count,
@@ -135,6 +154,8 @@ def comment_angle_import_summary(result: CommentAngleRuleSetImportResult) -> dic
         "asset_type": COMMENT_ANGLE_RULE_ASSET_TYPE,
         "asset_key": result.asset_key,
         "keyword_asset_key": result.keyword_asset_key,
+        "quality_guard_profile_key": result.quality_guard_profile_key,
+        "keyword_selection": result.keyword_selection,
         "rule_count": result.rule_count,
         "example_count": result.example_count,
         "warnings": result.warnings,
@@ -145,6 +166,46 @@ def comment_angle_import_summary(result: CommentAngleRuleSetImportResult) -> dic
 def _normalize_keyword_asset_key(value: str | None) -> str | None:
     normalized = str(value or "").strip()
     return normalized or None
+
+
+def _normalize_keyword_selection(value: dict[str, Any] | str | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("keyword_selection must be valid JSON") from exc
+    if not isinstance(value, dict):
+        raise ValueError("keyword_selection must be a JSON object")
+    normalized: dict[str, list[str]] = {}
+    for category_code, codes in value.items():
+        key = str(category_code or "").strip()
+        if not key:
+            continue
+        if isinstance(codes, dict):
+            codes = codes.get("include") or codes.get("codes") or codes.get("keyword_codes")
+        if isinstance(codes, str):
+            codes = re.split(r"[,，\s]+", codes)
+        if not isinstance(codes, list):
+            raise ValueError("keyword_selection values must be arrays or comma-separated strings")
+        normalized_codes = [str(code).strip() for code in codes if str(code).strip()]
+        if normalized_codes:
+            normalized[key] = normalized_codes
+    return normalized or None
+
+
+def _activity_name_for_import(asset_key: str, display_name: str | None) -> str:
+    if asset_key == DEFAULT_COMMENT_ANGLE_ASSET_KEY:
+        return DEFAULT_COMMENT_BATCH_TOPIC
+    normalized = str(display_name or "").strip()
+    if normalized:
+        normalized = re.sub(r"(?:评论)?切角(?:规则)?$", "评论", normalized).strip()
+        return normalized or str(display_name or "").strip()
+    return asset_key
 
 
 def _read_rule_rows(file_content: bytes, *, source_name: str) -> list[dict[str, str]]:

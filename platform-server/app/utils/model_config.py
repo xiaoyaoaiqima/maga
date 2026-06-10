@@ -79,6 +79,10 @@ def ensure_chat_completions_endpoint(base_url: Optional[str]) -> Optional[str]:
     normalized = base_url.rstrip("/")
     if normalized.endswith("/v1/chat/completions") or normalized.endswith("/chat/completions"):
         return normalized
+    # OpenAI-compatible providers usually configure base_url as ".../v1".
+    # Keep that form and append only the resource path, not another /v1.
+    if normalized.endswith("/v1"):
+        return f"{normalized}/chat/completions"
     
     return f"{normalized}/v1/chat/completions"
 

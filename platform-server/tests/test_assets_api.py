@@ -56,8 +56,8 @@ async def asset_client():
         session.add_all(
             [
                 ExecutorRegistry(
-                    executor_code="hermes_maga_worker",
-                    executor_type="hermes_profile",
+                    executor_code="maga_direct_llm_executor",
+                    executor_type="direct_llm",
                     profile_name="maga-worker",
                     invoke_url="mock://maga-worker/invoke",
                     supported_capabilities_json=[{"capability": "asset.import", "schema_version": "1"}],
@@ -288,10 +288,20 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
     assert fallback_categories[-1]["category_name"] == "评论格式控制"
     assert fallback_categories[-1]["applicable_content_types"] == ["comment"]
     assert [item["keyword_name"] for item in fallback_categories[-1]["sub_keywords"]] == [
-        "0-5字",
-        "6-15字",
-        "15-25字",
+        "8-16字",
+        "10-20字",
+        "21-30字少量",
+        "21-35字",
+        "21-50字",
     ]
+    assert fallback_categories[3]["sub_keywords"][0]["keyword_name"] == "随机发散"
+    assert "离散运动" in fallback_categories[3]["sub_keywords"][0]["corpus"][0]
+    assert "至少一半在8到20字" in fallback_categories[3]["sub_keywords"][2]["corpus"][0]
+    assert "21到30字" in fallback_categories[-1]["sub_keywords"][2]["corpus"][0]
+    assert "21到35字" in fallback_categories[-1]["sub_keywords"][3]["corpus"][0]
+    assert "21到50字" in fallback_categories[-1]["sub_keywords"][4]["corpus"][0]
+    assert "剧情锚点" not in fallback_categories[-1]["sub_keywords"][4]["corpus"][0]
+    assert "门店活动" not in fallback_categories[-1]["sub_keywords"][4]["corpus"][0]
 
     payload = {
         "asset_key": "default_content_generation_keywords",
@@ -694,7 +704,12 @@ async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
 
     response = await asset_client.post(
         "/api/v1/assets/imports/comment-angle-rule-set",
-        data={"created_by": "ops", "keyword_asset_key": "a2_plot_discussion_comment_keywords"},
+        data={
+            "created_by": "ops",
+            "keyword_asset_key": "a2_plot_discussion_comment_keywords",
+            "quality_guard_profile_key": "a2_sentiment_comment_202606",
+            "keyword_selection": '{"persona":["family_mom","experienced_mom"]}',
+        },
         files={"file": ("评论切角_子关键词导出.csv", csv_content.encode("utf-8-sig"), "text/csv")},
     )
 
@@ -708,6 +723,8 @@ async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
     assert data["summary_json"]["example_count"] == 3
     assert data["summary_json"]["default_generation_count"] == 10
     assert data["summary_json"]["keyword_asset_key"] == "a2_plot_discussion_comment_keywords"
+    assert data["summary_json"]["quality_guard_profile_key"] == "a2_sentiment_comment_202606"
+    assert data["summary_json"]["keyword_selection"] == {"persona": ["family_mom", "experienced_mom"]}
 
     detail_response = await asset_client.get(
         "/api/v1/assets/comment_angle_rule_set/yuanyue_comment_activity"
@@ -716,7 +733,11 @@ async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
     asset = detail_response.json()["data"]
     assert asset["asset_type"] == "comment_angle_rule_set"
     assert asset["content_json"]["keyword_asset_key"] == "a2_plot_discussion_comment_keywords"
+    assert asset["content_json"]["quality_guard_profile_key"] == "a2_sentiment_comment_202606"
+    assert asset["content_json"]["keyword_selection"] == {"persona": ["family_mom", "experienced_mom"]}
     assert asset["metadata_json"]["keyword_asset_key"] == "a2_plot_discussion_comment_keywords"
+    assert asset["metadata_json"]["quality_guard_profile_key"] == "a2_sentiment_comment_202606"
+    assert asset["metadata_json"]["keyword_selection"] == {"persona": ["family_mom", "experienced_mom"]}
     assert asset["content_json"]["rule_type"] == "comment_angle"
     assert asset["content_json"]["items"][0]["comment_angle"] == "整体适应"
     assert asset["content_json"]["items"][0]["examples"][0] == "我家刚开始也在看源悦，想蹲蹲真实反馈"

@@ -47,7 +47,7 @@ async def test_start_run_creates_run_token_and_current_stage_call(db_session):
 
     run, stage_call = await service.start_run_with_stage(
         task.id,
-        executor_code="hermes_maga_worker",
+        executor_code="maga_direct_llm_executor",
         stage=ContentAgentStageCallCreate(
             stage_call_id="stage-generate-001",
             capability="content.generate",
@@ -70,7 +70,7 @@ async def test_stage_complete_requires_current_stage(db_session):
     task = await service.create_task(ContentAgentTaskCreate(task_type="content_generate"))
     run, _ = await service.start_run_with_stage(
         task.id,
-        executor_code="hermes_maga_worker",
+        executor_code="maga_direct_llm_executor",
         stage=ContentAgentStageCallCreate(
             stage_call_id="stage-generate-001",
             capability="content.generate",
@@ -108,7 +108,7 @@ async def test_stage_fail_marks_stage_failed_but_leaves_run_for_maga_decision(db
     task = await service.create_task(ContentAgentTaskCreate(task_type="content_generate"))
     run, _ = await service.start_run_with_stage(
         task.id,
-        executor_code="hermes_maga_worker",
+        executor_code="maga_direct_llm_executor",
         stage=ContentAgentStageCallCreate(stage_call_id="stage-rewrite-001", capability="content.rewrite"),
     )
 
@@ -135,7 +135,7 @@ async def test_event_and_artifact_are_idempotent_per_run_key_and_grouped_by_stag
     task = await service.create_task(ContentAgentTaskCreate(task_type="content_generate"))
     run, _ = await service.start_run_with_stage(
         task.id,
-        executor_code="hermes_maga_worker",
+        executor_code="maga_direct_llm_executor",
         stage=ContentAgentStageCallCreate(stage_call_id="stage-generate-001", capability="content.generate"),
     )
 

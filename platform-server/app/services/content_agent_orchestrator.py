@@ -6,10 +6,13 @@ from typing import Any
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.content_agent_defaults import normalize_executor_code
 from app.models.content_agent import ContentAgentRun, ContentAgentStageCall, ExecutorRegistry
+from app.models.llm_model_route import LLMModelRoute
+from app.models.llm_provider_config import LLMProviderConfig
 from app.schemas.content_agent import (
     ContentAgentRunCompleteRequest,
     ContentAgentRunFailRequest,
@@ -39,6 +42,14 @@ class SingleCapabilityResult:
     run: ContentAgentRun
     output: dict[str, Any]
     stage_calls: list[ContentAgentStageCall]
+
+
+def _model_code_from_config(model_config: dict[str, Any]) -> str | None:
+    for key in ("model_code", "ge_model", "ae_model"):
+        value = str(model_config.get(key) or "").strip()
+        if value:
+            return value
+    return None
 
 
 class ContentAgentOrchestrator:
@@ -159,7 +170,7 @@ class ContentAgentOrchestrator:
             capability=stage_call.capability,
             schema_version=stage_call.schema_version,
             run_token=run.run_token,
-            input_payload=stage_call.input_snapshot or {},
+            input_payload=await self._input_payload_with_provider_config(stage_call.input_snapshot or {}),
             callback_base_url=self.callback_base_url,
             deadline_at=stage_call.deadline_at,
         )
@@ -215,6 +226,109 @@ class ContentAgentOrchestrator:
             )
             await self.db.refresh(run)
         return stage_call, invoke_result
+
+    async def _input_payload_with_provider_config(self, input_payload: dict[str, Any]) -> dict[str, Any]:
+        """Attach provider connection details only to the outbound invoke envelope.
+
+        The stage/task snapshots remain free of API keys; the key stays in
+        llm_provider_config and is copied into the transient executor request.
+        """
+        if not isinstance(input_payload, dict):
+            return input_payload
+        raw_model_config = input_payload.get("model_config")
+        if not isinstance(raw_model_config, dict):
+            return input_payload
+        model_config = dict(raw_model_config)
+        try:
+            provider = await self._provider_for_model_config(model_config)
+        except SQLAlchemyError:
+            return input_payload
+        if provider is None:
+            return input_payload
+
+        model_config["provider_code"] = provider.provider_code
+        model_config["base_url"] = provider.base_url
+        if provider.api_key:
+            model_config["api_key"] = provider.api_key
+        for key, value in (provider.default_params or {}).items():
+            if key in {"temperature", "max_tokens", "top_p"} and value is not None and key not in model_config:
+                model_config[key] = value
+
+        model_code = _model_code_from_config(model_config) or str(provider.default_model or "").strip()
+        route = await self._route_for_model(provider.provider_code, model_code)
+        if route is not None:
+            model_config["model_code"] = route.provider_model
+            model_config["provider_model"] = route.provider_model
+            model_config["route_model_code"] = route.model_code
+            if route.timeout_seconds and "timeout" not in model_config:
+                model_config["timeout"] = route.timeout_seconds
+        elif model_code and "model_code" not in model_config:
+            model_config["model_code"] = model_code
+
+        return {**input_payload, "model_config": model_config}
+
+    async def _provider_for_model_config(self, model_config: dict[str, Any]) -> LLMProviderConfig | None:
+        provider_code = str(model_config.get("provider_code") or "").strip()
+        if provider_code:
+            return await self._provider_by_code(provider_code)
+
+        model_code = _model_code_from_config(model_config)
+        if model_code:
+            route = await self._best_route_for_model(model_code)
+            if route is not None:
+                return await self._provider_by_code(route.provider_code)
+
+        result = await self.db.execute(
+            select(LLMProviderConfig)
+            .where(
+                LLMProviderConfig.enabled == 1,
+                LLMProviderConfig.is_deleted == 0,
+            )
+            .order_by(LLMProviderConfig.priority.desc(), LLMProviderConfig.id.asc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def _provider_by_code(self, provider_code: str) -> LLMProviderConfig | None:
+        result = await self.db.execute(
+            select(LLMProviderConfig)
+            .where(
+                LLMProviderConfig.provider_code == provider_code,
+                LLMProviderConfig.enabled == 1,
+                LLMProviderConfig.is_deleted == 0,
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def _best_route_for_model(self, model_code: str) -> LLMModelRoute | None:
+        result = await self.db.execute(
+            select(LLMModelRoute)
+            .where(
+                LLMModelRoute.model_code == model_code,
+                LLMModelRoute.enabled == 1,
+                LLMModelRoute.is_deleted == 0,
+            )
+            .order_by(LLMModelRoute.priority.desc(), LLMModelRoute.id.asc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def _route_for_model(self, provider_code: str, model_code: str | None) -> LLMModelRoute | None:
+        if not model_code:
+            return None
+        result = await self.db.execute(
+            select(LLMModelRoute)
+            .where(
+                LLMModelRoute.provider_code == provider_code,
+                LLMModelRoute.model_code == model_code,
+                LLMModelRoute.enabled == 1,
+                LLMModelRoute.is_deleted == 0,
+            )
+            .order_by(LLMModelRoute.priority.desc(), LLMModelRoute.id.asc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
 
     def _invoke_exception_message(self, exc: Exception, capability: str) -> str:
         if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):

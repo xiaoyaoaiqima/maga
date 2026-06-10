@@ -1,9 +1,12 @@
 """Build operator-facing reports for MAGA content batch jobs."""
 from __future__ import annotations
 
+import json
 import re
 from io import BytesIO
 from collections import Counter
+from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
 
 from openpyxl import Workbook
@@ -38,6 +41,7 @@ from app.schemas.content_batch_report import (
     ContentFeedbackSampleListResponse,
 )
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService, find_forbidden_hits
+from app.services.activity_quality_guard_service import build_article_pool_context_list
 
 SIMILARITY_WARNING_THRESHOLD = 0.42
 
@@ -166,6 +170,18 @@ class ContentBatchReportService:
         output = BytesIO()
         workbook.save(output)
         filename = _excel_filename(report)
+        return filename, output.getvalue()
+
+    async def export_article_pool_excel(self, batch_id: int) -> tuple[str, bytes]:
+        report = await self.get_batch_report(batch_id)
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "文章池数据"
+        _write_article_pool_sheet(sheet, report)
+
+        output = BytesIO()
+        workbook.save(output)
+        filename = _article_pool_excel_filename(report)
         return filename, output.getvalue()
 
     async def list_feedback_samples(
@@ -679,8 +695,10 @@ class ContentBatchReportService:
         )
         rendered_prompt = self._string_or_none(source.get("rendered_prompt") or unified.get("rendered_prompt"))
         forbidden_review = self._forbidden_review(quality)
+        realness_review = self._comment_realness_review(quality)
+        activity_quality_guard = self._activity_quality_guard(quality)
         rewrite_records = self._rewrite_records(stage_calls)
-        if not any([business_rule, selected_keywords, expert, rendered_prompt, forbidden_review, rewrite_records, generation_stage]):
+        if not any([business_rule, selected_keywords, expert, rendered_prompt, forbidden_review, realness_review, activity_quality_guard, rewrite_records, generation_stage]):
             return None
         capability = (
             self._string_or_none(source.get("capability"))
@@ -707,6 +725,8 @@ class ContentBatchReportService:
             ),
             "rendered_prompt": rendered_prompt,
             "forbidden_terms_review": forbidden_review,
+            "comment_realness_review": realness_review,
+            "activity_quality_guard": activity_quality_guard,
             "rewrite_records": rewrite_records,
             "execution_stages": [self._stage_trace(stage).model_dump(mode="json") for stage in stage_calls],
         }
@@ -741,6 +761,15 @@ class ContentBatchReportService:
         review = quality.get("forbidden_terms_review") or review_report.get("forbidden_terms_review")
         return review if isinstance(review, dict) else None
 
+    def _comment_realness_review(self, quality: dict[str, Any]) -> dict[str, Any] | None:
+        review_report = quality.get("review_report") if isinstance(quality.get("review_report"), dict) else {}
+        review = quality.get("comment_realness_review") or review_report.get("comment_realness_review")
+        return review if isinstance(review, dict) else None
+
+    def _activity_quality_guard(self, quality: dict[str, Any]) -> dict[str, Any] | None:
+        review = quality.get("activity_quality_guard")
+        return review if isinstance(review, dict) else None
+
     def _rewrite_records(self, stage_calls: list[ContentAgentStageCall]) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
         for stage in stage_calls:
@@ -758,6 +787,8 @@ class ContentBatchReportService:
                     "before": self._rewrite_before(input_payload),
                     "after": self._rewrite_after(output_payload),
                     "forbidden_hits": self._list_of_strings(input_payload.get("forbidden_hits")),
+                    "style_hits": self._list_of_strings(input_payload.get("style_hits")),
+                    "rewrite_source": self._string_or_none(input_payload.get("rewrite_source")),
                     "rewrite_instructions": self._list_of_strings(input_payload.get("rewrite_instructions")),
                     "expert": self._dict_value(input_payload.get("expert")) or {},
                     "model_config": self._dict_value(input_payload.get("model_config")) or {},
@@ -1203,6 +1234,71 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
         sheet.row_dimensions[row_index].height = 42
 
 
+def _write_article_pool_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
+    headers = ["ID", "Content ID", "标题", "正文", "上下文变量(context_list)"]
+    sheet.append(headers)
+    for item in _article_pool_export_items(report.items):
+        context_list = _article_pool_context_list(item)
+        sheet.append(
+            [
+                "",
+                "",
+                "",
+                item.body or "",
+                json.dumps(context_list, ensure_ascii=False),
+            ]
+        )
+    _style_table_header(sheet, header_row=1, column_count=len(headers))
+    sheet.freeze_panes = "A2"
+    sheet.column_dimensions["A"].width = 12
+    sheet.column_dimensions["B"].width = 16
+    sheet.column_dimensions["C"].width = 18
+    sheet.column_dimensions["D"].width = 56
+    sheet.column_dimensions["E"].width = 72
+    for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+
+def _article_pool_export_items(items: list[ContentBatchReportItem]) -> list[ContentBatchReportItem]:
+    # 文章池导出只保留可直接入库的正文，审核失败或仍需重写的行留在批次报告里看。
+    return [item for item in items if _article_pool_item_exportable(item)]
+
+
+def _article_pool_item_exportable(item: ContentBatchReportItem) -> bool:
+    if str(item.status or "") != "generated":
+        return False
+    if not str(item.body or "").strip():
+        return False
+    if item.hard_pass is False:
+        return False
+    if item.rewrite_required is True:
+        return False
+    return True
+
+
+def _article_pool_context_list(item: ContentBatchReportItem) -> dict[str, str]:
+    quality = item.quality or {}
+    guard = quality.get("activity_quality_guard") if isinstance(quality, dict) else {}
+    if isinstance(guard, dict) and isinstance(guard.get("context_list"), dict):
+        return {
+            str(key): str(value or "")
+            for key, value in guard["context_list"].items()
+        }
+
+    snapshot = item.generation_snapshot or {}
+    business_rule = snapshot.get("business_rule") if isinstance(snapshot.get("business_rule"), dict) else {}
+    plan = dict(business_rule or {})
+    plan["unified_generation"] = {"selected_keywords": snapshot.get("selected_keywords") or []}
+    pseudo_item = SimpleNamespace(
+        plan_json=plan,
+        quality_json=quality,
+        title=item.title,
+        body=item.body,
+    )
+    return build_article_pool_context_list(pseudo_item)
+
+
 def _style_table_header(sheet: Any, *, header_row: int, column_count: int) -> None:
     fill = PatternFill("solid", fgColor="1F2937")
     font = Font(color="FFFFFF", bold=True)
@@ -1277,3 +1373,9 @@ def _model_label(snapshot: dict[str, Any]) -> str:
 def _excel_filename(report: ContentBatchReportResponse) -> str:
     batch_code = re.sub(r"[^0-9A-Za-z_-]+", "_", report.batch_code or f"batch_{report.batch_id}").strip("_")
     return f"生文结果_{batch_code or report.batch_id}.xlsx"
+
+
+def _article_pool_excel_filename(report: ContentBatchReportResponse) -> str:
+    topic = re.sub(r"[^0-9A-Za-z\u4e00-\u9fa5_-]+", "_", report.product_topic or "评论").strip("_")
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    return f"生成{topic or '评论'}-{timestamp}.xlsx"

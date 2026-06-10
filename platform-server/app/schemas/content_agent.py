@@ -49,7 +49,7 @@ class ContentAgentClaimRequest(BaseSchema):
     executor_code: str = Field(..., max_length=64)
     capabilities: list[str] = Field(default_factory=list)
     external_run_id: Optional[str] = Field(default=None, max_length=128)
-    executor_type: Optional[str] = Field(default="hermes_profile", max_length=64)
+    executor_type: Optional[str] = Field(default="direct_llm", max_length=64)
     config_snapshot: Optional[dict[str, Any]] = None
 
 

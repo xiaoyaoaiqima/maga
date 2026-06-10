@@ -1,0 +1,46 @@
+{
+  "enabled": true,
+  "similarity": {
+    "enabled": true,
+    "review": "comment_similarity_review",
+    "threshold": 0.3,
+    "history_lookback": 80
+  },
+  "expression_frequency": [
+    {
+      "group_key": "activity_status_question",
+      "label": "活动状态提问",
+      "terms": ["活动还在不在", "活动还有没有", "还有没有活动", "还在不在", "还有没有"],
+      "max_ratio": 0.16,
+      "risk_level": "medium"
+    },
+    {
+      "group_key": "walkie_talkie_phrase",
+      "label": "对讲机固定说法",
+      "terms": ["同款对讲机", "那套对讲机", "这套对讲机", "巴克队长款对讲机", "艾尔博士款对讲机"],
+      "max_ratio": 0.18,
+      "risk_level": "medium"
+    },
+    {
+      "group_key": "store_check_phrase",
+      "label": "到店查看固定说法",
+      "terms": ["怕跑空", "顺路问问", "问店员", "去门店看看", "到店看看", "店里看看"],
+      "max_ratio": 0.24,
+      "risk_level": "medium"
+    },
+    {
+      "group_key": "stockup_four_cans_phrase",
+      "label": "补货四罐固定说法",
+      "terms": ["补货买4罐", "补货四罐", "带够四罐", "买4罐", "四罐"],
+      "max_ratio": 0.22,
+      "risk_level": "medium"
+    },
+    {
+      "group_key": "plot_find_mom_anchor",
+      "label": "奶宝找妈妈剧情锚点",
+      "terms": ["找妈妈", "找到妈妈", "团聚"],
+      "max_ratio": 0.34,
+      "risk_level": "medium"
+    }
+  ]
+}

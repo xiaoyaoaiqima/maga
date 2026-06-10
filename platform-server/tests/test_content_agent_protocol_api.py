@@ -36,7 +36,7 @@ async def api_context():
         task = await service.create_task(ContentAgentTaskCreate(task_type="content_generate"))
         run, stage = await service.start_run_with_stage(
             task.id,
-            executor_code="hermes_maga_worker",
+            executor_code="maga_direct_llm_executor",
             stage=ContentAgentStageCallCreate(
                 stage_call_id="stage-api-001",
                 capability="content.generate",

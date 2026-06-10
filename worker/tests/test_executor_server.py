@@ -150,7 +150,7 @@ def test_content_generate_fake_mode_returns_comment_from_unified_input(monkeypat
     assert data["output"]["runtime_result"]["expert_config_code"] == "comment_generator_v1"
 
 
-def test_content_generate_runtime_falls_back_when_model_returns_empty_comment(monkeypatch):
+def test_content_generate_runtime_keeps_empty_comment_when_model_returns_empty(monkeypatch):
     monkeypatch.delenv("MAGA_WORKER_RUNTIME_FAST_FAKE", raising=False)
 
     def empty_model(*args, **kwargs):
@@ -188,12 +188,52 @@ def test_content_generate_runtime_falls_back_when_model_returns_empty_comment(mo
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "succeeded"
-    assert data["output"]["comment"] == "第一口愿意喝，我就放心点了"
+    assert data["output"]["comment"] == ""
     runtime = data["output"]["runtime_result"]
     assert runtime["mode"] == "content_runtime"
-    assert runtime["fallback"] is True
-    assert runtime["fallback_reason"] == "content.generate produced empty comment"
+    assert runtime["fallback"] is False
+    assert runtime["empty_output"] is True
+    assert runtime["empty_reason"] == "content.generate produced empty comment"
     assert runtime["model_attempts"] == 2
+
+
+def test_content_generate_runtime_uses_model_config_provider(monkeypatch):
+    monkeypatch.delenv("MAGA_WORKER_RUNTIME_FAST_FAKE", raising=False)
+    calls = []
+
+    def model_with_provider(*args, **kwargs):
+        calls.append(kwargs)
+        return '{"title":"标题","body":"正文"}'
+
+    monkeypatch.setattr("maga_worker.llm_runtime.call_model", model_with_provider)
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/invoke",
+        json=_envelope(
+            "content.generate",
+            {
+                "content_type": "article",
+                "output_fields": ["title", "body"],
+                "business_rule": {"topic": "日常体验"},
+                "model_config": {
+                    "provider_code": "aihubmix",
+                    "model_code": "deepseek-v4-flash",
+                    "base_url": "https://aihubmix.example/v1",
+                    "api_key": "db-key",
+                },
+                "expert": {"expert_config_code": "article_generator_v1"},
+                "rendered_prompt": "生成一篇文章",
+            },
+            stage_call_id="stage-content-provider",
+        ),
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "succeeded"
+    assert calls[0]["base_url"] == "https://aihubmix.example/v1"
+    assert calls[0]["api_key"] == "db-key"
 
 
 def test_content_rewrite_fake_mode_removes_forbidden_terms(monkeypatch):

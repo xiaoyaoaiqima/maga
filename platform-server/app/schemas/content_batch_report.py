@@ -14,6 +14,9 @@ from app.services.product_experience_rule_service import DEFAULT_PRODUCT_EXPERIE
 from app.schemas.base import BaseSchema, TimestampSchema
 
 
+ARTICLE_BATCH_MAX_COUNT = 1000
+
+
 class ContentBatchRejectReason(BaseSchema):
     source: str
     code: str | None = None
@@ -137,8 +140,13 @@ class ContentBatchReportResponse(BaseSchema):
 
 
 class ContentBatchModelConfig(BaseSchema):
+    provider_code: str | None = Field(default=None, max_length=64)
+    model_code: str | None = Field(default=None, max_length=128)
     ge_model: str | None = Field(default=MAGA_WORKER_DEFAULT_GE_MODEL, max_length=128)
     ae_model: str | None = Field(default=MAGA_WORKER_DEFAULT_AE_MODEL, max_length=128)
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    max_tokens: int | None = Field(default=None, ge=1, le=100000)
+    system_prompt: str | None = None
 
 
 class ContentBatchStartRequest(BaseSchema):
@@ -148,7 +156,7 @@ class ContentBatchStartRequest(BaseSchema):
     target_audience: str | None = Field(default=None, max_length=255)
     persona_target: str | None = Field(default=None, max_length=255)
     style: str | None = Field(default=None, max_length=255)
-    count: int = Field(default=10, ge=1, le=20)
+    count: int = Field(default=10, ge=1, le=ARTICLE_BATCH_MAX_COUNT)
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     generation_model_config: ContentBatchModelConfig = Field(
         default_factory=ContentBatchModelConfig,
@@ -160,6 +168,14 @@ class ContentBatchStartRequest(BaseSchema):
 class ContentCommentBatchStartRequest(BaseSchema):
     asset_key: str = Field(default="yuanyue_comment_activity", max_length=128)
     keyword_asset_key: str | None = Field(default=None, max_length=128)
+    quality_guard_profile_key: str | None = Field(default=None, max_length=128)
+    comment_angle: str | None = Field(default=None, max_length=255)
+    rule_id: str | None = Field(default=None, max_length=128)
+    source_row_no: int | None = Field(default=None, ge=1)
+    draft_corpus: str | None = None
+    draft_rule_id: str | None = Field(default=None, max_length=128)
+    draft_source_row_no: int | None = Field(default=None, ge=1)
+    count: int | None = Field(default=None, ge=1, le=100)
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     created_by: str | None = Field(default=None, max_length=100)
 

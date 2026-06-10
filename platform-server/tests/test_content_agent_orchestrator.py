@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models.base import Base
 from app.models.content_agent import ContentAgentRun, ContentAgentStageCall, ContentAgentTask, ExecutorRegistry
+from app.models.llm_model_route import LLMModelRoute
+from app.models.llm_provider_config import LLMProviderConfig
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 from app.schemas.content_agent import ContentAgentTaskCreate
 from app.services.content_agent_orchestrator import ContentAgentInvokeError, ContentAgentOrchestrator
@@ -44,8 +46,8 @@ async def db_session():
 async def test_run_single_capability_invokes_content_generate_and_completes_run(db_session):
     db_session.add(
         ExecutorRegistry(
-            executor_code="hermes_maga_worker",
-            executor_type="hermes_profile",
+            executor_code="maga_direct_llm_executor",
+            executor_type="direct_llm",
             invoke_url="https://executor.example.com/invoke",
             supported_capabilities_json=[{"capability": "content.generate", "schema_version": "1"}],
         )
@@ -68,7 +70,7 @@ async def test_run_single_capability_invokes_content_generate_and_completes_run(
     result = await orchestrator.run_single_capability(
         ContentAgentTaskCreate(
             task_type="content_generate",
-            executor_code="hermes_maga_worker",
+            executor_code="maga_direct_llm_executor",
             input_snapshot={"content_type": "article", "rendered_prompt": "生成内容"},
         ),
         capability="content.generate",
@@ -87,11 +89,117 @@ async def test_run_single_capability_invokes_content_generate_and_completes_run(
 
 
 @pytest.mark.asyncio
+async def test_run_single_capability_attaches_provider_config_only_to_invoke_envelope(db_session):
+    db_session.add(
+        ExecutorRegistry(
+            executor_code="maga_direct_llm_executor",
+            executor_type="direct_llm",
+            invoke_url="https://executor.example.com/invoke",
+            supported_capabilities_json=[{"capability": "content.generate", "schema_version": "1"}],
+        )
+    )
+    db_session.add(
+        LLMProviderConfig(
+            id=1,
+            provider_code="aihubmix",
+            provider_name="AIHubMix",
+            provider_type="openai_compatible",
+            base_url="https://aihubmix.example/v1",
+            api_key="db-key",
+            default_model="deepseek-v4-flash",
+            priority=100,
+            enabled=1,
+        )
+    )
+    db_session.add(
+        LLMModelRoute(
+            id=1,
+            model_code="deepseek-v4-flash",
+            model_name="DeepSeek V4 Flash",
+            provider_code="aihubmix",
+            provider_model="deepseek-v4-flash",
+            priority=100,
+            enabled=1,
+        )
+    )
+    await db_session.flush()
+    invocation_client = FakeInvocationClient(
+        InvokeResult(mode="sync", stage_call_id="stage-fixed", output={"title": "标题", "body": "正文"})
+    )
+    orchestrator = ContentAgentOrchestrator(
+        db_session,
+        invocation_client=invocation_client,
+        callback_base_url="https://maga.example.com/api/v1/content-agent",
+    )
+
+    result = await orchestrator.run_single_capability(
+        ContentAgentTaskCreate(
+            task_type="content_generate",
+            executor_code="maga_direct_llm_executor",
+            input_snapshot={
+                "content_type": "article",
+                "rendered_prompt": "生成内容",
+                "model_config": {"provider_code": "aihubmix", "model_code": "deepseek-v4-flash"},
+            },
+        ),
+        capability="content.generate",
+    )
+
+    outbound_model_config = invocation_client.calls[0]["envelope"]["input"]["model_config"]
+    assert outbound_model_config["base_url"] == "https://aihubmix.example/v1"
+    assert outbound_model_config["api_key"] == "db-key"
+    assert result.stage_calls[0].input_snapshot["model_config"] == {
+        "provider_code": "aihubmix",
+        "model_code": "deepseek-v4-flash",
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_single_capability_uses_direct_llm_executor_without_worker(db_session, monkeypatch):
+    async def fake_call(**kwargs):
+        return '{"title":"直连标题","body":"直连正文"}'
+
+    monkeypatch.setattr("app.services.executor_invocation_service._call_openai_compatible_model", fake_call)
+    db_session.add(
+        ExecutorRegistry(
+            executor_code="maga_direct_llm_executor",
+            executor_type="direct_llm",
+            invoke_url="llm://direct/content",
+            supported_capabilities_json=[{"capability": "content.generate", "schema_version": "1"}],
+        )
+    )
+    await db_session.flush()
+    orchestrator = ContentAgentOrchestrator(
+        db_session,
+        callback_base_url="https://maga.example.com/api/v1/content-agent",
+    )
+
+    result = await orchestrator.run_single_capability(
+        ContentAgentTaskCreate(
+            task_type="content_generate",
+            executor_code="maga_direct_llm_executor",
+            input_snapshot={
+                "content_type": "article",
+                "output_fields": ["title", "body"],
+                "rendered_prompt": "生成内容",
+                "model_config": {"model_code": "deepseek-v4-flash"},
+            },
+        ),
+        capability="content.generate",
+    )
+
+    assert result.run.status == "succeeded"
+    assert result.output["title"] == "直连标题"
+    assert result.stage_calls[0].status == "succeeded"
+    assert result.stage_calls[0].stats_json["adapter"] == "platform_server.direct_llm"
+
+
+@pytest.mark.asyncio
 async def test_run_single_capability_defaults_blank_executor_code_to_maga_worker(db_session):
     db_session.add(
         ExecutorRegistry(
-            executor_code="hermes_maga_worker",
-            executor_type="hermes_profile",
+            executor_code="maga_direct_llm_executor",
+            executor_type="direct_llm",
             invoke_url="https://executor.example.com/invoke",
             supported_capabilities_json=[{"capability": "content.generate", "schema_version": "1"}],
         )
@@ -114,7 +222,7 @@ async def test_run_single_capability_defaults_blank_executor_code_to_maga_worker
         capability="content.generate",
     )
 
-    assert result.run.executor_code == "hermes_maga_worker"
+    assert result.run.executor_code == "maga_direct_llm_executor"
     assert result.stage_calls[0].status == "succeeded"
 
 
@@ -122,8 +230,8 @@ async def test_run_single_capability_defaults_blank_executor_code_to_maga_worker
 async def test_run_single_capability_marks_failed_sync_stage_failed(db_session):
     db_session.add(
         ExecutorRegistry(
-            executor_code="hermes_maga_worker",
-            executor_type="hermes_profile",
+            executor_code="maga_direct_llm_executor",
+            executor_type="direct_llm",
             invoke_url="https://executor.example.com/invoke",
         )
     )
@@ -157,8 +265,8 @@ async def test_run_single_capability_marks_failed_sync_stage_failed(db_session):
 async def test_run_single_capability_marks_stage_and_run_failed_when_executor_call_raises(db_session):
     db_session.add(
         ExecutorRegistry(
-            executor_code="hermes_maga_worker",
-            executor_type="hermes_profile",
+            executor_code="maga_direct_llm_executor",
+            executor_type="direct_llm",
             invoke_url="https://executor.example.com/invoke",
         )
     )
@@ -173,7 +281,7 @@ async def test_run_single_capability_marks_stage_and_run_failed_when_executor_ca
         await orchestrator.run_single_capability(
             ContentAgentTaskCreate(
                 task_type="content_generate",
-                executor_code="hermes_maga_worker",
+                executor_code="maga_direct_llm_executor",
                 input_snapshot={"content_type": "article"},
             ),
             capability="content.generate",
@@ -194,7 +302,7 @@ async def test_run_single_capability_marks_stage_and_run_failed_when_executor_ca
 
 @pytest.mark.asyncio
 async def test_run_single_capability_requires_executor_invoke_url(db_session):
-    db_session.add(ExecutorRegistry(executor_code="hermes_maga_worker", executor_type="hermes_profile"))
+    db_session.add(ExecutorRegistry(executor_code="maga_direct_llm_executor", executor_type="direct_llm"))
     await db_session.flush()
     orchestrator = ContentAgentOrchestrator(
         db_session,

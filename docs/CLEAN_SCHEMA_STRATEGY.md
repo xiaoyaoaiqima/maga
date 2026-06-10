@@ -143,12 +143,18 @@ make init-clean-schema
 
 该命令会创建/补齐 MAGA clean schema，并 seed 默认执行器：
 
-- `hermes_maga_worker`：统一的 Hermes `maga-worker` 执行器。
+- `maga_direct_llm_executor`：统一的 MAGA 内容执行器，默认由后端本进程直连大模型。
 
-默认 `MAGA_WORKER_INVOKE_URL` 为 `http://host.docker.internal:8765/invoke`，适合 Docker 后端调用宿主机上运行的 `maga-worker` HTTP 服务。如果只想先跑平台内置 mock，可以显式切回：
+默认 `MAGA_WORKER_INVOKE_URL` 为 `llm://direct/content`，适合后端直接调用 OpenAI-compatible 大模型，不依赖 Hermes/worker。如果只想先跑平台内置 mock，可以显式切回：
 
 ```bash
 MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
+```
+
+如需兼容旧 worker，可显式指定 HTTP invoke URL：
+
+```bash
+MAGA_WORKER_INVOKE_URL=http://host.docker.internal:8765/invoke make init-clean-schema
 ```
 
 脚本行为：

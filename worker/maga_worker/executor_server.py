@@ -130,6 +130,7 @@ def _handle_content_generate(input_payload: dict[str, Any]) -> dict[str, Any]:
     output = _generate_content_with_runtime_fallback(
         input_payload,
         call_model=call_model,
+        model_config=model_config,
         model=model,
         system=system,
         prompt=prompt,
@@ -151,13 +152,14 @@ def _generate_content_with_runtime_fallback(
     input_payload: dict[str, Any],
     *,
     call_model,
+    model_config: dict[str, Any],
     model: str,
     system: str,
     prompt: str,
     temperature: float,
     max_tokens: int | None,
 ) -> dict[str, Any]:
-    """Retry empty model outputs, then use rule examples so one blank response does not fail an item."""
+    """Retry empty model outputs, then return an explicit empty result."""
     attempts = [
         prompt,
         (
@@ -174,6 +176,10 @@ def _generate_content_with_runtime_fallback(
             user=attempt_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
+            api_key=model_config.get("api_key"),
+            base_url=model_config.get("base_url") or model_config.get("endpoint"),
+            timeout=model_config.get("timeout"),
+            max_retries=model_config.get("max_retries"),
         )
         last_raw = str(raw or "")
         try:
@@ -190,10 +196,13 @@ def _generate_content_with_runtime_fallback(
         }
         return output
 
-    output = _stable_content_from_unified_input(input_payload)
+    # Do not reuse rule examples after runtime empties; duplicate generated rows
+    # are worse than an explicit empty result that upstream can mark for retry.
+    output = _empty_content_from_unified_input(input_payload)
     output["_runtime_meta"] = {
-        "fallback": True,
-        "fallback_reason": str(last_error or "empty_model_output"),
+        "fallback": False,
+        "empty_output": True,
+        "empty_reason": str(last_error or "empty_model_output"),
         "model_attempts": len(attempts),
         "raw_output_length": len(last_raw),
     }
@@ -249,13 +258,17 @@ def _handle_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
             forbidden_replacements=forbidden_replacements,
             content_type=content_type,
         )
-    raw = call_model(
-        model,
-        system=system,
-        user=prompt,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+        raw = call_model(
+            model,
+            system=system,
+            user=prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_key=model_config.get("api_key"),
+            base_url=model_config.get("base_url") or model_config.get("endpoint"),
+            timeout=model_config.get("timeout"),
+            max_retries=model_config.get("max_retries"),
+        )
     output = _normalize_rewrite_output(raw, input_payload, content_type=content_type, output_fields=output_fields)
     output["runtime_result"] = {
         "mode": "content_rewrite_runtime",
@@ -439,6 +452,13 @@ def _stable_content_from_unified_input(input_payload: dict[str, Any]) -> dict[st
         "title": f"{topic}，{persona}的真实分享",
         "body": f"围绕{topic}，写给{target}，用{persona}的口吻承接业务规则，再用{method}把具体感受讲清楚。整体表达保持自然克制，不夸大、不照搬示例。",
     }
+
+
+def _empty_content_from_unified_input(input_payload: dict[str, Any]) -> dict[str, str]:
+    output_fields = input_payload.get("output_fields") or []
+    if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
+        return {"comment": ""}
+    return {"title": "", "body": ""}
 
 
 def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -> dict[str, str]:

@@ -71,7 +71,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--database-url", default=None, help="Async SQLAlchemy database URL")
     parser.add_argument("--drop", action="store_true", help="Drop clean core tables before creating them")
     parser.add_argument("--seed", action="store_true", help="Seed baseline executor registry rows")
-    parser.add_argument("--maga-worker-invoke-url", default=MAGA_WORKER_INVOKE_URL, help="Invoke URL for hermes_maga_worker executor seed")
+    parser.add_argument(
+        "--maga-worker-invoke-url",
+        default=MAGA_WORKER_INVOKE_URL,
+        help="Invoke URL for MAGA direct LLM executor seed; defaults to backend direct LLM execution",
+    )
     parser.add_argument(
         "--executor-token",
         default="test-token",

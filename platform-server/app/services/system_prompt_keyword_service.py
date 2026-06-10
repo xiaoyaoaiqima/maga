@@ -211,15 +211,40 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
             "selection_policy": {"default_mode": "one_per_enabled_category"},
             "categories": [
                 {
+                    "category_code": "comment_generation_requirement",
+                    "category_name": "生成要求",
+                    "description": "评论任务入口要求，控制输出形态和基础口语感。",
+                    "sort_order": 5,
+                    "applicable_content_types": ["comment"],
+                    "selection_mode": "fixed",
+                    "selected_keyword_code": "xhs_maternal_comment_requirement",
+                    "sub_keywords": [
+                        {
+                            "keyword_code": "xhs_maternal_comment_requirement",
+                            "keyword_name": "小红书母婴评论生成要求",
+                            "corpus": [
+                                "生成一条小红书母婴社区真实用户评论，口语化，有活人感。只输出评论正文，不要标题、编号、解释。先看业务规则里的参考示例，再换一种自然说法输出。不要复述规则，也不要写成广告口播。"
+                            ],
+                        }
+                    ],
+                },
+                {
                     "category_code": "persona",
                     "category_name": "人设",
                     "description": "默认表达身份，不是类别上限。",
                     "sort_order": 10,
                     "sub_keywords": [
                         {
+                            "keyword_code": "family_mom",
+                            "keyword_name": "家庭妈妈",
+                            "corpus": [
+                                "像普通家庭妈妈自然接话。语气自然、有生活感，不端着讲课，也不要像品牌客服或活动公告。"
+                            ],
+                        },
+                        {
                             "keyword_code": "experienced_mom",
                             "keyword_name": "经验型妈妈",
-                            "corpus": ["像有带娃经验的妈妈在评论区交流，语气自然，不端着讲课。"],
+                            "corpus": ["像有带娃经验的妈妈自然接话，语气自然，不端着讲课。"],
                         },
                         {
                             "keyword_code": "careful_observer",
@@ -230,6 +255,21 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                             "keyword_code": "rational_comparer",
                             "keyword_name": "理性比较型妈妈",
                             "corpus": ["用克制的比较口吻表达，关注选择依据，不做绝对化推荐。"],
+                        },
+                        {
+                            "keyword_code": "chatty_mom",
+                            "keyword_name": "碎碎念妈妈",
+                            "corpus": ["像爱补半句生活细节的妈妈，语气随口、有一点闺蜜感，不硬塞职业、兴趣或固定生活桥段。"],
+                        },
+                        {
+                            "keyword_code": "new_mom",
+                            "keyword_name": "新手妈妈",
+                            "corpus": ["像刚开始做功课的妈妈，说话会多一点确认、追问和求反馈，不装专家。"],
+                        },
+                        {
+                            "keyword_code": "working_mom",
+                            "keyword_name": "职场妈妈",
+                            "corpus": ["像普通上班族妈妈，说话利落，关注方便和少折腾，但不要把工作身份写成正文主线。"],
                         },
                     ],
                 },
@@ -267,17 +307,23 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                         {
                             "keyword_code": "natural_comment",
                             "keyword_name": "自然评论区表达",
-                            "corpus": ["语言像顺手评论，短句优先，不写成广告口播或完整科普段落。"],
+                            "corpus": [
+                                "语言像妈妈在评论区顺手补一句，可以用同款、加一、我们家、刚转这种入口，不写成广告口播或完整科普段落。"
+                            ],
                         },
                         {
                             "keyword_code": "specific_comment_question",
                             "keyword_name": "带着具体问题来",
-                            "corpus": ["把泛泛的兴趣落到一个具体问题上，让内容更像真实妈妈在评论区交流。"],
+                            "corpus": [
+                                "把泛泛兴趣落到纸尿裤、擦屁屁、转奶第几天、喝奶后状态这类小观察上，让评论像真实交流。"
+                            ],
                         },
                         {
                             "keyword_code": "light_comment_experience",
                             "keyword_name": "轻经验互动",
-                            "corpus": ["可以带一点轻量经验感或观望感，但不要虚构强亲历或承诺效果。"],
+                            "corpus": [
+                                "可以带一点轻量经验感、犹豫或小缺口，不必凑成完整总结，也别写成强推荐。"
+                            ],
                         },
                     ],
                 },
@@ -288,19 +334,30 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                     "sort_order": 30,
                     "sub_keywords": [
                         {
+                            "keyword_code": "random_thinking_shift",
+                            "keyword_name": "随机发散",
+                            "corpus": [
+                                "生成的时候提高你思考的随机性，不要用一种固定的思路。真实的生活就是发散而随机，离散运动。"
+                            ],
+                        },
+                        {
                             "keyword_code": "opening_shift",
                             "keyword_name": "开头扰动",
-                            "corpus": ["不要总用同一种开头，可从共鸣、追问、观察、轻提醒里选一种自然切入。"],
+                            "corpus": [
+                                "不要总用同一种开头，可从同款、加一、今天记录、刚转、我们家、顺手提醒里选一种自然切入。"
+                            ],
                         },
                         {
                             "keyword_code": "length_shift",
                             "keyword_name": "长短扰动",
-                            "corpus": ["同批内容长短要有变化，本条优先控制在一到两句话。"],
+                            "corpus": [
+                                "同批内容长短要有变化，至少一半在8到20字，常态8到22字，少量可以到21到30字，不要自动压成两个词的极短回应。"
+                            ],
                         },
                         {
                             "keyword_code": "stance_shift",
                             "keyword_name": "态度扰动",
-                            "corpus": ["态度可以是想了解、轻共鸣、谨慎观望或补充经验，不要每条都像强推荐。"],
+                            "corpus": ["态度可以是补经验、轻共鸣、谨慎观望或小吐槽，不要每条都像强推荐。"],
                         },
                     ],
                 },
@@ -313,12 +370,12 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                         {
                             "keyword_code": "scene_detail",
                             "keyword_name": "场景细节法",
-                            "corpus": ["用一个带娃场景或选择奶粉时的小细节承接业务规则。"],
+                            "corpus": ["用一个纸尿裤、擦屁屁、奶瓶剩余、早晚臭臭之类的小细节承接业务规则。"],
                         },
                         {
                             "keyword_code": "question_hook",
                             "keyword_name": "问题钩子法",
-                            "corpus": ["用真实问题引出互动，让评论更像妈妈之间互相确认。"],
+                            "corpus": ["可以轻轻带一个真实疑问或确认感，但别每条都写成提问。"],
                         },
                         {
                             "keyword_code": "plain_explain",
@@ -366,23 +423,37 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                     "sub_keywords": [
                         {
                             "keyword_code": "comment_short_clean",
-                            "keyword_name": "0-5字",
+                            "keyword_name": "8-16字",
                             "corpus": [
-                                "评论控制在0到5字，极短回应，不用emoji，不分段。"
+                                "评论多在8到16字，像顺手回帖，至少说清一个观察点，不要压成两个词。"
                             ],
                         },
                         {
                             "keyword_code": "comment_light_emoji",
-                            "keyword_name": "6-15字",
+                            "keyword_name": "10-20字",
                             "corpus": [
-                                "评论控制在6到15字，尽量一句话，可不用emoji，不写成完整科普。"
+                                "评论多在10到20字，可一句半或两小句，带一个具体细节，不写成完整科普。"
                             ],
                         },
                         {
                             "keyword_code": "comment_two_sentence",
-                            "keyword_name": "15-25字",
+                            "keyword_name": "21-30字少量",
                             "corpus": [
-                                "评论控制在15到25字，最多两句话，少用或不用emoji，保留真实互动感。"
+                                "少量评论可以到21到30字，允许碎碎念多补半句细节或小缺口，别每条都写长。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "comment_21_35",
+                            "keyword_name": "21-35字",
+                            "corpus": [
+                                "评论控制在21到35字，最多两句话；语义要完整，适合同时带两个信息点，不要半句截断。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "comment_21_50",
+                            "keyword_name": "21-50字",
+                            "corpus": [
+                                "评论控制在21到50字，最多两句话；语义要完整，适合承载稍完整的生活细节，不要半句截断。"
                             ],
                         },
                     ],

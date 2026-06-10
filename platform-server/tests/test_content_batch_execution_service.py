@@ -59,8 +59,8 @@ async def test_batch_execution_generates_first_n_items_and_links_runs():
     async with session_factory() as session:
         session.add(
             ExecutorRegistry(
-                executor_code="hermes_maga_worker",
-                executor_type="hermes_profile",
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
                 display_name="Hermes MAGA worker",
                 invoke_url="mock://maga-worker/invoke",
                 enabled=1,
@@ -142,8 +142,8 @@ async def test_batch_execution_rewrites_business_forbidden_terms():
     async with session_factory() as session:
         session.add(
             ExecutorRegistry(
-                executor_code="hermes_maga_worker",
-                executor_type="hermes_profile",
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
                 display_name="Hermes MAGA worker",
                 invoke_url="mock://maga-worker/invoke",
                 enabled=1,
@@ -327,8 +327,8 @@ async def test_batch_execution_runs_items_with_configured_concurrency():
     async with session_factory() as session:
         session.add(
             ExecutorRegistry(
-                executor_code="hermes_maga_worker",
-                executor_type="hermes_profile",
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
                 display_name="Hermes MAGA worker",
                 invoke_url="http://maga-worker.test/invoke",
                 enabled=1,
@@ -380,8 +380,8 @@ async def test_batch_execution_reports_worker_start_hint_when_executor_is_unreac
     async with session_factory() as session:
         session.add(
             ExecutorRegistry(
-                executor_code="hermes_maga_worker",
-                executor_type="hermes_profile",
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
                 display_name="Hermes MAGA worker",
                 invoke_url="http://127.0.0.1:8766/invoke",
                 enabled=1,
@@ -437,8 +437,8 @@ async def test_batch_execution_rewrites_later_item_when_similarity_is_too_high()
     async with session_factory() as session:
         session.add(
             ExecutorRegistry(
-                executor_code="hermes_maga_worker",
-                executor_type="hermes_profile",
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
                 display_name="Hermes MAGA worker",
                 invoke_url="http://maga-worker.test/invoke",
                 enabled=1,
@@ -503,8 +503,8 @@ async def test_batch_execution_checks_recent_history_for_similarity():
     async with session_factory() as session:
         session.add(
             ExecutorRegistry(
-                executor_code="hermes_maga_worker",
-                executor_type="hermes_profile",
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
                 display_name="Hermes MAGA worker",
                 invoke_url="http://maga-worker.test/invoke",
                 enabled=1,
@@ -580,8 +580,8 @@ async def test_batch_execution_marks_manual_review_when_similarity_rewrite_still
     async with session_factory() as session:
         session.add(
             ExecutorRegistry(
-                executor_code="hermes_maga_worker",
-                executor_type="hermes_profile",
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
                 display_name="Hermes MAGA worker",
                 invoke_url="http://maga-worker.test/invoke",
                 enabled=1,
@@ -639,8 +639,8 @@ async def test_batch_execution_uses_unified_content_generate_runtime_output():
     async with session_factory() as session:
         session.add(
             ExecutorRegistry(
-                executor_code="hermes_maga_worker",
-                executor_type="hermes_profile",
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
                 display_name="Hermes MAGA worker",
                 invoke_url="http://maga-worker.test/invoke",
                 enabled=1,

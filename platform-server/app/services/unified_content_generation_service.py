@@ -22,6 +22,20 @@ CONTENT_GENERATE_CAPABILITY = "content.generate"
 SYSTEM_KEYWORD_ASSET_TYPE = CONTENT_GENERATION_KEYWORDS_ASSET_TYPE
 DEFAULT_COMMENT_EXPERT_CONFIG_CODE = "comment_generator_v1"
 DEFAULT_ARTICLE_EXPERT_CONFIG_CODE = "article_generator_v1"
+GENERATION_REQUIREMENT_CATEGORY_CODES = {
+    "generation_requirement",
+    "comment_generation_requirement",
+    "article_generation_requirement",
+}
+KEYWORD_CORPUS_RENDER_PRIORITY = {
+    "perturbation_rule": 10,
+    "persona": 20,
+    "comment_writing_instruction": 30,
+    "writing_instruction": 30,
+    "writing_method": 40,
+    "comment_format_control": 50,
+    "article_format_control": 50,
+}
 
 
 @dataclass(frozen=True)
@@ -66,7 +80,12 @@ class UnifiedContentGenerationService:
             if keyword_asset
             else fallback_system_prompt_keyword_content()
         )
-        selected_keywords = _select_keyword_bundle(keyword_content, content_type=content_type, item_no=item_no)
+        selected_keywords = _select_keyword_bundle(
+            keyword_content,
+            content_type=content_type,
+            item_no=item_no,
+            keyword_selection=_keyword_selection_from_rule(business_rule),
+        )
         expert = await self._expert_snapshot(
             expert_config_code or _default_expert_code(content_type),
             content_type=content_type,
@@ -162,7 +181,13 @@ class UnifiedContentGenerationService:
         return _fallback_expert_snapshot(expert_config_code, content_type=content_type, model_config=model_config)
 
 
-def _select_keyword_bundle(content_json: dict[str, Any], *, content_type: str, item_no: int) -> list[dict[str, Any]]:
+def _select_keyword_bundle(
+    content_json: dict[str, Any],
+    *,
+    content_type: str,
+    item_no: int,
+    keyword_selection: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     categories = _categories_from_content(content_json)
     selected: list[dict[str, Any]] = []
     base = max(1, item_no) - 1
@@ -176,6 +201,7 @@ def _select_keyword_bundle(content_json: dict[str, Any], *, content_type: str, i
         sub_keywords = category.get("sub_keywords") or category.get("items") or []
         sub_keywords = [item for item in sub_keywords if isinstance(item, dict)]
         sub_keywords = [item for item in sub_keywords if item.get("enabled") is not False]
+        sub_keywords = _filter_sub_keywords_by_selection(category, sub_keywords, keyword_selection)
         if not sub_keywords:
             continue
         item = _select_sub_keyword(category, sub_keywords, index=(base + offset))
@@ -192,6 +218,54 @@ def _select_keyword_bundle(content_json: dict[str, Any], *, content_type: str, i
             }
         )
     return selected
+
+
+def _keyword_selection_from_rule(rule: dict[str, Any]) -> dict[str, Any]:
+    value = rule.get("keyword_selection") if isinstance(rule, dict) else None
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _filter_sub_keywords_by_selection(
+    category: dict[str, Any],
+    sub_keywords: list[dict[str, Any]],
+    keyword_selection: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    allowed_codes = _allowed_keyword_codes_for_category(category, keyword_selection)
+    filtered = sub_keywords
+    if allowed_codes is not None:
+        filtered = [
+            item
+            for item in filtered
+            if str(item.get("keyword_code") or item.get("code") or item.get("子关键词") or "").strip() in allowed_codes
+        ]
+    return filtered
+
+
+def _allowed_keyword_codes_for_category(
+    category: dict[str, Any],
+    keyword_selection: dict[str, Any] | None,
+) -> set[str] | None:
+    if not keyword_selection:
+        return None
+    category_keys = [
+        category.get("category_code"),
+        category.get("code"),
+        category.get("category_name"),
+        category.get("name"),
+    ]
+    for key in category_keys:
+        normalized_key = str(key or "").strip()
+        if not normalized_key or normalized_key not in keyword_selection:
+            continue
+        value = keyword_selection[normalized_key]
+        if isinstance(value, dict):
+            value = value.get("include") or value.get("codes") or value.get("keyword_codes")
+        if isinstance(value, str):
+            value = re.split(r"[,，\s]+", value)
+        if isinstance(value, list):
+            allowed = {str(item).strip() for item in value if str(item).strip()}
+            return allowed or set()
+    return None
 
 
 def _resolve_keyword_asset_key(explicit_key: str | None, business_rule: dict[str, Any]) -> str:
@@ -250,14 +324,17 @@ def _template_variables(
         "business_rule": _business_rule_text(business_rule),
         "keyword_corpus": _keyword_corpus_text(selected_keywords),
         "selected_keywords_json": json.dumps(selected_keywords, ensure_ascii=False, indent=2),
-        "generation_requirements": _generation_requirements(content_type, output_fields),
+        "generation_requirements": _generation_requirements(
+            content_type,
+            output_fields,
+            business_rule,
+            selected_keywords,
+        ),
     }
 
 
 def _business_rule_text(rule: dict[str, Any]) -> str:
     lines: list[str] = []
-    if rule.get("rule_type"):
-        lines.append(f"- 规则类型：{rule.get('rule_type')}")
     if rule.get("product_topic"):
         lines.append(f"- 主题：{rule.get('product_topic')}")
     if rule.get("target_audience"):
@@ -307,12 +384,13 @@ def _business_rule_text(rule: dict[str, Any]) -> str:
         lines.append("- 多样性槽位：\n" + json.dumps(rule["diversity_slot"], ensure_ascii=False, indent=2))
     if isinstance(rule.get("brief_constraints"), dict):
         lines.append("- 格式/篇幅约束：\n" + json.dumps(rule["brief_constraints"], ensure_ascii=False, indent=2))
-    examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
-    supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
-    if examples:
-        lines.append("- 参考示例：\n" + "\n".join(f"  - {item}" for item in examples[:8]))
-    if supplements:
-        lines.append("- 补充参考：\n" + "\n".join(f"  - {item}" for item in supplements[:6]))
+    if rule.get("render_reference_examples") is not False:
+        examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
+        supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
+        if examples:
+            lines.append("- 参考示例：\n" + "\n".join(f"  - {item}" for item in examples[:8]))
+        if supplements:
+            lines.append("- 补充参考：\n" + "\n".join(f"  - {item}" for item in supplements[:6]))
     if not lines:
         lines.append(json.dumps(rule, ensure_ascii=False, indent=2))
     return "\n".join(lines)
@@ -320,23 +398,63 @@ def _business_rule_text(rule: dict[str, Any]) -> str:
 
 def _keyword_corpus_text(selected_keywords: list[dict[str, Any]]) -> str:
     parts = []
-    for item in selected_keywords:
+    for item in _ordered_keyword_corpus_items(selected_keywords):
+        # 生成要求要放在 prompt 顶部独立生效，不再在系统关键词语料区重复出现。
+        if str(item.get("category_code") or "").strip() in GENERATION_REQUIREMENT_CATEGORY_CODES:
+            continue
         corpus = item.get("corpus") or []
         corpus_text = "\n".join(f"  - {line}" for line in corpus)
         parts.append(f"- {item.get('category_name')} / {item.get('keyword_name')}：\n{corpus_text}")
     return "\n".join(parts)
 
 
-def _generation_requirements(content_type: str, output_fields: list[str]) -> str:
+def _ordered_keyword_corpus_items(selected_keywords: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    indexed = list(enumerate(selected_keywords))
+    return [
+        item
+        for _, item in sorted(
+            indexed,
+            key=lambda pair: (
+                KEYWORD_CORPUS_RENDER_PRIORITY.get(str(pair[1].get("category_code") or "").strip(), 100),
+                pair[0],
+            ),
+        )
+    ]
+
+
+def _generation_requirements(
+    content_type: str,
+    output_fields: list[str],
+    business_rule: dict[str, Any],
+    selected_keywords: list[dict[str, Any]],
+) -> str:
+    parts = _selected_generation_requirements(selected_keywords)
+    configured = str(business_rule.get("generation_requirements") or "").strip()
+    if configured:
+        parts.append(configured)
+    if parts:
+        return "\n".join(parts)
     if content_type == "comment" or output_fields == ["comment"]:
         return (
-            "只输出一条自然评论正文；像真实评论区，不要标题、编号、解释；"
-            "可以借鉴示例的语义方向，但不要照搬原句；不承诺解决所有问题，不做医疗化诊断。"
+            "生成一条小红书母婴社区真实用户评论，口语化，有活人感。"
+            "只输出评论正文，不要标题、编号、解释。"
         )
     return (
         "输出 JSON 对象，字段包含 title 和 body；正文保持小红书自然表达；"
         "业务规则优先，系统提示词关键词语料用于表达身份、生成指令、多样性和写法控制。"
     )
+
+
+def _selected_generation_requirements(selected_keywords: list[dict[str, Any]]) -> list[str]:
+    requirements: list[str] = []
+    for item in selected_keywords:
+        if str(item.get("category_code") or "").strip() not in GENERATION_REQUIREMENT_CATEGORY_CODES:
+            continue
+        for line in item.get("corpus") or []:
+            text = str(line or "").strip()
+            if text:
+                requirements.append(text)
+    return requirements
 
 
 _TEMPLATE_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")
@@ -376,24 +494,33 @@ def _fallback_expert_snapshot(
 def _fallback_prompt_template(content_type: str) -> str:
     if content_type == "comment":
         return (
-            "你是小红书母婴评论生成 expert。\n"
-            "请根据业务规则和系统内置关键词语料，生成一条自然评论。\n\n"
-            "【业务规则】\n{{ business_rule }}\n\n"
-            "【本次自动选中的系统关键词语料】\n{{ keyword_corpus }}\n\n"
-            "【生成要求】\n{{ generation_requirements }}"
+            "【生成要求】\n{{ generation_requirements }}\n\n"
+            "【系统关键词语料】\n{{ keyword_corpus }}\n\n"
+            "【业务规则】\n{{ business_rule }}"
         )
     return (
         "你是小红书母婴内容生成 expert。\n"
         "请根据业务规则和系统内置关键词语料，生成一篇自然种草内容。\n\n"
         "【业务规则】\n{{ business_rule }}\n\n"
-        "【本次自动选中的系统关键词语料】\n{{ keyword_corpus }}\n\n"
+        "【系统关键词语料】\n{{ keyword_corpus }}\n\n"
         "【生成要求】\n{{ generation_requirements }}"
     )
 
 
 def _normalize_model_config(value: dict[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
-    for key in ("provider", "provider_code", "model_code", "ge_model", "ae_model", "temperature", "max_tokens", "system_prompt"):
+    for key in (
+        "provider",
+        "provider_code",
+        "model_code",
+        "ge_model",
+        "ae_model",
+        "temperature",
+        "max_tokens",
+        "timeout",
+        "max_retries",
+        "system_prompt",
+    ):
         item = value.get(key)
         if item is not None and item != "":
             normalized[key] = item

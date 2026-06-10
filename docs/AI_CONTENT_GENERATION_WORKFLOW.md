@@ -26,6 +26,10 @@ Demo 主线调整为：
 
 这里的 `expert` 不是人设，也不是业务规则；它是“提示词模版 + 模型参数配置”。业务规则负责告诉模型写什么，系统提示词关键词负责告诉模型怎么写，expert 负责把这些输入组装成最终提示词。
 
+通用系统关键词要保持轻量，尤其是 `人设`、`生文指令`、`生评论指令`、`扰动规则`、`格式控制/评论格式控制` 这些与具体业务事实无关的类别。它们只描述语气、生成动作、随机性和输出形态，不承载产品卖点、活动机制、剧情事实、禁写清单或重业务边界。重业务规则应放在业务规则包或评论切角语料里；可跨业务复用的表达边界放到表达写作规则；必须强约束的底线再放到硬性规则。
+
+系统关键词可以维护全局子关键词池，具体业务规则包通过 `keyword_selection` 圈选本次可用子集。例如剧情讨论评论可以从全局 `人设` 池中只圈选 `家庭妈妈`、`经验型妈妈`、`碎碎念妈妈`、`新手妈妈`、`职场妈妈`，生成时只在这个子集里轮换；不要为了单个业务复制一套重系统关键词。
+
 ## 规则包边界
 
 ### 源悦活动评论
@@ -79,6 +83,76 @@ Demo 主线调整为：
 运营写规则时不需要把所有角度拆成复杂表单，也不要把提示词写成死板大纲。一个规则块只说明这个切角在聊什么、语气像什么、边界在哪里；多样性主要靠示例增加，而不是靠堆更多限制。
 
 当生成结果重复时，优先补充更多不同方向的自然示例；不要把规则改成很长的“必须/只能/固定写法”。
+
+## 资产配置更新工具
+
+后端提供 `platform-server/scripts/update_asset_config.py` 用于维护 `asset_registry` 里的 JSON 配置字段，避免手写 SQL。默认只做 dry-run；真正写库必须显式加 `--apply`。
+
+查看当前字段：
+
+```bash
+cd platform-server
+PYTHONPATH=. ../.venv/bin/python scripts/update_asset_config.py \
+  --asset-key a2_plot_discussion_comment \
+  --field batch_variation_review \
+  --show-current
+```
+
+预览更新：
+
+```bash
+cd platform-server
+PYTHONPATH=. ../.venv/bin/python scripts/update_asset_config.py \
+  --asset-key a2_plot_discussion_comment \
+  --field batch_variation_review \
+  --file ../docs/a2_plot_discussion_batch_variation_review.json
+```
+
+发布更新：
+
+```bash
+cd platform-server
+PYTHONPATH=. ../.venv/bin/python scripts/update_asset_config.py \
+  --asset-key a2_plot_discussion_comment \
+  --field batch_variation_review \
+  --file ../docs/a2_plot_discussion_batch_variation_review.json \
+  --apply
+```
+
+默认发布模式是 `--mode new-version`：归档旧 active 资产，复制一份新 active 版本并写入配置，脚本会在 `.local/asset-config-backups` 保存旧版本备份。只在本地快速试验时使用 `--mode in-place`。
+
+如果只需要修改某一条评论切角语料，使用 `platform-server/scripts/update_comment_angle_rule_item.py`，避免手写 SQL 或临时脚本。它支持按 `rule_id`、`source_row_no` 或 `comment_angle` 定位 `content_json.items[]` 里的单条规则；默认 dry-run，真正发布需加 `--apply`。
+
+查看当前语料：
+
+```bash
+cd platform-server
+PYTHONPATH=. ../.venv/bin/python scripts/update_comment_angle_rule_item.py \
+  --asset-key a2_sentiment_comment_activity \
+  --rule-id comment_angle_015 \
+  --show-current
+```
+
+预览单条更新：
+
+```bash
+cd platform-server
+PYTHONPATH=. ../.venv/bin/python scripts/update_comment_angle_rule_item.py \
+  --asset-key a2_sentiment_comment_activity \
+  --rule-id comment_angle_015 \
+  --corpus-file /tmp/comment_angle_015.txt
+```
+
+发布单条更新：
+
+```bash
+cd platform-server
+PYTHONPATH=. ../.venv/bin/python scripts/update_comment_angle_rule_item.py \
+  --asset-key a2_sentiment_comment_activity \
+  --rule-id comment_angle_015 \
+  --corpus-file /tmp/comment_angle_015.txt \
+  --apply
+```
 
 ## 公开接口
 
@@ -143,7 +217,7 @@ POST /api/v1/content-agent/comment-batches/start
 {
   "asset_key": "yuanyue_comment_activity",
   "created_by": "ops",
-  "executor_code": "hermes_maga_worker"
+  "executor_code": "maga_direct_llm_executor"
 }
 ```
 
@@ -163,7 +237,7 @@ POST /api/v1/content-agent/batches/start
 {
   "asset_key": "yuanyue_product_experience",
   "created_by": "ops",
-  "executor_code": "hermes_maga_worker"
+  "executor_code": "maga_direct_llm_executor"
 }
 ```
 
@@ -193,7 +267,7 @@ GET /api/v1/assets/exports/content-generation-keywords
 
 每个关键词类别默认自动轮换选择 1 个启用子关键词；当某次活动需要稳定使用某个方向时，可以把类别的选择模式改为“固定选择”，并指定 `固定子关键词Code`。固定选择只影响该类别，其他类别仍可继续自动轮换。
 
-Prompt 预览用于在保存前查看“业务规则 + 当前页面关键词配置 + expert 模版”最终组装出的 prompt，帮助运营确认语料是否真的进入了生成上下文。
+Prompt 预览用于在保存前查看“业务规则 + 当前页面关键词配置 + expert 模版”最终组装出的 prompt，帮助运营确认语料是否真的进入了生成上下文。预览时需要额外检查系统关键词是否过重：如果 `人设`、`生文指令/生评论指令`、`扰动规则` 或 `格式控制/评论格式控制` 里出现具体产品、活动、剧情、门店、禁写长清单，优先移回业务规则包、评论切角、表达写作规则或硬性规则。
 
 ## 生文 Expert 管理
 

@@ -10,6 +10,22 @@ from app.models.content_agent import ContentBatchJob, ContentBatchItem
 from app.services.content_batch_planner import ContentBatchPlanner
 
 
+def test_product_experience_generation_limit_prefers_requested_count():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    asset = AssetRegistry(
+        metadata_json={"default_generation_count": 10},
+        content_json={"default_generation_count": 20},
+    )
+    rules = [
+        {"product_experience": f"体验{i}", "corpus": "像真实妈妈分享产品使用体验。"}
+        for i in range(1200)
+    ]
+
+    limit = service._product_experience_generation_limit(asset, rules, requested_count=1000)
+
+    assert limit == 1000
+
+
 @pytest.mark.asyncio
 async def test_content_batch_planner_creates_100_diverse_yuanyue_plans():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")

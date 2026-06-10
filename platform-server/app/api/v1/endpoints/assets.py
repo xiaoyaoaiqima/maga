@@ -26,6 +26,7 @@ from app.schemas.assets import (
     SystemPromptKeywordUpdate,
 )
 from app.services.asset_service import AssetService, normalize_asset_content
+from app.services.activity_quality_guard_service import resolve_quality_guard_profile
 from app.services.comment_angle_rule_service import (
     COMMENT_ANGLE_RULE_ASSET_TYPE,
     DEFAULT_COMMENT_ANGLE_ASSET_KEY,
@@ -169,12 +170,16 @@ async def import_comment_angle_rule_set_endpoint(
     asset_key: str = Form(default=DEFAULT_COMMENT_ANGLE_ASSET_KEY),
     display_name: str | None = Form(default=None),
     keyword_asset_key: str | None = Form(default=None),
+    quality_guard_profile_key: str | None = Form(default=None),
+    keyword_selection: str | None = Form(default=None),
     created_by: str = Form(default="maga-operator"),
     db: AsyncSession = Depends(get_db),
 ):
     filename = file.filename or "评论切角_子关键词导出.csv"
     if not filename.lower().endswith((".csv", ".xlsx")):
         raise HTTPException(status_code=400, detail="only .csv and .xlsx files are supported")
+    if quality_guard_profile_key and not resolve_quality_guard_profile(quality_guard_profile_key):
+        raise HTTPException(status_code=400, detail=f"unknown quality_guard_profile_key: {quality_guard_profile_key}")
 
     file_content = await file.read()
     try:
@@ -185,6 +190,8 @@ async def import_comment_angle_rule_set_endpoint(
             asset_key=asset_key,
             display_name=display_name,
             keyword_asset_key=keyword_asset_key,
+            quality_guard_profile_key=quality_guard_profile_key,
+            keyword_selection=keyword_selection,
             created_by=created_by,
         )
         await db.commit()

@@ -1,5 +1,6 @@
 """Content-agent execution-layer endpoints."""
 from urllib.parse import quote
+from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import select
@@ -65,38 +66,52 @@ def _map_protocol_error(exc: ValueError) -> HTTPException:
 
 async def _model_config_with_maga_defaults(
     db: AsyncSession,
-    model_config: dict[str, str | None],
-) -> dict[str, str]:
-    config = {key: value for key, value in model_config.items() if key in {"ge_model", "ae_model"} and value}
-    if config.get("ge_model") and config.get("ae_model"):
-        return config
-
-    default_model = await _default_llm_model_code(db)
-    if not default_model:
-        return config
-
-    # MAGA owns the default GE/AE model choice. Operators can still override
-    # either field per generation request from the advanced settings.
-    return {
-        "ge_model": config.get("ge_model") or default_model,
-        "ae_model": config.get("ae_model") or default_model,
+    model_config: dict[str, Any],
+) -> dict[str, Any]:
+    allowed_keys = {
+        "provider_code",
+        "model_code",
+        "ge_model",
+        "ae_model",
+        "temperature",
+        "max_tokens",
+        "system_prompt",
     }
+    config = {key: value for key, value in model_config.items() if key in allowed_keys and value is not None and value != ""}
+    provider = await _default_llm_provider_config(db, provider_code=config.get("provider_code"))
+    if not provider:
+        return config
+
+    default_model = str(provider.default_model or "").strip()
+    if default_model:
+        config["model_code"] = config.get("model_code") or default_model
+        config["ge_model"] = config.get("ge_model") or default_model
+        config["ae_model"] = config.get("ae_model") or default_model
+    config["provider_code"] = provider.provider_code
+    for key, value in (provider.default_params or {}).items():
+        if key in {"temperature", "max_tokens"} and value is not None and key not in config:
+            config[key] = value
+    return config
 
 
-async def _default_llm_model_code(db: AsyncSession) -> str | None:
+async def _default_llm_provider_config(
+    db: AsyncSession,
+    *,
+    provider_code: str | None = None,
+) -> LLMProviderConfig | None:
+    conditions = [
+        LLMProviderConfig.enabled == 1,
+        LLMProviderConfig.is_deleted == 0,
+    ]
+    if provider_code:
+        conditions.append(LLMProviderConfig.provider_code == provider_code)
     result = await db.execute(
-        select(LLMProviderConfig.default_model)
-        .where(
-            LLMProviderConfig.enabled == 1,
-            LLMProviderConfig.is_deleted == 0,
-            LLMProviderConfig.default_model.is_not(None),
-            LLMProviderConfig.default_model != "",
-        )
+        select(LLMProviderConfig)
+        .where(*conditions)
         .order_by(LLMProviderConfig.priority.desc(), LLMProviderConfig.id.asc())
         .limit(1)
     )
-    value = result.scalar_one_or_none()
-    return value.strip() if isinstance(value, str) and value.strip() else None
+    return result.scalar_one_or_none()
 
 
 def _invocation_client_for_invoke_url(invoke_url: str | None):
@@ -179,6 +194,14 @@ async def start_comment_batch_generation(
         ).create_and_execute_batch(
             asset_key=request.asset_key,
             keyword_asset_key=request.keyword_asset_key,
+            quality_guard_profile_key=request.quality_guard_profile_key,
+            comment_angle=request.comment_angle,
+            rule_id=request.rule_id,
+            source_row_no=request.source_row_no,
+            draft_corpus=request.draft_corpus,
+            draft_rule_id=request.draft_rule_id,
+            draft_source_row_no=request.draft_source_row_no,
+            count=request.count,
             created_by=request.created_by,
         )
         db.expire_all()
@@ -260,6 +283,26 @@ async def export_batch_report_excel(
     service = ContentBatchReportService(db)
     try:
         filename, content = await service.export_batch_report_excel(batch_id)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    quoted_filename = quote(filename)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
+        },
+    )
+
+
+@router.get("/batches/{batch_id}/export-article-pool.xlsx")
+async def export_batch_article_pool_excel(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    service = ContentBatchReportService(db)
+    try:
+        filename, content = await service.export_article_pool_excel(batch_id)
     except ValueError as exc:
         raise _map_protocol_error(exc) from exc
     quoted_filename = quote(filename)

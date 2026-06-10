@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.maga_assets import AssetRegistry
@@ -33,7 +34,10 @@ class BusinessForbiddenTermService:
         keys = _asset_keys_for_lookup(asset_key, include_default=include_default)
         terms: list[str] = []
         for key in keys:
-            asset = await self._latest_asset(key)
+            try:
+                asset = await self._latest_asset(key)
+            except SQLAlchemyError:
+                continue
             if asset is None:
                 continue
             for term in _terms_from_content(asset.content_json or {}):
@@ -45,7 +49,10 @@ class BusinessForbiddenTermService:
         keys = _asset_keys_for_lookup(asset_key, include_default=include_default)
         replacements: dict[str, str] = {}
         for key in keys:
-            asset = await self._latest_asset(key)
+            try:
+                asset = await self._latest_asset(key)
+            except SQLAlchemyError:
+                continue
             if asset is None:
                 continue
             for entry in _term_entries_from_content(asset.content_json or {}):

@@ -372,7 +372,7 @@ class ContentBatchPlanner:
     ) -> int:
         metadata_limit = (asset.metadata_json or {}).get("default_generation_count")
         content_limit = (asset.content_json or {}).get("default_generation_count")
-        value = metadata_limit or content_limit or requested_count
+        value = requested_count or metadata_limit or content_limit
         try:
             limit = int(value)
         except (TypeError, ValueError):

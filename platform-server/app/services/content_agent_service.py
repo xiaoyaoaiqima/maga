@@ -120,7 +120,7 @@ class ContentAgentService:
         *,
         executor_code: str,
         stage: ContentAgentStageCallCreate,
-        executor_type: str = "hermes_profile",
+        executor_type: str = "direct_llm",
         config_snapshot: Optional[dict] = None,
     ) -> tuple[ContentAgentRun, ContentAgentStageCall]:
         """Start a protocol v0.1 run and its first stage call."""

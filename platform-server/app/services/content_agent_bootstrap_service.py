@@ -32,7 +32,7 @@ async def seed_default_content_agent_executors(
         {
             "executor_code": DEFAULT_EXECUTOR_CODE,
             "display_name": MAGA_WORKER_DISPLAY_NAME,
-            "executor_type": "hermes_profile",
+            "executor_type": "direct_llm",
             "profile_name": MAGA_WORKER_PROFILE_NAME,
             "protocol_version": "0.1",
             "invoke_url": maga_worker_invoke_url,

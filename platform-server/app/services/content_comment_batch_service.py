@@ -1,6 +1,8 @@
 """Plan and execute comment batches from uploaded comment-angle rules."""
 from __future__ import annotations
 
+import asyncio
+import os
 import uuid
 from dataclasses import dataclass
 import re
@@ -16,10 +18,22 @@ from app.models.maga_assets import AssetRegistry
 from app.schemas.content_agent import ContentAgentTaskCreate
 from app.services.comment_angle_rule_service import (
     COMMENT_ANGLE_RULE_ASSET_TYPE,
+    DEFAULT_COMMENT_ANGLE_ASSET_KEY,
     DEFAULT_COMMENT_BATCH_LIMIT,
     DEFAULT_COMMENT_BATCH_TOPIC,
 )
+from app.services.activity_quality_guard_service import (
+    A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY,
+    A2_SENTIMENT_COMMENT_PROFILE_KEY,
+    ActivityQualityGuardService,
+    QualityGuardProfile,
+    derive_profile_keyword_from_text,
+    quality_guard_profile_key_from_asset,
+    resolve_quality_guard_profile,
+)
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
+from app.services.comment_realness_review_service import CommentRealnessReviewService
+from app.services.comment_batch_variation_review_service import CommentBatchVariationReviewService
 from app.services.executor_invocation_service import ExecutorInvocationClient
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService
 from app.services.system_prompt_keyword_service import DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
@@ -31,6 +45,44 @@ from app.services.unified_content_generation_service import (
 COMMENT_SIMILARITY_REWRITE_THRESHOLD = 0.30
 MAX_COMMENT_SIMILARITY_REWRITE_ROUNDS = 2
 COMMENT_HISTORY_SIMILARITY_LOOKBACK_LIMIT = 80
+COMMENT_BATCH_EXECUTION_CONCURRENCY = 5
+COMMENT_BATCH_MAX_COUNT = 100
+COMMENT_GENERATION_MODEL_TIMEOUT_SECONDS = 18
+COMMENT_GENERATION_MODEL_MAX_RETRIES = 2
+COMMENT_GENERATION_MAX_TOKENS = 256
+YUANYUE_COMMENT_ASSET_KEY = "yuanyue_comment_activity"
+YUANYUE_COMPETITOR_BRAND_TERMS = [
+    "星飞帆",
+    "爱他美",
+    "a2",
+    "A2",
+    "飞鹤",
+    "君乐宝",
+    "贝因美",
+    "惠氏",
+    "启赋",
+    "雀巢",
+    "美赞臣",
+    "雅培",
+    "合生元",
+    "佳贝艾特",
+    "金领冠",
+    "皇家美素",
+    "蓝河",
+    "澳优",
+    "海普诺凯",
+    "可瑞康",
+    "诺优能",
+    "完达山",
+    "圣元",
+]
+YUANYUE_COMPETITOR_BRAND_REPLACEMENT = "源悦"
+LOW_INFORMATION_COMMENT_REWRITE_INSTRUCTIONS = [
+    "上一轮评论只有空泛开头，信息量太低",
+    "只输出一条35字以内的评论正文",
+    "保留当前评论切角，从业务规则或参考示例里借一个具体观察点",
+    "不要只输出“我们家”“我家”“同款”“加一”这类空短句",
+]
 
 
 @dataclass(frozen=True)
@@ -71,36 +123,88 @@ class ContentCommentBatchService:
         *,
         asset_key: str,
         keyword_asset_key: str | None = None,
+        quality_guard_profile_key: str | None = None,
+        comment_angle: str | None = None,
+        rule_id: str | None = None,
+        source_row_no: int | None = None,
+        draft_corpus: str | None = None,
+        draft_rule_id: str | None = None,
+        draft_source_row_no: int | None = None,
+        count: int | None = None,
         created_by: str | None = None,
     ) -> CommentBatchExecutionResult:
         asset = await self._require_rule_asset(asset_key)
-        rules = self._rule_items(asset)
-        limit = self._generation_limit(asset, rules)
+        all_rules = self._rule_items(asset)
+        focus_comment_angle = _normalize_comment_angle(comment_angle)
+        rules = self._rules_for_comment_angle(all_rules, focus_comment_angle) if focus_comment_angle else all_rules
+        focus_rule_id = str(rule_id or "").strip() or None
+        focus_source_row_no = _int_or_none(source_row_no)
+        if focus_rule_id or focus_source_row_no is not None:
+            rules = self._rules_for_single_item(
+                rules,
+                rule_id=focus_rule_id,
+                source_row_no=focus_source_row_no,
+            )
+        draft_override = _normalize_draft_rule_override(
+            draft_corpus=draft_corpus,
+            draft_rule_id=draft_rule_id or focus_rule_id,
+            draft_source_row_no=draft_source_row_no if draft_source_row_no is not None else focus_source_row_no,
+        )
+        if draft_override:
+            rules = self._rules_with_draft_override(rules, draft_override)
+        focus_single_rule = bool(focus_rule_id) or focus_source_row_no is not None
+        limit = self._generation_limit(
+            asset,
+            rules,
+            requested_count=count,
+            allow_repeat=bool(focus_comment_angle) or focus_single_rule,
+        )
         resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, asset)
-        selected_rules = self._select_rules(rules, limit)
+        resolved_quality_guard_profile_key = quality_guard_profile_key or quality_guard_profile_key_from_asset(asset)
+        quality_guard_profile = resolve_quality_guard_profile(resolved_quality_guard_profile_key)
+        if resolved_quality_guard_profile_key and not quality_guard_profile:
+            raise ValueError(f"unknown quality_guard_profile_key: {resolved_quality_guard_profile_key}")
+        selected_rules, selection_mode = self._select_rules_for_batch(
+            rules,
+            limit,
+            focus_comment_angle=focus_comment_angle,
+            profile=quality_guard_profile,
+        )
         if not selected_rules:
-            raise ValueError("comment angle rule set has no usable rules")
+            suffix = f" for comment_angle={focus_comment_angle}" if focus_comment_angle else ""
+            raise ValueError(f"comment angle rule set has no usable rules{suffix}")
 
         job = ContentBatchJob(
             batch_code=f"comment_{uuid.uuid4().hex[:12]}",
             asset_key=asset.asset_key,
-            product_topic=DEFAULT_COMMENT_BATCH_TOPIC,
+            product_topic=_comment_batch_product_topic(asset),
             target_audience=None,
             style=None,
             count=len(selected_rules),
             status="planned",
             strategy_json={
-                "mode": "comment_angle",
+                "mode": "comment_angle_focus_test" if focus_comment_angle else "comment_angle",
                 "rule_asset_id": asset.id,
                 "rule_asset_version": asset.version_no,
                 "keyword_asset_key": resolved_keyword_asset_key,
+                "keyword_selection": _keyword_selection_from_asset(asset),
+                "quality_guard_profile_key": resolved_quality_guard_profile_key,
+                "comment_angle_filter": focus_comment_angle,
+                "rule_id_filter": focus_rule_id,
+                "source_row_no_filter": focus_source_row_no,
+                "draft_rule_override": _draft_override_summary(draft_override),
                 "executor": self.executor_code,
             },
             diversity_plan_json={
                 "source": "comment_angle_rule_set",
-                "rule_count": len(rules),
+                "rule_count": len(all_rules),
+                "filtered_rule_count": len(rules),
                 "selected_count": len(selected_rules),
-                "selection_mode": "balanced_random" if len(rules) > limit else "all",
+                "selection_mode": selection_mode,
+                "comment_angle_filter": focus_comment_angle,
+                "rule_id_filter": focus_rule_id,
+                "source_row_no_filter": focus_source_row_no,
+                "draft_rule_override": _draft_override_summary(draft_override),
                 "selected_source_row_nos": [rule.get("source_row_no") for rule in selected_rules],
             },
             created_by=created_by,
@@ -119,6 +223,7 @@ class ContentCommentBatchService:
                         asset=asset,
                         item_no=item_no,
                         keyword_asset_key=resolved_keyword_asset_key,
+                        quality_guard_profile_key=resolved_quality_guard_profile_key,
                     ),
                 )
             )
@@ -127,16 +232,36 @@ class ContentCommentBatchService:
         item_ids = [item.id for item in await self._planned_items(job_id)]
         await self.db.commit()
 
-        generated = 0
-        failed = 0
-        for item_id in item_ids:
-            ok = await self._execute_one_item(item_id, created_by=created_by)
-            generated += 1 if ok else 0
-            failed += 0 if ok else 1
+        semaphore = asyncio.Semaphore(COMMENT_BATCH_EXECUTION_CONCURRENCY)
+
+        async def run_item(item_id: int) -> bool:
+            # 每条评论用独立 DB session；AsyncSession 不能在并发任务之间共享 flush/commit。
+            async with semaphore:
+                try:
+                    return await asyncio.wait_for(
+                        self._execute_one_item(item_id, created_by=created_by),
+                        timeout=_comment_item_soft_timeout_seconds(),
+                    )
+                except TimeoutError:
+                    await self._mark_item_timeout(item_id)
+                    return False
+
+        results = await asyncio.gather(*(run_item(item_id) for item_id in item_ids))
+        generated = sum(1 for ok in results if ok)
+        failed = sum(1 for ok in results if not ok)
 
         job = await self._require_job(job_id)
         job.status = "generated" if generated == len(item_ids) else "partially_generated" if generated else "failed"
         await self.db.flush()
+        if generated:
+            await self._review_generated_batch_similarity(job_id)
+        self.db.expire_all()
+        job = await self._require_job(job_id)
+        items = await self._planned_items(job_id)
+        ActivityQualityGuardService().review_batch(job, items)
+        CommentBatchVariationReviewService().review_batch(items)
+        await self.db.flush()
+        await self.db.commit()
         return CommentBatchExecutionResult(
             batch_id=job_id,
             requested_limit=len(item_ids),
@@ -181,15 +306,144 @@ class ContentCommentBatchService:
         items = (asset.content_json or {}).get("items")
         return [item for item in items or [] if isinstance(item, dict) and item.get("comment_angle") and item.get("corpus")]
 
-    def _generation_limit(self, asset: AssetRegistry, rules: list[dict[str, Any]]) -> int:
+    def _generation_limit(
+        self,
+        asset: AssetRegistry,
+        rules: list[dict[str, Any]],
+        *,
+        requested_count: int | None = None,
+        allow_repeat: bool = False,
+    ) -> int:
         metadata_limit = (asset.metadata_json or {}).get("default_generation_count")
         content_limit = (asset.content_json or {}).get("default_generation_count")
-        value = metadata_limit or content_limit or DEFAULT_COMMENT_BATCH_LIMIT
+        value = requested_count or metadata_limit or content_limit or DEFAULT_COMMENT_BATCH_LIMIT
         try:
             limit = int(value)
         except (TypeError, ValueError):
             limit = DEFAULT_COMMENT_BATCH_LIMIT
-        return max(1, min(limit, len(rules)))
+        requested_repeat = requested_count is not None and limit > len(rules)
+        upper_bound = COMMENT_BATCH_MAX_COUNT if allow_repeat or requested_repeat else len(rules)
+        return max(1, min(limit, upper_bound))
+
+    def _rules_for_comment_angle(self, rules: list[dict[str, Any]], comment_angle: str | None) -> list[dict[str, Any]]:
+        if not comment_angle:
+            return list(rules)
+        return [
+            rule
+            for rule in rules
+            if _normalize_comment_angle(rule.get("comment_angle")) == comment_angle
+        ]
+
+    def _rules_for_single_item(
+        self,
+        rules: list[dict[str, Any]],
+        *,
+        rule_id: str | None,
+        source_row_no: int | None,
+    ) -> list[dict[str, Any]]:
+        # 重要逻辑：by case 调试要能只重复抽一个子方向，否则同一评论切角下的 11 个子方向会混在一起。
+        return [
+            rule
+            for rule in rules
+            if (not rule_id or str(rule.get("rule_id") or "").strip() == rule_id)
+            and (source_row_no is None or _int_or_none(rule.get("source_row_no")) == source_row_no)
+        ]
+
+    def _rules_with_draft_override(
+        self,
+        rules: list[dict[str, Any]],
+        draft_override: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        updated: list[dict[str, Any]] = []
+        matched = False
+        for rule in rules:
+            if not _rule_matches_draft_override(rule, draft_override):
+                updated.append(rule)
+                continue
+            next_rule = dict(rule)
+            next_rule["corpus"] = draft_override["corpus"]
+            next_rule["examples"] = _extract_examples_from_corpus(draft_override["corpus"])
+            next_rule["draft_rule_override"] = _draft_override_summary(draft_override)
+            updated.append(next_rule)
+            matched = True
+        if not matched:
+            raise ValueError("draft corpus target rule not found; pass draft_rule_id or draft_source_row_no matching the selected rule")
+        return updated
+
+    def _select_rules_for_batch(
+        self,
+        rules: list[dict[str, Any]],
+        limit: int,
+        *,
+        focus_comment_angle: str | None,
+        profile: QualityGuardProfile | None,
+    ) -> tuple[list[dict[str, Any]], str]:
+        use_replacement = bool(focus_comment_angle) or limit > len(rules)
+        if focus_comment_angle:
+            return self._select_rules_with_replacement(rules, limit), "random_with_replacement"
+        if len(rules) <= limit:
+            if not use_replacement:
+                return list(rules), "all"
+            if limit % len(rules) == 0:
+                return self._select_rules_even_repetition(rules, limit), "even_rule_repetition"
+        if profile and profile.context_keyword_allowlist:
+            selected = self._select_rules_balanced_by_profile_keyword(
+                rules,
+                limit,
+                profile,
+                with_replacement=use_replacement,
+            )
+            if selected:
+                mode = "keyword_balanced_random_with_replacement" if use_replacement else "keyword_balanced_random"
+                return selected, mode
+        if use_replacement:
+            return self._select_rules_with_replacement(rules, limit), "random_with_replacement"
+        return self._select_rules(rules, limit), "balanced_random"
+
+    def _select_rules_balanced_by_profile_keyword(
+        self,
+        rules: list[dict[str, Any]],
+        limit: int,
+        profile: QualityGuardProfile,
+        *,
+        with_replacement: bool = False,
+    ) -> list[dict[str, Any]]:
+        rng = SystemRandom()
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for rule in rules:
+            keyword = _rule_profile_keyword(rule, profile)
+            groups.setdefault(keyword, []).append(rule)
+
+        ordered_keys = [keyword for keyword in profile.context_keyword_allowlist if groups.get(keyword)]
+        ordered_keys.extend(keyword for keyword in groups if keyword not in ordered_keys)
+        if len(ordered_keys) < 2:
+            return []
+
+        original_groups = {keyword: list(bucket) for keyword, bucket in groups.items()}
+        buckets = {keyword: list(bucket) for keyword, bucket in groups.items()}
+        for bucket in buckets.values():
+            rng.shuffle(bucket)
+        rng.shuffle(ordered_keys)
+
+        selected: list[dict[str, Any]] = []
+        while ordered_keys and len(selected) < limit:
+            next_keys: list[str] = []
+            for keyword in ordered_keys:
+                bucket = buckets.get(keyword) or []
+                if not bucket and with_replacement:
+                    bucket = list(original_groups.get(keyword) or [])
+                    rng.shuffle(bucket)
+                    buckets[keyword] = bucket
+                if not bucket:
+                    continue
+                selected.append(bucket.pop())
+                if len(selected) >= limit:
+                    break
+                if bucket or (with_replacement and original_groups.get(keyword)):
+                    next_keys.append(keyword)
+            rng.shuffle(next_keys)
+            ordered_keys = next_keys
+        return selected
 
     def _select_rules(self, rules: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
         if len(rules) <= limit:
@@ -220,6 +474,20 @@ class ContentCommentBatchService:
             buckets = next_round
         return selected
 
+    def _select_rules_with_replacement(self, rules: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+        if not rules:
+            return []
+        rng = SystemRandom()
+        # 单切角测试批次会重复同一条规则，但每个 item 仍会重新随机抽示例。
+        return [rng.choice(rules) for _ in range(limit)]
+
+    def _select_rules_even_repetition(self, rules: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+        if not rules:
+            return []
+        repeat_count = max(1, limit // len(rules))
+        # 活动抽样明确要求“每个切角 N 条”时，整轮重复规则，避免带放回抽样漏掉某个切角。
+        return [rule for _ in range(repeat_count) for rule in rules][:limit]
+
     def _plan_from_rule(
         self,
         rule: dict[str, Any],
@@ -227,13 +495,19 @@ class ContentCommentBatchService:
         asset: AssetRegistry,
         item_no: int,
         keyword_asset_key: str = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+        quality_guard_profile_key: str | None = None,
     ) -> dict[str, Any]:
         selected_examples, example_meta = self._selected_prompt_examples(rule)
         return {
             "rule_type": "comment_angle",
+            "render_reference_examples": False,
             "item_no": item_no,
             "asset_key": asset.asset_key,
             "keyword_asset_key": keyword_asset_key,
+            "keyword_selection": _keyword_selection_from_asset(asset),
+            "generation_requirements": _generation_requirements_from_asset(asset),
+            "batch_variation_review": _batch_variation_review_from_asset(asset),
+            "quality_guard_profile_key": quality_guard_profile_key,
             "rule_asset_id": asset.id,
             "rule_asset_version": asset.version_no,
             "rule_id": rule.get("rule_id"),
@@ -241,6 +515,7 @@ class ContentCommentBatchService:
             "corpus": rule.get("corpus"),
             "examples": selected_examples,
             "supplements": [],
+            "draft_rule_override": rule.get("draft_rule_override"),
             **example_meta,
             "source_row_no": rule.get("source_row_no"),
             "output_fields": ["comment"],
@@ -251,8 +526,8 @@ class ContentCommentBatchService:
         supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
         pool = examples or supplements
         selected = [SystemRandom().choice(pool)] if pool else []
-        # 重要逻辑：资产保留完整示例池，但单条生成只注入一条真人示例，
-        # 避免一次塞入过多示例后模型把评论区口语平均化。
+        # 重要逻辑：保留抽样元数据给 mock/报表，但 comment_angle 渲染 prompt 时不再额外
+        # 追加“参考示例”小尾巴，避免重复强调某一句导致表达同质化。
         return selected, {
             "example_pool_count": len(examples),
             "supplement_pool_count": len(supplements),
@@ -270,12 +545,17 @@ class ContentCommentBatchService:
                 invocation_client=self.invocation_client,
                 callback_base_url=self.callback_base_url,
             )
+            model_config = dict((item.plan_json or {}).get("model_config") or {})
+            model_config.setdefault("max_tokens", COMMENT_GENERATION_MAX_TOKENS)
+            model_config.setdefault("timeout", COMMENT_GENERATION_MODEL_TIMEOUT_SECONDS)
+            model_config.setdefault("max_retries", COMMENT_GENERATION_MODEL_MAX_RETRIES)
             unified = await UnifiedContentGenerationService(db).build_snapshot(
                 content_type="comment",
                 business_rule=dict(item.plan_json or {}),
                 item_no=item.item_no,
                 output_fields=["comment"],
                 keyword_asset_key=(item.plan_json or {}).get("keyword_asset_key"),
+                model_config=model_config,
             )
             item.plan_json = {
                 **(item.plan_json or {}),
@@ -307,7 +587,7 @@ class ContentCommentBatchService:
                 comment = str((result.output or {}).get("comment") or "").strip()
                 if not comment:
                     raise ValueError("content.generate returned empty comment")
-                comment = self._fit_comment_length(comment)
+                comment = self._normalize_comment_length(item, comment)
                 item.status = "generated"
                 item.task_id = result.run.task_id
                 item.run_id = result.run.id
@@ -328,11 +608,17 @@ class ContentCommentBatchService:
                     "comment_angle": (item.plan_json or {}).get("comment_angle"),
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                 }
-                await self._review_and_rewrite_similarity(
-                    db=db,
+                await self._review_and_rewrite_low_information(
                     item=item,
                     orchestrator=orchestrator,
                 )
+                await CommentRealnessReviewService().review_and_rewrite_item(
+                    item=item,
+                    orchestrator=orchestrator,
+                    executor_code=self.executor_code,
+                )
+                item.body = self._normalize_comment_length(item, item.body or "")
+                self._sanitize_brand_hallucinations(item)
                 await ForbiddenTermReviewService(db).review_and_rewrite_item(
                     item=item,
                     asset_key=(item.plan_json or {}).get("asset_key"),
@@ -340,6 +626,8 @@ class ContentCommentBatchService:
                     executor_code=self.executor_code,
                     content_type="comment",
                 )
+                item.body = self._normalize_comment_length(item, item.body or "")
+                ActivityQualityGuardService().review_item(item)
                 item.error_message = None
                 await db.commit()
                 return True
@@ -350,6 +638,122 @@ class ContentCommentBatchService:
                 item.error_message = str(exc)
                 await db.commit()
                 return False
+
+    async def _mark_item_timeout(self, item_id: int) -> None:
+        async with self.session_factory() as db:
+            item = await self._require_item(db, item_id)
+            if item.status == "generated":
+                return
+            item.status = "failed"
+            item.error_message = f"comment generation soft timeout after {_comment_item_soft_timeout_seconds():.1f}s"
+            quality = dict(item.quality_json or {})
+            quality["hard_pass"] = False
+            quality["timeout_guard"] = {
+                "source": "comment_batch_soft_timeout",
+                "timeout_seconds": _comment_item_soft_timeout_seconds(),
+            }
+            item.quality_json = quality
+            await db.commit()
+
+    async def _review_generated_batch_similarity(self, batch_id: int) -> None:
+        async with self.session_factory() as db:
+            items = await self._planned_items(batch_id)
+            orchestrator = ContentAgentOrchestrator(
+                db,
+                invocation_client=self.invocation_client,
+                callback_base_url=self.callback_base_url,
+            )
+            for item in items:
+                if item.status != "generated" or not item.body:
+                    continue
+                before_body = item.body
+                await self._review_and_rewrite_similarity(db=db, item=item, orchestrator=orchestrator)
+                if item.body != before_body:
+                    await CommentRealnessReviewService().review_and_rewrite_item(
+                        item=item,
+                        orchestrator=orchestrator,
+                        executor_code=self.executor_code,
+                    )
+                    await ForbiddenTermReviewService(db).review_and_rewrite_item(
+                        item=item,
+                        asset_key=(item.plan_json or {}).get("asset_key"),
+                        orchestrator=orchestrator,
+                        executor_code=self.executor_code,
+                        content_type="comment",
+                    )
+                    item.body = self._normalize_comment_length(item, item.body or "")
+                    ActivityQualityGuardService().review_item(item)
+                await db.commit()
+
+    async def _review_and_rewrite_low_information(
+        self,
+        *,
+        item: ContentBatchItem,
+        orchestrator: ContentAgentOrchestrator,
+    ) -> None:
+        if not item.body or not item.run_id or not self._looks_low_information_comment(item.body):
+            return
+        input_payload = self._low_information_rewrite_input(item)
+        result = await orchestrator.run_content_rewrite_stage(
+            run_id=item.run_id,
+            executor_code=self.executor_code,
+            input_payload=input_payload,
+        )
+        final = result.output or {}
+        final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
+        comment = str(final.get("comment") or final_content.get("comment") or final.get("body") or final_content.get("body") or "").strip()
+        if not comment:
+            raise ValueError("content.rewrite returned empty low-information comment")
+        item.body = self._normalize_comment_length(item, comment)
+        low_information_rewrite = {
+            "rewrite_required": True,
+            "rewrite_reason": "评论信息量太低，已触发自动改写",
+            "previous_body": input_payload["previous_content"]["comment"],
+            "final_body": item.body,
+            "passed": not self._looks_low_information_comment(item.body),
+        }
+        quality = dict(item.quality_json or {})
+        quality["low_information_rewrite"] = low_information_rewrite
+        quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + len(result.stage_calls)
+        quality["run_status"] = result.run.status
+        quality["hard_pass"] = bool(low_information_rewrite["passed"])
+        item.quality_json = quality
+        if self._looks_low_information_comment(item.body):
+            raise ValueError("content.generate returned low-information comment")
+
+    def _low_information_rewrite_input(self, item: ContentBatchItem) -> dict[str, Any]:
+        unified_generation = (item.plan_json or {}).get("unified_generation") or {}
+        expert = unified_generation.get("expert") if isinstance(unified_generation, dict) else {}
+        model_config = (expert or {}).get("model_config") if isinstance(expert, dict) else {}
+        return {
+            "previous_content": {"comment": item.body or ""},
+            "content_type": "comment",
+            "output_fields": ["comment"],
+            "business_rule": dict(item.plan_json or {}),
+            "selected_keywords": unified_generation.get("selected_keywords") or [],
+            "forbidden_hits": [],
+            "forbidden_replacements": {},
+            "rewrite_instructions": LOW_INFORMATION_COMMENT_REWRITE_INSTRUCTIONS,
+            "model_config": model_config or {"temperature": 0.72, "max_tokens": 512},
+        }
+
+    def _sanitize_brand_hallucinations(self, item: ContentBatchItem) -> None:
+        plan = item.plan_json or {}
+        if plan.get("asset_key") != YUANYUE_COMMENT_ASSET_KEY or not item.body:
+            return
+        text = item.body
+        hits = _find_yuanyue_competitor_brand_hits(text)
+        if not hits:
+            return
+        item.body = _remove_yuanyue_competitor_brand_hits(text, hits)
+        quality = dict(item.quality_json or {})
+        quality["brand_hallucination_guard"] = {
+            "hits": hits,
+            "replacement": YUANYUE_COMPETITOR_BRAND_REPLACEMENT,
+            "blocked_terms": list(YUANYUE_COMPETITOR_BRAND_TERMS),
+            "scope": YUANYUE_COMMENT_ASSET_KEY,
+        }
+        item.quality_json = quality
 
     async def _review_and_rewrite_similarity(
         self,
@@ -469,7 +873,7 @@ class ContentCommentBatchService:
         comment = str(final.get("comment") or final_content.get("comment") or final.get("body") or final_content.get("body") or "").strip()
         if not comment:
             raise ValueError("content.rewrite returned empty comment")
-        item.body = self._fit_comment_length(comment)
+        item.body = self._normalize_comment_length(item, comment)
         post_score = round(self._jaccard_2gram(item.body or "", similar_item.get("body") or ""), 4)
         passed = post_score < COMMENT_SIMILARITY_REWRITE_THRESHOLD
         similarity_rewrite = {
@@ -538,7 +942,7 @@ class ContentCommentBatchService:
             },
             "rewrite_round": self._similarity_rewrite_rounds(item) + 1,
             "rewrite_instructions": [
-                "只输出一条20字以内的评论正文",
+                "只输出一条35字以内的评论正文",
                 "避开相似评论的开头、核心短语和句式",
                 "换一个生活细节或提问入口，不要只做同义词替换",
                 "保留当前评论切角和合规边界，不扩大功效表达",
@@ -574,6 +978,13 @@ class ContentCommentBatchService:
         return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
 
     @staticmethod
+    def _looks_low_information_comment(value: str) -> bool:
+        clean = re.sub(r"[，。！？、,.!?\s]+", "", value or "")
+        if clean in {"我们家", "我家", "俺家", "同款", "加一", "蹲蹲", "求问", "还行", "不错"}:
+            return True
+        return bool(re.fullmatch(r"(?:我们|我|俺)?家", clean))
+
+    @staticmethod
     def _text_2grams(text: str) -> set[str]:
         clean = re.sub(r"[，。！？、,.!?\s]+", "", text or "")
         return {clean[index : index + 2] for index in range(max(len(clean) - 1, 0)) if clean[index : index + 2].strip()}
@@ -602,7 +1013,27 @@ class ContentCommentBatchService:
                 return str(runtime_mode)
         return "content_generate"
 
-    def _fit_comment_length(self, comment: str, *, max_chars: int = 20) -> str:
+    @staticmethod
+    def _comment_max_chars(item: ContentBatchItem) -> int:
+        plan = item.plan_json or {}
+        if str(plan.get("quality_guard_profile_key") or "").strip() == A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY:
+            return 50
+        if str(plan.get("quality_guard_profile_key") or "").strip() == A2_SENTIMENT_COMMENT_PROFILE_KEY:
+            return 45
+        return 35
+
+    def _normalize_comment_length(self, item: ContentBatchItem, comment: str) -> str:
+        normalized = comment.strip()
+        if self._preserve_overlong_comment_for_guard(item):
+            return normalized
+        return self._fit_comment_length(normalized, max_chars=self._comment_max_chars(item))
+
+    @staticmethod
+    def _preserve_overlong_comment_for_guard(item: ContentBatchItem) -> bool:
+        plan = item.plan_json or {}
+        return str(plan.get("quality_guard_profile_key") or "").strip() == A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY
+
+    def _fit_comment_length(self, comment: str, *, max_chars: int = 35) -> str:
         comment = comment.strip()
         if len(comment) <= max_chars:
             return comment
@@ -616,22 +1047,213 @@ class ContentCommentBatchService:
                 candidate = next_candidate
                 continue
             if candidate:
+                if self._looks_incomplete_clause(candidate) and part:
+                    return self._truncate_comment_preserving_context(next_candidate, max_chars=max_chars)
                 break
-            return part[:max_chars].rstrip("，。！？,!?；;、 ")
-        return candidate or comment[:max_chars].rstrip("，。！？,!?；;、 ")
+            return self._truncate_comment_preserving_context(part, max_chars=max_chars)
+        return candidate or self._truncate_comment_preserving_context(comment, max_chars=max_chars)
+
+    @staticmethod
+    def _looks_incomplete_clause(value: str) -> bool:
+        text = value.strip(" ，。！？,!?；;、 ")
+        if not text:
+            return False
+        dangling_suffixes = ("开始", "之后", "以后", "那会儿", "的时候", "这几天", "刚转", "刚换", "就", "还", "也")
+        return text.endswith(dangling_suffixes) or bool(re.search(r"第[一二三四五六七八九十\d]+天$", text))
+
+    @staticmethod
+    def _truncate_comment_preserving_context(value: str, *, max_chars: int) -> str:
+        text = value.strip()[:max_chars].rstrip("，。！？,!?；;、 ")
+        dangling_suffixes = ("然后", "不过", "但是", "开始", "之后", "以后", "就", "还", "也")
+        changed = True
+        while changed:
+            changed = False
+            for suffix in dangling_suffixes:
+                if text.endswith(suffix) and len(text) > len(suffix):
+                    text = text[: -len(suffix)].rstrip("，。！？,!?；;、 ")
+                    changed = True
+                    break
+        return text
 
 
 def _resolve_keyword_asset_key(explicit_key: str | None, asset: AssetRegistry | None) -> str:
     normalized = _normalize_keyword_asset_key(explicit_key)
     if normalized:
         return normalized
-    for source in ((asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+    for source in _asset_json_sources(asset):
         normalized = _normalize_keyword_asset_key(source.get("keyword_asset_key"))
         if normalized:
             return normalized
     return DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
 
 
+def _keyword_selection_from_asset(asset: AssetRegistry | None) -> dict[str, Any] | None:
+    for source in _asset_json_sources(asset):
+        value = source.get("keyword_selection")
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _generation_requirements_from_asset(asset: AssetRegistry | None) -> str | None:
+    for source in _asset_json_sources(asset):
+        value = source.get("generation_requirements")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _batch_variation_review_from_asset(asset: AssetRegistry | None) -> dict[str, Any] | None:
+    for source in _asset_json_sources(asset):
+        value = source.get("batch_variation_review")
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _asset_json_sources(asset: AssetRegistry | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    if asset is None:
+        return {}, {}
+    content = getattr(asset, "content_json", None)
+    metadata = getattr(asset, "metadata_json", None)
+    return (
+        content if isinstance(content, dict) else {},
+        metadata if isinstance(metadata, dict) else {},
+    )
+
+
 def _normalize_keyword_asset_key(value: Any) -> str | None:
     normalized = str(value or "").strip()
     return normalized or None
+
+
+def _normalize_comment_angle(value: Any) -> str | None:
+    normalized = re.sub(r"\s+", " ", str(value or "")).strip()
+    return normalized or None
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_draft_rule_override(
+    *,
+    draft_corpus: str | None,
+    draft_rule_id: str | None,
+    draft_source_row_no: int | None,
+) -> dict[str, Any] | None:
+    corpus = str(draft_corpus or "").strip()
+    if not corpus:
+        return None
+    rule_id = str(draft_rule_id or "").strip() or None
+    source_row_no = _int_or_none(draft_source_row_no)
+    if not rule_id and source_row_no is None:
+        raise ValueError("draft_corpus requires draft_rule_id, draft_source_row_no, rule_id, or source_row_no")
+    return {"corpus": corpus, "rule_id": rule_id, "source_row_no": source_row_no}
+
+
+def _rule_matches_draft_override(rule: dict[str, Any], draft_override: dict[str, Any]) -> bool:
+    rule_id = draft_override.get("rule_id")
+    source_row_no = draft_override.get("source_row_no")
+    return (not rule_id or str(rule.get("rule_id") or "").strip() == rule_id) and (
+        source_row_no is None or _int_or_none(rule.get("source_row_no")) == source_row_no
+    )
+
+
+def _draft_override_summary(draft_override: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not draft_override:
+        return None
+    return {
+        "enabled": True,
+        "rule_id": draft_override.get("rule_id"),
+        "source_row_no": draft_override.get("source_row_no"),
+        "example_count": len(_extract_examples_from_corpus(str(draft_override.get("corpus") or ""))),
+    }
+
+
+def _extract_examples_from_corpus(corpus: str) -> list[str]:
+    examples: list[str] = []
+    in_examples = False
+    for raw_line in corpus.splitlines():
+        line = raw_line.strip()
+        if line == "示例：":
+            in_examples = True
+            continue
+        if in_examples and line.startswith("注意："):
+            break
+        if in_examples and line.startswith("- "):
+            example = line[2:].strip()
+            if example:
+                examples.append(example)
+    return examples
+
+
+def _comment_batch_product_topic(asset: AssetRegistry) -> str:
+    for source in (asset.content_json, asset.metadata_json):
+        if not isinstance(source, dict):
+            continue
+        for key in ("activity_name", "product_topic", "topic"):
+            value = str(source.get(key) or "").strip()
+            if value == DEFAULT_COMMENT_BATCH_TOPIC and asset.asset_key != DEFAULT_COMMENT_ANGLE_ASSET_KEY:
+                continue
+            if value:
+                return value
+    display_name = str(asset.display_name or "").strip()
+    if display_name:
+        normalized = re.sub(r"(?:评论)?切角(?:规则)?$", "评论", display_name).strip()
+        return normalized or display_name
+    return DEFAULT_COMMENT_BATCH_TOPIC
+
+
+def _comment_item_soft_timeout_seconds() -> float:
+    raw = os.getenv("MAGA_COMMENT_ITEM_SOFT_TIMEOUT_SECONDS", "35")
+    try:
+        value = float(raw)
+    except ValueError:
+        return 35.0
+    return max(3.0, value)
+
+
+def _rule_profile_keyword(rule: dict[str, Any], profile: QualityGuardProfile) -> str:
+    source = "\n".join(
+        str(value or "")
+        for value in (
+            rule.get("comment_angle"),
+            rule.get("corpus"),
+            " ".join(str(example) for example in rule.get("examples") or []),
+        )
+    )
+    return derive_profile_keyword_from_text(source, profile) or "__default__"
+
+
+def _find_yuanyue_competitor_brand_hits(text: str) -> list[str]:
+    hits: list[str] = []
+    for term in YUANYUE_COMPETITOR_BRAND_TERMS:
+        if not term:
+            continue
+        if term.lower() == "a2":
+            if term != "a2":
+                continue
+            # a2 常见大小写混写，源悦评论里只要出现都按其他品牌名处理。
+            for match in re.finditer(re.escape(term), text, flags=re.IGNORECASE):
+                value = match.group(0)
+                if value not in hits:
+                    hits.append(value)
+            continue
+        if term in text and term not in hits:
+            hits.append(term)
+    return sorted(hits, key=len, reverse=True)
+
+
+def _remove_yuanyue_competitor_brand_hits(text: str, hits: list[str]) -> str:
+    sanitized = text
+    for hit in hits:
+        sanitized = sanitized.replace(hit, YUANYUE_COMPETITOR_BRAND_REPLACEMENT)
+    # 兜底替换可能把“a2和爱他美”变成重复品牌，压成一个源悦，避免留下机械感。
+    for duplicate in ("源悦和源悦", "源悦、源悦", "源悦，源悦", "源悦/源悦"):
+        while duplicate in sanitized:
+            sanitized = sanitized.replace(duplicate, YUANYUE_COMPETITOR_BRAND_REPLACEMENT)
+    return sanitized.strip()

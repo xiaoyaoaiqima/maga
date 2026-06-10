@@ -12,7 +12,7 @@ from scripts.create_clean_schema import seed_clean_schema
 
 
 @pytest.mark.asyncio
-async def test_seed_clean_schema_registers_hermes_maga_worker_executor():
+async def test_seed_clean_schema_registers_maga_direct_llm_executor_executor():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         tables = [Base.metadata.tables[name] for name in MAGA_CORE_TABLE_NAMES]
@@ -22,14 +22,14 @@ async def test_seed_clean_schema_registers_hermes_maga_worker_executor():
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
         executor = await session.scalar(
-            select(ExecutorRegistry).where(ExecutorRegistry.executor_code == "hermes_maga_worker")
+            select(ExecutorRegistry).where(ExecutorRegistry.executor_code == "maga_direct_llm_executor")
         )
 
     await engine.dispose()
 
     assert executor is not None
-    assert executor.display_name == "Hermes MAGA worker"
-    assert executor.executor_type == "hermes_profile"
+    assert executor.display_name == "MAGA direct LLM executor"
+    assert executor.executor_type == "direct_llm"
     assert executor.profile_name == "maga-worker"
     assert executor.protocol_version == "0.1"
     assert executor.invoke_url == "http://127.0.0.1:8765/invoke"
@@ -82,7 +82,7 @@ async def test_seed_clean_schema_updates_existing_executor_url():
     async with session_factory() as session:
         executors = (
             await session.execute(
-                select(ExecutorRegistry).where(ExecutorRegistry.executor_code == "hermes_maga_worker")
+                select(ExecutorRegistry).where(ExecutorRegistry.executor_code == "maga_direct_llm_executor")
             )
         ).scalars().all()
 
@@ -114,7 +114,7 @@ async def test_startup_bootstrap_does_not_overwrite_existing_executor_url():
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
         executor = await session.scalar(
-            select(ExecutorRegistry).where(ExecutorRegistry.executor_code == "hermes_maga_worker")
+            select(ExecutorRegistry).where(ExecutorRegistry.executor_code == "maga_direct_llm_executor")
         )
 
     await engine.dispose()

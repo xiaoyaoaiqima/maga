@@ -159,7 +159,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
             ContentAgentRun(
                 id=101,
                 task_id=201,
-                executor_code="hermes_maga_worker",
+                executor_code="maga_direct_llm_executor",
                 status="succeeded",
                 started_at=started_at,
                 finished_at=started_at + timedelta(milliseconds=3200),
