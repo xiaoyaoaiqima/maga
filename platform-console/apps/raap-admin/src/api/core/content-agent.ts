@@ -18,7 +18,10 @@ export namespace ContentAgentApi {
 
   export interface CommentBatchStartRequest {
     asset_key?: string;
+    comment_angle?: null | string;
+    count?: number;
     executor_code?: string;
+    quality_guard_profile_key?: null | string;
     created_by?: null | string;
   }
 
@@ -76,6 +79,7 @@ export namespace ContentAgentApi {
     model_route?: Record<string, any>;
     rendered_prompt?: null | string;
     forbidden_terms_review?: null | Record<string, any>;
+    activity_quality_guard?: null | Record<string, any>;
     rewrite_records?: Array<Record<string, any>>;
     execution_stages?: Array<Record<string, any>>;
   }
@@ -379,6 +383,12 @@ export async function getContentBatchReportApi(batchId: number) {
 export async function downloadContentBatchReportExcelApi(batchId: number) {
   return requestClient.download<Blob>(
     `/v1/content-agent/batches/${batchId}/export.xlsx`,
+  );
+}
+
+export async function downloadContentBatchArticlePoolExcelApi(batchId: number) {
+  return requestClient.download<Blob>(
+    `/v1/content-agent/batches/${batchId}/export-article-pool.xlsx`,
   );
 }
 

@@ -21,6 +21,7 @@ import {
   Col,
   Empty,
   Input,
+  InputNumber,
   List,
   ListItem,
   message,
@@ -109,15 +110,35 @@ const reportLoading = ref(false);
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
 const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
 const batchTotal = ref(0);
-
-const selectedItems = computed(() => {
-  const items = selectedAsset.value?.content_json?.items;
-  return Array.isArray(items) ? items.slice(0, 30) : [];
+const focusGenerateOpen = ref(false);
+const focusGenerateForm = ref({
+  comment_angle: '',
+  count: 20,
 });
+
+const selectedRuleItems = computed(() => {
+  const items = selectedAsset.value?.content_json?.items;
+  return Array.isArray(items) ? items : [];
+});
+const selectedItems = computed(() => selectedRuleItems.value.slice(0, 30));
 const selectedReportItems = computed(() => selectedReport.value?.items || []);
 const selectedReportSummary = computed(
   () => selectedReport.value?.summary || null,
 );
+const isSelectedCommentRuleSet = computed(
+  () => selectedAsset.value?.asset_type === 'comment_angle_rule_set',
+);
+const selectedCommentAngleOptions = computed(() => {
+  const seen = new Set<string>();
+  return selectedRuleItems.value
+    .map((item) => String(item.comment_angle || '').trim())
+    .filter((value) => {
+      if (!value || seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    })
+    .map((value) => ({ label: value, value }));
+});
 
 const currentOperator = computed(
   () =>
@@ -468,6 +489,62 @@ async function generateFromRulePackage(
   }
 }
 
+function openFocusGeneration() {
+  if (!selectedAsset.value || !isSelectedCommentRuleSet.value) {
+    message.warning('请先选择评论切角规则包');
+    return;
+  }
+  const firstAngle = selectedCommentAngleOptions.value[0]?.value;
+  if (!firstAngle) {
+    message.warning('当前评论规则包没有可测试的评论切角');
+    return;
+  }
+  focusGenerateForm.value = {
+    comment_angle: focusGenerateForm.value.comment_angle || firstAngle,
+    count: focusGenerateForm.value.count || 20,
+  };
+  focusGenerateOpen.value = true;
+}
+
+async function generateFocusedCommentAngle() {
+  if (!selectedAsset.value?.asset_key) {
+    message.warning('请先选择评论切角规则包');
+    return;
+  }
+  const commentAngle = focusGenerateForm.value.comment_angle.trim();
+  if (!commentAngle) {
+    message.warning('请选择评论切角');
+    return;
+  }
+  generating.value = true;
+  try {
+    const preflight = await preflightContentGenerationApi({
+      asset_key: selectedAsset.value.asset_key,
+      asset_type: selectedAsset.value.asset_type,
+    });
+    if (!preflight.passed) {
+      showPreflightFailure(preflight);
+      return;
+    }
+    const result = await startCommentBatchApi({
+      asset_key: selectedAsset.value.asset_key,
+      comment_angle: commentAngle,
+      count: Number(focusGenerateForm.value.count || 20),
+      created_by: currentOperator.value,
+    });
+    message.success(
+      `切角测试完成：${result.execution.generated_count}/${result.execution.requested_limit}`,
+    );
+    focusGenerateOpen.value = false;
+    selectedReport.value = result.report;
+    await loadBatches();
+  } catch {
+    message.error('切角测试失败，请检查规则包、切角和 worker 状态');
+  } finally {
+    generating.value = false;
+  }
+}
+
 function showPreflightFailure(preflight: {
   checks: Array<{ label: string; message: string; status: string }>;
 }) {
@@ -741,15 +818,25 @@ watch(
             </Space>
           </template>
           <template #extra>
-            <Button
-              type="primary"
-              :disabled="!selectedAsset"
-              :loading="generating"
-              @click="selectedAsset && generateFromRulePackage(selectedAsset)"
-            >
-              <template #icon><PlayCircleOutlined /></template>
-              生成一批
-            </Button>
+            <Space>
+              <Button
+                v-if="isSelectedCommentRuleSet"
+                :disabled="!selectedAsset"
+                :loading="generating"
+                @click="openFocusGeneration"
+              >
+                切角测试
+              </Button>
+              <Button
+                type="primary"
+                :disabled="!selectedAsset"
+                :loading="generating"
+                @click="selectedAsset && generateFromRulePackage(selectedAsset)"
+              >
+                <template #icon><PlayCircleOutlined /></template>
+                生成一批
+              </Button>
+            </Space>
           </template>
 
           <template v-if="selectedAsset">
@@ -1105,6 +1192,38 @@ watch(
             v-model:value="displayName"
             :disabled="importing"
             placeholder="默认取文件名，可编辑"
+          />
+        </div>
+      </Space>
+    </Modal>
+
+    <Modal
+      v-model:open="focusGenerateOpen"
+      title="评论切角测试"
+      ok-text="开始生成"
+      cancel-text="取消"
+      :confirm-loading="generating"
+      @ok="generateFocusedCommentAngle"
+    >
+      <Space class="confirm-form" direction="vertical">
+        <div class="form-field">
+          <div class="field-label">评论切角</div>
+          <Select
+            v-model:value="focusGenerateForm.comment_angle"
+            :disabled="generating"
+            :options="selectedCommentAngleOptions"
+            class="full-width"
+            show-search
+          />
+        </div>
+        <div class="form-field">
+          <div class="field-label">生成数量</div>
+          <InputNumber
+            v-model:value="focusGenerateForm.count"
+            :disabled="generating"
+            :max="50"
+            :min="1"
+            class="full-width"
           />
         </div>
       </Space>
