@@ -31,6 +31,9 @@ critic_debug_log/
 prompt_optimize_results/
 critic_prompt_optimize_results/
 .local/*
+**/.local/
+outputs/
+/*.png
 worker/profiles/*/experts/*/lessons/
 批量生成/*
 *.csv
@@ -43,3 +46,4 @@ worker/profiles/*/experts/*/lessons/
 !关键词语料/评论切角_子关键词导出.csv
 !关键词语料/产品使用体验_子关键词导出.csv
 !关键词语料/标题要求_UGC_子关键词导出.csv
+关键词语料/*.bak-*
