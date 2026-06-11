@@ -33,7 +33,7 @@ def _include_clean_routes(api_router: APIRouter) -> None:
         health,
         llm_providers,
     )
-    from app.api.v1.endpoints.system import info
+    from app.api.v1.endpoints.system import info, roles, users as sys_users
 
     api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
     api_router.include_router(health.router, tags=["health"])
@@ -47,6 +47,9 @@ def _include_clean_routes(api_router: APIRouter) -> None:
     api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
     api_router.include_router(files.router, prefix="/files", tags=["files"])
     api_router.include_router(info.router, prefix="/system", tags=["system"])
+    # clean 模式仍然暴露系统用户页；这些接口是该页面读取用户列表和角色下拉框的最小依赖。
+    api_router.include_router(sys_users.router, prefix="/system", tags=["system"])
+    api_router.include_router(roles.router, prefix="/system", tags=["system"])
     api_router.include_router(llm_providers.static_router, prefix="/llm-providers", tags=["llm-providers"])
     api_router.include_router(llm_providers.router, prefix="/llm-providers", tags=["llm-providers"])
 

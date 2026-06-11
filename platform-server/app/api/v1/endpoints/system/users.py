@@ -86,18 +86,6 @@ async def delete_user(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{user_id}", response_model=ResponseModel, summary="获取用户详情")
-async def get_user(
-    user_id: str,
-    service: SysUserService = Depends(get_user_service)
-):
-    """获取用户详情"""
-    user = await service.get_user(user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    return ResponseModel(code=200, message="success", data=user.model_dump())
-
-
 @router.get("", response_model=ResponseModel, summary="查询用户列表")
 async def get_users(
     username: Optional[str] = Query(None, description="用户名"),
@@ -155,6 +143,18 @@ async def get_all_users(
     )
 
 
+@router.get("/{user_id}", response_model=ResponseModel, summary="获取用户详情")
+async def get_user(
+    user_id: str,
+    service: SysUserService = Depends(get_user_service)
+):
+    """获取用户详情"""
+    user = await service.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return ResponseModel(code=200, message="success", data=user.model_dump())
+
+
 @router.put("/{user_id}/password", response_model=ResponseModel, summary="重置用户密码")
 async def reset_password(
     user_id: str,
@@ -193,4 +193,3 @@ async def get_user_roles(
     """获取用户的角色ID列表"""
     role_ids = await service.get_user_roles(user_id)
     return ResponseModel(code=200, message="success", data=role_ids)
-

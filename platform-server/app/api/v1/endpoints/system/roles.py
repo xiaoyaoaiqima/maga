@@ -112,18 +112,6 @@ async def assign_role_menus_by_role_code(
     )
 
 
-@router.get("/{role_id}", response_model=ResponseModel, summary="获取角色详情")
-async def get_role(
-    role_id: str,
-    service: SysRoleService = Depends(get_role_service)
-):
-    """获取角色详情"""
-    role = await service.get_role(role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="角色不存在")
-    return ResponseModel(code=200, message="success", data=role.model_dump())
-
-
 @router.get("", response_model=ResponseModel, summary="查询角色列表")
 async def get_roles(
     role_code: Optional[str] = Query(None, description="角色编码"),
@@ -170,6 +158,18 @@ async def get_all_roles(
         message="success",
         data=[role.model_dump() for role in roles]
     )
+
+
+@router.get("/{role_id}", response_model=ResponseModel, summary="获取角色详情")
+async def get_role(
+    role_id: str,
+    service: SysRoleService = Depends(get_role_service)
+):
+    """获取角色详情"""
+    role = await service.get_role(role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="角色不存在")
+    return ResponseModel(code=200, message="success", data=role.model_dump())
 
 
 @router.put("/{role_id}/menus", response_model=ResponseModel, summary="分配角色菜单")
@@ -237,4 +237,3 @@ async def remove_user_from_role(
     """从角色中移除用户"""
     await service.remove_user_from_role(role_id, user_id)
     return ResponseModel(code=200, message="移除成功")
-
