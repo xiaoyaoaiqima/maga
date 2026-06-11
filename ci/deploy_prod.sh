@@ -7,6 +7,9 @@ LOCK_FILE="${MAGA_DEPLOY_LOCK_FILE:-/tmp/maga-deploy.lock}"
 COMPOSE_FILE="${MAGA_COMPOSE_FILE:-docker-compose.prod.yml}"
 ENV_FILE="${MAGA_ENV_FILE:-.env.prod}"
 IMAGE_TAG="${MAGA_FRONTEND_IMAGE_TAG:-maga-console:deploy}"
+DEPLOY_SCOPE="${MAGA_DEPLOY_SCOPE:-auto}"
+BUILD_BACKEND=1
+BUILD_FRONTEND=1
 FRONTEND_CONTAINER_ID=""
 TMP_FRONTEND_DIR=""
 
@@ -23,6 +26,73 @@ require_command() {
     log "missing required command: $1"
     exit 1
   fi
+}
+
+is_zero_sha() {
+  [[ "$1" =~ ^0+$ ]]
+}
+
+resolve_deploy_targets() {
+  local scope="$1"
+
+  case "${scope}" in
+    all)
+      BUILD_BACKEND=1
+      BUILD_FRONTEND=1
+      ;;
+    backend)
+      BUILD_BACKEND=1
+      BUILD_FRONTEND=0
+      ;;
+    frontend)
+      BUILD_BACKEND=0
+      BUILD_FRONTEND=1
+      ;;
+    auto)
+      BUILD_BACKEND=1
+      BUILD_FRONTEND=1
+
+      if [[ -z "${CI_COMMIT_BEFORE_SHA:-}" ]] ||
+        [[ -z "${CI_COMMIT_SHA:-}" ]] ||
+        is_zero_sha "${CI_COMMIT_BEFORE_SHA}" ||
+        ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        log "auto scope falls back to full deploy"
+      else
+        BUILD_BACKEND=0
+        BUILD_FRONTEND=0
+        local changed_files
+        changed_files="$(git diff --name-only "${CI_COMMIT_BEFORE_SHA}" "${CI_COMMIT_SHA}")"
+
+        if [[ -z "${changed_files}" ]]; then
+          log "auto scope found no changed files"
+        else
+          while IFS= read -r changed_file; do
+            case "${changed_file}" in
+              platform-console/*)
+                BUILD_FRONTEND=1
+                ;;
+              platform-server/* | worker/* | docker-compose.prod.yml | .env.prod.example)
+                BUILD_BACKEND=1
+                ;;
+              ci/deploy_prod.sh | .gitlab-ci.yml | docs/* | README.md | AGENTS.md)
+                ;;
+              *)
+                # 未分类文件保守处理，避免漏部署共享运行时配置。
+                BUILD_BACKEND=1
+                BUILD_FRONTEND=1
+                ;;
+            esac
+          done <<<"${changed_files}"
+        fi
+      fi
+      ;;
+    *)
+      log "invalid MAGA_DEPLOY_SCOPE=${scope}; expected auto/all/backend/frontend"
+      exit 1
+      ;;
+  esac
+
+  log "deploy scope=${scope}; backend=${BUILD_BACKEND}; frontend=${BUILD_FRONTEND}"
 }
 
 cleanup_frontend_publish() {
@@ -52,6 +122,7 @@ main() {
   source_dir="$(pwd)"
   log "source: ${source_dir}"
   log "deploy dir: ${DEPLOY_DIR}"
+  resolve_deploy_targets "${DEPLOY_SCOPE}"
 
   mkdir -p "${DEPLOY_DIR}"
 
@@ -77,27 +148,35 @@ main() {
     exit 1
   fi
 
-  log "building and restarting backend/worker"
-  run_compose up -d --build
+  if [[ "${BUILD_BACKEND}" == "1" ]]; then
+    log "building and restarting backend/worker"
+    run_compose up -d --build
+  else
+    log "skipping backend rebuild"
+  fi
 
-  log "building frontend image"
-  sudo -n docker build \
-    -f platform-console/Dockerfile \
-    -t "${IMAGE_TAG}" \
-    platform-console
+  if [[ "${BUILD_FRONTEND}" == "1" ]]; then
+    log "building frontend image"
+    sudo -n docker build \
+      -f platform-console/Dockerfile \
+      -t "${IMAGE_TAG}" \
+      platform-console
 
-  FRONTEND_CONTAINER_ID="$(sudo -n docker create "${IMAGE_TAG}")"
-  TMP_FRONTEND_DIR="$(mktemp -d)"
-  trap cleanup_frontend_publish EXIT
+    FRONTEND_CONTAINER_ID="$(sudo -n docker create "${IMAGE_TAG}")"
+    TMP_FRONTEND_DIR="$(mktemp -d)"
+    trap cleanup_frontend_publish EXIT
 
-  sudo -n docker cp "${FRONTEND_CONTAINER_ID}:/usr/share/nginx/html/." "${TMP_FRONTEND_DIR}/"
+    sudo -n docker cp "${FRONTEND_CONTAINER_ID}:/usr/share/nginx/html/." "${TMP_FRONTEND_DIR}/"
 
-  log "publishing frontend to ${FRONTEND_DIR}"
-  # Nginx 以 www-data 读取静态目录，目录本身必须可进入，否则首页会变成 404。
-  sudo -n install -d -m 0755 -o "$(id -u)" -g "$(id -g)" "${FRONTEND_DIR}"
-  rsync -az --delete "${TMP_FRONTEND_DIR}/" "${FRONTEND_DIR}/"
-  # rsync 会保留临时目录自身权限；mktemp 默认 0700，发布后必须重新开放目录进入权限给 nginx。
-  sudo -n chmod 0755 "${FRONTEND_DIR}"
+    log "publishing frontend to ${FRONTEND_DIR}"
+    # Nginx 以 www-data 读取静态目录，目录本身必须可进入，否则首页会变成 404。
+    sudo -n install -d -m 0755 -o "$(id -u)" -g "$(id -g)" "${FRONTEND_DIR}"
+    rsync -az --delete "${TMP_FRONTEND_DIR}/" "${FRONTEND_DIR}/"
+    # rsync 会保留临时目录自身权限；mktemp 默认 0700，发布后必须重新开放目录进入权限给 nginx。
+    sudo -n chmod 0755 "${FRONTEND_DIR}"
+  else
+    log "skipping frontend rebuild"
+  fi
 
   log "checking backend readiness"
   for _ in $(seq 1 30); do
@@ -110,6 +189,12 @@ main() {
 
   log "checking worker health"
   run_compose exec -T maga-worker curl -fsS http://127.0.0.1:8765/health >/dev/null
+
+  log "checking frontend publication"
+  test -x "${FRONTEND_DIR}"
+  test -r "${FRONTEND_DIR}/index.html"
+  curl -fsSI http://127.0.0.1/ >/dev/null
+  curl -fsSI http://127.0.0.1/content-agent/workbench >/dev/null
 
   log "deployment finished: ${CI_COMMIT_SHA:-local}"
 }
