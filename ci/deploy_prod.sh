@@ -96,6 +96,8 @@ main() {
   # Nginx 以 www-data 读取静态目录，目录本身必须可进入，否则首页会变成 404。
   sudo -n install -d -m 0755 -o "$(id -u)" -g "$(id -g)" "${FRONTEND_DIR}"
   rsync -az --delete "${TMP_FRONTEND_DIR}/" "${FRONTEND_DIR}/"
+  # rsync 会保留临时目录自身权限；mktemp 默认 0700，发布后必须重新开放目录进入权限给 nginx。
+  sudo -n chmod 0755 "${FRONTEND_DIR}"
 
   log "checking backend readiness"
   for _ in $(seq 1 30); do
