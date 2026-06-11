@@ -60,29 +60,6 @@ const chatOpen = computed({
   set: (value: boolean) => chatStore.setOpen(value),
 });
 
-const guideItems = [
-  {
-    icon: 'lucide:factory',
-    title: '生产工作台',
-    description: '集中处理业务规则、当前生产配置和生成前检查。',
-  },
-  {
-    icon: 'lucide:history',
-    title: '历史批次',
-    description: '查看每次测试和生成留下的批次记录。',
-  },
-  {
-    icon: 'lucide:list-checks',
-    title: '批次明细',
-    description: '点开批次后查看正文、红线、风险和失败原因。',
-  },
-  {
-    icon: 'lucide:flask-conical',
-    title: '规则测试',
-    description: '选择一条业务规则，小批量生成验证效果。',
-  },
-];
-
 // Token 过期检查
 const { formattedRemainingTime, isAboutToExpire, remainingMinutes } =
   useTokenExpiry({
@@ -134,11 +111,6 @@ const isChatMobile = computed(() => preferences.app.isMobile);
 
 async function handleLogout() {
   await authStore.logout(false);
-}
-
-function goBusinessRules() {
-  chatStore.setOpen(false);
-  router.push({ path: '/business-rules' });
 }
 
 function createChatMessage(
@@ -430,12 +402,10 @@ watch(
         :agent-missing="chatAgentMissing"
         :agent-name="chatAgentName"
         :active-context="chatStore.context"
-        :guide-items="guideItems"
         :messages="chatMessages"
         :sending="chatSending"
         @close="chatOpen = false"
         @chat-action="handleChatAction"
-        @go-business-rules="goBusinessRules"
         @send="sendChatMessage"
       />
     </Transition>

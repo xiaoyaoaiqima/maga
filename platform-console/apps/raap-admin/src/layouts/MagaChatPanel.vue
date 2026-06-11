@@ -15,17 +15,10 @@ interface ChatPanelMessage {
   loading?: boolean;
 }
 
-interface GuideItem {
-  description: string;
-  icon: string;
-  title: string;
-}
-
 const props = defineProps<{
   activeContext?: ChatContext | null;
   agentMissing: boolean;
   agentName: string;
-  guideItems: GuideItem[];
   messages: ChatPanelMessage[];
   sending: boolean;
 }>();
@@ -33,7 +26,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   chatAction: [action: ChatAction];
   close: [];
-  goBusinessRules: [];
   send: [message: string];
 }>();
 
@@ -111,10 +103,7 @@ function sendQuickPrompt(message: string) {
     <div class="chat-messages">
       <div v-if="messages.length === 0" class="chat-empty">
         <div class="empty-heading">
-          <span>{{ isCommentAngleCopilot ? '评论切角副驾' : '快速上手' }}</span>
-          <Button size="small" @click="emit('goBusinessRules')">
-            去生产工作台
-          </Button>
+          <span>{{ isCommentAngleCopilot ? '评论切角副驾' : '开始对话' }}</span>
         </div>
         <div v-if="isCommentAngleCopilot" class="quick-prompts">
           <Button
@@ -127,16 +116,8 @@ function sendQuickPrompt(message: string) {
             {{ prompt }}
           </Button>
         </div>
-        <div class="guide-list">
-          <div v-for="item in guideItems" :key="item.title" class="guide-item">
-            <span class="guide-item-icon">
-              <IconifyIcon :icon="item.icon" />
-            </span>
-            <span class="guide-item-copy">
-              <strong>{{ item.title }}</strong>
-              <span>{{ item.description }}</span>
-            </span>
-          </div>
+        <div v-else class="chat-empty-hint">
+          输入问题，Chat 会基于当前会话回答；刷新页面后记录清空。
         </div>
       </div>
 
@@ -233,7 +214,6 @@ function sendQuickPrompt(message: string) {
 }
 
 .chat-title-icon,
-.guide-item-icon,
 .message-avatar,
 .chat-close {
   display: inline-flex;
@@ -337,11 +317,6 @@ function sendQuickPrompt(message: string) {
   font-weight: 600;
 }
 
-.guide-list {
-  display: grid;
-  gap: 10px;
-}
-
 .quick-prompts {
   display: grid;
   gap: 8px;
@@ -357,40 +332,14 @@ function sendQuickPrompt(message: string) {
   white-space: normal;
 }
 
-.guide-item {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  gap: 10px;
-  align-items: flex-start;
+.chat-empty-hint {
   padding: 10px;
-  background: hsl(var(--muted) / 45%);
-  border: 1px solid hsl(var(--border));
-  border-radius: 8px;
-}
-
-.guide-item-icon {
-  width: 32px;
-  height: 32px;
-  color: #1677ff;
-  background: rgb(22 119 255 / 10%);
-  border-radius: 8px;
-}
-
-.guide-item-copy {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.guide-item-copy strong {
-  font-size: 14px;
-  line-height: 1.35;
-}
-
-.guide-item-copy span {
   font-size: 13px;
   line-height: 1.5;
   color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 45%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
 }
 
 .chat-message {
