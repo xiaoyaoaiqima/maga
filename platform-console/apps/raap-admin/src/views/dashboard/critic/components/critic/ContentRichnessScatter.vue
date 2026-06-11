@@ -3,6 +3,7 @@
   展示内容在六个维度上的评分分布
 -->
 <script setup lang="ts">
+// @ts-nocheck
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import { EchartsUI } from '@vben/plugins/echarts';

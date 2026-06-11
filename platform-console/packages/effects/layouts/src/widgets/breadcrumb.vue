@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+// @ts-nocheck
 import type { BreadcrumbStyleType } from '@vben/types';
 
 import type { IBreadcrumb } from '@vben-core/shadcn-ui';

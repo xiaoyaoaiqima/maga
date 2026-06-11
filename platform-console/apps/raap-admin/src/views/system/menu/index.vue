@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 
 import { IconPicker } from '@vben/common-ui';

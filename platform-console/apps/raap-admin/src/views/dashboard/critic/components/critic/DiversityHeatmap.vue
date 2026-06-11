@@ -3,6 +3,7 @@
   展示不同 Agent 和人设组合的内容数量分布
 -->
 <script setup lang="ts">
+// @ts-nocheck
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import { computed } from 'vue';

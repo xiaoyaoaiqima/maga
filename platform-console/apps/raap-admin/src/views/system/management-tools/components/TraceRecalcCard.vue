@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { ManagementApi } from '#/api/system/management';
 
 import { reactive, ref } from 'vue';

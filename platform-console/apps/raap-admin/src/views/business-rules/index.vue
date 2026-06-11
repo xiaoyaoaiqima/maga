@@ -2,54 +2,59 @@
 import type { UploadProps } from 'ant-design-vue';
 
 import type { AssetsApi } from '#/api/core/assets';
+import type { ChatContext } from '#/api/core/chat';
 import type { ContentAgentApi } from '#/api/core/content-agent';
 
-import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, h, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { useUserStore } from '@vben/stores';
 
 import {
-  PlayCircleOutlined,
+  CheckOutlined,
+  EditOutlined,
+  MessageOutlined,
   ReloadOutlined,
+  SaveOutlined,
   UploadOutlined,
 } from '@ant-design/icons-vue';
 import {
-  Alert,
   Button,
   Card,
   Col,
+  Drawer,
   Empty,
   Input,
   InputNumber,
-  List,
-  ListItem,
   message,
   Modal,
   Row,
   Select,
   Space,
   Spin,
-  Statistic,
+  Switch,
   Table,
   Tag,
+  Textarea,
   Upload,
 } from 'ant-design-vue';
 
 import {
   getAssetDetailApi,
-  getAssetImportRunsApi,
   getAssetSummariesApi,
+  getCommentAngleRuleDraftsApi,
   importCommentAngleRuleSetApi,
   importProductExperienceRuleSetApi,
+  publishCommentAngleRuleDraftApi,
+  saveCommentAngleRuleDraftApi,
 } from '#/api/core/assets';
 import {
   getContentBatchListApi,
   getContentBatchReportApi,
   preflightContentGenerationApi,
   startCommentBatchApi,
-  startContentBatchApi,
 } from '#/api/core/content-agent';
+import { useMagaChatStore } from '#/store';
 
 type RulePackageType = 'comment_angle' | 'product_experience';
 
@@ -66,15 +71,15 @@ const rulePackageConfigs: Record<RulePackageType, RulePackageConfig> = {
     accept: '.csv,.xlsx',
     assetType: 'comment_angle_rule_set',
     defaultAssetKey: 'yuanyue_comment_activity',
-    defaultDisplayName: '源悦-评论（评论切角）',
-    label: '源悦-评论',
+    defaultDisplayName: '源悦-业务规则（评论切角）',
+    label: '评论切角',
   },
   product_experience: {
     accept: '.csv,.xlsx',
     assetType: 'product_experience_rule_set',
     defaultAssetKey: 'yuanyue_product_experience',
-    defaultDisplayName: '源悦-生文（产品使用体验）',
-    label: '源悦-生文',
+    defaultDisplayName: '源悦-业务规则（产品使用体验）',
+    label: '产品使用体验',
   },
 };
 
@@ -93,18 +98,17 @@ const ruleUploadAccept = [
 const loading = ref(false);
 const importing = ref(false);
 const generating = ref(false);
-const importRunsLoading = ref(false);
 const packageType = ref<RulePackageType>('comment_angle');
 const displayName = ref(rulePackageConfigs.comment_angle.defaultDisplayName);
 const pendingFile = ref<File | null>(null);
 const uploadConfirmOpen = ref(false);
+const showHiddenRules = ref(false);
 const ruleAssets = ref<AssetsApi.AssetSummary[]>([]);
-const importRuns = ref<AssetsApi.AssetImportRun[]>([]);
 const selectedSummary = ref<AssetsApi.AssetSummary | null>(null);
 const selectedAsset = ref<AssetsApi.AssetRegistry | null>(null);
 const userStore = useUserStore();
+const chatStore = useMagaChatStore();
 const route = useRoute();
-const router = useRouter();
 const batchLoading = ref(false);
 const reportLoading = ref(false);
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
@@ -112,15 +116,27 @@ const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
 const batchTotal = ref(0);
 const focusGenerateOpen = ref(false);
 const focusGenerateForm = ref({
-  comment_angle: '',
-  count: 20,
+  rule_key: '',
+  count: 10,
 });
+const draftEditorOpen = ref(false);
+const draftSaving = ref(false);
+const draftTesting = ref(false);
+const draftPublishing = ref(false);
+const selectedDraftRule = ref<Record<string, any> | null>(null);
+const draftCorpus = ref('');
+const latestDraft = ref<AssetsApi.CommentAngleRuleDraft | null>(null);
+const hasUnsavedDraftChanges = computed(
+  () =>
+    Boolean(latestDraft.value) &&
+    draftCorpus.value.trim() !== latestDraft.value?.draft_corpus.trim(),
+);
 
 const selectedRuleItems = computed(() => {
   const items = selectedAsset.value?.content_json?.items;
   return Array.isArray(items) ? items : [];
 });
-const selectedItems = computed(() => selectedRuleItems.value.slice(0, 30));
+const selectedItems = computed(() => selectedRuleItems.value);
 const selectedReportItems = computed(() => selectedReport.value?.items || []);
 const selectedReportSummary = computed(
   () => selectedReport.value?.summary || null,
@@ -129,15 +145,12 @@ const isSelectedCommentRuleSet = computed(
   () => selectedAsset.value?.asset_type === 'comment_angle_rule_set',
 );
 const selectedCommentAngleOptions = computed(() => {
-  const seen = new Set<string>();
   return selectedRuleItems.value
-    .map((item) => String(item.comment_angle || '').trim())
-    .filter((value) => {
-      if (!value || seen.has(value)) return false;
-      seen.add(value);
-      return true;
-    })
-    .map((value) => ({ label: value, value }));
+    .filter((item) => String(item.comment_angle || '').trim())
+    .map((item) => ({
+      label: ruleDisplayName(item),
+      value: ruleKey(item),
+    }));
 });
 
 const currentOperator = computed(
@@ -210,31 +223,14 @@ const reportRiskCount = computed(() => {
     (summary.similarity_warning_count || 0)
   );
 });
-const reportAlertMessage = computed(() => {
-  const summary = selectedReportSummary.value;
-  if (!summary) return '';
-  if (reportFailureCount.value > 0) {
-    return `失败 ${reportFailureCount.value} 条，失败项不进入红线审核。`;
-  }
-  if (
-    summary.forbidden_hit_count ||
-    summary.remaining_rewrite_required_count ||
-    summary.similarity_warning_count
-  ) {
-    return '仍有风险项或相似内容，请优先处理标红和标橙内容。';
-  }
-  return '';
-});
 
-const importRunColumns: any[] = [
-  { title: 'ID', dataIndex: 'id', key: 'id', width: 70 },
-  { title: '来源文件', dataIndex: 'source_name', key: 'source_name' },
-  { title: '规则包', key: 'rule_package', width: 230 },
-  { title: '条数', key: 'rule_count', width: 90 },
-  { title: '示例', key: 'example_count', width: 90 },
-  { title: '状态', dataIndex: 'status', key: 'status', width: 100 },
-  { title: '上传人', dataIndex: 'created_by', key: 'created_by', width: 120 },
-  { title: '时间', dataIndex: 'create_time', key: 'create_time', width: 180 },
+const batchDetailColumns: any[] = [
+  { title: '序号', dataIndex: 'item_no', key: 'item_no', width: 72 },
+  { title: '状态', dataIndex: 'status', key: 'status', width: 110 },
+  { title: '正文', dataIndex: 'body', key: 'body', minWidth: 320 },
+  { title: '红线', dataIndex: 'hard_pass', key: 'hard_pass', width: 90 },
+  { title: '风险', key: 'risk', width: 220 },
+  { title: '字数', dataIndex: 'body_chars', key: 'body_chars', width: 80 },
 ];
 
 const previewColumns = computed<any[]>(() => {
@@ -268,19 +264,9 @@ const previewColumns = computed<any[]>(() => {
     { title: '语料', dataIndex: 'corpus', key: 'corpus' },
     { title: '示例', key: 'examples', width: 80 },
     { title: '补充', key: 'supplements', width: 80 },
+    { fixed: 'right', title: '操作', key: 'action', width: 240 },
   ];
 });
-
-const filteredImportRuns = computed(() =>
-  importRuns.value.filter((run) => {
-    const assetType = run.summary_json?.asset_type;
-    if (assetType && ruleAssetTypes.includes(assetType)) return true;
-    const assetKeys = run.summary_json?.asset_keys;
-    return Array.isArray(assetKeys)
-      ? assetKeys.some((item) => ruleAssetTypes.includes(item?.[0]))
-      : false;
-  }),
-);
 
 const statusLabel = (status?: string) => {
   if (status === 'approved') return '已通过';
@@ -305,51 +291,116 @@ const statusColor = (status?: string) => {
   return 'default';
 };
 
+const failedCountOf = (summary?: ContentAgentApi.BatchReportSummary | null) => {
+  if (!summary) return 0;
+  return Math.max(0, summary.total_count - summary.generated_count);
+};
+
 const passColor = (value?: boolean | null) => {
   if (value === true) return 'green';
   if (value === false) return 'red';
   return 'default';
 };
 
-const failedCountOf = (summary?: ContentAgentApi.BatchReportSummary | null) => {
-  if (!summary) return 0;
-  return Math.max(0, summary.total_count - summary.generated_count);
+const passLabel = (value?: boolean | null) => {
+  if (value === true) return '通过';
+  if (value === false) return '未通过';
+  return '未知';
 };
-
-const hasGeneratedContent = (item: ContentAgentApi.BatchReportItem) =>
-  Boolean((item.title || '').trim() || (item.body || '').trim());
 
 const displayErrorMessage = (value?: null | string) => {
   if (!value) return '';
   if (value.includes('content.generate produced empty comment')) {
-    return '模型没有返回可用正文，请重新从生产工作台生成新批次。';
+    return '模型没有返回可用正文';
   }
   return value;
 };
 
-const itemFailureMessage = (item: ContentAgentApi.BatchReportItem) => {
+const itemFailureMessage = (item: ContentAgentApi.BatchReportItem | Record<string, any>) => {
   const stageError = item.trace_stage_calls?.find(
-    (stage) => stage.status === 'failed' && stage.error_message,
+    (stage: Record<string, any>) => stage.status === 'failed' && stage.error_message,
   )?.error_message;
   return (
     displayErrorMessage(item.error_message || stageError) ||
-    '正文尚未生成，请查看完整报告里的执行链路。'
+    '正文尚未生成，请查看执行链路。'
   );
 };
 
-const copyText = async (text?: null | string) => {
-  if (!text) return;
-  await navigator.clipboard.writeText(text);
-  message.success('已复制');
-};
-
-const copyArticle = async (item: ContentAgentApi.BatchReportItem) => {
-  if (!hasGeneratedContent(item)) {
-    message.warning('这条还没有可复制的生成内容');
-    return;
+function riskTagsOf(item: ContentAgentApi.BatchReportItem | Record<string, any>) {
+  const tags: Array<{ color: string; label: string }> = [];
+  const forbiddenHits = item.forbidden_hits || [];
+  if (forbiddenHits.length > 0) {
+    tags.push({ color: 'red', label: `禁用词 ${forbiddenHits.join('、')}` });
   }
-  await copyText(`${item.title || ''}\n\n${item.body || ''}`.trim());
-};
+  if (item.rewrite_required) {
+    tags.push({ color: 'orange', label: item.rewrite_reason || '需改写' });
+  }
+  if (item.similarity_warnings?.length) {
+    tags.push({
+      color: 'orange',
+      label: `疑似趋同 ${item.similarity_warnings.length}`,
+    });
+  }
+  if (item.reject_reasons?.length) {
+    tags.push({ color: 'red', label: `拒绝 ${item.reject_reasons.length}` });
+  }
+  return tags;
+}
+
+function normalizeTextList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function buildChatReportSummary() {
+  const report = selectedReport.value;
+  if (!report) return null;
+  return {
+    batch_id: report.batch_id,
+    batch_code: report.batch_code || null,
+    status: report.status,
+    total_count: selectedReportSummary.value?.total_count ?? report.count,
+    generated_count: selectedReportSummary.value?.generated_count ?? 0,
+    failed_count: reportFailureCount.value,
+    risk_count: reportRiskCount.value,
+    samples: selectedReportItems.value.slice(0, 5).map((item) => ({
+      item_no: item.item_no,
+      body: item.body || itemFailureMessage(item),
+      risks: riskTagsOf(item).map((tag) => tag.label),
+    })),
+  };
+}
+
+function buildDraftChatContext(): ChatContext | null {
+  if (!selectedAsset.value || !selectedDraftRule.value || !isSelectedCommentRuleSet.value) {
+    return null;
+  }
+  return {
+    page: 'business_rules',
+    asset_key: selectedAsset.value.asset_key,
+    asset_type: selectedAsset.value.asset_type,
+    asset_version:
+      selectedAsset.value.version_no || latestDraft.value?.base_version_no || null,
+    rule_id: String(selectedDraftRule.value.rule_id || ''),
+    source_row_no:
+      Number(selectedDraftRule.value.source_row_no || 0) || null,
+    comment_angle: String(selectedDraftRule.value.comment_angle || ''),
+    corpus: String(selectedDraftRule.value.corpus || ''),
+    draft_corpus: draftCorpus.value,
+    examples: normalizeTextList(selectedDraftRule.value.examples),
+    supplements: normalizeTextList(selectedDraftRule.value.supplements),
+    test_report_summary: buildChatReportSummary(),
+  };
+}
+
+function syncDraftChatContext() {
+  if (!draftEditorOpen.value) return;
+  const context = buildDraftChatContext();
+  if (context) chatStore.setContext(context);
+}
 
 async function loadRuleAssets() {
   loading.value = true;
@@ -359,31 +410,29 @@ async function loadRuleAssets() {
         getAssetSummariesApi({
           asset_stage: 'production',
           asset_type: assetType,
+          include_hidden: showHiddenRules.value,
         }),
       ),
     );
     ruleAssets.value = groups.flat();
-    if (!selectedSummary.value && ruleAssets.value.length > 0) {
-      const firstAsset = ruleAssets.value[0];
-      if (firstAsset) {
-        await openAsset(firstAsset);
-      }
+    const selectedStillVisible = ruleAssets.value.some(
+      (asset) =>
+        asset.id === selectedSummary.value?.id ||
+        (asset.asset_type === selectedSummary.value?.asset_type &&
+          asset.asset_key === selectedSummary.value?.asset_key),
+    );
+    if (!selectedStillVisible) {
+      selectedSummary.value = null;
+      selectedAsset.value = null;
+    }
+    const firstAsset = ruleAssets.value[0];
+    if (!selectedSummary.value && firstAsset) {
+      await openAsset(firstAsset);
     }
   } catch {
-    message.error('获取业务规则包失败');
+    message.error('获取业务规则失败');
   } finally {
     loading.value = false;
-  }
-}
-
-async function loadImportRuns() {
-  importRunsLoading.value = true;
-  try {
-    importRuns.value = await getAssetImportRunsApi({ limit: 50 });
-  } catch {
-    message.error('获取导入记录失败');
-  } finally {
-    importRunsLoading.value = false;
   }
 }
 
@@ -415,6 +464,10 @@ const loadBatches = async () => {
       await openReport(queryBatchId, false);
       return;
     }
+    if (selectedReport.value?.batch_id) {
+      await openReport(selectedReport.value.batch_id, false);
+      return;
+    }
     if (!selectedReport.value && batchList.value[0]) {
       await openReport(batchList.value[0].batch_id, false);
     }
@@ -423,97 +476,46 @@ const loadBatches = async () => {
   }
 };
 
-const goFeedback = () => {
-  router.push({
-    path: '/content-agent/feedback',
-    query: selectedReport.value
-      ? { batch_id: String(selectedReport.value.batch_id) }
-      : {},
-  });
-};
-
-const openFullReport = () => {
-  if (!selectedReport.value) return;
-  router.push({
-    path: '/content-agent/workbench',
-    query: { batch_id: String(selectedReport.value.batch_id) },
-  });
-};
-
-// 运营在规则包管理页直接触发生成，入口按规则包类型分流到统一生文/评论批量接口。
-async function generateFromRulePackage(
-  row: AssetsApi.AssetRegistry | AssetsApi.AssetSummary | Record<string, any>,
-) {
-  if (!row?.asset_key || !row?.asset_type) {
-    message.warning('请先选择一个业务规则包');
-    return;
-  }
-  generating.value = true;
-  try {
-    const preflight = await preflightContentGenerationApi({
-      asset_key: row.asset_key,
-      asset_type: row.asset_type,
-    });
-    if (!preflight.passed) {
-      showPreflightFailure(preflight);
-      return;
-    }
-    if (preflight.warning_codes.length > 0) {
-      message.warning(
-        `生成前检查有 ${preflight.warning_codes.length} 项提示，已继续生成`,
-      );
-    }
-    const payload = {
-      asset_key: row.asset_key,
-      created_by: currentOperator.value,
-    };
-    let result = null;
-    if (row.asset_type === 'comment_angle_rule_set') {
-      result = await startCommentBatchApi(payload);
-    } else if (row.asset_type === 'product_experience_rule_set') {
-      result = await startContentBatchApi(payload);
-    }
-    if (!result) {
-      message.warning('当前规则包类型暂不支持一键生成');
-      return;
-    }
-    message.success(
-      `生成完成：${result.execution.generated_count}/${result.execution.requested_limit}`,
-    );
-    selectedReport.value = result.report;
-    await loadBatches();
-  } catch {
-    message.error('生成失败，请检查规则包和 worker 状态');
-  } finally {
-    generating.value = false;
-  }
-}
-
 function openFocusGeneration() {
   if (!selectedAsset.value || !isSelectedCommentRuleSet.value) {
-    message.warning('请先选择评论切角规则包');
+    message.warning('请先选择业务规则（评论切角）');
     return;
   }
-  const firstAngle = selectedCommentAngleOptions.value[0]?.value;
-  if (!firstAngle) {
-    message.warning('当前评论规则包没有可测试的评论切角');
+  const firstRuleKey = selectedCommentAngleOptions.value[0]?.value;
+  if (!firstRuleKey) {
+    message.warning('当前业务规则没有可测试的评论切角');
     return;
   }
   focusGenerateForm.value = {
-    comment_angle: focusGenerateForm.value.comment_angle || firstAngle,
-    count: focusGenerateForm.value.count || 20,
+    rule_key: focusGenerateForm.value.rule_key || firstRuleKey,
+    count: focusGenerateForm.value.count || 10,
+  };
+  focusGenerateOpen.value = true;
+}
+
+function openRuleGeneration(record: Record<string, any>) {
+  if (!isSelectedCommentRuleSet.value) {
+    message.warning('当前业务规则类型暂不支持单条测试');
+    return;
+  }
+  focusGenerateForm.value = {
+    rule_key: ruleKey(record),
+    count: focusGenerateForm.value.count || 10,
   };
   focusGenerateOpen.value = true;
 }
 
 async function generateFocusedCommentAngle() {
   if (!selectedAsset.value?.asset_key) {
-    message.warning('请先选择评论切角规则包');
+    message.warning('请先选择业务规则（评论切角）');
     return;
   }
-  const commentAngle = focusGenerateForm.value.comment_angle.trim();
-  if (!commentAngle) {
-    message.warning('请选择评论切角');
+  const targetRule = selectedRuleItems.value.find(
+    (item) => ruleKey(item) === focusGenerateForm.value.rule_key,
+  );
+  const commentAngle = String(targetRule?.comment_angle || '').trim();
+  if (!targetRule || !commentAngle) {
+    message.warning('请选择一条业务规则');
     return;
   }
   generating.value = true;
@@ -529,19 +531,162 @@ async function generateFocusedCommentAngle() {
     const result = await startCommentBatchApi({
       asset_key: selectedAsset.value.asset_key,
       comment_angle: commentAngle,
-      count: Number(focusGenerateForm.value.count || 20),
+      count: Number(focusGenerateForm.value.count || 10),
       created_by: currentOperator.value,
+      rule_id: String(targetRule.rule_id || ''),
+      source_row_no: Number(targetRule.source_row_no || 0) || undefined,
     });
     message.success(
-      `切角测试完成：${result.execution.generated_count}/${result.execution.requested_limit}`,
+      `业务规则测试完成：${result.execution.generated_count}/${result.execution.requested_limit}`,
     );
     focusGenerateOpen.value = false;
     selectedReport.value = result.report;
     await loadBatches();
   } catch {
-    message.error('切角测试失败，请检查规则包、切角和 worker 状态');
+    message.error('业务规则测试失败，请检查业务规则内容和模型配置');
   } finally {
     generating.value = false;
+  }
+}
+
+async function openDraftEditor(record: Record<string, any>) {
+  if (!selectedAsset.value?.asset_key || !isSelectedCommentRuleSet.value) {
+    message.warning('请先选择业务规则（评论切角）');
+    return;
+  }
+  selectedDraftRule.value = record;
+  draftCorpus.value = String(record.corpus || '');
+  latestDraft.value = null;
+  draftEditorOpen.value = true;
+  await loadLatestDraft(record);
+  syncDraftChatContext();
+}
+
+async function loadLatestDraft(record = selectedDraftRule.value) {
+  if (!selectedAsset.value?.asset_key || !record) return;
+  try {
+    const drafts = await getCommentAngleRuleDraftsApi({
+      asset_key: selectedAsset.value.asset_key,
+      limit: 1,
+      rule_id: String(record.rule_id || ''),
+      source_row_no: Number(record.source_row_no || 0) || undefined,
+    });
+    latestDraft.value = drafts[0] || null;
+    if (latestDraft.value?.draft_corpus) {
+      draftCorpus.value = latestDraft.value.draft_corpus;
+    }
+  } catch {
+    latestDraft.value = null;
+  }
+}
+
+async function openRuleChatCopilot(record: Record<string, any>) {
+  if (!selectedAsset.value?.asset_key || !isSelectedCommentRuleSet.value) {
+    message.warning('请先选择业务规则（评论切角）');
+    return;
+  }
+  selectedDraftRule.value = record;
+  draftCorpus.value = String(record.corpus || '');
+  latestDraft.value = null;
+  await loadLatestDraft(record);
+  const context = buildDraftChatContext();
+  if (!context) {
+    message.warning('当前业务规则上下文不可用');
+    return;
+  }
+  chatStore.openWithContext(context);
+}
+
+async function saveRuleDraft() {
+  if (!selectedAsset.value?.asset_key || !selectedDraftRule.value) {
+    message.warning('请先选择一条业务规则');
+    return;
+  }
+  if (!draftCorpus.value.trim()) {
+    message.warning('草稿语料不能为空');
+    return;
+  }
+  draftSaving.value = true;
+  try {
+    latestDraft.value = await saveCommentAngleRuleDraftApi({
+      asset_key: selectedAsset.value.asset_key,
+      created_by: currentOperator.value,
+      draft_corpus: draftCorpus.value,
+      rule_id: String(selectedDraftRule.value.rule_id || ''),
+      source_row_no:
+        Number(selectedDraftRule.value.source_row_no || 0) || undefined,
+    });
+    message.success(`草稿已保存 #${latestDraft.value.id}`);
+  } catch (error: any) {
+    message.error(error?.message || '保存草稿失败');
+  } finally {
+    draftSaving.value = false;
+  }
+}
+
+async function testRuleDraft(count: number) {
+  if (!selectedAsset.value?.asset_key || !selectedDraftRule.value) {
+    message.warning('请先选择一条业务规则');
+    return;
+  }
+  if (!draftCorpus.value.trim()) {
+    message.warning('草稿语料不能为空');
+    return;
+  }
+  draftTesting.value = true;
+  generating.value = true;
+  try {
+    const result = await startCommentBatchApi({
+      asset_key: selectedAsset.value.asset_key,
+      count,
+      created_by: currentOperator.value,
+      draft_corpus: draftCorpus.value,
+      draft_rule_id: String(selectedDraftRule.value.rule_id || ''),
+      draft_source_row_no:
+        Number(selectedDraftRule.value.source_row_no || 0) || undefined,
+      rule_id: String(selectedDraftRule.value.rule_id || ''),
+      source_row_no:
+        Number(selectedDraftRule.value.source_row_no || 0) || undefined,
+    });
+    message.success(
+      `草稿测试完成：${result.execution.generated_count}/${result.execution.requested_limit}`,
+    );
+    selectedReport.value = result.report;
+    await loadBatches();
+  } catch (error: any) {
+    message.error(error?.message || '草稿测试失败');
+  } finally {
+    draftTesting.value = false;
+    generating.value = false;
+  }
+}
+
+async function publishRuleDraft() {
+  if (!latestDraft.value) {
+    message.warning('请先保存草稿');
+    return;
+  }
+  if (hasUnsavedDraftChanges.value) {
+    message.warning('当前草稿有未保存修改，请先保存草稿');
+    return;
+  }
+  draftPublishing.value = true;
+  try {
+    const result = await publishCommentAngleRuleDraftApi(latestDraft.value.id, {
+      created_by: currentOperator.value,
+    });
+    latestDraft.value = result.draft;
+    message.success(`已发布为业务规则 v${result.asset.version_no}`);
+    selectedSummary.value = null;
+    selectedAsset.value = null;
+    await loadRuleAssets();
+    const summary = ruleAssets.value.find((asset) => asset.id === result.asset.id);
+    await openAsset(summary || result.asset);
+    draftEditorOpen.value = false;
+  } catch (error: any) {
+    message.error(error?.message || '发布草稿失败');
+  } finally {
+    draftPublishing.value = false;
   }
 }
 
@@ -553,7 +698,7 @@ function showPreflightFailure(preflight: {
     title: '生成前检查未通过',
     content:
       failures.map((item) => `${item.label}：${item.message}`).join('；') ||
-      '请检查业务规则包和生文配置。',
+      '请检查业务规则和生文配置。',
   });
 }
 
@@ -577,7 +722,7 @@ async function confirmUpload() {
     return;
   }
   if (!displayName.value.trim()) {
-    message.warning('请填写规则包名称');
+    message.warning('请填写业务规则名称');
     return;
   }
 
@@ -598,7 +743,7 @@ async function confirmUpload() {
     selectedAsset.value = null;
     uploadConfirmOpen.value = false;
     pendingFile.value = null;
-    await Promise.all([loadRuleAssets(), loadImportRuns()]);
+    await loadRuleAssets();
   } catch {
     message.error('导入失败，请检查文件格式');
   } finally {
@@ -625,6 +770,27 @@ function examplesCount(record: Record<string, any>) {
 
 function supplementsCount(record: Record<string, any>) {
   return Array.isArray(record.supplements) ? record.supplements.length : 0;
+}
+
+function ruleKey(record: Record<string, any>) {
+  return [
+    record.rule_id || '',
+    record.source_row_no || '',
+    record.comment_angle || '',
+    record.product_experience || '',
+  ].join('::');
+}
+
+function ruleDisplayName(record: Record<string, any>) {
+  return (
+    String(
+      record.comment_angle ||
+        record.product_experience ||
+        record.topic ||
+        record.rule_id ||
+        '',
+    ).trim() || `规则 ${record.source_row_no || ''}`.trim()
+  );
 }
 
 function formatValue(value: unknown) {
@@ -675,7 +841,6 @@ function assetKeyFromDisplayName(name: string, type: RulePackageType) {
 
 onMounted(() => {
   loadRuleAssets();
-  loadImportRuns();
   loadBatches();
 });
 
@@ -686,6 +851,71 @@ watch(
     loadBatches();
   },
 );
+
+watch(showHiddenRules, () => {
+  loadRuleAssets();
+});
+
+watch(
+  () => [
+    draftEditorOpen.value,
+    draftCorpus.value,
+    selectedDraftRule.value?.rule_id,
+    selectedDraftRule.value?.source_row_no,
+    selectedAsset.value?.id,
+    selectedReport.value?.batch_id,
+    selectedReportSummary.value?.generated_count,
+    reportFailureCount.value,
+    reportRiskCount.value,
+  ],
+  () => {
+    if (draftEditorOpen.value) {
+      syncDraftChatContext();
+    }
+  },
+);
+
+watch(
+  () => chatStore.draftFillPayload,
+  async (payload) => {
+    if (!payload) return;
+    let currentRuleId = String(selectedDraftRule.value?.rule_id || '');
+    let currentSourceRowNo =
+      Number(selectedDraftRule.value?.source_row_no || 0) || null;
+    if (!selectedDraftRule.value || draftEditorOpen.value === false) {
+      const targetRule = selectedRuleItems.value.find((item) => {
+        const ruleMatches =
+          !payload.rule_id || String(item.rule_id || '') === payload.rule_id;
+        const sourceMatches =
+          payload.source_row_no === null ||
+          Number(item.source_row_no || 0) === payload.source_row_no;
+        return ruleMatches && sourceMatches;
+      });
+      if (targetRule) {
+        selectedDraftRule.value = targetRule;
+        draftCorpus.value = String(targetRule.corpus || '');
+        latestDraft.value = null;
+        await loadLatestDraft(targetRule);
+        draftEditorOpen.value = true;
+        currentRuleId = String(targetRule.rule_id || '');
+        currentSourceRowNo = Number(targetRule.source_row_no || 0) || null;
+      }
+    }
+    const ruleMatches = !payload.rule_id || payload.rule_id === currentRuleId;
+    const sourceMatches =
+      payload.source_row_no === null || payload.source_row_no === currentSourceRowNo;
+    if (!selectedDraftRule.value || !ruleMatches || !sourceMatches) {
+      message.warning('Chat 返回的草稿不属于当前业务规则，已忽略');
+      chatStore.clearDraftFillPayload(payload.request_id);
+      return;
+    }
+    draftEditorOpen.value = true;
+    draftCorpus.value = payload.draft_corpus;
+    syncDraftChatContext();
+    message.success('已填入草稿，请确认后再保存或试跑');
+    chatStore.clearDraftFillPayload(payload.request_id);
+  },
+);
 </script>
 
 <template>
@@ -694,7 +924,7 @@ watch(
       <div class="page-title-block">
         <div class="eyebrow">MAGA CONTENT OPS</div>
         <h1>生产工作台</h1>
-        <p>规则包、生成、复盘集中处理。</p>
+        <p>业务规则、生成、复盘集中处理。</p>
       </div>
       <Space wrap>
         <Button @click="loadBatches">
@@ -709,7 +939,7 @@ watch(
         >
           <Button type="primary" :loading="importing">
             <template #icon><UploadOutlined /></template>
-            上传规则包
+            上传业务规则
           </Button>
         </Upload>
       </Space>
@@ -717,12 +947,16 @@ watch(
 
     <div class="workbench-layout">
       <div class="workbench-sidebar">
-        <Card class="selector-card" title="规则包" :bordered="false">
+        <Card class="selector-card" title="业务规则" :bordered="false">
           <template #extra>
-            <Button size="small" @click="loadRuleAssets">
-              <template #icon><ReloadOutlined /></template>
-              刷新
-            </Button>
+            <Space>
+              <span class="history-toggle-label">历史/调试</span>
+              <Switch v-model:checked="showHiddenRules" size="small" />
+              <Button size="small" @click="loadRuleAssets">
+                <template #icon><ReloadOutlined /></template>
+                刷新
+              </Button>
+            </Space>
           </template>
           <Space class="rule-form" direction="vertical">
             <Upload
@@ -739,7 +973,7 @@ watch(
           </Space>
 
           <Spin :spinning="loading">
-            <Empty v-if="ruleAssets.length === 0" description="暂无规则包" />
+            <Empty v-if="ruleAssets.length === 0" description="暂无业务规则" />
             <div v-else class="rule-package-list">
               <button
                 v-for="asset in ruleAssets"
@@ -754,6 +988,7 @@ watch(
                     {{ asset.display_name || packageLabel(asset.asset_type) }}
                   </span>
                   <Tag>{{ packageLabel(asset.asset_type) }}</Tag>
+                  <Tag v-if="asset.hidden" color="orange">历史/调试</Tag>
                 </span>
                 <span class="option-meta">
                   v{{ asset.version_no }} · {{ asset.item_count ?? '-' }} 条
@@ -825,16 +1060,7 @@ watch(
                 :loading="generating"
                 @click="openFocusGeneration"
               >
-                切角测试
-              </Button>
-              <Button
-                type="primary"
-                :disabled="!selectedAsset"
-                :loading="generating"
-                @click="selectedAsset && generateFromRulePackage(selectedAsset)"
-              >
-                <template #icon><PlayCircleOutlined /></template>
-                生成一批
+                选择一条业务规则进行测试
               </Button>
             </Space>
           </template>
@@ -875,7 +1101,7 @@ watch(
 
             <div class="preflight-strip">
               <div class="preflight-item ready">
-                <span>规则包</span>
+                <span>业务规则</span>
                 <strong>已选</strong>
               </div>
               <div class="preflight-item pending">
@@ -887,7 +1113,7 @@ watch(
                 <strong>待校验</strong>
               </div>
               <div class="preflight-item pending">
-                <span>Worker</span>
+                <span>模型路由</span>
                 <strong>待校验</strong>
               </div>
             </div>
@@ -902,205 +1128,23 @@ watch(
               </Tag>
             </div>
           </template>
-          <Empty v-else description="暂无当前规则包" />
+          <Empty v-else description="暂无当前业务规则" />
         </Card>
 
-        <Spin :spinning="reportLoading">
-          <Card class="result-card" :bordered="false">
-            <template #title>
-              <Space>
-                <span>最新生成结果</span>
-                <Tag v-if="selectedReport">
-                  {{
-                    selectedReport.batch_code || `#${selectedReport.batch_id}`
-                  }}
-                </Tag>
-                <Tag
-                  v-if="selectedReport"
-                  :color="statusColor(selectedReport.status)"
-                >
-                  {{ statusLabel(selectedReport.status) }}
-                </Tag>
-              </Space>
-            </template>
-            <template #extra>
-              <Space v-if="selectedReport">
-                <Button size="small" @click="goFeedback">去评价</Button>
-                <Button size="small" @click="openFullReport">完整报告</Button>
-                <Button
-                  size="small"
-                  @click="openReport(selectedReport.batch_id)"
-                >
-                  刷新
-                </Button>
-              </Space>
-            </template>
-
-            <template v-if="selectedReport">
-              <div class="result-heading">
-                <div>
-                  <div class="result-topic">
-                    {{ selectedReport.product_topic }}
-                  </div>
-                  <div class="result-subtitle">
-                    {{ selectedReport.asset_key }}
-                  </div>
-                </div>
-                <Tag v-if="reportRiskCount > 0" color="orange">
-                  待处理 {{ reportRiskCount }}
-                </Tag>
-                <Tag v-else color="green">无阻塞风险</Tag>
-              </div>
-
-              <Row v-if="selectedReportSummary" class="metric-row" :gutter="12">
-                <Col :md="4" :sm="8" :xs="12">
-                  <Statistic
-                    title="总数"
-                    :value="selectedReportSummary.total_count"
-                  />
-                </Col>
-                <Col :md="4" :sm="8" :xs="12">
-                  <Statistic
-                    title="已生成"
-                    :value="selectedReportSummary.generated_count"
-                  />
-                </Col>
-                <Col :md="4" :sm="8" :xs="12">
-                  <Statistic title="失败" :value="reportFailureCount" />
-                </Col>
-                <Col :md="4" :sm="8" :xs="12">
-                  <Statistic
-                    title="红线通过"
-                    :value="selectedReportSummary.hard_pass_count"
-                  />
-                </Col>
-                <Col :md="4" :sm="8" :xs="12">
-                  <Statistic
-                    title="自动改写"
-                    :value="selectedReportSummary.rewrite_item_count"
-                  />
-                </Col>
-                <Col :md="4" :sm="8" :xs="12">
-                  <Statistic
-                    title="禁用词"
-                    :value="selectedReportSummary.forbidden_hit_count"
-                  />
-                </Col>
-              </Row>
-
-              <Alert
-                v-if="reportAlertMessage"
-                class="mt-4"
-                :message="reportAlertMessage"
-                show-icon
-                type="warning"
-              />
-
-              <List
-                class="result-list"
-                :data-source="selectedReportItems"
-                item-layout="vertical"
-              >
-                <template #renderItem="{ item }">
-                  <ListItem :key="item.item_id" class="content-list-item">
-                    <div
-                      class="content-item"
-                      :class="{ failed: !hasGeneratedContent(item) }"
-                    >
-                      <div class="content-item-header">
-                        <Space wrap>
-                          <span>第 {{ item.item_no }} 条</span>
-                          <Tag :color="statusColor(item.status)">
-                            {{ statusLabel(item.status) }}
-                          </Tag>
-                          <Tag :color="passColor(item.hard_pass)">
-                            红线{{
-                              item.hard_pass === true
-                                ? '通过'
-                                : item.hard_pass === false
-                                  ? '未通过'
-                                  : '未知'
-                            }}
-                          </Tag>
-                          <Tag
-                            v-if="item.forbidden_hits.length > 0"
-                            color="red"
-                          >
-                            禁用词 {{ item.forbidden_hits.join('、') }}
-                          </Tag>
-                          <Tag
-                            v-if="item.similarity_warnings?.length"
-                            color="orange"
-                          >
-                            疑似趋同 {{ item.similarity_warnings.length }}
-                          </Tag>
-                        </Space>
-                        <Button
-                          size="small"
-                          :disabled="!hasGeneratedContent(item)"
-                          @click="copyArticle(item)"
-                        >
-                          复制
-                        </Button>
-                      </div>
-
-                      <h3>
-                        {{
-                          item.title ||
-                          (item.status === 'failed' ? '生成失败' : '未生成标题')
-                        }}
-                      </h3>
-                      <div v-if="item.body" class="content-body">
-                        {{ item.body }}
-                      </div>
-                      <Alert
-                        v-else
-                        :message="itemFailureMessage(item)"
-                        type="error"
-                      />
-
-                      <div class="content-meta mt-3">
-                        <Tag v-if="item.opening_type">
-                          {{ item.opening_type }}
-                        </Tag>
-                        <Tag v-if="item.structure_type">
-                          {{ item.structure_type }}
-                        </Tag>
-                        <Tag v-if="item.content_angle">
-                          {{ item.content_angle }}
-                        </Tag>
-                        <Tag v-if="item.scene_type">
-                          {{ item.scene_type }}
-                        </Tag>
-                        <Tag>字数 {{ item.body_chars }}</Tag>
-                        <Tag>建议 {{ item.suggestion_count }}</Tag>
-                        <Tag>替换 {{ item.replacement_count }}</Tag>
-                        <Tag v-if="item.trace_run_id || item.run_id">
-                          Run #{{ item.trace_run_id || item.run_id }}
-                        </Tag>
-                      </div>
-                    </div>
-                  </ListItem>
-                </template>
-              </List>
-            </template>
-
-            <Empty v-else description="暂无生成结果" />
-          </Card>
-        </Spin>
-      </div>
-    </div>
-
-    <Row class="diagnostics-row" :gutter="[16, 16]">
-      <Col :xl="15" :xs="24">
-        <Card title="规则详情" :bordered="false">
+        <Card class="rule-list-card" title="业务规则列表" :bordered="false">
+          <template #extra>
+            <Space v-if="selectedAsset">
+              <Tag>{{ selectedItems.length }} 条</Tag>
+              <Tag v-if="isSelectedCommentRuleSet" color="blue">可单条测试</Tag>
+            </Space>
+          </template>
           <template v-if="selectedAsset">
             <Table
               :columns="previewColumns"
               :data-source="selectedItems"
-              :pagination="{ pageSize: 6 }"
-              :scroll="{ x: 1120 }"
-              row-key="rule_id"
+              :pagination="false"
+              :row-key="ruleKey"
+              :scroll="{ x: 1120, y: 520 }"
               size="small"
             >
               <template #bodyCell="{ column, record, text }">
@@ -1115,50 +1159,131 @@ watch(
                 <template v-else-if="column.key === 'supplements'">
                   {{ supplementsCount(record) }}
                 </template>
+                <template v-else-if="column.key === 'action'">
+                  <Space>
+                    <Button size="small" @click="openDraftEditor(record)">
+                      <template #icon><EditOutlined /></template>
+                      编辑
+                    </Button>
+                    <Button size="small" type="primary" @click="openRuleGeneration(record)">
+                      测试
+                    </Button>
+                    <Button size="small" @click="openRuleChatCopilot(record)">
+                      <template #icon><MessageOutlined /></template>
+                      去 Chat
+                    </Button>
+                  </Space>
+                </template>
               </template>
             </Table>
           </template>
-          <Empty v-else description="暂无规则详情" />
+          <Empty v-else description="暂无业务规则列表" />
         </Card>
-      </Col>
+      </div>
+    </div>
 
-      <Col :xl="9" :xs="24">
-        <Card title="导入记录" :bordered="false">
+    <Row class="diagnostics-row" :gutter="[16, 16]">
+      <Col :xs="24">
+        <Card class="batch-detail-card" :bordered="false">
+          <template #title>
+            <Space wrap>
+              <span>批次明细</span>
+              <Tag v-if="selectedReport">
+                {{ selectedReport.batch_code || `#${selectedReport.batch_id}` }}
+              </Tag>
+              <Tag v-if="selectedReport" :color="statusColor(selectedReport.status)">
+                {{ statusLabel(selectedReport.status) }}
+              </Tag>
+            </Space>
+          </template>
           <template #extra>
-            <Button size="small" @click="loadImportRuns">
+            <Button
+              size="small"
+              :disabled="!selectedReport"
+              :loading="reportLoading"
+              @click="selectedReport && openReport(selectedReport.batch_id)"
+            >
               <template #icon><ReloadOutlined /></template>
               刷新
             </Button>
           </template>
-          <Table
-            :columns="importRunColumns"
-            :data-source="filteredImportRuns"
-            :loading="importRunsLoading"
-            :pagination="{ pageSize: 5 }"
-            :scroll="{ x: 900 }"
-            row-key="id"
-            size="small"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'rule_package'">
-                {{ packageLabel(record.summary_json?.asset_type) }}
-                <span class="muted">{{
-                  record.summary_json?.asset_key || ''
-                }}</span>
-              </template>
-              <template v-else-if="column.key === 'rule_count'">
-                {{ record.summary_json?.rule_count ?? '-' }}
-              </template>
-              <template v-else-if="column.key === 'example_count'">
-                {{ record.summary_json?.example_count ?? '-' }}
-              </template>
-              <template v-else-if="column.key === 'status'">
-                <Tag :color="record.status === 'succeeded' ? 'green' : 'red'">
-                  {{ record.status }}
-                </Tag>
-              </template>
+          <Spin :spinning="reportLoading">
+            <template v-if="selectedReport">
+              <div class="batch-detail-summary">
+                <div class="metric-block">
+                  <span>业务规则</span>
+                  <strong>{{ selectedReport.asset_key }}</strong>
+                </div>
+                <div class="metric-block">
+                  <span>总数</span>
+                  <strong>{{ selectedReportSummary?.total_count ?? '-' }}</strong>
+                </div>
+                <div class="metric-block">
+                  <span>已生成</span>
+                  <strong>{{ selectedReportSummary?.generated_count ?? '-' }}</strong>
+                </div>
+                <div class="metric-block">
+                  <span>失败</span>
+                  <strong>{{ reportFailureCount }}</strong>
+                </div>
+                <div class="metric-block">
+                  <span>红线通过</span>
+                  <strong>{{ selectedReportSummary?.hard_pass_count ?? '-' }}</strong>
+                </div>
+                <div class="metric-block">
+                  <span>待关注</span>
+                  <strong>{{ reportRiskCount }}</strong>
+                </div>
+              </div>
+
+              <Table
+                class="batch-detail-table"
+                :columns="batchDetailColumns"
+                :data-source="selectedReportItems"
+                :pagination="{ pageSize: 10, showSizeChanger: false }"
+                :scroll="{ x: 980, y: 520 }"
+                row-key="item_id"
+                size="small"
+              >
+                <template #bodyCell="{ column, record, text }">
+                  <template v-if="column.key === 'status'">
+                    <Tag :color="statusColor(record.status)">
+                      {{ statusLabel(record.status) }}
+                    </Tag>
+                  </template>
+                  <template v-else-if="column.key === 'body'">
+                    <div v-if="record.body" class="batch-body-cell">
+                      {{ record.body }}
+                    </div>
+                    <div v-else class="batch-error-cell">
+                      {{ itemFailureMessage(record) }}
+                    </div>
+                  </template>
+                  <template v-else-if="column.key === 'hard_pass'">
+                    <Tag :color="passColor(record.hard_pass)">
+                      {{ passLabel(record.hard_pass) }}
+                    </Tag>
+                  </template>
+                  <template v-else-if="column.key === 'risk'">
+                    <Space v-if="riskTagsOf(record).length" wrap size="small">
+                      <Tag
+                        v-for="tag in riskTagsOf(record)"
+                        :key="tag.label"
+                        :color="tag.color"
+                      >
+                        {{ tag.label }}
+                      </Tag>
+                    </Space>
+                    <span v-else class="muted">-</span>
+                  </template>
+                  <template v-else>
+                    {{ formatValue(text) }}
+                  </template>
+                </template>
+              </Table>
             </template>
-          </Table>
+            <Empty v-else description="请选择左侧历史批次查看明细" />
+          </Spin>
         </Card>
       </Col>
     </Row>
@@ -1187,7 +1312,7 @@ watch(
           />
         </div>
         <div class="form-field">
-          <div class="field-label">规则包名称</div>
+          <div class="field-label">业务规则名称</div>
           <Input
             v-model:value="displayName"
             :disabled="importing"
@@ -1199,7 +1324,7 @@ watch(
 
     <Modal
       v-model:open="focusGenerateOpen"
-      title="评论切角测试"
+      title="选择一条业务规则进行测试"
       ok-text="开始生成"
       cancel-text="取消"
       :confirm-loading="generating"
@@ -1207,9 +1332,9 @@ watch(
     >
       <Space class="confirm-form" direction="vertical">
         <div class="form-field">
-          <div class="field-label">评论切角</div>
+          <div class="field-label">业务规则</div>
           <Select
-            v-model:value="focusGenerateForm.comment_angle"
+            v-model:value="focusGenerateForm.rule_key"
             :disabled="generating"
             :options="selectedCommentAngleOptions"
             class="full-width"
@@ -1228,6 +1353,73 @@ watch(
         </div>
       </Space>
     </Modal>
+
+    <Drawer
+      v-model:open="draftEditorOpen"
+      class="rule-draft-drawer"
+      placement="right"
+      title="单条规则草稿调试"
+      width="720"
+    >
+      <template v-if="selectedDraftRule">
+        <Space class="draft-meta" direction="vertical">
+          <div>
+            <Tag>{{ selectedDraftRule.rule_id || '-' }}</Tag>
+            <Tag>行 {{ selectedDraftRule.source_row_no || '-' }}</Tag>
+            <Tag v-if="latestDraft">草稿 #{{ latestDraft.id }}</Tag>
+          </div>
+          <div class="draft-title-row">
+            <strong>{{ selectedDraftRule.comment_angle || '-' }}</strong>
+          </div>
+        </Space>
+
+        <div class="draft-section">
+          <div class="field-label">正式版本语料</div>
+          <div class="readonly-corpus">
+            {{ selectedDraftRule.corpus || '-' }}
+          </div>
+        </div>
+
+        <div class="draft-section">
+          <div class="field-label">草稿语料</div>
+          <Textarea
+            v-model:value="draftCorpus"
+            :auto-size="{ minRows: 16, maxRows: 28 }"
+            :disabled="draftSaving || draftTesting || draftPublishing"
+            placeholder="在这里修改当前单条评论切角语料。保存草稿不会影响正式业务规则。"
+          />
+        </div>
+
+        <div v-if="latestDraft" class="draft-hint">
+          基于 v{{ latestDraft.base_version_no || '-' }} 保存，状态：
+          {{ latestDraft.status }}
+          <span v-if="hasUnsavedDraftChanges"> · 有未保存修改</span>
+        </div>
+
+        <Space class="draft-actions" wrap>
+          <Button :icon="h(SaveOutlined)" :loading="draftSaving" @click="saveRuleDraft">
+            保存草稿
+          </Button>
+          <Button :loading="draftTesting" @click="testRuleDraft(10)">
+            用草稿跑10条
+          </Button>
+          <Button :loading="draftTesting" @click="testRuleDraft(50)">
+            用草稿跑50条
+          </Button>
+          <Button
+            danger
+            type="primary"
+            :disabled="!latestDraft || hasUnsavedDraftChanges"
+            :icon="h(CheckOutlined)"
+            :loading="draftPublishing"
+            @click="publishRuleDraft"
+          >
+            发布为新版本
+          </Button>
+        </Space>
+      </template>
+      <Empty v-else description="请选择一条业务规则" />
+    </Drawer>
   </div>
 </template>
 
@@ -1521,6 +1713,9 @@ watch(
   font-weight: 600;
   flex-direction: column;
   gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .batch-list-item {
@@ -1531,97 +1726,41 @@ watch(
   margin-top: 10px;
 }
 
-.result-card {
-  min-height: 520px;
-}
-
-.result-heading {
-  align-items: flex-start;
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.result-topic {
-  color: var(--maga-text, #1f2937);
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1.45;
-}
-
-.result-subtitle {
-  color: var(--maga-text-muted, #667085);
-  font-size: 12px;
-  margin-top: 4px;
-}
-
-.metric-row {
-  margin-top: 0;
-}
-
-.metric-row :deep(.ant-statistic) {
-  background: var(--maga-surface-soft, #f8fafc);
-  border: 1px solid var(--maga-border, #edf0f5);
-  border-radius: 8px;
-  padding: 10px 12px;
-}
-
-.metric-row :deep(.ant-statistic-title) {
-  color: var(--maga-text-muted, #667085);
-  font-size: 12px;
-  margin-bottom: 4px;
-}
-
-.metric-row :deep(.ant-statistic-content) {
-  color: var(--maga-text, #1f2937);
-  font-size: 20px;
-  line-height: 1.35;
-}
-
-.result-list {
-  margin-top: 16px;
-}
-
-.content-list-item {
-  padding: 0 0 12px;
-}
-
-.content-item {
-  border: 1px solid var(--maga-border, #edf0f5);
-  border-radius: 8px;
-  padding: 14px 16px;
-  width: 100%;
-}
-
-.content-item.failed {
-  background: var(--maga-error-soft, #fff7f7);
-  border-color: var(--maga-error-border, #ffd6d6);
-}
-
-.content-item-header {
-  align-items: flex-start;
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.content-item h3 {
-  color: var(--maga-text, #262626);
-  font-size: 16px;
-  line-height: 1.5;
-  margin: 0 0 8px;
-}
-
-.content-body {
-  color: var(--maga-text, #262626);
-  line-height: 1.8;
-  white-space: pre-wrap;
+.rule-list-card {
+  min-height: 620px;
 }
 
 .diagnostics-row {
   margin-top: 16px;
+}
+
+.batch-detail-card {
+  min-height: 420px;
+}
+
+.batch-detail-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(180px, 2fr) repeat(5, minmax(96px, 1fr));
+  margin-bottom: 14px;
+}
+
+.batch-detail-table {
+  margin-top: 4px;
+}
+
+.batch-body-cell {
+  color: var(--maga-text, #1f2937);
+  line-height: 1.65;
+  max-height: 88px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.batch-error-cell {
+  color: var(--maga-error, #cf1322);
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .corpus-cell {
@@ -1635,11 +1774,65 @@ watch(
   -webkit-line-clamp: 3;
 }
 
+.draft-meta {
+  background: var(--maga-surface-soft, #f8fafc);
+  border: 1px solid var(--maga-border, #edf0f5);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  padding: 12px;
+  width: 100%;
+}
+
+.draft-title-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.draft-title-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.draft-section {
+  margin-top: 16px;
+}
+
+.readonly-corpus {
+  background: var(--maga-surface-soft, #f8fafc);
+  border: 1px solid var(--maga-border, #edf0f5);
+  border-radius: 8px;
+  color: var(--maga-text, #1f2937);
+  line-height: 1.7;
+  max-height: 180px;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.draft-hint {
+  color: var(--maga-text-muted, #667085);
+  font-size: 12px;
+  margin-top: 12px;
+}
+
+.draft-actions {
+  border-top: 1px solid var(--maga-border, #edf0f5);
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
 .muted {
   color: var(--maga-text-muted, #8c8c8c);
   display: block;
   font-size: 12px;
   margin-top: 2px;
+}
+
+.history-toggle-label {
+  color: var(--maga-text-muted, #667085);
+  font-size: 12px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1658,9 +1851,7 @@ watch(
 }
 
 @media (max-width: 768px) {
-  .page-toolbar,
-  .result-heading,
-  .content-item-header {
+  .page-toolbar {
     align-items: stretch;
     flex-direction: column;
   }

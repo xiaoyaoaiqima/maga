@@ -883,7 +883,7 @@ watch(
 
           <Card v-else :bordered="false">
             <Empty
-              description="暂无生成结果，请先在生产工作台上传规则包并生成"
+              description="暂无生成结果，请先在生产工作台上传业务规则并生成"
             />
           </Card>
         </Spin>

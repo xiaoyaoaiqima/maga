@@ -13,11 +13,16 @@ from app.schemas.assets import (
     AssetChangeProposalResponse,
     AssetChangeRequestCreate,
     AssetChangeRequestResponse,
+    CommentAngleRuleDraftPublish,
+    CommentAngleRuleDraftPublishResponse,
+    CommentAngleRuleDraftResponse,
+    CommentAngleRuleDraftSave,
     AssetGenerationOptionsResponse,
     AssetImportResponse,
     AssetImportRunResponse,
     AssetRegistryResponse,
     AssetRegistrySummaryResponse,
+    AssetVisibilityUpdate,
     SystemPromptKeywordAssetResponse,
     SystemPromptKeywordExportResponse,
     SystemPromptKeywordPreviewRequest,
@@ -25,7 +30,7 @@ from app.schemas.assets import (
     SystemPromptKeywordRollback,
     SystemPromptKeywordUpdate,
 )
-from app.services.asset_service import AssetService, normalize_asset_content
+from app.services.asset_service import AssetService, comment_angle_rule_draft_response, normalize_asset_content
 from app.services.activity_quality_guard_service import resolve_quality_guard_profile
 from app.services.comment_angle_rule_service import (
     COMMENT_ANGLE_RULE_ASSET_TYPE,
@@ -57,10 +62,16 @@ async def list_assets(
     asset_type: str | None = Query(default=None),
     asset_key: str | None = Query(default=None),
     asset_stage: str | None = Query(default="production"),
+    include_hidden: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ):
     service = AssetService(db)
-    assets = await service.list_assets(asset_type=asset_type, asset_key=asset_key, asset_stage=asset_stage)
+    assets = await service.list_assets(
+        asset_type=asset_type,
+        asset_key=asset_key,
+        asset_stage=asset_stage,
+        include_hidden=include_hidden,
+    )
     return ResponseData(
         code=200,
         message="success",
@@ -73,10 +84,16 @@ async def list_asset_summaries(
     asset_type: str | None = Query(default=None),
     asset_key: str | None = Query(default=None),
     asset_stage: str | None = Query(default="production"),
+    include_hidden: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ):
     service = AssetService(db)
-    assets = await service.list_assets(asset_type=asset_type, asset_key=asset_key, asset_stage=asset_stage)
+    assets = await service.list_assets(
+        asset_type=asset_type,
+        asset_key=asset_key,
+        asset_stage=asset_stage,
+        include_hidden=include_hidden,
+    )
     return ResponseData(
         code=200,
         message="success",
@@ -92,6 +109,7 @@ async def list_asset_summaries(
                 source_name=asset.source_name,
                 source_hash=asset.source_hash,
                 item_count=_asset_item_count(asset.content_json),
+                hidden=_asset_is_hidden(asset),
                 created_by=asset.created_by,
                 create_time=asset.create_time,
                 update_time=asset.update_time,
@@ -515,6 +533,78 @@ async def create_candidate_asset(payload: AssetCandidateCreate, db: AsyncSession
     )
 
 
+@router.get("/comment-angle-rule-drafts", response_model=ResponseData)
+async def list_comment_angle_rule_drafts(
+    asset_key: str = Query(..., min_length=1),
+    rule_id: str | None = Query(default=None),
+    source_row_no: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    drafts = await service.list_comment_angle_rule_drafts(
+        asset_key=asset_key,
+        rule_id=rule_id,
+        source_row_no=source_row_no,
+        limit=limit,
+    )
+    return ResponseData(
+        code=200,
+        message="success",
+        data=[
+            CommentAngleRuleDraftResponse(**comment_angle_rule_draft_response(draft)).model_dump(mode="json")
+            for draft in drafts
+        ],
+    )
+
+
+@router.post("/comment-angle-rule-drafts", response_model=ResponseData)
+async def save_comment_angle_rule_draft(payload: CommentAngleRuleDraftSave, db: AsyncSession = Depends(get_db)):
+    service = AssetService(db)
+    try:
+        draft = await service.save_comment_angle_rule_draft(payload)
+        await db.commit()
+        await db.refresh(draft)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ResponseData(
+        code=200,
+        message="success",
+        data=CommentAngleRuleDraftResponse(**comment_angle_rule_draft_response(draft)).model_dump(mode="json"),
+    )
+
+
+@router.post("/comment-angle-rule-drafts/{draft_id}/publish", response_model=ResponseData)
+async def publish_comment_angle_rule_draft(
+    draft_id: int,
+    payload: CommentAngleRuleDraftPublish,
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    try:
+        draft, asset = await service.publish_comment_angle_rule_draft(
+            draft_id,
+            created_by=payload.created_by or "maga-operator",
+        )
+        if draft is None or asset is None:
+            raise HTTPException(status_code=404, detail="draft not found")
+        await db.commit()
+        await db.refresh(draft)
+        await db.refresh(asset)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ResponseData(
+        code=200,
+        message="success",
+        data=CommentAngleRuleDraftPublishResponse(
+            draft=CommentAngleRuleDraftResponse(**comment_angle_rule_draft_response(draft)),
+            asset=AssetRegistryResponse.model_validate(asset),
+        ).model_dump(mode="json"),
+    )
+
+
 @router.get("/{asset_type}/{asset_key}", response_model=ResponseData)
 async def get_latest_asset(
     asset_type: str,
@@ -532,6 +622,34 @@ async def get_latest_asset(
         code=200,
         message="success",
         data=response_data,
+    )
+
+
+@router.patch("/{asset_type}/{asset_key}/visibility", response_model=ResponseData)
+async def update_asset_visibility(
+    asset_type: str,
+    asset_key: str,
+    payload: AssetVisibilityUpdate,
+    asset_stage: str | None = Query(default="production"),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    asset = await service.update_asset_visibility(
+        asset_type,
+        asset_key,
+        hidden=payload.hidden,
+        reason=payload.reason,
+        asset_stage=asset_stage,
+        updated_by=payload.updated_by,
+    )
+    if asset is None:
+        raise HTTPException(status_code=404, detail="asset not found")
+    await db.commit()
+    await db.refresh(asset)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetRegistryResponse.model_validate(asset).model_dump(mode="json"),
     )
 
 
@@ -580,3 +698,9 @@ async def apply_change_proposal(proposal_id: int, db: AsyncSession = Depends(get
 def _asset_item_count(content: dict | None) -> int | None:
     items = (content or {}).get("items")
     return len(items) if isinstance(items, list) else None
+
+
+def _asset_is_hidden(asset) -> bool:
+    metadata = asset.metadata_json or {}
+    content = asset.content_json or {}
+    return bool(metadata.get("hidden") or content.get("hidden"))

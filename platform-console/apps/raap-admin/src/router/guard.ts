@@ -81,6 +81,14 @@ function is_backend_unreachable(error: any): boolean {
   return false;
 }
 
+function has_route_authority(
+  authority: string[] | undefined,
+  roles: string[] | undefined,
+): boolean {
+  if (!authority?.length) return true;
+  return (roles || []).some((role) => authority.includes(role));
+}
+
 /**
  * 通用守卫配置
  * @param router
@@ -161,6 +169,18 @@ function setupAccessGuard(router: Router) {
       return to;
     }
 
+    // 路由层二次校验，避免通过直接输入 URL 绕过侧栏菜单的 admin 可见性限制。
+    if (
+      accessStore.isAccessChecked &&
+      !has_route_authority(to.meta.authority, userStore.userInfo?.roles)
+    ) {
+      message.warning('当前账号无权访问该页面');
+      return {
+        path: preferences.app.defaultHomePath,
+        replace: true,
+      };
+    }
+
     // 是否已经生成过动态路由。MAGA 菜单由前端路由生成，若持久化状态里菜单为空，
     // 必须重新生成，否则侧栏会渲染成空白。
     if (accessStore.isAccessChecked && accessStore.accessMenus.length > 0) {
@@ -178,6 +198,14 @@ function setupAccessGuard(router: Router) {
         authStore.fetchSystemInfo(),
       ]);
       const userRoles = userInfo.roles ?? [];
+
+      if (!has_route_authority(to.meta.authority, userRoles)) {
+        message.warning('当前账号无权访问该页面');
+        return {
+          path: preferences.app.defaultHomePath,
+          replace: true,
+        };
+      }
 
       // 生成菜单和路由
       const { accessibleMenus, accessibleRoutes } = await generateAccess({

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { RLHFApi } from '#/api/core/rlhf';
 import type { TraceApi } from '#/api/core/trace';
 

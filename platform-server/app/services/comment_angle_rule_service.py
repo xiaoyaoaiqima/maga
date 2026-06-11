@@ -89,7 +89,7 @@ async def import_comment_angle_rule_set(
     asset = AssetRegistry(
         asset_type=COMMENT_ANGLE_RULE_ASSET_TYPE,
         asset_key=normalized_asset_key,
-        display_name=display_name or "源悦-评论（评论切角）",
+        display_name=display_name or "源悦-业务规则（评论切角）",
         version_no=await _next_asset_version(db, COMMENT_ANGLE_RULE_ASSET_TYPE, normalized_asset_key),
         status="active",
         asset_stage="production",

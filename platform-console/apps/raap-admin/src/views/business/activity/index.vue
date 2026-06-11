@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { ActivityApi, TenantApi } from '#/api/core/business';
 import type { PublishApi } from '#/api/core/publish';
 

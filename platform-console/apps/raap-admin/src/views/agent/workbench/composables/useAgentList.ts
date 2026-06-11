@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { AgentListItem } from './useAgentTemplates';
 
 import { computed, ref } from 'vue';

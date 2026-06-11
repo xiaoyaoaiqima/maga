@@ -137,6 +137,16 @@ async def asset_client():
                     created_by="test",
                 ),
                 AssetRegistry(
+                    asset_type="comment_angle_rule_set",
+                    asset_key="hidden_probe_rule",
+                    display_name="隐藏调试评论规则",
+                    version_no=1,
+                    status="active",
+                    content_json={"items": [{"comment_angle": "调试切角", "corpus": "仅用于调试"}]},
+                    metadata_json={"hidden": True, "visibility_reason": "probe"},
+                    created_by="test",
+                ),
+                AssetRegistry(
                     asset_type="painpoint_model",
                     asset_key="yuanyue",
                     display_name="源悦候选扩展主题",
@@ -230,6 +240,52 @@ async def test_asset_summary_and_import_runs(asset_client):
 
 
 @pytest.mark.asyncio
+async def test_asset_summary_hides_debug_rules_by_default(asset_client):
+    default_response = await asset_client.get(
+        "/api/v1/assets/summary",
+        params={"asset_type": "comment_angle_rule_set"},
+    )
+    assert default_response.status_code == 200
+    default_data = default_response.json()["data"]
+    assert all(item["asset_key"] != "hidden_probe_rule" for item in default_data)
+
+    hidden_response = await asset_client.get(
+        "/api/v1/assets/summary",
+        params={"asset_type": "comment_angle_rule_set", "include_hidden": True},
+    )
+    assert hidden_response.status_code == 200
+    hidden_data = hidden_response.json()["data"]
+    hidden_rule = next(item for item in hidden_data if item["asset_key"] == "hidden_probe_rule")
+    assert hidden_rule["hidden"] is True
+
+
+@pytest.mark.asyncio
+async def test_asset_visibility_can_be_updated(asset_client):
+    update_response = await asset_client.patch(
+        "/api/v1/assets/brand_profile/other-brand/visibility",
+        json={"hidden": True, "reason": "debug", "updated_by": "ops"},
+    )
+    assert update_response.status_code == 200
+    updated = update_response.json()["data"]
+    assert updated["metadata_json"]["hidden"] is True
+    assert updated["metadata_json"]["visibility_reason"] == "debug"
+
+    default_response = await asset_client.get(
+        "/api/v1/assets/summary",
+        params={"asset_type": "brand_profile"},
+    )
+    default_keys = {item["asset_key"] for item in default_response.json()["data"]}
+    assert "other-brand" not in default_keys
+
+    hidden_response = await asset_client.get(
+        "/api/v1/assets/summary",
+        params={"asset_type": "brand_profile", "include_hidden": True},
+    )
+    hidden_keys = {item["asset_key"] for item in hidden_response.json()["data"]}
+    assert "other-brand" in hidden_keys
+
+
+@pytest.mark.asyncio
 async def test_generation_options_are_extracted_from_uploaded_assets(asset_client):
     response = await asset_client.get("/api/v1/assets/generation-options", params={"asset_key": "yuanyue"})
     assert response.status_code == 200
@@ -275,33 +331,38 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
     assert fallback["content_json"]["schema_version"] == "2"
     fallback_categories = fallback["content_json"]["categories"]
     assert len(fallback_categories) >= 6
-    assert [item["category_name"] for item in fallback_categories[:3]] == [
+    fallback_by_code = {item["category_code"]: item for item in fallback_categories}
+    assert [item["category_name"] for item in fallback_categories[:4]] == [
+        "生成要求",
         "人设",
         "生文指令",
         "生评论指令",
     ]
-    assert fallback_categories[1]["applicable_content_types"] == ["article"]
-    assert fallback_categories[2]["applicable_content_types"] == ["comment"]
-    assert fallback_categories[-2]["category_name"] == "帖子格式控制"
-    assert fallback_categories[-2]["applicable_content_types"] == ["article"]
-    assert fallback_categories[-2]["sub_keywords"][0]["keyword_name"] == "短帖干净"
-    assert fallback_categories[-1]["category_name"] == "评论格式控制"
-    assert fallback_categories[-1]["applicable_content_types"] == ["comment"]
-    assert [item["keyword_name"] for item in fallback_categories[-1]["sub_keywords"]] == [
+    assert fallback_by_code["comment_generation_requirement"]["applicable_content_types"] == ["comment"]
+    assert fallback_by_code["comment_generation_requirement"]["selection_mode"] == "fixed"
+    assert "只输出评论正文" in fallback_by_code["comment_generation_requirement"]["sub_keywords"][0]["corpus"][0]
+    assert fallback_by_code["writing_instruction"]["applicable_content_types"] == ["article"]
+    assert fallback_by_code["comment_writing_instruction"]["applicable_content_types"] == ["comment"]
+    assert fallback_by_code["article_format_control"]["category_name"] == "帖子格式控制"
+    assert fallback_by_code["article_format_control"]["applicable_content_types"] == ["article"]
+    assert fallback_by_code["article_format_control"]["sub_keywords"][0]["keyword_name"] == "短帖干净"
+    assert fallback_by_code["comment_format_control"]["category_name"] == "评论格式控制"
+    assert fallback_by_code["comment_format_control"]["applicable_content_types"] == ["comment"]
+    assert [item["keyword_name"] for item in fallback_by_code["comment_format_control"]["sub_keywords"]] == [
         "8-16字",
         "10-20字",
         "21-30字少量",
         "21-35字",
         "21-50字",
     ]
-    assert fallback_categories[3]["sub_keywords"][0]["keyword_name"] == "随机发散"
-    assert "离散运动" in fallback_categories[3]["sub_keywords"][0]["corpus"][0]
-    assert "至少一半在8到20字" in fallback_categories[3]["sub_keywords"][2]["corpus"][0]
-    assert "21到30字" in fallback_categories[-1]["sub_keywords"][2]["corpus"][0]
-    assert "21到35字" in fallback_categories[-1]["sub_keywords"][3]["corpus"][0]
-    assert "21到50字" in fallback_categories[-1]["sub_keywords"][4]["corpus"][0]
-    assert "剧情锚点" not in fallback_categories[-1]["sub_keywords"][4]["corpus"][0]
-    assert "门店活动" not in fallback_categories[-1]["sub_keywords"][4]["corpus"][0]
+    assert fallback_by_code["perturbation_rule"]["sub_keywords"][0]["keyword_name"] == "随机发散"
+    assert "离散运动" in fallback_by_code["perturbation_rule"]["sub_keywords"][0]["corpus"][0]
+    assert "至少一半在8到20字" in fallback_by_code["perturbation_rule"]["sub_keywords"][2]["corpus"][0]
+    assert "21到30字" in fallback_by_code["comment_format_control"]["sub_keywords"][2]["corpus"][0]
+    assert "21到35字" in fallback_by_code["comment_format_control"]["sub_keywords"][3]["corpus"][0]
+    assert "21到50字" in fallback_by_code["comment_format_control"]["sub_keywords"][4]["corpus"][0]
+    assert "剧情锚点" not in fallback_by_code["comment_format_control"]["sub_keywords"][4]["corpus"][0]
+    assert "门店活动" not in fallback_by_code["comment_format_control"]["sub_keywords"][4]["corpus"][0]
 
     payload = {
         "asset_key": "default_content_generation_keywords",
@@ -741,6 +802,105 @@ async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
     assert asset["content_json"]["rule_type"] == "comment_angle"
     assert asset["content_json"]["items"][0]["comment_angle"] == "整体适应"
     assert asset["content_json"]["items"][0]["examples"][0] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
+
+
+@pytest.mark.asyncio
+async def test_comment_angle_rule_draft_save_list_and_publish(asset_client):
+    csv_content = "\n".join(
+        [
+            "评论切角,语料",
+            '"奶宝找到妈妈","奶宝找到妈妈：',
+            "",
+            "示例：",
+            '- 找到了找到了，我家娃终于肯吃饭了"',
+            '"艾尔博士讲A1/A2型奶牛","艾尔博士讲A1/A2型奶牛：',
+            "",
+            "示例：",
+            '- 娃听艾尔博士讲完，又催我去门店看看活动"',
+            "",
+        ]
+    )
+    import_response = await asset_client.post(
+        "/api/v1/assets/imports/comment-angle-rule-set",
+        data={
+            "asset_key": "a2_plot_discussion_comment",
+            "created_by": "ops",
+            "display_name": "A2剧情讨论评论",
+        },
+        files={"file": ("剧情讨论评论切角.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+    assert import_response.status_code == 200
+
+    draft_corpus = "\n".join(
+        [
+            "艾尔博士讲A1/A2型奶牛：",
+            "",
+            "示例：",
+            "- 娃听艾尔博士讲A1/A2型奶牛，正好我路过门店补奶粉",
+            "- 群里有人晒对讲机，我准备带娃去门店续上奶粉",
+        ]
+    )
+
+    save_response = await asset_client.post(
+        "/api/v1/assets/comment-angle-rule-drafts",
+        json={
+            "asset_key": "a2_plot_discussion_comment",
+            "rule_id": "comment_angle_002",
+            "draft_corpus": draft_corpus,
+            "created_by": "ops",
+        },
+    )
+    assert save_response.status_code == 200
+    draft = save_response.json()["data"]
+    assert draft["status"] == "draft"
+    assert draft["base_version_no"] == 1
+    assert draft["comment_angle"] == "艾尔博士讲A1/A2型奶牛"
+    assert draft["original_corpus"].startswith("艾尔博士讲A1/A2型奶牛")
+    assert "路过门店补奶粉" in draft["draft_corpus"]
+
+    list_response = await asset_client.get(
+        "/api/v1/assets/comment-angle-rule-drafts",
+        params={
+            "asset_key": "a2_plot_discussion_comment",
+            "rule_id": "comment_angle_002",
+        },
+    )
+    assert list_response.status_code == 200
+    drafts = list_response.json()["data"]
+    assert [item["id"] for item in drafts] == [draft["id"]]
+
+    before_publish = await asset_client.get(
+        "/api/v1/assets/comment_angle_rule_set/a2_plot_discussion_comment"
+    )
+    before_asset = before_publish.json()["data"]
+    assert before_asset["version_no"] == 1
+    assert "路过门店补奶粉" not in before_asset["content_json"]["items"][1]["corpus"]
+
+    publish_response = await asset_client.post(
+        f"/api/v1/assets/comment-angle-rule-drafts/{draft['id']}/publish",
+        json={"created_by": "ops"},
+    )
+    assert publish_response.status_code == 200
+    published = publish_response.json()["data"]
+    assert published["draft"]["status"] == "applied"
+    assert published["asset"]["version_no"] == 2
+    assert published["asset"]["source_name"] == f"comment_angle_rule_draft:{draft['id']}"
+    assert published["asset"]["metadata_json"]["last_rule_draft_id"] == draft["id"]
+
+    items = published["asset"]["content_json"]["items"]
+    assert items[0]["corpus"] == before_asset["content_json"]["items"][0]["corpus"]
+    assert items[1]["corpus"] == draft_corpus
+    assert items[1]["examples"] == [
+        "娃听艾尔博士讲A1/A2型奶牛，正好我路过门店补奶粉",
+        "群里有人晒对讲机，我准备带娃去门店续上奶粉",
+    ]
+
+    latest_response = await asset_client.get(
+        "/api/v1/assets/comment_angle_rule_set/a2_plot_discussion_comment"
+    )
+    latest = latest_response.json()["data"]
+    assert latest["version_no"] == 2
+    assert latest["content_json"]["items"][1]["corpus"] == draft_corpus
 
 
 @pytest.mark.asyncio

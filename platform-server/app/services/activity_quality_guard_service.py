@@ -41,6 +41,7 @@ A2_SENTIMENT_COMMENT_FORBIDDEN_TERMS = (
     "猜",
     "抱娃",
     "睡不着",
+    "直接着喝",
     "专家",
     "专业指标",
     "盲信",
@@ -298,10 +299,6 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
             "新西兰报告标准": "报告里",
             "高于中国标准": "标准细节更值得看",
             "全球最严格": "标准看着更细",
-            "0.03这点": "蜡样检测0.03这点",
-            "0.03这个细节": "蜡样检测0.03这个细节",
-            "0.03这个数值": "蜡样检测0.03这个数值",
-            "0.03这条线": "报告里那项0.03",
             "0.03报告": "蜡样检测0.03报告",
             "爱他美0.03": "爱他美样批也看，a2报告里那项0.03",
             "达能0.03": "达能也看，a2报告里那项0.03",
@@ -771,6 +768,8 @@ def _collapse_repeated_activity_terms(text: str) -> str:
     value = str(text or "")
     value = re.sub(r"扫物流码底(?:物流码|码)?", "扫罐底物流码", value)
     value = re.sub(r"物流码底(?:物流码|码)?", "罐底物流码", value)
+    value = re.sub(r"物流码码", "物流码", value)
+    value = re.sub(r"物流码(?:那个|这个)码", "物流码", value)
     value = re.sub(r"物流码(?:那个|这个|这边|这里)?物流码", "物流码", value)
     for term in ("物流码", "批次报告", "检测报告", "蜡样检测", "报告里那项"):
         value = re.sub(f"(?:{re.escape(term)}){{2,}}", term, value)
@@ -780,6 +779,10 @@ def _collapse_repeated_activity_terms(text: str) -> str:
 def _repair_a2_003_reference(text: str) -> str:
     value = str(text or "")
     competitor = r"(爱他美|达能|美素|皇家美素|皇美|雀巢|超启能恩)"
+    value = re.sub(r"(?<!<)(?<!小于)0\.03这点", "蜡样检测0.03这点", value)
+    value = re.sub(r"(?<!<)(?<!小于)0\.03这个细节", "蜡样检测0.03这个细节", value)
+    value = re.sub(r"(?<!<)(?<!小于)0\.03这个数值", "蜡样检测0.03这个数值", value)
+    value = re.sub(r"(?<!<)(?<!小于)0\.03这条线", "报告里那项0.03", value)
     value = re.sub(rf"(?:拿|把){competitor}也看，", r"\1也看，", value)
     value = re.sub(
         rf"{competitor}(?:和|跟)a2的(?:蜡样检测)?(?:报告里那项)?0\.03(?:报告)?",
@@ -817,7 +820,7 @@ def _repair_a2_003_reference(text: str) -> str:
         value,
     )
     if "0.03" in value and not A2_003_CONTEXT_PATTERN.search(value):
-        value = value.replace("0.03", "报告里那项0.03", 1)
+        value = re.sub(r"(?<!<)(?<!小于)0\.03", "报告里那项0.03", value, count=1)
     value = value.replace("爱他美也看，a2报告里那项0.03", "爱他美样批也看，a2报告里那项0.03")
     return value
 
@@ -923,7 +926,12 @@ def _a2_plot_discussion_item_issues(body: str) -> list[dict[str, Any]]:
 def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     if keyword in A2_COMBO_KEYWORDS:
-        if not _has_any_marker(body, A2_BATCH_REPORT_MARKERS):
+        if (
+            not _has_any_marker(body, A2_BATCH_REPORT_MARKERS)
+            and not _a2_has_wax_standard_advantage_for_rule(item, body)
+            and not _a2_has_third_party_data_advantage_for_rule(item, body)
+            and not _a2_has_contextual_batch_detection_advantage(body)
+        ):
             issues.append(
                 {
                     "code": "activity_body_missing_combo_marker",
@@ -932,7 +940,12 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
                     "risk_level": "high",
                 }
             )
-        if not _a2_has_specific_advantage(body):
+        if (
+            not _a2_has_specific_advantage(body)
+            and not _a2_has_wax_standard_advantage_for_rule(item, body)
+            and not _a2_has_third_party_data_advantage_for_rule(item, body)
+            and not _a2_has_contextual_batch_detection_advantage(body)
+        ):
             issues.append(
                 {
                     "code": "activity_body_missing_a2_specific_advantage",
@@ -1180,6 +1193,51 @@ def _a2_has_specific_advantage(body: str) -> bool:
     return False
 
 
+def _a2_has_wax_standard_advantage_for_rule(item: Any, body: str) -> bool:
+    plan = _dict_value(getattr(item, "plan_json", None))
+    source = "\n".join(
+        str(value or "")
+        for value in (
+            getattr(item, "title", None),
+            plan.get("comment_angle"),
+            _corpus_heading(plan.get("corpus")),
+        )
+    )
+    if "蜡样检测0.03" not in source and "蜡样检测标准" not in source:
+        return False
+    normalized = re.sub(r"\s+", "", str(body or ""))
+    if not re.search(r"a2|A2|至初", normalized):
+        return False
+    if "0.03" not in normalized:
+        return False
+    return bool(re.search(r"蜡样|蜡毒|检测标准|未检出标准", normalized))
+
+
+def _a2_has_third_party_data_advantage_for_rule(item: Any, body: str) -> bool:
+    plan = _dict_value(getattr(item, "plan_json", None))
+    source = "\n".join(
+        str(value or "")
+        for value in (
+            getattr(item, "title", None),
+            plan.get("comment_angle"),
+            _corpus_heading(plan.get("corpus")),
+        )
+    )
+    if "对雀巢打新西兰三方和60多项" not in source:
+        return False
+    normalized = re.sub(r"\s+", "", str(body or ""))
+    if not re.search(r"a2|A2|至初", normalized):
+        return False
+    # 027 切角主打三方检测/实验室/60多项数据，允许不强制带扫码或批次报告。
+    third_party_markers = ("新西兰三方", "三方检测", "第三方检测", "第三方实验室", "三方报告", "第三方报告")
+    data_markers = ("60多项", "六十多项", "检测数据", "质检数据", "检测", "质检", "实验室", "数据")
+    if any(marker in normalized for marker in third_party_markers) and any(marker in normalized for marker in data_markers):
+        return True
+    if "60多项" in normalized and any(marker in normalized for marker in ("数据", "检测", "质检", "指标")):
+        return True
+    return False
+
+
 def _a2_has_batch_report_action_chain(normalized: str) -> bool:
     if not re.search(r"a2|A2|至初", normalized):
         return False
@@ -1261,6 +1319,60 @@ def _a2_has_contextual_report_advantage(normalized: str) -> bool:
     ):
         return True
     return False
+
+
+def _a2_has_contextual_batch_detection_advantage(body: str) -> bool:
+    normalized = re.sub(r"\s+", "", str(body or ""))
+    if not normalized:
+        return False
+    # A2 语境下的评论短句常省略品牌，只说“这批/这罐也测过”。
+    # 这里仅放行同时带补货/有货/转奶场景和正向决策感的批次检测表达。
+    batch_detection_patterns = (
+        r"(?:这批|这罐|新批次|新一批).{0,6}(?:也)?(?:有|做了|做过|测过|查过).{0,4}(?:检测|质检|测)",
+        r"(?:这批|这罐|新批次|新一批).{0,6}(?:都)?(?:检测|质检|测)(?:过|了)?",
+        r"(?:每批|批批).{0,6}(?:检测|质检|查|测|检|验)",
+    )
+    if not any(re.search(pattern, normalized) for pattern in batch_detection_patterns):
+        return False
+    scene_markers = (
+        "有货",
+        "到货",
+        "新货",
+        "补货",
+        "补a2",
+        "补A2",
+        "补一罐",
+        "补上",
+        "补了",
+        "囤",
+        "转奶",
+        "换奶",
+        "快喝完",
+        "下单",
+    )
+    confidence_markers = (
+        "安心",
+        "放心",
+        "踏实",
+        "有底",
+        "有谱",
+        "不纠结",
+        "靠谱",
+        "省心",
+        "敢补",
+        "敢囤",
+        "愿意补",
+        "想补",
+        "会补",
+        "下单",
+        "买得",
+    )
+    has_scene = any(marker in normalized for marker in scene_markers)
+    if not has_scene:
+        return False
+    if re.search(r"a2|A2|至初", normalized):
+        return True
+    return any(marker in normalized for marker in confidence_markers)
 
 
 def _a2_has_unconfirmed_competitor_batch_claim(body: str) -> bool:

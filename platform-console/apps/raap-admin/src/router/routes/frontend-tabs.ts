@@ -27,6 +27,7 @@ const frontendTabRoutes: RouteRecordRaw[] = [
       icon: 'lucide:message-square-check',
       order: -80,
       activeMenu: '/content-agent/feedback',
+      authority: ['admin'],
     },
   },
   {
@@ -39,6 +40,7 @@ const frontendTabRoutes: RouteRecordRaw[] = [
       icon: 'lucide:list-tree',
       order: -70,
       activeMenu: '/content-agent/system-prompt-keywords',
+      authority: ['admin'],
     },
   },
   {
@@ -50,6 +52,19 @@ const frontendTabRoutes: RouteRecordRaw[] = [
       icon: 'lucide:bot',
       order: -60,
       activeMenu: '/content-agent/experts',
+      authority: ['admin'],
+    },
+  },
+  {
+    name: 'SystemUserManagement',
+    path: '/system/user',
+    component: () => import('#/views/system/user/index.vue'),
+    meta: {
+      title: '用户管理',
+      icon: 'lucide:users',
+      order: -55,
+      activeMenu: '/system/user',
+      authority: ['admin'],
     },
   },
   {

@@ -33,6 +33,7 @@ describe('frontend controlled sidebar tabs', () => {
       '/content-agent/feedback',
       '/content-agent/system-prompt-keywords',
       '/content-agent/experts',
+      '/system/user',
       '/llm/provider',
     ]);
     expect(titles).toEqual([
@@ -40,6 +41,7 @@ describe('frontend controlled sidebar tabs', () => {
       '评价反馈',
       '系统关键词',
       '生文 Expert',
+      '用户管理',
       '模型配置',
     ]);
   });
@@ -81,6 +83,21 @@ describe('frontend controlled sidebar tabs', () => {
     expect(paths).not.toContain('/llm/stats');
   });
 
+  it('keeps admin-only operation tabs behind the admin authority', () => {
+    const adminOnlyPaths = new Set([
+      '/content-agent/feedback',
+      '/content-agent/system-prompt-keywords',
+      '/content-agent/experts',
+      '/system/user',
+    ]);
+
+    for (const route of frontendTabRoutes) {
+      if (adminOnlyPaths.has(route.path)) {
+        expect(route.meta?.authority).toEqual(['admin']);
+      }
+    }
+  });
+
   it('removes obsolete direct legacy routes from core routes', () => {
     const rootRoute = coreRoutes.find((route) => route.path === '/');
     const routePaths = rootRoute?.children?.map((route) => route.path) ?? [];
@@ -102,6 +119,9 @@ describe('frontend controlled sidebar tabs', () => {
     const modelManagement = rootRoute?.children?.find(
       (route) => route.path === 'llm/provider',
     );
+    const systemUser = rootRoute?.children?.find(
+      (route) => route.path === 'system/user',
+    );
     const modelRoutes = rootRoute?.children?.find(
       (route) => route.path === 'llm/routes',
     );
@@ -115,8 +135,25 @@ describe('frontend controlled sidebar tabs', () => {
     expect(contentWorkbench?.meta?.hideInMenu).toBe(true);
     expect(systemPromptKeywords?.meta?.hideInMenu).toBe(true);
     expect(contentExperts?.meta?.hideInMenu).toBe(true);
+    expect(systemUser?.meta?.hideInMenu).toBe(true);
     expect(modelManagement?.meta?.hideInMenu).toBe(true);
     expect(modelRoutes?.meta?.hideInMenu).toBe(true);
     expect(modelStats?.meta?.hideInMenu).toBe(true);
+  });
+
+  it('keeps admin-only core route mirrors behind the admin authority', () => {
+    const rootRoute = coreRoutes.find((route) => route.path === '/');
+    const adminOnlyCorePaths = new Set([
+      'content-agent/feedback',
+      'content-agent/system-prompt-keywords',
+      'content-agent/experts',
+      'system/user',
+    ]);
+
+    for (const route of rootRoute?.children || []) {
+      if (adminOnlyCorePaths.has(route.path)) {
+        expect(route.meta?.authority).toEqual(['admin']);
+      }
+    }
   });
 });

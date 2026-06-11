@@ -119,8 +119,8 @@ async function fetchRoles() {
     // 使用静态数据作为后备
     roles.value = [
       { id: 'role-admin', role_code: 'admin', role_name: '超级管理员' },
-      { id: 'role-developer', role_code: 'developer', role_name: '开发者' },
-      { id: 'role-viewer', role_code: 'viewer', role_name: '只读用户' },
+      { id: 'role-user', role_code: 'user', role_name: '用户' },
+      { id: 'role-guest', role_code: 'guest', role_name: '游客' },
     ];
   }
 }

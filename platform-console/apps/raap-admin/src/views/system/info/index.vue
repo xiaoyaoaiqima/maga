@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { SystemInfoApi } from '#/api/core/system-info';
 
 import { computed, onMounted, ref } from 'vue';

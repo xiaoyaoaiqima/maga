@@ -6,7 +6,7 @@
  * instead of breaking the console bundle.
  */
 
-const retiredMessage = '旧关键词策略系统已下线，请使用业务规则包和系统提示词关键词链路。';
+const retiredMessage = '旧关键词策略系统已下线，请使用业务规则和系统提示词关键词链路。';
 
 function retiredApi<T>(): Promise<T> {
   return Promise.reject(new Error(retiredMessage));

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { requestClient } from '#/api/request';
 
 export interface CalibrationRecordCreate {

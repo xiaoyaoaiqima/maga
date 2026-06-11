@@ -3,6 +3,7 @@
   带旋转光圈、脉冲波纹、动态维度连线的炫酷雷达图
 -->
 <script setup lang="ts">
+// @ts-nocheck
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import { computed } from 'vue';

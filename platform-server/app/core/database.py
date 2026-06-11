@@ -17,7 +17,10 @@ from app.core.config import settings
 from app.core.content_agent_defaults import MAGA_WORKER_INVOKE_URL
 from app.models.base import Base
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES  # noqa: F401 - registers clean MAGA models
-from app.services.content_agent_bootstrap_service import seed_default_content_agent_executors
+from app.services.content_agent_bootstrap_service import (
+    seed_default_content_agent_executors,
+    seed_default_realtime_chat_agent,
+)
 
 
 def _engine_options(url: str, *, analytics: bool = False) -> dict:
@@ -113,6 +116,7 @@ async def init_db() -> None:
                     executor_token=None,
                     overwrite=False,
                 )
+                await seed_default_realtime_chat_agent(conn, overwrite=False)
             return  # Success, exit function
         except OperationalError as e:
             if attempt < max_retries - 1:

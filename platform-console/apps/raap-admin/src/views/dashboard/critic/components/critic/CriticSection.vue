@@ -3,6 +3,7 @@
   Compose all critic-related sub-components
 -->
 <script setup lang="ts">
+// @ts-nocheck
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type {

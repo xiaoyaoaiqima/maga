@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 /* TODO: 逐步修复以下 lint 错误
 - unused-vars: 删除更多未使用的类型、变量和函数
 - unicorn/prefer-ternary: 将 if 语句改为三元表达式

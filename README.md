@@ -29,7 +29,7 @@ make dev
 make frontend-start
 ```
 
-`make dev` 默认不启动 Hermes/worker，生文由 `platform-server` 直连 OpenAI-compatible 大模型。只想重启 MAGA 后端栈并重新 seed schema 时也可以显式运行：
+`make dev` 默认不启动 Hermes/worker，生文由 `platform-server` 直连 OpenAI-compatible 大模型。Hermes 只保留为历史 demo/兼容验证链路，最新主流程不再使用它。只想重启 MAGA 后端栈并重新 seed schema 时也可以显式运行：
 
 ```bash
 make dev-restart
@@ -49,7 +49,7 @@ MAGA 当前通过 `executor_registry.invoke_url` 决定生文走向：
 MAGA 前端/接口
   -> /api/v1/content-agent/generation/start 或 /api/v1/content-agent/batches/start
   -> MAGA 创建 task/run/stage_call
-  -> 调用 executor_code=hermes_maga_worker，默认 invoke_url=llm://direct/content
+  -> 调用 executor_code=maga_direct_llm_executor，默认 invoke_url=llm://direct/content
   -> platform-server 本进程执行 content.generate / content.rewrite
   -> 返回 title/body，并在批量报告中展示审核原因、耗时和 stage trace
 ```
@@ -66,7 +66,7 @@ MAGA 当前第一阶段以 clean schema 为准，不依赖历史 Alembic 链初�
 make init-clean-schema
 ```
 
-`make init-clean-schema` 默认会写入 `hermes_maga_worker`，并把 `invoke_url` 指向 `llm://direct/content`。如果本地只想跑平台内置 mock：
+`make init-clean-schema` 默认会写入 `maga_direct_llm_executor`，并把 `invoke_url` 指向 `llm://direct/content`。如果本地只想跑平台内置 mock：
 
 ```bash
 MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
@@ -74,15 +74,15 @@ MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
 
 说明：后端应用启动时也会补一个不覆盖已有记录的 executor 兜底，代码常量默认是 `llm://direct/content`；推荐开发入口仍以 `make init-clean-schema` / `make dev` 的 seed 结果为准。
 
-## maga-worker
+## 历史 demo：maga-worker
 
-Hermes `maga-worker` 现在只作为兼容或对照链路，需要时可手动启动：
+Hermes `maga-worker` 现在只作为历史 demo、兼容或对照链路，最新内容生成主流程不再使用它。需要验证旧 HTTP Executor Protocol 时可手动启动：
 
 ```bash
 make worker-start
 ```
 
-默认监听 `http://127.0.0.1:8765`。如果要把生文路由切回 worker，可在 seed 时显式传入：
+默认监听 `http://127.0.0.1:8765`。如果要把生文路由临时切回 worker，可在 seed 时显式传入：
 
 ```bash
 MAGA_WORKER_INVOKE_URL=http://host.docker.internal:8765/invoke make init-clean-schema
@@ -92,6 +92,13 @@ MAGA_WORKER_INVOKE_URL=http://host.docker.internal:8765/invoke make init-clean-s
 
 ```bash
 MAGA_WORKER_RUNTIME_FAST_FAKE=1 make worker-start
+```
+
+生产 compose 中也把 `maga-worker` 放进了 `historical-demo` profile，默认不会启动：
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile historical-demo up -d maga-worker
 ```
 
 ## 常用命令

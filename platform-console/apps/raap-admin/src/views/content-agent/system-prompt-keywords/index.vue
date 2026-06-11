@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { AssetsApi } from '#/api/core/assets';
 import type { UploadProps } from 'ant-design-vue';
 

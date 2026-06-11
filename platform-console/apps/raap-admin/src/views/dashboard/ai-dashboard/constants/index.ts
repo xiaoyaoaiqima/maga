@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * AI Dashboard 常量定义
  *

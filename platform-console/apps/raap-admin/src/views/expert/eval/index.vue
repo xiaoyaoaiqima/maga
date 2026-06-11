@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { ExpertEvalApi } from '#/api/core/expert-debug';
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';

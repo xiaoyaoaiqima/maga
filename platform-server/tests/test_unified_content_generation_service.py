@@ -490,6 +490,11 @@ async def test_unified_generation_uses_a2_asset_keyword_selection_for_sentiment_
                             "applicable_content_types": ["comment"],
                             "sub_keywords": [
                                 {
+                                    "keyword_code": "natural_comment",
+                                    "keyword_name": "自然评论区表达",
+                                    "corpus": ["语言像妈妈在评论区顺手补一句，不写成广告口播。"],
+                                },
+                                {
                                     "keyword_code": "specific_comment_question",
                                     "keyword_name": "带着具体问题来",
                                     "corpus": ["把泛泛兴趣落到纸尿裤、擦屁屁、转奶第几天、喝奶后状态这类小观察上。"],
@@ -532,7 +537,7 @@ async def test_unified_generation_uses_a2_asset_keyword_selection_for_sentiment_
                 "quality_guard_profile_key": "a2_sentiment_comment_202606",
                 "keyword_selection": {
                     "persona": ["rational_comparer"],
-                    "comment_writing_instruction": ["light_comment_experience"],
+                    "comment_writing_instruction": ["natural_comment"],
                     "writing_method": ["plain_explain"],
                 },
                 "corpus": "转奶前看a2这罐对应批次的质检和蜡样检测报告。",
@@ -546,7 +551,8 @@ async def test_unified_generation_uses_a2_asset_keyword_selection_for_sentiment_
     assert "rational_comparer" in selected_codes
     assert "specific_comment_question" not in selected_codes
     assert "scene_detail" not in selected_codes
-    assert "light_comment_experience" in selected_codes
+    assert "light_comment_experience" not in selected_codes
+    assert "natural_comment" in selected_codes
     assert "plain_explain" in selected_codes
     prompt = snapshot.input_snapshot["rendered_prompt"]
     assert "臭臭" not in prompt

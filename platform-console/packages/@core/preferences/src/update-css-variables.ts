@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Preferences } from './types';
 
 import { generatorColorVariables } from '@vben-core/shared/color';

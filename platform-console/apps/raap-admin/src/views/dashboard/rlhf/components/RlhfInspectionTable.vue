@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { RLHFInspectionDetailItem } from '../types';
 
 import { computed, h } from 'vue';

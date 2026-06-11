@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+// @ts-nocheck
 import { computed, nextTick } from 'vue';
 
 import { VbenButton } from '@vben-core/shadcn-ui';

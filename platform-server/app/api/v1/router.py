@@ -26,6 +26,7 @@ def _include_clean_routes(api_router: APIRouter) -> None:
     from app.api.v1.endpoints import (
         assets,
         auth,
+        chat,
         content_agent,
         content_generation_experts,
         files,
@@ -36,6 +37,7 @@ def _include_clean_routes(api_router: APIRouter) -> None:
 
     api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
     api_router.include_router(health.router, tags=["health"])
+    api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
     api_router.include_router(content_agent.router, prefix="/content-agent", tags=["content-agent"])
     api_router.include_router(
         content_generation_experts.router,
@@ -60,6 +62,7 @@ def _include_full_routes(api_router: APIRouter) -> None:
         cache_monitor,
         calibration_records,
         calibration_tasks,
+        chat,
         compat_invoke,
         content_agent,
         content_generation_experts,
@@ -104,6 +107,7 @@ def _include_full_routes(api_router: APIRouter) -> None:
 
     # Include all endpoints
     api_router.include_router(health.router, tags=["health"])
+    api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
     api_router.include_router(cache_monitor.router, tags=["cache-monitor"])
     api_router.include_router(users.router, prefix="/users", tags=["users"])
     api_router.include_router(metrics.router)

@@ -28,7 +28,7 @@ const quickActions = [
   {
     key: 'strategy',
     title: '业务规则',
-    description: '管理活动级业务规则包',
+    description: '管理活动级业务规则',
     icon: ThunderboltOutlined,
     path: '/business-rules',
     color: '#52c41a',
@@ -153,10 +153,10 @@ function goToJobCreate() {
           <div class="guide-step">
             <div class="step-number">1</div>
             <div class="step-content">
-              <h4>配置关键词策略</h4>
-              <p>上传活动业务规则包，作为正式生成任务的规则来源</p>
+              <h4>配置业务规则</h4>
+              <p>上传活动业务规则，作为正式生成任务的规则来源</p>
               <Button type="link" @click="goToStrategy">
-                前往策略配置 <ArrowRightOutlined />
+                前往业务规则 <ArrowRightOutlined />
               </Button>
             </div>
           </div>

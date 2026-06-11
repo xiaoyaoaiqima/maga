@@ -27,6 +27,24 @@ from app.core.logger import logger
 
 class AuthService:
     """认证服务"""
+
+    DEFAULT_ROLE_DEFINITIONS = (
+        {
+            "role_code": "admin",
+            "role_name": "超级管理员",
+            "description": "系统超级管理员",
+        },
+        {
+            "role_code": "user",
+            "role_name": "用户",
+            "description": "普通系统用户",
+        },
+        {
+            "role_code": "guest",
+            "role_name": "游客",
+            "description": "游客账号，仅保留基础访问权限",
+        },
+    )
     
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -274,17 +292,22 @@ class AuthService:
     
     async def create_default_admin(self) -> Optional[SysUser]:
         """
-        创建默认管理员账号（如果不存在）
+        创建默认管理员账号（如果不存在），并补齐内置角色。
         
         Returns:
             创建的用户或 None
         """
-        # 检查是否已存在
+        default_roles = await self._ensure_default_roles()
+        admin_role = default_roles["admin"]
+
+        # 检查管理员账号是否已存在；角色要先补齐，避免老库因为 admin 已存在而缺少 user/guest。
         stmt = select(SysUser).where(SysUser.username == "admin")
         result = await self.db.execute(stmt)
         existing = result.scalar_one_or_none()
         
         if existing:
+            await self._ensure_user_role(existing.id, admin_role.id)
+            await self.db.commit()
             return None
         
         # 创建管理员用户
@@ -296,17 +319,7 @@ class AuthService:
             status=1
         )
         self.db.add(admin_user)
-        
-        # 创建管理员角色
-        admin_role = SysRole(
-            id=str(uuid.uuid4()),
-            role_code="admin",
-            role_name="超级管理员",
-            description="系统超级管理员",
-            status=1
-        )
-        self.db.add(admin_role)
-        
+
         # 关联用户角色
         user_role = SysUserRole(
             user_id=admin_user.id,
@@ -320,3 +333,44 @@ class AuthService:
         
         return admin_user
 
+    async def _ensure_default_roles(self) -> dict[str, SysRole]:
+        """确保用户管理下拉需要的内置角色存在，启动时可重复执行。"""
+        roles: dict[str, SysRole] = {}
+        for definition in self.DEFAULT_ROLE_DEFINITIONS:
+            stmt = select(SysRole).where(
+                and_(
+                    SysRole.role_code == definition["role_code"],
+                    SysRole.is_deleted == 0,
+                )
+            )
+            result = await self.db.execute(stmt)
+            role = result.scalar_one_or_none()
+            if role:
+                roles[definition["role_code"]] = role
+                continue
+
+            role = SysRole(
+                id=str(uuid.uuid4()),
+                role_code=definition["role_code"],
+                role_name=definition["role_name"],
+                description=definition["description"],
+                status=1,
+            )
+            self.db.add(role)
+            roles[definition["role_code"]] = role
+
+        await self.db.flush()
+        return roles
+
+    async def _ensure_user_role(self, user_id: str, role_id: str) -> None:
+        """确保指定用户拥有指定角色，避免老库管理员账号缺少 admin 角色。"""
+        stmt = select(SysUserRole).where(
+            and_(
+                SysUserRole.user_id == user_id,
+                SysUserRole.role_id == role_id,
+            )
+        )
+        result = await self.db.execute(stmt)
+        if result.scalar_one_or_none():
+            return
+        self.db.add(SysUserRole(user_id=user_id, role_id=role_id))

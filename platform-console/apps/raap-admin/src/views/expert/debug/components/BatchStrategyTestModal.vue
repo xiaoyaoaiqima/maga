@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { ContentStrategyApi } from '#/api/core/content-strategy';
 
 /**

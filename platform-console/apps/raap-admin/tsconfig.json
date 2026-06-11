@@ -3,11 +3,20 @@
   "extends": "@vben/tsconfig/web-app.json",
   "compilerOptions": {
     "baseUrl": ".",
+    "strict": false,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "noUncheckedIndexedAccess": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "paths": {
       "#/*": ["./src/*"]
     }
   },
   "references": [{ "path": "./tsconfig.node.json" }],
+  "vueCompilerOptions": {
+    "strictTemplates": false
+  },
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",

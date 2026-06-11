@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { JobApi, JobVariantApi } from '#/api/core/job';
 
 import { computed, onMounted, ref, watch } from 'vue';

@@ -4,10 +4,15 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
+from app.models.agent import Agent
 from app.models.content_agent import ContentFeedback, ExecutorRegistry
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 from app.models.base import Base
-from app.services.content_agent_bootstrap_service import seed_default_content_agent_executors
+from app.services.content_agent_bootstrap_service import (
+    DEFAULT_REALTIME_CHAT_AGENT_CODE,
+    seed_default_content_agent_executors,
+    seed_default_realtime_chat_agent,
+)
 from scripts.create_clean_schema import seed_clean_schema
 
 
@@ -38,6 +43,30 @@ async def test_seed_clean_schema_registers_maga_direct_llm_executor_executor():
     assert capabilities == {"asset.import", "content.generate", "content.rewrite"}
     assert "asset.query" not in capabilities
     assert "feedback.collect" not in capabilities
+
+
+@pytest.mark.asyncio
+async def test_seed_clean_schema_registers_default_realtime_chat_agent():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        tables = [Base.metadata.tables[name] for name in MAGA_CORE_TABLE_NAMES]
+        await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=tables))
+        await seed_clean_schema(conn, maga_worker_invoke_url="http://127.0.0.1:8765/invoke")
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        agent = await session.scalar(
+            select(Agent).where(Agent.agent_code == DEFAULT_REALTIME_CHAT_AGENT_CODE)
+        )
+
+    await engine.dispose()
+
+    assert agent is not None
+    assert agent.agent_type == "REALTIME_CHAT"
+    assert agent.enabled == 1
+    assert agent.publish_status == "PUBLISHED"
+    assert agent.default_model_code == "deepseek-v4-flash"
+    assert agent.default_config["system_prompt"]
 
 
 @pytest.mark.asyncio
@@ -122,3 +151,30 @@ async def test_startup_bootstrap_does_not_overwrite_existing_executor_url():
     assert executor is not None
     assert executor.invoke_url == "http://127.0.0.1:8765/invoke"
     assert executor.config_json == {"executor_token": "test-token"}
+
+
+@pytest.mark.asyncio
+async def test_startup_bootstrap_does_not_overwrite_existing_realtime_chat_agent():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        tables = [Base.metadata.tables[name] for name in MAGA_CORE_TABLE_NAMES]
+        await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=tables))
+        await seed_default_realtime_chat_agent(conn, overwrite=True)
+        await conn.execute(
+            Agent.__table__.update()
+            .where(Agent.agent_code == DEFAULT_REALTIME_CHAT_AGENT_CODE)
+            .values(default_model_code="custom-model", updated_by="operator")
+        )
+        await seed_default_realtime_chat_agent(conn, overwrite=False)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        agent = await session.scalar(
+            select(Agent).where(Agent.agent_code == DEFAULT_REALTIME_CHAT_AGENT_CODE)
+        )
+
+    await engine.dispose()
+
+    assert agent is not None
+    assert agent.default_model_code == "custom-model"
+    assert agent.updated_by == "operator"

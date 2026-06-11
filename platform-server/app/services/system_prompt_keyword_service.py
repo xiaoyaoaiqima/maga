@@ -308,7 +308,7 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                             "keyword_code": "natural_comment",
                             "keyword_name": "自然评论区表达",
                             "corpus": [
-                                "语言像妈妈在评论区顺手补一句，可以用同款、加一、我们家、刚转这种入口，不写成广告口播或完整科普段落。"
+                                "语言像妈妈在评论区顺手补一句，不写成广告口播或完整科普段落。"
                             ],
                         },
                         {

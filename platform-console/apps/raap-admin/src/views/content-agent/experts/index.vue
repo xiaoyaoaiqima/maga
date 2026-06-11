@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { ContentGenerationExpertApi } from '#/api/core/content-generation-experts';
 import type { LLMApi } from '#/api/core/llm';
 

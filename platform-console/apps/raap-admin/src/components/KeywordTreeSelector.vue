@@ -32,6 +32,6 @@ function close() {
     width="520px"
     @cancel="close"
   >
-    <Empty description="旧关键词树系统已下线，请使用业务规则包和系统提示词关键词链路。" />
+    <Empty description="旧关键词树系统已下线，请使用业务规则和系统提示词关键词链路。" />
   </Modal>
 </template>

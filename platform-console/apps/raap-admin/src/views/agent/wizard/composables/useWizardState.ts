@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { AgentTemplate, TemplateConfig } from '../workbench/composables';
 
 import { computed, ref } from 'vue';

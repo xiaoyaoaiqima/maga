@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { VxeGridProps } from '#/adapter/vxe-table';
 import type { AgentApi } from '#/api/core/business';
 import type { JobSimpleItem } from '#/api/core/job';

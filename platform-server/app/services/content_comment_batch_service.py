@@ -478,14 +478,14 @@ class ContentCommentBatchService:
         if not rules:
             return []
         rng = SystemRandom()
-        # 单切角测试批次会重复同一条规则，但每个 item 仍会重新随机抽示例。
+        # 单条业务规则（评论切角）测试批次会重复同一规则，但每个 item 仍会重新随机抽示例。
         return [rng.choice(rules) for _ in range(limit)]
 
     def _select_rules_even_repetition(self, rules: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
         if not rules:
             return []
         repeat_count = max(1, limit // len(rules))
-        # 活动抽样明确要求“每个切角 N 条”时，整轮重复规则，避免带放回抽样漏掉某个切角。
+        # 活动抽样明确要求“每条业务规则 N 条”时，整轮重复规则，避免带放回抽样漏掉某个切角。
         return [rule for _ in range(repeat_count) for rule in rules][:limit]
 
     def _plan_from_rule(

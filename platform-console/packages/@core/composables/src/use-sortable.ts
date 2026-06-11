@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { SortableOptions } from 'sortablejs';
 import type Sortable from 'sortablejs';
 

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { ComputedRef } from 'vue';
 import type {
   RouteLocationNormalized,

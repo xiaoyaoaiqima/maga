@@ -439,7 +439,7 @@ const openBusinessForbiddenTermModal = (
         h(
           'div',
           { class: 'business-forbidden-term-hint' },
-          '会保存到当前业务规则包的违禁词里，并刷新这篇内容的风险命中。',
+          '会保存到当前业务规则的违禁词里，并刷新这篇内容的风险命中。',
         ),
       ]),
     async onOk() {

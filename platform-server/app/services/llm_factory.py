@@ -62,6 +62,88 @@ class LLMFactory:
     DEFAULT_FALLBACK_API_KEY = ""
     # 默认兜底 base_url（无环境变量时使用）
     DEFAULT_FALLBACK_BASE_URL = "https://aihubmix.com/v1/chat/completions"
+
+    @staticmethod
+    async def _call_llm_direct(
+        config: Dict[str, Any],
+        system_prompt: str,
+        user_prompt: str,
+        functions: Optional[list] = None,
+        return_full_response: bool = False,
+    ) -> Union[str, Dict[str, Any]]:
+        """SDK/Dapr 不可用时使用 OpenAI-compatible HTTP 直连。"""
+        import httpx
+
+        llm_config = LLMFactory.get_llm_config(config)
+        api_key = llm_config.get("api_key")
+        base_url = ensure_chat_completions_endpoint(llm_config.get("base_url") or llm_config.get("endpoint") or "")
+        model = normalize_default_model(llm_config.get("model") or config.get("model") or DEFAULT_MODEL)
+        temperature = config.get("temperature", llm_config.get("temperature", DEFAULT_TEMPERATURE))
+        max_tokens = config.get("max_tokens", llm_config.get("max_tokens", DEFAULT_MAX_TOKENS))
+
+        if not api_key:
+            raise RuntimeError("未配置 API Key，无法调用模型")
+        if not base_url:
+            raise RuntimeError("未配置 base_url，无法调用模型")
+
+        headers = {"Authorization": f"Bearer {api_key}"}
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt or ""},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if functions:
+            payload["functions"] = functions
+
+        timeout_s = float(os.getenv("LLM_HTTP_TIMEOUT", "30"))
+        try:
+            async with httpx.AsyncClient(timeout=timeout_s) as client:
+                resp = await client.post(base_url, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.TimeoutException as e:
+            raise TimeoutError(f"LLM HTTP 调用超时 (timeout={timeout_s}s)") from e
+        except httpx.HTTPStatusError as e:
+            body = (e.response.text or "")[:300]
+            raise RuntimeError(f"LLM HTTP 调用失败 ({e.response.status_code}): {body}") from e
+        except httpx.RequestError as e:
+            raise RuntimeError(f"LLM HTTP 网络错误: {e}") from e
+        except ValueError as e:
+            raise RuntimeError(f"LLM HTTP 响应解析失败: {e}") from e
+
+        content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+
+        if not return_full_response:
+            return content
+
+        usage = data.get("usage", {})
+        provider_code = llm_config.get("provider") or os.getenv("LLM_PROVIDER", "openai")
+        return {
+            "content": content,
+            "model_code": model,
+            "provider_code": provider_code,
+            "usage": {
+                "input_tokens": usage.get("prompt_tokens", 0),
+                "output_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+            }
+        }
+
+    @staticmethod
+    def _can_fallback_to_direct(config: Dict[str, Any], exc: Exception) -> bool:
+        """只有本地 Dapr 路由发现失败且直连配置完整时才绕过 SDK。"""
+        message = str(exc)
+        has_direct_config = bool(config.get("api_key") and (config.get("base_url") or config.get("endpoint")))
+        is_route_discovery_error = (
+            "获取模型路由失败" in message
+            or "Dapr HTTP 调用失败" in message
+            or "/v1.0/invoke/" in message
+        )
+        return has_direct_config and is_route_discovery_error
     
     @staticmethod
     def get_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -186,63 +268,13 @@ class LLMFactory:
         """
         # 兼容：如果 raap_llm_sdk 不存在，则走 OpenAI 兼容 HTTP 直连（不依赖 build context）
         if not _check_sdk_available():
-            import httpx
-
-            llm_config = LLMFactory.get_llm_config(config)
-            api_key = llm_config.get("api_key")
-            base_url = ensure_chat_completions_endpoint(llm_config.get("base_url") or llm_config.get("endpoint") or "")
-            model = normalize_default_model(llm_config.get("model") or config.get("model") or DEFAULT_MODEL)
-            temperature = config.get("temperature", llm_config.get("temperature", DEFAULT_TEMPERATURE))
-            max_tokens = config.get("max_tokens", llm_config.get("max_tokens", DEFAULT_MAX_TOKENS))
-
-            if not api_key:
-                raise RuntimeError("未配置 API Key，无法调用模型")
-            if not base_url:
-                raise RuntimeError("未配置 base_url，无法调用模型")
-
-            headers = {"Authorization": f"Bearer {api_key}"}
-            payload = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt or ""},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            }
-            if functions:
-                payload["functions"] = functions
-
-            # 模型执行超时（秒）：默认 30s，可通过环境变量覆盖
-            timeout_s = float(os.getenv("LLM_HTTP_TIMEOUT", "30"))
-            try:
-                async with httpx.AsyncClient(timeout=timeout_s) as client:
-                    resp = await client.post(base_url, json=payload, headers=headers)
-                    resp.raise_for_status()
-                    data = resp.json()
-            except httpx.TimeoutException as e:
-                # 让上层能稳定识别并展示“超时”，避免 str(e) 为空导致日志不直观
-                raise TimeoutError(f"LLM HTTP 调用超时 (timeout={timeout_s}s)") from e
-            
-            content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
-            
-            if not return_full_response:
-                return content
-            
-            # 组装完整响应
-            usage = data.get("usage", {})
-            # 直连模式：从配置或环境变量获取 provider，避免返回 "unknown" 导致后续查询失败
-            provider_code = llm_config.get("provider") or os.getenv("LLM_PROVIDER", "openai")
-            return {
-                "content": content,
-                "model_code": model,
-                "provider_code": provider_code,
-                "usage": {
-                    "input_tokens": usage.get("prompt_tokens", 0),
-                    "output_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                }
-            }
+            return await LLMFactory._call_llm_direct(
+                config=config,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                functions=functions,
+                return_full_response=return_full_response,
+            )
         
         client = get_llm_client()
         
@@ -270,13 +302,25 @@ class LLMFactory:
                 expert_config_code=context.get("expert_config_code"),
             )
         
-        response = await client.invoke(
-            model_code=model_code,
-            messages=messages,
-            context=llm_context,
-            temperature=config.get("temperature", 0.7),
-            max_tokens=config.get("max_tokens", 1500),
-        )
+        try:
+            response = await client.invoke(
+                model_code=model_code,
+                messages=messages,
+                context=llm_context,
+                temperature=config.get("temperature", 0.7),
+                max_tokens=config.get("max_tokens", 1500),
+            )
+        except Exception as exc:
+            if not LLMFactory._can_fallback_to_direct(config, exc):
+                raise
+            logger.warning(f"[LLMFactory] SDK 路由不可用，降级为直连调用: {exc}")
+            return await LLMFactory._call_llm_direct(
+                config=config,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                functions=functions,
+                return_full_response=return_full_response,
+            )
         
         logger.info(
             f"[LLMFactory] LLM 调用成功: "

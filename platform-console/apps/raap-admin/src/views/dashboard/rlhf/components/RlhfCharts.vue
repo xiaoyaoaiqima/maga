@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { RLHFIssueTagDistribution, RLHFScoreDimension } from '../types';

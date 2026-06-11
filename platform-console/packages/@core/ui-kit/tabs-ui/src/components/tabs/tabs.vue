@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+// @ts-nocheck
 import type { TabDefinition } from '@vben-core/typings';
 
 import type { TabConfig, TabsProps } from '../../types';

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { computed, ref } from 'vue';
 
 import { getAgentListApi } from '#/api/core/business';

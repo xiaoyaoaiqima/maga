@@ -21,7 +21,12 @@ export namespace ContentAgentApi {
     comment_angle?: null | string;
     count?: number;
     executor_code?: string;
+    draft_corpus?: null | string;
+    draft_rule_id?: null | string;
+    draft_source_row_no?: null | number;
     quality_guard_profile_key?: null | string;
+    rule_id?: null | string;
+    source_row_no?: null | number;
     created_by?: null | string;
   }
 

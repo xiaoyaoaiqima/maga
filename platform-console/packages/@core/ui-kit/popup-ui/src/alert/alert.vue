@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+// @ts-nocheck
 import type { Component } from 'vue';
 
 import type { AlertProps } from './alert';

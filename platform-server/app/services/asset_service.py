@@ -1,6 +1,7 @@
 """Services for MAGA asset registry and Asset Steward proposal workflow."""
 from __future__ import annotations
 
+import copy
 import re
 from typing import Any
 
@@ -8,10 +9,12 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.maga_assets import AssetChangeProposal, AssetChangeRequest, AssetImportRun, AssetRegistry
+from app.services.comment_angle_rule_service import COMMENT_ANGLE_RULE_ASSET_TYPE
 from app.schemas.assets import (
     AssetCandidateCreate,
     AssetChangeProposalCreate,
     AssetChangeRequestCreate,
+    CommentAngleRuleDraftSave,
     AssetGenerationOptionsResponse,
 )
 
@@ -28,6 +31,7 @@ class AssetService:
         status: str = "active",
         asset_stage: str | None = "production",
         latest_only: bool = True,
+        include_hidden: bool = False,
     ) -> list[AssetRegistry]:
         stmt = select(AssetRegistry)
         if asset_type:
@@ -61,7 +65,11 @@ class AssetService:
             )
         stmt = stmt.order_by(AssetRegistry.asset_type, AssetRegistry.asset_key, AssetRegistry.version_no.desc())
         result = await self.db.execute(stmt)
-        return list(result.scalars().all())
+        assets = list(result.scalars().all())
+        if include_hidden:
+            return assets
+        # 历史 probe/focus 资产不删除，只通过 metadata_json.hidden 从运营默认视图隐藏。
+        return [asset for asset in assets if not _asset_is_hidden(asset)]
 
     async def get_latest_asset(
         self,
@@ -86,6 +94,28 @@ class AssetService:
             stmt
         )
         return result.scalar_one_or_none()
+
+    async def update_asset_visibility(
+        self,
+        asset_type: str,
+        asset_key: str,
+        *,
+        hidden: bool,
+        reason: str | None = None,
+        asset_stage: str | None = "production",
+        updated_by: str | None = "maga-operator",
+    ) -> AssetRegistry | None:
+        asset = await self.get_latest_asset(asset_type, asset_key, asset_stage=asset_stage)
+        if asset is None:
+            return None
+        metadata = dict(asset.metadata_json or {})
+        metadata["hidden"] = hidden
+        if reason:
+            metadata["visibility_reason"] = reason
+        if updated_by:
+            metadata["visibility_updated_by"] = updated_by
+        asset.metadata_json = metadata
+        return asset
 
     async def list_import_runs(self, *, limit: int = 20) -> list[AssetImportRun]:
         result = await self.db.execute(
@@ -230,6 +260,192 @@ class AssetService:
         )
         return list(result.scalars().all())
 
+    async def save_comment_angle_rule_draft(self, payload: CommentAngleRuleDraftSave) -> AssetChangeProposal:
+        asset = await self.get_latest_asset(COMMENT_ANGLE_RULE_ASSET_TYPE, payload.asset_key)
+        if asset is None:
+            raise ValueError("comment-angle asset not found")
+        _, item = _find_comment_angle_item(asset.content_json, rule_id=payload.rule_id, source_row_no=payload.source_row_no)
+        draft_corpus = payload.draft_corpus.strip()
+        if not draft_corpus:
+            raise ValueError("draft_corpus is required")
+
+        request = AssetChangeRequest(
+            source_text=f"业务规则草稿（评论切角）：{payload.asset_key}/{item.get('rule_id')}",
+            requester=payload.created_by,
+            context_json={
+                "draft_type": "comment_angle_rule_item",
+                "asset_type": COMMENT_ANGLE_RULE_ASSET_TYPE,
+                "asset_key": payload.asset_key,
+                "base_asset_id": asset.id,
+                "base_version_no": asset.version_no,
+                "rule_id": item.get("rule_id"),
+                "source_row_no": item.get("source_row_no"),
+            },
+            status="draft",
+            created_by=payload.created_by,
+        )
+        self.db.add(request)
+        await self.db.flush()
+
+        proposal = AssetChangeProposal(
+            request_id=request.id,
+            risk_level="medium",
+            summary=f"评论切角单条草稿：{item.get('rule_id') or item.get('source_row_no')}",
+            affected_assets_json=[
+                {
+                    "asset_type": COMMENT_ANGLE_RULE_ASSET_TYPE,
+                    "asset_key": payload.asset_key,
+                    "base_asset_id": asset.id,
+                    "base_version_no": asset.version_no,
+                    "rule_id": item.get("rule_id"),
+                    "source_row_no": item.get("source_row_no"),
+                }
+            ],
+            proposed_changes_json={
+                "draft_type": "comment_angle_rule_item",
+                "asset_type": COMMENT_ANGLE_RULE_ASSET_TYPE,
+                "asset_key": payload.asset_key,
+                "base_asset_id": asset.id,
+                "base_version_no": asset.version_no,
+                "target": {
+                    "rule_id": item.get("rule_id"),
+                    "source_row_no": item.get("source_row_no"),
+                    "comment_angle": item.get("comment_angle"),
+                },
+                "original_corpus": item.get("corpus") or "",
+                "draft_corpus": draft_corpus,
+                "draft_examples": _extract_examples_from_corpus(draft_corpus),
+            },
+            risk_notes_json=[
+                "草稿不会影响正式 production 规则包。",
+                "发布时会复制当前 active 规则包，只替换目标规则并生成新版本。",
+            ],
+            smoke_test_json={
+                "endpoint": "/api/v1/content-agent/comment-batches/start",
+                "asset_key": payload.asset_key,
+                "rule_id": item.get("rule_id"),
+                "source_row_no": item.get("source_row_no"),
+                "draft_rule_id": item.get("rule_id"),
+                "draft_source_row_no": item.get("source_row_no"),
+            },
+            status="draft",
+            created_by=payload.created_by,
+        )
+        self.db.add(proposal)
+        await self.db.flush()
+        return proposal
+
+    async def list_comment_angle_rule_drafts(
+        self,
+        *,
+        asset_key: str,
+        rule_id: str | None = None,
+        source_row_no: int | None = None,
+        limit: int = 20,
+    ) -> list[AssetChangeProposal]:
+        result = await self.db.execute(
+            select(AssetChangeProposal)
+            .where(AssetChangeProposal.status.in_(["draft", "testing"]))
+            .order_by(AssetChangeProposal.id.desc())
+            .limit(max(1, min(limit * 5, 200)))
+        )
+        drafts: list[AssetChangeProposal] = []
+        for proposal in result.scalars().all():
+            changes = proposal.proposed_changes_json or {}
+            if changes.get("draft_type") != "comment_angle_rule_item":
+                continue
+            if changes.get("asset_key") != asset_key:
+                continue
+            target = changes.get("target") if isinstance(changes.get("target"), dict) else {}
+            if rule_id and str(target.get("rule_id") or "") != str(rule_id):
+                continue
+            if source_row_no is not None and _int_or_none(target.get("source_row_no")) != int(source_row_no):
+                continue
+            drafts.append(proposal)
+            if len(drafts) >= limit:
+                break
+        return drafts
+
+    async def publish_comment_angle_rule_draft(
+        self,
+        draft_id: int,
+        *,
+        created_by: str | None = "maga-operator",
+    ) -> tuple[AssetChangeProposal | None, AssetRegistry | None]:
+        proposal = await self.db.get(AssetChangeProposal, draft_id)
+        if proposal is None:
+            return None, None
+        changes = proposal.proposed_changes_json or {}
+        if changes.get("draft_type") != "comment_angle_rule_item":
+            raise ValueError("not a comment-angle rule draft")
+        if proposal.status == "applied" and proposal.applied_asset_ids_json:
+            asset = await self.db.get(AssetRegistry, proposal.applied_asset_ids_json[0])
+            return proposal, asset
+
+        asset_key = str(changes.get("asset_key") or "").strip()
+        current_asset = await self.get_latest_asset(COMMENT_ANGLE_RULE_ASSET_TYPE, asset_key)
+        if current_asset is None:
+            raise ValueError("comment-angle asset not found")
+        target = changes.get("target") if isinstance(changes.get("target"), dict) else {}
+        content_json = copy.deepcopy(current_asset.content_json or {})
+        _, item = _find_comment_angle_item(
+            content_json,
+            rule_id=str(target.get("rule_id") or "") or None,
+            source_row_no=_int_or_none(target.get("source_row_no")),
+        )
+        draft_corpus = str(changes.get("draft_corpus") or "").strip()
+        if not draft_corpus:
+            raise ValueError("draft_corpus is empty")
+        # 重要逻辑：发布草稿只替换目标单条规则，保留当前 active 版本中的其他运营改动。
+        item["corpus"] = draft_corpus
+        item["examples"] = _extract_examples_from_corpus(draft_corpus)
+
+        await self.db.execute(
+            update(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type == COMMENT_ANGLE_RULE_ASSET_TYPE,
+                AssetRegistry.asset_key == asset_key,
+                AssetRegistry.asset_stage == "production",
+                AssetRegistry.status == "active",
+            )
+            .values(status="archived")
+        )
+        metadata_json = copy.deepcopy(current_asset.metadata_json or {})
+        metadata_json.update(
+            {
+                "rule_count": len(content_json.get("items") or []),
+                "example_count": _comment_angle_example_count(content_json),
+                "last_rule_draft_id": proposal.id,
+                "last_rule_draft_base_asset_id": changes.get("base_asset_id"),
+                "last_rule_draft_base_version_no": changes.get("base_version_no"),
+            }
+        )
+        asset = AssetRegistry(
+            asset_type=COMMENT_ANGLE_RULE_ASSET_TYPE,
+            asset_key=asset_key,
+            display_name=current_asset.display_name,
+            version_no=await self._next_asset_version(COMMENT_ANGLE_RULE_ASSET_TYPE, asset_key),
+            status="active",
+            asset_stage="production",
+            source_name=f"comment_angle_rule_draft:{proposal.id}",
+            source_uri=None,
+            source_hash=None,
+            content_json=content_json,
+            metadata_json=metadata_json,
+            created_by=created_by,
+        )
+        self.db.add(asset)
+        await self.db.flush()
+
+        proposal.status = "applied"
+        proposal.applied_by = created_by
+        proposal.applied_asset_ids_json = [asset.id]
+        request = await self.db.get(AssetChangeRequest, proposal.request_id)
+        if request is not None:
+            request.status = "applied"
+        await self.db.flush()
+        return proposal, asset
+
     async def create_compliance_rule_proposal_from_request(
         self,
         request_id: int,
@@ -342,6 +558,85 @@ class AssetService:
 def _proposed_assets(changes: dict[str, Any]) -> list[dict[str, Any]]:
     assets = changes.get("assets") if isinstance(changes, dict) else None
     return [item for item in assets or [] if isinstance(item, dict) and item.get("asset_type") and item.get("asset_key")]
+
+
+def _find_comment_angle_item(
+    content_json: dict[str, Any] | None,
+    *,
+    rule_id: str | None,
+    source_row_no: int | None,
+) -> tuple[int, dict[str, Any]]:
+    items = (content_json or {}).get("items")
+    if not isinstance(items, list):
+        raise ValueError("comment-angle asset has no items")
+    matches: list[tuple[int, dict[str, Any]]] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        if rule_id and str(item.get("rule_id") or "") == str(rule_id):
+            matches.append((index, item))
+            continue
+        if source_row_no is not None and _int_or_none(item.get("source_row_no")) == int(source_row_no):
+            matches.append((index, item))
+    if not matches:
+        raise ValueError("comment-angle rule item not found")
+    if len(matches) > 1:
+        raise ValueError("comment-angle rule selector matched multiple items")
+    return matches[0]
+
+
+def _extract_examples_from_corpus(corpus: str) -> list[str]:
+    examples: list[str] = []
+    in_examples = False
+    for raw_line in str(corpus or "").splitlines():
+        line = raw_line.strip()
+        if line == "示例：":
+            in_examples = True
+            continue
+        if in_examples and line.startswith("注意："):
+            break
+        if in_examples and line.startswith("- "):
+            example = line[2:].strip()
+            if example:
+                examples.append(example)
+    return examples
+
+
+def _comment_angle_example_count(content_json: dict[str, Any] | None) -> int:
+    total = 0
+    for item in (content_json or {}).get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        total += len(item.get("examples") or []) + len(item.get("supplements") or [])
+    return total
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def comment_angle_rule_draft_response(proposal: AssetChangeProposal) -> dict[str, Any]:
+    changes = proposal.proposed_changes_json or {}
+    target = changes.get("target") if isinstance(changes.get("target"), dict) else {}
+    return {
+        "id": proposal.id,
+        "status": proposal.status,
+        "asset_key": str(changes.get("asset_key") or ""),
+        "base_asset_id": changes.get("base_asset_id"),
+        "base_version_no": changes.get("base_version_no"),
+        "rule_id": target.get("rule_id"),
+        "source_row_no": target.get("source_row_no"),
+        "comment_angle": target.get("comment_angle"),
+        "original_corpus": changes.get("original_corpus"),
+        "draft_corpus": str(changes.get("draft_corpus") or ""),
+        "created_by": proposal.created_by,
+        "applied_by": proposal.applied_by,
+        "create_time": proposal.create_time,
+        "update_time": proposal.update_time,
+    }
 
 
 def _forbidden_terms_from_change_request(request: AssetChangeRequest) -> list[str]:
@@ -503,6 +798,12 @@ def _clean_text(value: Any) -> str | None:
 def _content_items(content: dict[str, Any]) -> list[dict[str, Any]]:
     items = content.get("items") if isinstance(content, dict) else None
     return [item for item in items or [] if isinstance(item, dict)]
+
+
+def _asset_is_hidden(asset: AssetRegistry) -> bool:
+    metadata = asset.metadata_json or {}
+    content = asset.content_json or {}
+    return bool(metadata.get("hidden") or content.get("hidden"))
 
 
 def _painpoint_items(content: dict[str, Any]) -> list[dict[str, Any]]:

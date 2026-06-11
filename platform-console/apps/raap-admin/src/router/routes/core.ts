@@ -75,6 +75,7 @@ const coreRoutes: RouteRecordRaw[] = [
           title: '评价反馈',
           icon: 'LineChartOutlined',
           activeMenu: '/content-agent/feedback',
+          authority: ['admin'],
         },
       },
       {
@@ -87,6 +88,7 @@ const coreRoutes: RouteRecordRaw[] = [
           hideInMenu: true,
           hideInTab: false,
           activeMenu: '/content-agent/system-prompt-keywords',
+          authority: ['admin'],
         },
       },
       {
@@ -98,6 +100,19 @@ const coreRoutes: RouteRecordRaw[] = [
           hideInMenu: true,
           hideInTab: false,
           activeMenu: '/content-agent/experts',
+          authority: ['admin'],
+        },
+      },
+      {
+        name: 'SystemUserManagement',
+        path: 'system/user',
+        component: () => import('#/views/system/user/index.vue'),
+        meta: {
+          title: '用户管理',
+          hideInMenu: true,
+          hideInTab: false,
+          activeMenu: '/system/user',
+          authority: ['admin'],
         },
       },
       {

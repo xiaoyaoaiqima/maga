@@ -4,7 +4,7 @@ uvicorn[standard]==0.27.0
 pydantic==2.7.4
 pydantic-settings==2.3.4
 email-validator==2.1.1
-typing-extensions==4.12.0
+typing-extensions==4.15.0
 # Database
 sqlalchemy==2.0.25
 aiomysql==0.2.0

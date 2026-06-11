@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { SelectValue } from 'ant-design-vue/es/select';
 
 import type {

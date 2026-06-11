@@ -79,7 +79,7 @@ async def import_product_experience_rule_set(
     asset = AssetRegistry(
         asset_type=PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
         asset_key=normalized_asset_key,
-        display_name=display_name or "源悦-生文（产品使用体验）",
+        display_name=display_name or "源悦-业务规则（产品使用体验）",
         version_no=await _next_asset_version(db, PRODUCT_EXPERIENCE_RULE_ASSET_TYPE, normalized_asset_key),
         status="active",
         asset_stage="production",

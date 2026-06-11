@@ -2342,7 +2342,7 @@ watch(
           <div class="guide-content">
             <p>创建生文任务的完整流程如下：</p>
             <ol class="guide-steps">
-              <li><strong>上传业务规则</strong> - 在业务规则页上传活动规则包</li>
+              <li><strong>上传业务规则</strong> - 在业务规则页上传活动业务规则</li>
               <li>
                 <strong>创建 Agent</strong> - 选择一个 Agent 模板，创建或复制
                 Agent

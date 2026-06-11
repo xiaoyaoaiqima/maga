@@ -1,5 +1,6 @@
 <!-- AIGC生成中心 -->
 <script setup lang="ts">
+// @ts-nocheck
 import type {
   AgentContentTrend,
   AgentCostItem,

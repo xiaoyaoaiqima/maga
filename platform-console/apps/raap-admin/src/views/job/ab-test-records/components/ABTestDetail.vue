@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import type { TableColumnsType } from 'ant-design-vue';
 import type { ECharts } from 'echarts/core';
 

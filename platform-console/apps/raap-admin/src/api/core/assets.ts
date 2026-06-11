@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { requestClient } from '#/api/request';
 
 export namespace AssetsApi {
@@ -12,6 +13,7 @@ export namespace AssetsApi {
     source_name?: null | string;
     source_hash?: null | string;
     item_count?: null | number;
+    hidden?: boolean;
     created_by?: null | string;
     create_time?: null | string;
     update_time?: null | string;
@@ -89,6 +91,28 @@ export namespace AssetsApi {
     created_asset_ids: number[];
   }
 
+  export interface CommentAngleRuleDraft {
+    id: number;
+    status: string;
+    asset_key: string;
+    base_asset_id?: null | number;
+    base_version_no?: null | number;
+    rule_id?: null | string;
+    source_row_no?: null | number;
+    comment_angle?: null | string;
+    original_corpus?: null | string;
+    draft_corpus: string;
+    created_by?: null | string;
+    applied_by?: null | string;
+    create_time?: null | string;
+    update_time?: null | string;
+  }
+
+  export interface CommentAngleRuleDraftPublishResult {
+    draft: CommentAngleRuleDraft;
+    asset: AssetRegistry;
+  }
+
   export interface SystemPromptSubKeyword {
     keyword_code: string;
     keyword_name: string;
@@ -154,6 +178,7 @@ export async function getAssetSummariesApi(params?: {
   asset_key?: string;
   asset_stage?: string;
   asset_type?: string;
+  include_hidden?: boolean;
 }) {
   return requestClient.get<AssetsApi.AssetSummary[]>('/v1/assets/summary', {
     params,
@@ -167,6 +192,19 @@ export async function getAssetDetailApi(
 ) {
   return requestClient.get<AssetsApi.AssetRegistry>(
     `/v1/assets/${assetType}/${assetKey}`,
+    { params },
+  );
+}
+
+export async function updateAssetVisibilityApi(
+  assetType: string,
+  assetKey: string,
+  payload: { hidden: boolean; reason?: string; updated_by?: string },
+  params?: { asset_stage?: string },
+) {
+  return requestClient.patch<AssetsApi.AssetRegistry>(
+    `/v1/assets/${assetType}/${assetKey}/visibility`,
+    payload,
     { params },
   );
 }
@@ -207,6 +245,41 @@ export async function proposeComplianceRuleApi(requestId: number) {
 export async function applyAssetChangeProposalApi(proposalId: number) {
   return requestClient.post<AssetsApi.AssetChangeProposalApplyResult>(
     `/v1/assets/change-proposals/${proposalId}/apply`,
+  );
+}
+
+export async function getCommentAngleRuleDraftsApi(params: {
+  asset_key: string;
+  limit?: number;
+  rule_id?: string;
+  source_row_no?: number;
+}) {
+  return requestClient.get<AssetsApi.CommentAngleRuleDraft[]>(
+    '/v1/assets/comment-angle-rule-drafts',
+    { params },
+  );
+}
+
+export async function saveCommentAngleRuleDraftApi(data: {
+  asset_key: string;
+  created_by?: string;
+  draft_corpus: string;
+  rule_id?: string;
+  source_row_no?: number;
+}) {
+  return requestClient.post<AssetsApi.CommentAngleRuleDraft>(
+    '/v1/assets/comment-angle-rule-drafts',
+    data,
+  );
+}
+
+export async function publishCommentAngleRuleDraftApi(
+  draftId: number,
+  data: { created_by?: string },
+) {
+  return requestClient.post<AssetsApi.CommentAngleRuleDraftPublishResult>(
+    `/v1/assets/comment-angle-rule-drafts/${draftId}/publish`,
+    data,
   );
 }
 

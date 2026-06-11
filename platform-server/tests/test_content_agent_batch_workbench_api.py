@@ -789,6 +789,134 @@ def test_a2_activity_guard_accepts_batch_quality_data_wording():
     assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
 
 
+def test_a2_activity_guard_accepts_contextual_this_batch_detection_short_comment():
+    item = ContentBatchItem(
+        body="有货了！这批也有检测，买得安心",
+        plan_json=_a2_guard_plan("不是偶尔抽查看着更稳：\n关键词方向是有货+批批检，像妈妈补货时聊每批检测。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_accepts_contextual_this_can_tested_short_comment():
+    item = ContentBatchItem(
+        body="这次补a2看到这罐都测过，比抽查更放心些，毕竟宝宝天天喝呢。",
+        plan_json=_a2_guard_plan("不是偶尔抽查看着更稳：\n关键词方向是有货+批批检，像妈妈补货时聊每批检测。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_accepts_every_batch_check_short_comment_without_emotion_word():
+    item = ContentBatchItem(
+        body="这次补a2是因为听店员说他们每批都查，不是抽测",
+        plan_json=_a2_guard_plan("不是偶尔抽查看着更稳：\n关键词方向是有货+批批检，像妈妈补货时聊每批检测。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_accepts_batch_by_batch_check_short_comment():
+    item = ContentBatchItem(
+        body="今天又补了a2，主要是看中它批批都检，不是偶尔查",
+        plan_json=_a2_guard_plan("不是偶尔抽查看着更稳：\n关键词方向是有货+批批检，像妈妈补货时聊每批检测。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_accepts_batch_by_batch_inspection_short_comment():
+    item = ContentBatchItem(
+        body="囤货时候看a2批批都验，就放心入啦",
+        plan_json=_a2_guard_plan("不是偶尔抽查看着更稳：\n关键词方向是有货+批批检，像妈妈补货时聊每批检测。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_accepts_new_batch_detection_without_brand_when_context_is_clear():
+    item = ContentBatchItem(
+        body="看了下新批次也都有检测，这下补货不纠结了",
+        plan_json=_a2_guard_plan("不是偶尔抽查看着更稳：\n关键词方向是有货+批批检，像妈妈补货时聊每批检测。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_accepts_third_party_data_angle_without_scan_wording():
+    item = ContentBatchItem(
+        body="准备转奶时也看了超启能恩，不过a2的60多项检测数据列得比较清楚，会多参考这个。",
+        plan_json=_a2_guard_plan("对雀巢打新西兰三方和60多项：\n关键词方向是批批检+转奶。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_accepts_new_zealand_third_party_data_without_report_wording():
+    item = ContentBatchItem(
+        body="功课做了几圈，a2的三方检测数据列得明明白白，选起来更踏实",
+        plan_json=_a2_guard_plan("对雀巢打新西兰三方和60多项：\n关键词方向是批批检+转奶。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
 def test_a2_activity_guard_keeps_waxy_detection_standard_wording():
     item = ContentBatchItem(
         body="刚转a2，扫批次报告看到蜡样检测标准是小于0.03，心里有底。",
@@ -1158,7 +1286,7 @@ def test_a2_activity_guard_accepts_aptamil_platform_public_comparison():
     assert not payload["issues"]
 
 
-@pytest.mark.parametrize("term", ["急", "担心", "不确定", "断粮"])
+@pytest.mark.parametrize("term", ["急", "担心", "不确定", "断粮", "直接着喝"])
 def test_a2_activity_guard_rejects_soft_negative_words_without_repair(term):
     item = ContentBatchItem(
         body=f"有货了先看报告再转奶，{term}这个点我也会留意。",
@@ -1335,6 +1463,51 @@ def test_a2_activity_guard_allows_plain_003_and_02_standard_comparison():
     assert not payload["issues"]
 
 
+def test_a2_activity_guard_allows_wax_standard_angle_without_batch_report_wording():
+    item = ContentBatchItem(
+        body="我看奶粉会特意留意一下蜡毒那项，a2是<0.03，看到这个数字会放心些。",
+        plan_json=_a2_guard_plan("蜡样检测0.03轻提：\n关键词方向是有货+批批检，重点讲蜡样检测标准。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_does_not_break_less_than_003_wording():
+    item = ContentBatchItem(
+        body="补货前会看蜡样检测标准，a2是<0.03这点我记住了",
+        plan_json=_a2_guard_plan("蜡样检测0.03轻提：\n关键词方向是有货+批批检，重点讲蜡样检测标准。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert "a2是<蜡样检测0.03" not in item.body
+    assert "a2是<0.03这点" in item.body
+    assert payload["pass"] is True
+
+
+def test_a2_activity_guard_repairs_bare_003_point_wording():
+    item = ContentBatchItem(
+        body="补货前看报告，a2 0.03这点我会记一下",
+        plan_json=_a2_guard_plan("蜡样检测0.03轻提：\n关键词方向是有货+批批检，重点讲蜡样检测标准。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert "蜡样检测0.03这点" in item.body
+    assert payload["pass"] is True
+
+
 def test_a2_activity_guard_accepts_combo_keyword_without_forcing_both_scene_words():
     item = ContentBatchItem(
         body="达能也在看，转奶前我会先扫a2物流码查报告，自己这批次能对上更踏实。",
@@ -1507,6 +1680,38 @@ def test_a2_activity_guard_repairs_duplicate_report_reference_and_batch_wording(
     assert "a2每罐" not in item.body
     assert "a2报告里那项0.03" in item.body
     assert "a2每批报告" in item.body
+
+
+def test_a2_activity_guard_repairs_duplicate_logistics_code_suffix():
+    item = ContentBatchItem(
+        body="a2有货了，我家快喝完，导购说可以先扫物流码码看报告再买",
+        plan_json=_a2_guard_plan("快喝完时先看报告：\n关键词方向是有货+转奶，像妈妈补货前看报告。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert "物流码码" not in item.body
+    assert "扫物流码看报告" in item.body
+    assert any(repair["code"] == "activity_body_duplicate_term_collapsed" for repair in payload["repairs"])
+
+
+def test_a2_activity_guard_repairs_redundant_logistics_code_reference():
+    item = ContentBatchItem(
+        body="想先转这罐试试，扫罐底物流码那个码就能看到这罐的检测报告对吧？",
+        plan_json=_a2_guard_plan("问货时看扫码入口：\n关键词方向是有货+转奶，像妈妈问到货后看报告。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert "物流码那个码" not in item.body
+    assert "扫罐底物流码就能看到" in item.body
+    assert any(repair["code"] == "activity_body_duplicate_term_collapsed" for repair in payload["repairs"])
 
 
 def test_a2_activity_guard_limits_wax_term_to_once_per_comment():
@@ -1941,8 +2146,8 @@ async def test_a2_comment_batch_applies_activity_quality_guard_and_article_pool_
                     "keyword_selection": {
                         "comment_generation_requirement": ["xhs_maternal_comment_requirement"],
                         "persona": ["family_mom", "experienced_mom", "rational_comparer", "chatty_mom", "new_mom", "working_mom"],
-                        "comment_writing_instruction": ["natural_comment", "light_comment_experience"],
-                        "perturbation_rule": ["random_thinking_shift", "opening_shift", "length_shift", "stance_shift"],
+                        "comment_writing_instruction": ["natural_comment"],
+                        "perturbation_rule": ["random_thinking_shift"],
                         "writing_method": ["question_hook", "plain_explain"],
                         "comment_format_control": [
                             "comment_short_clean",
@@ -1983,8 +2188,8 @@ async def test_a2_comment_batch_applies_activity_quality_guard_and_article_pool_
                     "keyword_selection": {
                         "comment_generation_requirement": ["xhs_maternal_comment_requirement"],
                         "persona": ["family_mom", "experienced_mom", "rational_comparer", "chatty_mom", "new_mom", "working_mom"],
-                        "comment_writing_instruction": ["natural_comment", "light_comment_experience"],
-                        "perturbation_rule": ["random_thinking_shift", "opening_shift", "length_shift", "stance_shift"],
+                        "comment_writing_instruction": ["natural_comment"],
+                        "perturbation_rule": ["random_thinking_shift"],
                         "writing_method": ["question_hook", "plain_explain"],
                         "comment_format_control": [
                             "comment_short_clean",

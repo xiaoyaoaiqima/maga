@@ -22,7 +22,10 @@ from app.core.content_agent_defaults import (
 from app.core.config import settings
 from app.models.base import Base
 from app.models.maga_core import MAGA_CORE_TABLE_NAMES  # noqa: F401 - importing registers clean models
-from app.services.content_agent_bootstrap_service import seed_default_content_agent_executors
+from app.services.content_agent_bootstrap_service import (
+    seed_default_content_agent_executors,
+    seed_default_realtime_chat_agent,
+)
 
 
 def _selected_tables() -> list:
@@ -42,6 +45,7 @@ async def seed_clean_schema(
         executor_token=executor_token,
         overwrite=True,
     )
+    await seed_default_realtime_chat_agent(conn, overwrite=True)
 
 
 async def create_clean_schema(

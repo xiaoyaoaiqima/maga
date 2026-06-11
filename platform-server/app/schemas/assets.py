@@ -39,6 +39,7 @@ class AssetRegistrySummaryResponse(BaseModel):
     source_name: str | None = None
     source_hash: str | None = None
     item_count: int | None = None
+    hidden: bool = False
     created_by: str | None = None
     create_time: datetime | None = None
     update_time: datetime | None = None
@@ -65,6 +66,12 @@ class AssetImportResponse(BaseModel):
     asset_keys: list[tuple[str, str]]
     source_hash: str
     summary_json: dict[str, Any] | None = None
+
+
+class AssetVisibilityUpdate(BaseModel):
+    hidden: bool
+    reason: str | None = None
+    updated_by: str | None = "maga-operator"
 
 
 class AssetGenerationOptionsResponse(BaseModel):
@@ -202,6 +209,40 @@ class AssetChangeProposalApplyResponse(BaseModel):
     id: int
     status: str
     created_asset_ids: list[int]
+
+
+class CommentAngleRuleDraftSave(BaseModel):
+    asset_key: str = Field(..., min_length=1)
+    rule_id: str | None = None
+    source_row_no: int | None = Field(default=None, ge=1)
+    draft_corpus: str = Field(..., min_length=1)
+    created_by: str | None = "maga-operator"
+
+
+class CommentAngleRuleDraftResponse(BaseModel):
+    id: int
+    status: str
+    asset_key: str
+    base_asset_id: int | None = None
+    base_version_no: int | None = None
+    rule_id: str | None = None
+    source_row_no: int | None = None
+    comment_angle: str | None = None
+    original_corpus: str | None = None
+    draft_corpus: str
+    created_by: str | None = None
+    applied_by: str | None = None
+    create_time: datetime | None = None
+    update_time: datetime | None = None
+
+
+class CommentAngleRuleDraftPublish(BaseModel):
+    created_by: str | None = "maga-operator"
+
+
+class CommentAngleRuleDraftPublishResponse(BaseModel):
+    draft: CommentAngleRuleDraftResponse
+    asset: AssetRegistryResponse
 
 
 class ReferenceElementExtractRequest(BaseModel):

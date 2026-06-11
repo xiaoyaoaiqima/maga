@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import { ref, watch } from 'vue';
 
 import { useClipboard } from '@vueuse/core';

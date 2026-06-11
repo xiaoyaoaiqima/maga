@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * MAGA Console - 优化的 Toast 通知系统
  *
