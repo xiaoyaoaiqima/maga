@@ -273,6 +273,33 @@ async def test_direct_llm_generate_parses_article_json(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_direct_llm_generate_repairs_loose_article_json(monkeypatch):
+    async def fake_call(**kwargs):
+        return '{\n"title": "有姐妹一起转a2吗？刚补了一罐试试🧐",\n"body": "家里奶粉快见底了。\\n\\n到货后扫了罐底码，报告能看到。"\n'
+
+    monkeypatch.setattr("app.services.executor_invocation_service._call_openai_compatible_model", fake_call)
+    client = ExecutorInvocationClient()
+
+    result = await client.invoke(
+        invoke_url="llm://direct/content",
+        envelope={
+            "stage_call_id": "stage-direct-loose-json",
+            "capability": "content.generate",
+            "input": {
+                "content_type": "article",
+                "output_fields": ["title", "body"],
+                "rendered_prompt": "生成一篇文章",
+                "model_config": {"model_code": "deepseek-v4-flash"},
+            },
+        },
+    )
+
+    assert result.status == "succeeded"
+    assert result.output["title"] == "有姐妹一起转a2吗？刚补了一罐试试🧐"
+    assert result.output["body"] == "家里奶粉快见底了。\n\n到货后扫了罐底码，报告能看到。"
+
+
+@pytest.mark.asyncio
 async def test_direct_llm_generate_parses_article_plain_text(monkeypatch):
     async def fake_call(**kwargs):
         return "自然标题\n正文第一段\n正文第二段"

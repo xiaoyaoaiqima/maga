@@ -20,7 +20,7 @@ class ChatContext(BaseModel):
     asset_version: int | str | None = Field(default=None, description="业务规则版本")
     rule_id: str | None = Field(default=None, description="单条规则 ID")
     source_row_no: int | None = Field(default=None, description="源表行号")
-    comment_angle: str | None = Field(default=None, description="评论切角")
+    business_rule: str | None = Field(default=None, description="业务规则")
     corpus: str | None = Field(default=None, description="正式语料")
     draft_corpus: str | None = Field(default=None, description="当前草稿语料")
     examples: list[str] = Field(default_factory=list, description="已有示例")
@@ -31,7 +31,7 @@ class ChatContext(BaseModel):
 class ChatAction(BaseModel):
     """Chat 可返回给前端执行的安全动作。"""
 
-    type: Literal["fill_comment_angle_draft"] = Field(..., description="动作类型")
+    type: Literal["fill_business_rule_draft"] = Field(..., description="动作类型")
     label: str = Field(default="填入草稿", description="按钮文案")
     payload: dict[str, Any] = Field(default_factory=dict, description="动作参数")
 
@@ -41,7 +41,7 @@ class ChatMessageRequest(BaseModel):
 
     message: constr(strip_whitespace=True, min_length=1) = Field(..., description="用户消息")
     history: list[ChatHistoryMessage] = Field(default_factory=list, description="当前前端会话历史")
-    context: ChatContext | None = Field(default=None, description="页面上下文；首版仅评论切角副驾使用")
+    context: ChatContext | None = Field(default=None, description="页面上下文；首版仅业务规则副驾使用")
 
 
 class ChatMessageResponse(BaseModel):

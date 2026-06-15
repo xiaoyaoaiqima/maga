@@ -350,8 +350,8 @@ def _mock_comment_from_rule(input_payload: dict[str, Any]) -> str:
             item_no = 1
         return examples[(item_no - 1) % len(examples)]
 
-    comment_angle = str(input_payload.get("comment_angle") or "这个角度").strip()
-    return f"这个{comment_angle}我还挺有共鸣的，想看看其他妈妈怎么说。"
+    business_rule = str(input_payload.get("business_rule") or "这个角度").strip()
+    return f"这个{business_rule}我还挺有共鸣的，想看看其他妈妈怎么说。"
 
 
 def _is_direct_llm_invoke_url(invoke_url: str | None) -> bool:
@@ -735,7 +735,7 @@ def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -
     title = str(parsed.get("title") or parsed.get("标题") or "").strip()
     body = str(parsed.get("body") or parsed.get("正文") or "").strip()
     if not title or not body:
-        title, body = _title_body_from_text(raw)
+        title, body = _loose_title_body_from_text(raw) or _title_body_from_text(raw)
     if not body:
         raise ValueError("content.generate produced empty body")
     return {"title": title or "源悦真实体验分享", "body": body}
@@ -836,7 +836,7 @@ def _normalize_rewrite_output(
     title = str(parsed.get("title") or parsed.get("标题") or "").strip()
     body = str(parsed.get("body") or parsed.get("正文") or "").strip()
     if not title or not body:
-        title, body = _title_body_from_text(raw)
+        title, body = _loose_title_body_from_text(raw) or _title_body_from_text(raw)
     if not body:
         previous = _rewrite_previous_content(input_payload)
         body = previous.get("body") or ""
@@ -861,6 +861,29 @@ def _parse_json_object(raw: str) -> dict[str, Any]:
         except json.JSONDecodeError:
             return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _loose_title_body_from_text(raw: str) -> tuple[str, str] | None:
+    value = str(raw or "").strip()
+    value = re.sub(r"^```(?:json)?\s*", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*```$", "", value).strip()
+    title_match = re.search(
+        r'["“]?(?:title|标题)["”]?\s*[:：]\s*["“](?P<title>.+?)["”]\s*,?',
+        value,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    body_match = re.search(
+        r'["“]?(?:body|正文)["”]?\s*[:：]\s*["“](?P<body>.+)["”]\s*[,}]?\s*$',
+        value,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not title_match or not body_match:
+        return None
+    title = title_match.group("title").strip()
+    body = body_match.group("body").strip()
+    body = body.replace("\\n", "\n").replace('\\"', '"')
+    # 大模型偶尔漏掉 JSON 右括号，但字段本身完整；这里只恢复字段内容，不吞掉其他纯文本。
+    return (title, body) if title and body else None
 
 
 def _title_body_from_text(raw: str) -> tuple[str, str]:

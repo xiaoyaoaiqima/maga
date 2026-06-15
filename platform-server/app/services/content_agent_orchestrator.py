@@ -270,7 +270,10 @@ class ContentAgentOrchestrator:
     async def _provider_for_model_config(self, model_config: dict[str, Any]) -> LLMProviderConfig | None:
         provider_code = str(model_config.get("provider_code") or "").strip()
         if provider_code:
-            return await self._provider_by_code(provider_code)
+            provider = await self._provider_by_code(provider_code)
+            if provider is not None:
+                return provider
+            # 老专家配置里可能残留已删除 provider_code；继续走模型路由，避免绕过系统 LLM provider。
 
         model_code = _model_code_from_config(model_config)
         if model_code:

@@ -53,7 +53,7 @@ async def batch_report_client():
                 batch_id=job.id,
                 item_no=1,
                 status="generated",
-                plan_json={},
+                plan_json={"rule_id": "business_rule_001", "source_row_no": 5},
                 title="换奶前先看这3点",
                 body="新手爸妈先别慌，慢慢观察宝宝日常状态。",
                 quality_json={
@@ -93,6 +93,39 @@ async def test_get_batch_report_endpoint_returns_operator_view(batch_report_clie
     assert data["items"][0]["title"] == "换奶前先看这3点"
     assert data["items"][0]["hard_pass"] is True
     assert data["items"][0]["rewrite_required"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_batches_endpoint_filters_by_asset_and_rule(batch_report_client):
+    client, batch_id = batch_report_client
+
+    asset_response = await client.get(
+        "/api/v1/content-agent/batches",
+        params={"asset_key": "yuanyue", "limit": 10},
+    )
+    assert asset_response.status_code == 200
+    asset_data = asset_response.json()["data"]
+    assert asset_data["total"] == 1
+    assert asset_data["items"][0]["batch_id"] == batch_id
+
+    rule_response = await client.get(
+        "/api/v1/content-agent/batches",
+        params={
+            "asset_key": "yuanyue",
+            "rule_id": "business_rule_001",
+            "source_row_no": 5,
+            "limit": 10,
+        },
+    )
+    assert rule_response.status_code == 200
+    assert rule_response.json()["data"]["total"] == 1
+
+    missing_response = await client.get(
+        "/api/v1/content-agent/batches",
+        params={"asset_key": "yuanyue", "rule_id": "business_rule_missing"},
+    )
+    assert missing_response.status_code == 200
+    assert missing_response.json()["data"]["total"] == 0
 
 
 @pytest.mark.asyncio

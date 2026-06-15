@@ -19,6 +19,98 @@ from app.services.content_batch_report_service import ContentBatchReportService
 
 
 @pytest.mark.asyncio
+async def test_list_batch_reports_filters_by_asset_and_rule():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[
+                ContentBatchJob.__table__,
+                ContentBatchItem.__table__,
+                ContentBatchItemVersion.__table__,
+                ContentFeedback.__table__,
+                ContentAgentStageCall.__table__,
+                ContentAgentRun.__table__,
+            ],
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        job_a = ContentBatchJob(
+            batch_code="comment_a_rule_1",
+            asset_key="comment_asset_a",
+            product_topic="评论测试 A",
+            count=1,
+            status="generated",
+        )
+        job_b = ContentBatchJob(
+            batch_code="comment_a_rule_2",
+            asset_key="comment_asset_a",
+            product_topic="评论测试 A",
+            count=1,
+            status="generated",
+        )
+        job_c = ContentBatchJob(
+            batch_code="comment_b_rule_1",
+            asset_key="comment_asset_b",
+            product_topic="评论测试 B",
+            count=1,
+            status="generated",
+        )
+        session.add_all([job_a, job_b, job_c])
+        await session.flush()
+        session.add_all(
+            [
+                ContentBatchItem(
+                    batch_id=job_a.id,
+                    item_no=1,
+                    status="generated",
+                    plan_json={"rule_id": "business_rule_001", "source_row_no": 5},
+                    body="第一条规则的结果",
+                    quality_json={"hard_pass": True},
+                ),
+                ContentBatchItem(
+                    batch_id=job_b.id,
+                    item_no=1,
+                    status="generated",
+                    plan_json={"rule_id": "business_rule_002", "source_row_no": "8"},
+                    body="第二条规则的结果",
+                    quality_json={"hard_pass": True},
+                ),
+                ContentBatchItem(
+                    batch_id=job_c.id,
+                    item_no=1,
+                    status="generated",
+                    plan_json={"rule_id": "business_rule_001", "source_row_no": 5},
+                    body="另一个规则包的结果",
+                    quality_json={"hard_pass": True},
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        service = ContentBatchReportService(session)
+        asset_result = await service.list_batch_reports(asset_key="comment_asset_a", limit=10)
+        rule_result = await service.list_batch_reports(
+            asset_key="comment_asset_a",
+            rule_id="business_rule_002",
+            source_row_no=8,
+            limit=10,
+        )
+
+    assert asset_result.total == 2
+    assert {item.batch_code for item in asset_result.items} == {
+        "comment_a_rule_1",
+        "comment_a_rule_2",
+    }
+    assert rule_result.total == 1
+    assert rule_result.items[0].batch_code == "comment_a_rule_2"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:

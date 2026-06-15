@@ -137,12 +137,12 @@ async def asset_client():
                     created_by="test",
                 ),
                 AssetRegistry(
-                    asset_type="comment_angle_rule_set",
+                    asset_type="comment_business_rule_set",
                     asset_key="hidden_probe_rule",
                     display_name="隐藏调试评论规则",
                     version_no=1,
                     status="active",
-                    content_json={"items": [{"comment_angle": "调试切角", "corpus": "仅用于调试"}]},
+                    content_json={"items": [{"business_rule": "调试业务规则", "corpus": "仅用于调试"}]},
                     metadata_json={"hidden": True, "visibility_reason": "probe"},
                     created_by="test",
                 ),
@@ -243,7 +243,7 @@ async def test_asset_summary_and_import_runs(asset_client):
 async def test_asset_summary_hides_debug_rules_by_default(asset_client):
     default_response = await asset_client.get(
         "/api/v1/assets/summary",
-        params={"asset_type": "comment_angle_rule_set"},
+        params={"asset_type": "comment_business_rule_set"},
     )
     assert default_response.status_code == 200
     default_data = default_response.json()["data"]
@@ -251,7 +251,7 @@ async def test_asset_summary_hides_debug_rules_by_default(asset_client):
 
     hidden_response = await asset_client.get(
         "/api/v1/assets/summary",
-        params={"asset_type": "comment_angle_rule_set", "include_hidden": True},
+        params={"asset_type": "comment_business_rule_set", "include_hidden": True},
     )
     assert hidden_response.status_code == 200
     hidden_data = hidden_response.json()["data"]
@@ -341,6 +341,51 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
     assert fallback_by_code["comment_generation_requirement"]["applicable_content_types"] == ["comment"]
     assert fallback_by_code["comment_generation_requirement"]["selection_mode"] == "fixed"
     assert "只输出评论正文" in fallback_by_code["comment_generation_requirement"]["sub_keywords"][0]["corpus"][0]
+    persona_keywords = fallback_by_code["persona"]["sub_keywords"]
+    persona_by_code = {item["keyword_code"]: item for item in persona_keywords}
+    assert "babytree_short_confirm_mom" in persona_by_code
+    assert "babytree_teeth_care_mom" in persona_by_code
+    assert "babytree_dad_checkup_mom" in persona_by_code
+    assert "只围绕一个具体宝宝状态问一句" in persona_by_code["babytree_short_confirm_mom"]["corpus"][0]
+    assert "仅在业务覆盖孕期或检查场景时圈选" in persona_by_code["babytree_dad_checkup_mom"]["corpus"][0]
+    assert fallback_by_code["comment_speaking_style"]["category_name"] == "说话方式"
+    assert fallback_by_code["comment_speaking_style"]["applicable_content_types"] == ["comment"]
+    assert [item["keyword_name"] for item in fallback_by_code["comment_speaking_style"]["sub_keywords"]] == [
+        "接楼主一句",
+        "接姐妹评论",
+        "顺手报信",
+        "老客稳场",
+        "自己刚补到",
+        "短句附和",
+        "轻提醒一句",
+        "个人处理方式",
+        "同城/附近更新",
+        "小声补充",
+        "半句式回复",
+        "问答感回复",
+        "松口气反应",
+        "务实妈妈口吻",
+        "评论串跟进",
+        "给个参考",
+    ]
+    old_customer_style = next(
+        item
+        for item in fallback_by_code["comment_speaking_style"]["sub_keywords"]
+        if item["keyword_code"] == "old_customer_stabilize"
+    )
+    assert "不要把“老客”这个词写进正文" in old_customer_style["corpus"][0]
+    sister_reply_style = next(
+        item
+        for item in fallback_by_code["comment_speaking_style"]["sub_keywords"]
+        if item["keyword_code"] == "reply_to_sister_comment"
+    )
+    assert "姐妹哪买的" in sister_reply_style["corpus"][0]
+    report_reference_style = next(
+        item
+        for item in fallback_by_code["comment_speaking_style"]["sub_keywords"]
+        if item["keyword_code"] == "soft_reference"
+    )
+    assert "Not Detected就是未检出" in report_reference_style["corpus"][0]
     assert fallback_by_code["writing_instruction"]["applicable_content_types"] == ["article"]
     assert fallback_by_code["comment_writing_instruction"]["applicable_content_types"] == ["comment"]
     assert fallback_by_code["article_format_control"]["category_name"] == "帖子格式控制"
@@ -349,6 +394,8 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
     assert fallback_by_code["comment_format_control"]["category_name"] == "评论格式控制"
     assert fallback_by_code["comment_format_control"]["applicable_content_types"] == ["comment"]
     assert [item["keyword_name"] for item in fallback_by_code["comment_format_control"]["sub_keywords"]] == [
+        "5-8字短接话",
+        "批批检短接话",
         "8-16字",
         "10-20字",
         "21-30字少量",
@@ -358,11 +405,24 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
     assert fallback_by_code["perturbation_rule"]["sub_keywords"][0]["keyword_name"] == "随机发散"
     assert "离散运动" in fallback_by_code["perturbation_rule"]["sub_keywords"][0]["corpus"][0]
     assert "至少一半在8到20字" in fallback_by_code["perturbation_rule"]["sub_keywords"][2]["corpus"][0]
-    assert "21到30字" in fallback_by_code["comment_format_control"]["sub_keywords"][2]["corpus"][0]
-    assert "21到35字" in fallback_by_code["comment_format_control"]["sub_keywords"][3]["corpus"][0]
-    assert "21到50字" in fallback_by_code["comment_format_control"]["sub_keywords"][4]["corpus"][0]
-    assert "剧情锚点" not in fallback_by_code["comment_format_control"]["sub_keywords"][4]["corpus"][0]
-    assert "门店活动" not in fallback_by_code["comment_format_control"]["sub_keywords"][4]["corpus"][0]
+    assert "纸尿裤" not in fallback_by_code["writing_method"]["sub_keywords"][0]["corpus"][0]
+    assert "5到8字" in fallback_by_code["comment_format_control"]["sub_keywords"][0]["corpus"][0]
+    assert "口气词" in fallback_by_code["comment_format_control"]["sub_keywords"][0]["corpus"][0]
+    assert "必须带一个到货" in fallback_by_code["comment_format_control"]["sub_keywords"][0]["corpus"][0]
+    assert "附近门店有货、准备去拿或已经拿到" in fallback_by_code["comment_format_control"]["sub_keywords"][0]["corpus"][0]
+    assert "同批别都用口气词开头" in fallback_by_code["comment_format_control"]["sub_keywords"][0]["corpus"][0]
+    assert "少用“踏实、续上、补上”" in fallback_by_code["comment_format_control"]["sub_keywords"][0]["corpus"][0]
+    assert "别写“店里新到”" in fallback_by_code["comment_format_control"]["sub_keywords"][0]["corpus"][0]
+    assert "别把“奶瓶快空、导购说到”" in fallback_by_code["comment_format_control"]["sub_keywords"][0]["corpus"][0]
+    assert "10到32字" in fallback_by_code["comment_format_control"]["sub_keywords"][1]["corpus"][0]
+    assert "扫码、罐底码、二维码" in fallback_by_code["comment_format_control"]["sub_keywords"][1]["corpus"][0]
+    assert "有货、到货、门店、补到货、拿一罐、先试或转奶锚点" in fallback_by_code["comment_format_control"]["sub_keywords"][1]["corpus"][0]
+    assert "别写“保证没问题、绝对安全”" in fallback_by_code["comment_format_control"]["sub_keywords"][1]["corpus"][0]
+    assert "21到30字" in fallback_by_code["comment_format_control"]["sub_keywords"][4]["corpus"][0]
+    assert "21到35字" in fallback_by_code["comment_format_control"]["sub_keywords"][5]["corpus"][0]
+    assert "21到50字" in fallback_by_code["comment_format_control"]["sub_keywords"][6]["corpus"][0]
+    assert "剧情锚点" not in fallback_by_code["comment_format_control"]["sub_keywords"][6]["corpus"][0]
+    assert "门店活动" not in fallback_by_code["comment_format_control"]["sub_keywords"][6]["corpus"][0]
 
     payload = {
         "asset_key": "default_content_generation_keywords",
@@ -517,8 +577,8 @@ async def test_import_and_preview_content_generation_keywords(asset_client):
             "content_type": "comment",
             "item_no": 1,
             "business_rule": {
-                "rule_type": "comment_angle",
-                "comment_angle": "互动提问",
+                "rule_type": "business_rule",
+                "business_rule": "互动提问",
                 "corpus": "像妈妈在评论区问源悦真实反馈。",
             },
         },
@@ -743,11 +803,11 @@ async def test_change_request_can_generate_and_apply_candidate_compliance_rule(a
 
 
 @pytest.mark.asyncio
-async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
+async def test_upload_comment_business_rule_set_imports_rule_asset(asset_client):
     csv_content = "\n".join(
         [
             "# 运营本地说明行会被导入器忽略",
-            "评论切角,语料",
+            "业务规则,语料",
             '"整体适应","整体适应：',
             '像妈妈在评论区聊刚开始喝源悦的观察，语气自然一点。',
             '',
@@ -764,14 +824,14 @@ async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
     )
 
     response = await asset_client.post(
-        "/api/v1/assets/imports/comment-angle-rule-set",
+        "/api/v1/assets/imports/comment-business-rule-set",
         data={
             "created_by": "ops",
             "keyword_asset_key": "a2_plot_discussion_comment_keywords",
             "quality_guard_profile_key": "a2_sentiment_comment_202606",
             "keyword_selection": '{"persona":["family_mom","experienced_mom"]}',
         },
-        files={"file": ("评论切角_子关键词导出.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+        files={"file": ("业务规则_子关键词导出.csv", csv_content.encode("utf-8-sig"), "text/csv")},
     )
 
     assert response.status_code == 200
@@ -779,7 +839,7 @@ async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
     assert payload["code"] == 200
     data = payload["data"]
     assert data["imported_assets"] == 1
-    assert ["comment_angle_rule_set", "yuanyue_comment_activity"] in data["asset_keys"]
+    assert ["comment_business_rule_set", "yuanyue_comment_activity"] in data["asset_keys"]
     assert data["summary_json"]["rule_count"] == 2
     assert data["summary_json"]["example_count"] == 3
     assert data["summary_json"]["default_generation_count"] == 10
@@ -788,27 +848,27 @@ async def test_upload_comment_angle_rule_set_imports_rule_asset(asset_client):
     assert data["summary_json"]["keyword_selection"] == {"persona": ["family_mom", "experienced_mom"]}
 
     detail_response = await asset_client.get(
-        "/api/v1/assets/comment_angle_rule_set/yuanyue_comment_activity"
+        "/api/v1/assets/comment_business_rule_set/yuanyue_comment_activity"
     )
     assert detail_response.status_code == 200
     asset = detail_response.json()["data"]
-    assert asset["asset_type"] == "comment_angle_rule_set"
+    assert asset["asset_type"] == "comment_business_rule_set"
     assert asset["content_json"]["keyword_asset_key"] == "a2_plot_discussion_comment_keywords"
     assert asset["content_json"]["quality_guard_profile_key"] == "a2_sentiment_comment_202606"
     assert asset["content_json"]["keyword_selection"] == {"persona": ["family_mom", "experienced_mom"]}
     assert asset["metadata_json"]["keyword_asset_key"] == "a2_plot_discussion_comment_keywords"
     assert asset["metadata_json"]["quality_guard_profile_key"] == "a2_sentiment_comment_202606"
     assert asset["metadata_json"]["keyword_selection"] == {"persona": ["family_mom", "experienced_mom"]}
-    assert asset["content_json"]["rule_type"] == "comment_angle"
-    assert asset["content_json"]["items"][0]["comment_angle"] == "整体适应"
+    assert asset["content_json"]["rule_type"] == "business_rule"
+    assert asset["content_json"]["items"][0]["business_rule"] == "整体适应"
     assert asset["content_json"]["items"][0]["examples"][0] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
 
 
 @pytest.mark.asyncio
-async def test_comment_angle_rule_draft_save_list_and_publish(asset_client):
+async def test_comment_business_rule_draft_save_list_and_publish(asset_client):
     csv_content = "\n".join(
         [
-            "评论切角,语料",
+            "业务规则,语料",
             '"奶宝找到妈妈","奶宝找到妈妈：',
             "",
             "示例：",
@@ -821,13 +881,13 @@ async def test_comment_angle_rule_draft_save_list_and_publish(asset_client):
         ]
     )
     import_response = await asset_client.post(
-        "/api/v1/assets/imports/comment-angle-rule-set",
+        "/api/v1/assets/imports/comment-business-rule-set",
         data={
             "asset_key": "a2_plot_discussion_comment",
             "created_by": "ops",
             "display_name": "A2剧情讨论评论",
         },
-        files={"file": ("剧情讨论评论切角.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+        files={"file": ("剧情讨论业务规则.csv", csv_content.encode("utf-8-sig"), "text/csv")},
     )
     assert import_response.status_code == 200
 
@@ -842,10 +902,10 @@ async def test_comment_angle_rule_draft_save_list_and_publish(asset_client):
     )
 
     save_response = await asset_client.post(
-        "/api/v1/assets/comment-angle-rule-drafts",
+        "/api/v1/assets/comment-business-rule-drafts",
         json={
             "asset_key": "a2_plot_discussion_comment",
-            "rule_id": "comment_angle_002",
+            "rule_id": "business_rule_002",
             "draft_corpus": draft_corpus,
             "created_by": "ops",
         },
@@ -854,15 +914,15 @@ async def test_comment_angle_rule_draft_save_list_and_publish(asset_client):
     draft = save_response.json()["data"]
     assert draft["status"] == "draft"
     assert draft["base_version_no"] == 1
-    assert draft["comment_angle"] == "艾尔博士讲A1/A2型奶牛"
+    assert draft["business_rule"] == "艾尔博士讲A1/A2型奶牛"
     assert draft["original_corpus"].startswith("艾尔博士讲A1/A2型奶牛")
     assert "路过门店补奶粉" in draft["draft_corpus"]
 
     list_response = await asset_client.get(
-        "/api/v1/assets/comment-angle-rule-drafts",
+        "/api/v1/assets/comment-business-rule-drafts",
         params={
             "asset_key": "a2_plot_discussion_comment",
-            "rule_id": "comment_angle_002",
+            "rule_id": "business_rule_002",
         },
     )
     assert list_response.status_code == 200
@@ -870,21 +930,21 @@ async def test_comment_angle_rule_draft_save_list_and_publish(asset_client):
     assert [item["id"] for item in drafts] == [draft["id"]]
 
     before_publish = await asset_client.get(
-        "/api/v1/assets/comment_angle_rule_set/a2_plot_discussion_comment"
+        "/api/v1/assets/comment_business_rule_set/a2_plot_discussion_comment"
     )
     before_asset = before_publish.json()["data"]
     assert before_asset["version_no"] == 1
     assert "路过门店补奶粉" not in before_asset["content_json"]["items"][1]["corpus"]
 
     publish_response = await asset_client.post(
-        f"/api/v1/assets/comment-angle-rule-drafts/{draft['id']}/publish",
+        f"/api/v1/assets/comment-business-rule-drafts/{draft['id']}/publish",
         json={"created_by": "ops"},
     )
     assert publish_response.status_code == 200
     published = publish_response.json()["data"]
     assert published["draft"]["status"] == "applied"
     assert published["asset"]["version_no"] == 2
-    assert published["asset"]["source_name"] == f"comment_angle_rule_draft:{draft['id']}"
+    assert published["asset"]["source_name"] == f"comment_business_rule_draft:{draft['id']}"
     assert published["asset"]["metadata_json"]["last_rule_draft_id"] == draft["id"]
 
     items = published["asset"]["content_json"]["items"]
@@ -896,7 +956,7 @@ async def test_comment_angle_rule_draft_save_list_and_publish(asset_client):
     ]
 
     latest_response = await asset_client.get(
-        "/api/v1/assets/comment_angle_rule_set/a2_plot_discussion_comment"
+        "/api/v1/assets/comment_business_rule_set/a2_plot_discussion_comment"
     )
     latest = latest_response.json()["data"]
     assert latest["version_no"] == 2
@@ -908,7 +968,7 @@ async def test_upload_product_experience_rule_set_imports_rule_asset(asset_clien
     csv_content = "\n".join(
         [
             "# 运营本地说明行会被导入器忽略",
-            "产品使用体验,语料",
+            "产品使用体验,语料,参考示例,补充参考",
             '"0-6个月，3个月内，奶量补充","## 产品使用体验',
             "",
             "你宝宝的月龄：0-6个月。",
@@ -922,7 +982,9 @@ async def test_upload_product_experience_rule_set_imports_rule_asset(asset_clien
             "- 刚换源悦那阵子，喂奶没之前那么拉扯。",
             "- 有时候不用追着喂，家里人也松口气。",
             "",
-            '注意：参考素材只提供语义方向，生成时换一种自然说法。"',
+            '注意：参考素材只提供语义方向，生成时换一种自然说法。","- 新列示例1',
+            "- 新列示例2",
+            '- 新列示例3","- 新列补充1"',
             '"7-12个月，3-6个月，消化吸收","## 产品使用体验',
             "",
             "你宝宝的月龄：7-12个月。",
@@ -952,17 +1014,17 @@ async def test_upload_product_experience_rule_set_imports_rule_asset(asset_clien
     assert payload["code"] == 200
     data = payload["data"]
     assert data["imported_assets"] == 1
-    assert ["product_experience_rule_set", "yuanyue_product_experience"] in data["asset_keys"]
+    assert ["article_business_rule_set", "yuanyue_product_experience"] in data["asset_keys"]
     assert data["summary_json"]["rule_count"] == 2
-    assert data["summary_json"]["example_count"] == 3
+    assert data["summary_json"]["example_count"] == 5
     assert data["summary_json"]["keyword_asset_key"] == "yuanyue_product_experience_keywords"
 
     detail_response = await asset_client.get(
-        "/api/v1/assets/product_experience_rule_set/yuanyue_product_experience"
+        "/api/v1/assets/article_business_rule_set/yuanyue_product_experience"
     )
     assert detail_response.status_code == 200
     asset = detail_response.json()["data"]
-    assert asset["asset_type"] == "product_experience_rule_set"
+    assert asset["asset_type"] == "article_business_rule_set"
     assert asset["display_name"] == "源悦-生文"
     assert asset["content_json"]["keyword_asset_key"] == "yuanyue_product_experience_keywords"
     assert asset["metadata_json"]["keyword_asset_key"] == "yuanyue_product_experience_keywords"
@@ -971,3 +1033,7 @@ async def test_upload_product_experience_rule_set_imports_rule_asset(asset_clien
     assert asset["content_json"]["items"][0]["baby_stage"] == "0-6个月"
     assert asset["content_json"]["items"][0]["use_duration"] == "3个月内"
     assert asset["content_json"]["items"][0]["topic"] == "奶量补充"
+    assert asset["content_json"]["items"][0]["examples"] == ["新列示例1", "新列示例2", "新列示例3"]
+    assert asset["content_json"]["items"][0]["supplements"] == ["新列补充1"]
+    assert asset["content_json"]["items"][1]["examples"] == ["主要看喝完后的肚肚状态和便便节奏。"]
+    assert "1 条规则参考示例少于3条" in asset["metadata_json"]["warnings"]

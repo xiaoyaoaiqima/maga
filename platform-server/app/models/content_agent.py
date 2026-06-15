@@ -101,6 +101,30 @@ class ContentFeedback(Base):
     create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), nullable=True)
 
 
+class CommentDeliveryLedger(Base):
+    """Delivered comment ledger used to prevent exact reuse across exports."""
+
+    __tablename__ = "comment_delivery_ledger"
+    __table_args__ = (
+        UniqueConstraint("asset_key", "comment_hash", name="uq_comment_delivery_ledger_asset_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
+    asset_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True, comment="资产键")
+    category: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="评论分类")
+    comment_text: Mapped[str] = mapped_column(Text, nullable=False, comment="原始评论内容")
+    normalized_comment: Mapped[str] = mapped_column(Text, nullable=False, comment="归一化评论内容")
+    comment_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="归一化评论 sha256")
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="来源类型")
+    source_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="来源 URI")
+    batch_id: Mapped[Optional[int]] = mapped_column(BIGINT_PK, nullable=True, index=True, comment="批次ID")
+    item_id: Mapped[Optional[int]] = mapped_column(BIGINT_PK, nullable=True, index=True, comment="批次文章ID")
+    delivered_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True, comment="交付人")
+    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), nullable=True, comment="交付时间")
+    metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, comment="扩展数据")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), nullable=True)
+
+
 class ExecutorRegistry(Base):
     """Registered execution worker, e.g. Hermes profile maga-worker."""
 

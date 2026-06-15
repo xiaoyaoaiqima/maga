@@ -45,6 +45,7 @@ STATIC_COMMENT_REALNESS_REPLACEMENTS: dict[str, str] = {
     "接受度": "喝奶反应",
     "接得住": "愿意接着喝",
     "承接住": "愿意接着喝",
+    "能接上": "接着喝",
     "能接几口": "愿意喝几口",
     "接几口": "喝几口",
     "能接": "愿意喝",
@@ -104,6 +105,132 @@ STATIC_COMMENT_REALNESS_TERMS: list[str] = [
     "同款稳",
 ]
 
+A2_COMMENT_REALNESS_REPLACEMENTS: dict[str, str] = {
+    "我这罐快喝完了，姐妹有推荐的吗": "姐妹哪买的啊，我也想先买a2",
+    "有推荐的吗": "哪买的啊",
+    "姐妹有推荐的吗": "姐妹哪买的啊",
+    "接着喝家里的": "接着喝熟悉的",
+    "把家里的接着喝": "把a2接上",
+    "正好接着喝家里的": "正好接着喝熟悉的",
+    "先把家里的接着喝": "先把a2接上",
+    "喝喝看": "接着喝",
+    "先等等看": "先等a2",
+    "先来这罐": "先买a2",
+    "买罐a2先接着喝": "先买a2接着喝",
+    "备着": "接上",
+    "同款妈妈冲": "同款妈妈可以看看",
+    "赶紧先下一单": "先下一单",
+    "赶紧": "先",
+    "立马": "先",
+    "抢到": "买到",
+    "总算等到": "等到",
+    "安排": "接上",
+    "敢下手": "先看一下",
+    "安心值+1": "我会点开看看",
+    "也太方便了": "还挺直观",
+    "太方便了": "还挺直观",
+    "宝宝喝得挺痛快": "先接着喝熟悉的",
+    "这这罐": "这罐",
+    "参考起来更直观": "我会点开看看",
+    "比听介绍靠谱": "报告能点开",
+    "比光听介绍直观": "报告能点开",
+    "顺手核批次": "扫一下罐底码",
+    "核批次": "扫罐底码",
+    "平台公开信息": "那边资料",
+    "新入": "刚到手",
+    "确认报告": "看报告",
+    "这点比较安心": "我会点开看看",
+    "这点让我更放心": "我会再看一眼",
+    "这点确实让人安心": "有报告能自己查",
+    "比较安心": "能自己查",
+    "更倾向a2": "再看看a2",
+    "感觉这样更省心": "报告能点开",
+    "比问店员方便": "报告能点开",
+    "选奶粉不光看牌子": "我现在会看报告",
+    "刚去店里比较了": "刚去店里看了",
+    "就冲这点": "看到这个",
+    "这个细节挺放心": "报告能点开",
+    "感觉更放心一点": "能自己看到",
+    "这点挺打动我": "有报告能自己查到",
+    "报告都齐": "报告能看到",
+    "先别急": "先看看",
+    "快递到了先别急着开": "快递到了我先看了罐底码",
+    "物流码子": "物流码",
+    "这瓶见底": "这罐快见底",
+    "转奶前记得看罐底": "转奶前我会看罐底",
+    "我更喜欢a2能扫物流码的方式": "a2能扫物流码看报告",
+    "顺手核对": "看一眼",
+    "这点挺戳新手妈妈的": "我会停一下",
+    "主要图它": "主要看它",
+    "挺省事的": "能自己看",
+    "这个步骤现在我会顺手查一下": "我会顺手看一下",
+}
+
+# A2 舆情评论的低质真人感表达：不一定违规，但像“规则翻译”或搭配怪。
+# 只在 A2 评论规则包下启用，避免误伤其他评论资产。
+A2_COMMENT_REALNESS_TERMS: list[str] = [
+    *A2_COMMENT_REALNESS_REPLACEMENTS.keys(),
+    "看到能买了",
+    "看到有a2，我先补货",
+    "先补货喝喝看",
+    "我这罐快喝完了，姐妹有推荐的吗",
+    "我也想先来这罐",
+    "家里的接着喝",
+    "同款妈妈冲",
+    "赶紧先下一单",
+    "赶紧",
+    "立马",
+    "抢到",
+    "总算等到",
+    "继续安排",
+    "安排",
+    "敢下手",
+    "安心值+1",
+    "也太方便了",
+    "太方便了",
+    "宝宝喝得挺痛快",
+    "这这罐",
+    "参考起来更直观",
+    "比听介绍靠谱",
+    "比光听介绍直观",
+    "顺手核批次",
+    "核批次",
+    "平台公开信息",
+    "新入",
+    "确认报告",
+    "这点比较安心",
+    "这点让我更放心",
+    "这点确实让人安心",
+    "比较安心",
+    "更倾向a2",
+    "感觉这样更省心",
+    "比问店员方便",
+    "选奶粉不光看牌子",
+    "刚去店里比较了",
+    "就冲这点",
+    "这个细节挺放心",
+    "感觉更放心一点",
+    "这点挺打动我",
+    "报告都齐",
+    "先别急",
+    "快递到了先别急着开",
+    "物流码子",
+    "这瓶见底",
+    "转奶前记得看罐底",
+    "我更喜欢a2能扫物流码的方式",
+    "顺手核对",
+    "这点挺戳新手妈妈的",
+    "主要图它",
+    "挺省事的",
+    "这个步骤现在我会顺手查一下",
+]
+
+A2_COMMENT_PROFILE_KEYS = {
+    "a2_sentiment_comment_202606",
+    "a2_negative_post_comment_202606",
+    "a2_plot_discussion_comment_202606",
+}
+
 
 @dataclass(frozen=True)
 class CommentRealnessAuditResult:
@@ -120,13 +247,14 @@ class CommentRealnessReviewService:
         *,
         title: str | None,
         body: str | None,
+        extra_terms: list[str] | None = None,
     ) -> CommentRealnessAuditResult:
-        terms = _unique_terms(STATIC_COMMENT_REALNESS_TERMS)
+        terms = _unique_terms([*STATIC_COMMENT_REALNESS_TERMS, *(extra_terms or [])])
         hits = find_comment_realness_hits(_text(title, body), terms)
         return CommentRealnessAuditResult(
             terms=terms,
             hits=hits,
-            replacements={hit: STATIC_COMMENT_REALNESS_REPLACEMENTS[hit] for hit in hits if hit in STATIC_COMMENT_REALNESS_REPLACEMENTS},
+            replacements=_realness_replacements_for_hits(hits),
         )
 
     async def review_and_rewrite_item(
@@ -137,7 +265,8 @@ class CommentRealnessReviewService:
         executor_code: str | None,
         max_rounds: int = MAX_COMMENT_REALNESS_REWRITE_ROUNDS,
     ) -> dict[str, Any]:
-        audit = await self.audit_text(title=item.title, body=item.body)
+        extra_terms = _extra_realness_terms_for_item(item)
+        audit = await self.audit_text(title=item.title, body=item.body, extra_terms=extra_terms)
         if not audit.hits:
             review_payload = _review_payload(
                 initial_hits=[],
@@ -190,7 +319,7 @@ class CommentRealnessReviewService:
                 last_error = str(exc)
                 rewrite_method = "deterministic_sanitize_after_error"
 
-            post_audit = await self.audit_text(title=item.title, body=item.body)
+            post_audit = await self.audit_text(title=item.title, body=item.body, extra_terms=extra_terms)
             if post_audit.hits:
                 item.body = _remove_or_replace_realness_terms(item.body or "", post_audit.hits, post_audit.replacements)
                 rewrite_method = (
@@ -198,7 +327,7 @@ class CommentRealnessReviewService:
                     if "deterministic_sanitize" not in rewrite_method
                     else rewrite_method
                 )
-                post_audit = await self.audit_text(title=item.title, body=item.body)
+                post_audit = await self.audit_text(title=item.title, body=item.body, extra_terms=extra_terms)
             current_hits = post_audit.hits
             current_replacements = post_audit.replacements
             if not current_hits:
@@ -221,6 +350,25 @@ def find_comment_realness_hits(text: str, terms: list[str] | None = None) -> lis
         if term and term in text and term not in hits:
             hits.append(term)
     return sorted(hits, key=len, reverse=True)
+
+
+def _extra_realness_terms_for_item(item: ContentBatchItem) -> list[str]:
+    plan = getattr(item, "plan_json", None) or {}
+    asset_key = str(plan.get("asset_key") or "").strip()
+    profile_key = str(plan.get("quality_guard_profile_key") or "").strip()
+    if asset_key == "a2_sentiment_comment_activity" or profile_key in A2_COMMENT_PROFILE_KEYS:
+        return A2_COMMENT_REALNESS_TERMS
+    return []
+
+
+def _realness_replacements_for_hits(hits: list[str]) -> dict[str, str]:
+    replacements: dict[str, str] = {}
+    for hit in hits:
+        if hit in STATIC_COMMENT_REALNESS_REPLACEMENTS:
+            replacements[hit] = STATIC_COMMENT_REALNESS_REPLACEMENTS[hit]
+        if hit in A2_COMMENT_REALNESS_REPLACEMENTS:
+            replacements[hit] = A2_COMMENT_REALNESS_REPLACEMENTS[hit]
+    return replacements
 
 
 def _rewrite_input_payload(

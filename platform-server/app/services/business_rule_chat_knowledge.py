@@ -5,14 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 from app.schemas.chat import ChatContext
+from app.services.business_rule_asset_types import COMMENT_BUSINESS_RULE_ASSET_TYPES
 
 
-COMMENT_ANGLE_COPILOT_PROMPT = """
-你现在是 MAGA 的评论切角 by-case 语料副驾，只服务当前选中的一条评论切角子方向。
+BUSINESS_RULE_COPILOT_PROMPT = """
+你现在是 MAGA 的业务规则 by-case 语料副驾，只服务当前选中的一条业务规则子方向。
 
 工作方式：
-- 必须基于页面传入的 asset_key、rule_id、source_row_no、comment_angle、正式语料、草稿语料、examples、supplements 和测试报告摘要回答。
-- 只优化当前单条子方向，不扩展新子方向，不整包编辑；同名评论切角下可能有多个子方向，优先以 rule_id/source_row_no 为准。
+- 必须基于页面传入的 asset_key、rule_id、source_row_no、business_rule、正式语料、草稿语料、examples、supplements 和测试报告摘要回答。
+- 只优化当前单条子方向，不扩展新子方向，不整包编辑；同名业务规则下可能有多个子方向，优先以 rule_id/source_row_no 为准。
 - 优先改当前子方向的示例池和松规则，不把规则写成重审核清单。
 - 草稿建议只用于前端填入文本框；保存草稿、试跑 10/50 条、发布新版本都必须让用户点击现有按钮完成。
 - 不联网检索真人素材，不补充未出现在当前上下文里的品牌、剧情、竞品、功效、检测、活动机制等业务事实。
@@ -33,7 +34,6 @@ COMMENT_ANGLE_COPILOT_PROMPT = """
 
 质量检查：
 - 标题是否明确说明当前子方向在聊什么。
-- 规则是否太硬，是否堆叠“必须/只写/可写方向/固定数字/生成重点”等词。
 - 示例是否像真实评论区表达，是否有生活碎片、短问句、犹豫感、顺手聊天感。
 - 示例句式是否重复，是否都沿着同一个开头和结构。
 - 已购/未购、体验身份、宝宝阶段等身份边界是否一致。
@@ -42,19 +42,19 @@ COMMENT_ANGLE_COPILOT_PROMPT = """
 
 LOOSENER_PROMPT = """
 用户正在要求放松或修正 AI 味/同质化：
-- 先指出硬规则、重复句式、生活感弱、边界过窄的位置。
-- 把“必须/只写/可写方向/固定数字/生成重点”改成“像在聊/可以带一点/别都写成”。
-- 保留必要合规边界，但写轻；不要为了放松删除身份或安全边界。
+- 先指出重复句式、生活感弱、表达过满、示例横向不够的位置。
+- 保留必要业务边界和合规边界；不要为了放松删除身份、安全或禁区边界。
+- 边界可以写清楚，但生成口径要更像评论区自然表达，不要变成审核清单。
 - 多样性优先靠示例横向扩展承担，不新增一串规则。
 """.strip()
 
 
-def is_comment_angle_context(context: ChatContext | None) -> bool:
-    """Return whether the request should activate comment-angle copilot behavior."""
+def is_business_rule_context(context: ChatContext | None) -> bool:
+    """Return whether the request should activate business-rule copilot behavior."""
 
     if context is None:
         return False
-    return context.page == "business_rules" and context.asset_type == "comment_angle_rule_set"
+    return context.page == "business_rules" and context.asset_type in COMMENT_BUSINESS_RULE_ASSET_TYPES
 
 
 def should_inject_loosener(message: str) -> bool:
@@ -67,17 +67,17 @@ def should_inject_loosener(message: str) -> bool:
 def build_business_rule_system_prompt(base_prompt: str, context: ChatContext | None, message: str) -> str:
     """Append business-rule copilot knowledge to the selected REALTIME_CHAT Agent prompt."""
 
-    if not is_comment_angle_context(context):
+    if not is_business_rule_context(context):
         return base_prompt
 
-    parts = [base_prompt.strip(), COMMENT_ANGLE_COPILOT_PROMPT]
+    parts = [base_prompt.strip(), BUSINESS_RULE_COPILOT_PROMPT]
     if should_inject_loosener(message):
         parts.append(LOOSENER_PROMPT)
     parts.append(
         """
 如果你给出可直接填入草稿文本框的完整语料，请在回复最后追加一个 JSON fenced block：
 ```json
-{"actions":[{"type":"fill_comment_angle_draft","label":"填入草稿","payload":{"draft_corpus":"完整草稿语料"}}]}
+{"actions":[{"type":"fill_business_rule_draft","label":"填入草稿","payload":{"draft_corpus":"完整草稿语料"}}]}
 ```
 不要返回保存、试跑、发布等动作。
 """.strip()
@@ -88,17 +88,17 @@ def build_business_rule_system_prompt(base_prompt: str, context: ChatContext | N
 def build_business_rule_context_block(context: ChatContext | None) -> str:
     """Serialize the current page state into a compact, auditable prompt block."""
 
-    if not is_comment_angle_context(context):
+    if not is_business_rule_context(context):
         return ""
 
     lines = [
-        "当前页面上下文：业务规则页 / 评论切角单条草稿 Drawer",
+        "当前页面上下文：业务规则页 / 业务规则单条草稿 Drawer",
         f"asset_key: {_text(context.asset_key)}",
         f"asset_type: {_text(context.asset_type)}",
         f"asset_version: {_text(context.asset_version)}",
         f"rule_id: {_text(context.rule_id)}",
         f"source_row_no: {_text(context.source_row_no)}",
-        f"comment_angle: {_text(context.comment_angle)}",
+        f"business_rule: {_text(context.business_rule)}",
         "正式语料:",
         _text(context.corpus),
         "当前草稿语料:",
@@ -110,7 +110,7 @@ def build_business_rule_context_block(context: ChatContext | None) -> str:
         "最近测试报告摘要:",
         _format_report_summary(context.test_report_summary),
     ]
-    # 重要逻辑：副驾必须只看当前 rule_id/source_row_no，避免把同名评论切角下多个子方向混在一起。
+    # 重要逻辑：副驾必须只看当前 rule_id/source_row_no，避免把同名业务规则下多个子方向混在一起。
     return "\n".join(lines)
 
 

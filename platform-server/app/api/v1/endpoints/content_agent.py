@@ -135,6 +135,8 @@ async def start_batch_generation(
     try:
         job = await ContentBatchPlanner(db).create_batch_plan(
             asset_key=request.asset_key,
+            rule_id=request.rule_id,
+            source_row_no=request.source_row_no,
             product_topic=request.product_topic,
             target_audience=request.target_audience,
             persona_target=request.persona_target,
@@ -195,7 +197,7 @@ async def start_comment_batch_generation(
             asset_key=request.asset_key,
             keyword_asset_key=request.keyword_asset_key,
             quality_guard_profile_key=request.quality_guard_profile_key,
-            comment_angle=request.comment_angle,
+            business_rule=request.business_rule,
             rule_id=request.rule_id,
             source_row_no=request.source_row_no,
             draft_corpus=request.draft_corpus,
@@ -242,9 +244,18 @@ async def check_content_generation_preflight(
 async def list_batches(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    asset_key: str | None = Query(default=None, max_length=128),
+    rule_id: str | None = Query(default=None, max_length=128),
+    source_row_no: int | None = Query(default=None, ge=1),
     db: AsyncSession = Depends(get_db),
 ) -> ResponseData[ContentBatchListResponse]:
-    batches = await ContentBatchReportService(db).list_batch_reports(limit=limit, offset=offset)
+    batches = await ContentBatchReportService(db).list_batch_reports(
+        limit=limit,
+        offset=offset,
+        asset_key=asset_key,
+        rule_id=rule_id,
+        source_row_no=source_row_no,
+    )
     return ResponseData(data=batches)
 
 

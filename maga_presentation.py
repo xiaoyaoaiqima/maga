@@ -573,7 +573,7 @@ add_textbox(slide9, Inches(0.6), Inches(3.7), Inches(5.6), Inches(0.35),
             "轻规则：只定三件事", font_size=16, font_color=ACCENT_BLUE, bold=True)
 
 rule_items = [
-    ("方向", "这个切角在聊什么"),
+    ("方向", "这个业务规则在聊什么"),
     ("边界", "别写成什么、别超出什么阶段"),
     ("否定式", "\"不要写成...\"比\"必须包含...\"更有效"),
 ]

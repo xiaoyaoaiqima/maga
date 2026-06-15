@@ -211,7 +211,7 @@ class AssetChangeProposalApplyResponse(BaseModel):
     created_asset_ids: list[int]
 
 
-class CommentAngleRuleDraftSave(BaseModel):
+class CommentBusinessRuleDraftSave(BaseModel):
     asset_key: str = Field(..., min_length=1)
     rule_id: str | None = None
     source_row_no: int | None = Field(default=None, ge=1)
@@ -219,7 +219,7 @@ class CommentAngleRuleDraftSave(BaseModel):
     created_by: str | None = "maga-operator"
 
 
-class CommentAngleRuleDraftResponse(BaseModel):
+class CommentBusinessRuleDraftResponse(BaseModel):
     id: int
     status: str
     asset_key: str
@@ -227,7 +227,7 @@ class CommentAngleRuleDraftResponse(BaseModel):
     base_version_no: int | None = None
     rule_id: str | None = None
     source_row_no: int | None = None
-    comment_angle: str | None = None
+    business_rule: str | None = None
     original_corpus: str | None = None
     draft_corpus: str
     created_by: str | None = None
@@ -236,12 +236,12 @@ class CommentAngleRuleDraftResponse(BaseModel):
     update_time: datetime | None = None
 
 
-class CommentAngleRuleDraftPublish(BaseModel):
+class CommentBusinessRuleDraftPublish(BaseModel):
     created_by: str | None = "maga-operator"
 
 
-class CommentAngleRuleDraftPublishResponse(BaseModel):
-    draft: CommentAngleRuleDraftResponse
+class CommentBusinessRuleDraftPublishResponse(BaseModel):
+    draft: CommentBusinessRuleDraftResponse
     asset: AssetRegistryResponse
 
 

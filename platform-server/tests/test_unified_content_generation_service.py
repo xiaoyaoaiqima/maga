@@ -9,6 +9,7 @@ from app.services.unified_content_generation_service import (
     DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
     SYSTEM_KEYWORD_ASSET_TYPE,
     UnifiedContentGenerationService,
+    _business_rule_text,
     _normalize_model_config,
 )
 
@@ -66,8 +67,8 @@ async def test_unified_generation_selects_one_sub_keyword_per_category(unified_s
         snapshot = await UnifiedContentGenerationService(session).build_snapshot(
             content_type="comment",
             business_rule={
-                "rule_type": "comment_angle",
-                "comment_angle": "整体适应",
+                "rule_type": "business_rule",
+                "business_rule": "整体适应",
                 "corpus": "像妈妈在评论区聊刚开始喝源悦的观察。",
                 "examples": ["我家刚开始也在看源悦，想蹲蹲真实反馈"],
             },
@@ -98,8 +99,8 @@ async def test_unified_generation_selects_one_sub_keyword_per_category(unified_s
     assert "只输出评论正文，不要标题、编号、解释" in snapshot.input_snapshot["rendered_prompt"]
     assert "先看业务规则里的参考示例，再换一种自然说法输出" in snapshot.input_snapshot["rendered_prompt"]
     assert "小红书母婴评论生成要求：" not in snapshot.input_snapshot["rendered_prompt"]
-    assert "字数按评论切角或系统关键词要求控制" not in snapshot.input_snapshot["rendered_prompt"]
-    assert "具体业务信息只跟随【评论切角】" not in snapshot.input_snapshot["rendered_prompt"]
+    assert "字数按业务规则或系统关键词要求控制" not in snapshot.input_snapshot["rendered_prompt"]
+    assert "具体业务信息只跟随【业务规则】" not in snapshot.input_snapshot["rendered_prompt"]
     assert "不像广告、不像客服、不像教程、不像科普公告" not in snapshot.input_snapshot["rendered_prompt"]
     assert "妈妈自己能观察到" not in snapshot.input_snapshot["rendered_prompt"]
     assert "品牌名称只能使用业务规则或参考示例里的品牌" not in snapshot.input_snapshot["rendered_prompt"]
@@ -122,6 +123,24 @@ def test_model_config_keeps_timeout_and_retry_controls():
     assert "ignored" not in config
 
 
+def test_business_rule_text_renders_only_supplied_examples_with_usage_boundary():
+    text = _business_rule_text(
+        {
+            "rule_type": "product_experience",
+            "topic": "奶量补充",
+            "examples": ["抽中示例1", "抽中示例2", "抽中示例3"],
+            "example_pool_count": 20,
+            "example_sample_count": 3,
+        }
+    )
+
+    assert "示例使用边界：只学习语气、场景颗粒和生活细节，不复刻原句、结构和事实主张。" in text
+    assert "抽中示例1" in text
+    assert "抽中示例2" in text
+    assert "抽中示例3" in text
+    assert "example_pool_count" not in text
+
+
 @pytest.mark.asyncio
 async def test_unified_comment_generation_keeps_yuanyue_brand_guard_asset_scoped(unified_session_factory):
     generation_requirements = (
@@ -132,8 +151,8 @@ async def test_unified_comment_generation_keeps_yuanyue_brand_guard_asset_scoped
             content_type="comment",
             business_rule={
                 "asset_key": "yuanyue_comment_activity",
-                "rule_type": "comment_angle",
-                "comment_angle": "整体适应",
+                "rule_type": "business_rule",
+                "business_rule": "整体适应",
                 "generation_requirements": generation_requirements,
             },
             item_no=1,
@@ -152,8 +171,8 @@ async def test_unified_comment_generation_does_not_add_a2_business_boundaries(un
             business_rule={
                 "asset_key": "a2_sentiment_comment_activity",
                 "quality_guard_profile_key": "a2_sentiment_comment_202606",
-                "rule_type": "comment_angle",
-                "comment_angle": "A2舆情改善评论",
+                "rule_type": "business_rule",
+                "business_rule": "A2舆情改善评论",
                 "corpus": "关键词方向是有货+转奶。",
             },
             item_no=1,
@@ -165,7 +184,7 @@ async def test_unified_comment_generation_does_not_add_a2_business_boundaries(un
     assert "只输出评论正文，不要标题、编号、解释" in prompt
     assert "A2评论不要为了凑组合关键词强行补信息" not in prompt
     assert "不要自行补具体检测数值" not in prompt
-    assert "只有评论切角写了具体数值时才可跟随" not in prompt
+    assert "只有业务规则写了具体数值时才可跟随" not in prompt
     assert "检测数值要和蜡样检测、报告里那项或检测数值连起来说" not in prompt
     assert "扫码说法用扫罐底物流码、扫物流码看报告、罐底一扫这类自然说法" not in prompt
     assert "正文必须自然带一个竞品名" not in prompt
@@ -183,7 +202,7 @@ async def test_unified_generation_splits_article_and_comment_instructions(unifie
     async with unified_session_factory() as session:
         comment_snapshot = await UnifiedContentGenerationService(session).build_snapshot(
             content_type="comment",
-            business_rule={"rule_type": "comment_angle", "comment_angle": "整体适应"},
+            business_rule={"rule_type": "business_rule", "business_rule": "整体适应"},
             item_no=1,
             output_fields=["comment"],
         )
@@ -204,12 +223,14 @@ async def test_unified_generation_splits_article_and_comment_instructions(unifie
     ]
     assert "comment_writing_instruction" in comment_codes
     assert "comment_generation_requirement" in comment_codes
+    assert "comment_speaking_style" in comment_codes
     assert "writing_instruction" not in comment_codes
     assert "comment_format_control" in comment_codes
     assert "article_format_control" not in comment_codes
     assert "writing_instruction" in article_codes
     assert "comment_writing_instruction" not in article_codes
     assert "comment_generation_requirement" not in article_codes
+    assert "comment_speaking_style" not in article_codes
     assert "article_format_control" in article_codes
     assert "comment_format_control" not in article_codes
 
@@ -237,8 +258,8 @@ async def test_unified_generation_does_not_put_business_forbidden_terms_in_promp
             content_type="comment",
             business_rule={
                 "asset_key": "yuanyue_comment_activity",
-                "rule_type": "comment_angle",
-                "comment_angle": "整体适应",
+                "rule_type": "business_rule",
+                "business_rule": "整体适应",
             },
             item_no=1,
             output_fields=["comment"],
@@ -279,8 +300,8 @@ async def test_unified_generation_uses_keyword_asset_key_from_business_rule(unif
         snapshot = await UnifiedContentGenerationService(session).build_snapshot(
             content_type="comment",
             business_rule={
-                "rule_type": "comment_angle",
-                "comment_angle": "剧情讨论",
+                "rule_type": "business_rule",
+                "business_rule": "剧情讨论",
                 "keyword_asset_key": "a2_plot_discussion_comment_keywords",
             },
             item_no=1,
@@ -318,8 +339,8 @@ async def test_unified_generation_uses_light_requirements_for_a2_plot_discussion
         snapshot = await UnifiedContentGenerationService(session).build_snapshot(
             content_type="comment",
             business_rule={
-                "rule_type": "comment_angle",
-                "comment_angle": "剧情讨论",
+                "rule_type": "business_rule",
+                "business_rule": "剧情讨论",
                 "quality_guard_profile_key": "a2_plot_discussion_comment_202606",
                 "generation_requirements": generation_requirements,
                 "corpus": "剧情事实答复型：\n像妈妈聊奶宝找到妈妈后顺路去门店问活动。\n\n示例：\n- 找到了，我补货前去门店问问活动",
@@ -330,7 +351,7 @@ async def test_unified_generation_uses_light_requirements_for_a2_plot_discussion
 
     prompt = snapshot.input_snapshot["rendered_prompt"]
     assert generation_requirements in prompt
-    assert "遇到便便、生病这类切角" not in prompt
+    assert "遇到便便、生病这类业务规则" not in prompt
     assert "品牌名称只能使用业务规则或参考示例里的品牌" not in prompt
 
 
@@ -365,7 +386,7 @@ async def test_unified_generation_handles_extensible_keyword_categories(unified_
 
         snapshot = await UnifiedContentGenerationService(session).build_snapshot(
             content_type="comment",
-            business_rule={"rule_type": "comment_angle", "comment_angle": "互动提问"},
+            business_rule={"rule_type": "business_rule", "business_rule": "互动提问"},
             item_no=1,
             output_fields=["comment"],
         )
@@ -403,7 +424,7 @@ async def test_unified_generation_respects_fixed_keyword_selection(unified_sessi
 
         snapshot = await UnifiedContentGenerationService(session).build_snapshot(
             content_type="comment",
-            business_rule={"rule_type": "comment_angle", "comment_angle": "互动提问"},
+            business_rule={"rule_type": "business_rule", "business_rule": "互动提问"},
             item_no=1,
             output_fields=["comment"],
         )
@@ -438,8 +459,8 @@ async def test_unified_generation_filters_persona_by_business_rule_keyword_selec
         snapshot = await UnifiedContentGenerationService(session).build_snapshot(
             content_type="comment",
             business_rule={
-                "rule_type": "comment_angle",
-                "comment_angle": "剧情讨论",
+                "rule_type": "business_rule",
+                "business_rule": "剧情讨论",
                 "keyword_selection": {"persona": ["persona_1", "persona_3"]},
             },
             item_no=2,
@@ -532,8 +553,8 @@ async def test_unified_generation_uses_a2_asset_keyword_selection_for_sentiment_
         snapshot = await UnifiedContentGenerationService(session).build_snapshot(
             content_type="comment",
             business_rule={
-                "rule_type": "comment_angle",
-                "comment_angle": "批批检+转奶，转奶前看蜡样那项",
+                "rule_type": "business_rule",
+                "business_rule": "批批检+转奶，转奶前看蜡样那项",
                 "quality_guard_profile_key": "a2_sentiment_comment_202606",
                 "keyword_selection": {
                     "persona": ["rational_comparer"],
@@ -581,7 +602,7 @@ async def test_unified_generation_uses_expert_template_and_model_config(unified_
 
         snapshot = await UnifiedContentGenerationService(session).build_snapshot(
             content_type="comment",
-            business_rule={"rule_type": "comment_angle", "comment_angle": "互动提问", "corpus": "问问大家"},
+            business_rule={"rule_type": "business_rule", "business_rule": "互动提问", "corpus": "问问大家"},
             item_no=1,
             output_fields=["comment"],
         )

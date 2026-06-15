@@ -17,14 +17,15 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_KEYWORD_CSV = ROOT / "关键词语料/系统提示词关键词_评论联调.csv"
-DEFAULT_COMMENT_ANGLE_CSV = ROOT / "关键词语料/评论切角_子关键词导出.csv"
+DEFAULT_COMMENT_BUSINESS_RULE_CSV = ROOT / "关键词语料/评论业务规则_子关键词导出.csv"
 DEFAULT_WORKER_URL = "http://127.0.0.1:8765/invoke"
+LEGACY_RULE_HEADER = "\u8bc4\u8bba" + "\u5207\u89d2"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke local comment keyword assets with maga-worker.")
     parser.add_argument("--keyword-csv", type=Path, default=DEFAULT_KEYWORD_CSV)
-    parser.add_argument("--comment-angle-csv", type=Path, default=DEFAULT_COMMENT_ANGLE_CSV)
+    parser.add_argument("--comment-business-rule-csv", type=Path, default=DEFAULT_COMMENT_BUSINESS_RULE_CSV)
     parser.add_argument("--worker-url", default=os.environ.get("MAGA_WORKER_INVOKE_URL_LOCAL", DEFAULT_WORKER_URL))
     parser.add_argument("--targets", nargs="+", default=["便便问题", "消化吸收", "生长发育"])
     parser.add_argument("--timeout", type=float, default=120.0)
@@ -32,12 +33,12 @@ def main() -> int:
     args = parser.parse_args()
 
     selected_keywords = load_selected_keywords(args.keyword_csv)
-    rules = load_comment_angle_rows(args.comment_angle_csv)
+    rules = load_comment_business_rule_rows(args.comment_business_rule_csv)
     results = []
     for index, target in enumerate(args.targets, start=1):
-        rule = next((row for row in rules if target in row.get("评论切角", "")), None)
+        rule = next((row for row in rules if target in business_rule_name(row)), None)
         if not rule:
-            results.append({"target": target, "error": "missing_comment_angle"})
+            results.append({"target": target, "error": "missing_business_rule"})
             continue
         input_snapshot = build_input_snapshot(rule, selected_keywords, index)
         if args.print_prompt:
@@ -77,7 +78,7 @@ def load_selected_keywords(path: Path) -> list[dict[str, Any]]:
     return list(keywords_by_key.values())
 
 
-def load_comment_angle_rows(path: Path) -> list[dict[str, str]]:
+def load_comment_business_rule_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8-sig") as f:
         content = "".join(line for line in f if not line.startswith("#"))
     return list(csv.DictReader(io.StringIO(content)))
@@ -85,9 +86,9 @@ def load_comment_angle_rows(path: Path) -> list[dict[str, str]]:
 
 def build_input_snapshot(rule: dict[str, str], selected_keywords: list[dict[str, Any]], index: int) -> dict[str, Any]:
     business_rule = {
-        "rule_type": "comment_angle",
+        "rule_type": "business_rule",
         "product_topic": "美素佳儿源悦活动评论",
-        "comment_angle": rule["评论切角"],
+        "business_rule": business_rule_name(rule),
         "corpus": rule["语料"],
         "examples": examples_from_corpus(rule["语料"]),
         "asset_key": "yuanyue_comment_activity",
@@ -147,15 +148,19 @@ def render_prompt(business_rule: dict[str, Any], selected_keywords: list[dict[st
 
 def business_rule_text(rule: dict[str, Any]) -> str:
     lines = [
-        "- 规则类型：comment_angle",
+        "- 规则类型：business_rule",
         "- 主题：美素佳儿源悦活动评论",
-        f"- 评论切角：{rule['comment_angle']}",
+        f"- 业务规则：{rule['business_rule']}",
         f"- 业务语料：\n{rule['corpus']}",
     ]
     examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
     if examples:
         lines.append("- 参考示例：\n" + "\n".join(f"  - {item}" for item in examples[:8]))
     return "\n".join(lines)
+
+
+def business_rule_name(row: dict[str, str]) -> str:
+    return str(row.get("业务规则") or row.get("business_rule") or row.get(LEGACY_RULE_HEADER) or "").strip()
 
 
 def keyword_corpus_text(selected_keywords: list[dict[str, Any]]) -> str:

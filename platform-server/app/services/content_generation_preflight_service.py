@@ -11,18 +11,22 @@ from app.models.content_agent import ExecutorRegistry
 from app.models.expert_config import ExpertConfig
 from app.models.llm_model_route import LLMModelRoute
 from app.models.maga_assets import AssetRegistry
+from app.services.business_rule_asset_types import (
+    ARTICLE_BUSINESS_RULE_ASSET_TYPES,
+    BUSINESS_RULE_ASSET_TYPES,
+    COMMENT_BUSINESS_RULE_ASSET_TYPES,
+    content_type_for_business_rule_asset_type,
+)
 from app.schemas.content_batch_report import (
     ContentGenerationPreflightCheck,
     ContentGenerationPreflightResponse,
 )
 from app.services.business_forbidden_term_service import BusinessForbiddenTermService
-from app.services.comment_angle_rule_service import COMMENT_ANGLE_RULE_ASSET_TYPE
 from app.services.content_generation_expert_service import (
     CONTENT_REWRITE_CAPABILITY,
     DEFAULT_REWRITE_EXPERT_CONFIG_CODE,
 )
 from app.services.forbidden_term_review_service import STATIC_FORBIDDEN_TERMS
-from app.services.product_experience_rule_service import PRODUCT_EXPERIENCE_RULE_ASSET_TYPE
 from app.services.system_prompt_keyword_service import (
     DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
     SystemPromptKeywordService,
@@ -100,7 +104,7 @@ class ContentGenerationPreflightService:
     ) -> _RuleAssetContext:
         resolved_type = asset_type or await self._infer_rule_asset_type(asset_key)
         content_type = _content_type_for_asset_type(resolved_type)
-        if resolved_type not in {COMMENT_ANGLE_RULE_ASSET_TYPE, PRODUCT_EXPERIENCE_RULE_ASSET_TYPE}:
+        if resolved_type not in BUSINESS_RULE_ASSET_TYPES:
             checks.append(
                 _fail(
                     "rule_package",
@@ -389,7 +393,7 @@ class ContentGenerationPreflightService:
                 )
 
     async def _infer_rule_asset_type(self, asset_key: str) -> str | None:
-        for asset_type in (COMMENT_ANGLE_RULE_ASSET_TYPE, PRODUCT_EXPERIENCE_RULE_ASSET_TYPE):
+        for asset_type in BUSINESS_RULE_ASSET_TYPES:
             if await self._latest_asset(asset_type, asset_key):
                 return asset_type
         return None
@@ -435,26 +439,24 @@ class ContentGenerationPreflightService:
 
 
 def _content_type_for_asset_type(asset_type: str | None) -> str | None:
-    if asset_type == COMMENT_ANGLE_RULE_ASSET_TYPE:
-        return "comment"
-    if asset_type == PRODUCT_EXPERIENCE_RULE_ASSET_TYPE:
-        return "article"
-    return None
+    return content_type_for_business_rule_asset_type(asset_type)
 
 
 def _usable_rule_count(asset: AssetRegistry) -> int:
     items = (asset.content_json or {}).get("items")
-    if asset.asset_type == COMMENT_ANGLE_RULE_ASSET_TYPE:
+    if asset.asset_type in COMMENT_BUSINESS_RULE_ASSET_TYPES:
         return sum(
             1
             for item in items or []
-            if isinstance(item, dict) and item.get("comment_angle") and item.get("corpus")
+            if isinstance(item, dict) and item.get("business_rule") and item.get("corpus")
         )
-    if asset.asset_type == PRODUCT_EXPERIENCE_RULE_ASSET_TYPE:
+    if asset.asset_type in ARTICLE_BUSINESS_RULE_ASSET_TYPES:
         return sum(
             1
             for item in items or []
-            if isinstance(item, dict) and item.get("product_experience") and item.get("corpus")
+            if isinstance(item, dict)
+            and item.get("corpus")
+            and (item.get("product_experience") or item.get("business_rule") or item.get("article_rule"))
         )
     return 0
 

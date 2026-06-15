@@ -44,6 +44,11 @@ def _include_clean_routes(api_router: APIRouter) -> None:
         prefix="/content-agent",
         tags=["content-generation-experts"],
     )
+    api_router.include_router(
+        content_generation_experts.router,
+        prefix="/content-generation",
+        tags=["content-generation-experts"],
+    )
     api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
     api_router.include_router(files.router, prefix="/files", tags=["files"])
     api_router.include_router(info.router, prefix="/system", tags=["system"])
@@ -137,6 +142,11 @@ def _include_full_routes(api_router: APIRouter) -> None:
     api_router.include_router(
         content_generation_experts.router,
         prefix="/content-agent",
+        tags=["content-generation-experts"],
+    )
+    api_router.include_router(
+        content_generation_experts.router,
+        prefix="/content-generation",
         tags=["content-generation-experts"],
     )
     api_router.include_router(assets.router, prefix="/assets", tags=["assets"])

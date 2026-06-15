@@ -9,12 +9,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.maga_assets import AssetChangeProposal, AssetChangeRequest, AssetImportRun, AssetRegistry
-from app.services.comment_angle_rule_service import COMMENT_ANGLE_RULE_ASSET_TYPE
+from app.services.business_rule_asset_types import COMMENT_BUSINESS_RULE_ASSET_TYPES
+from app.services.comment_business_rule_service import COMMENT_BUSINESS_RULE_ASSET_TYPE
 from app.schemas.assets import (
     AssetCandidateCreate,
     AssetChangeProposalCreate,
     AssetChangeRequestCreate,
-    CommentAngleRuleDraftSave,
+    CommentBusinessRuleDraftSave,
     AssetGenerationOptionsResponse,
 )
 
@@ -92,6 +93,20 @@ class AssetService:
             stmt = stmt.where(AssetRegistry.asset_stage == asset_stage)
         result = await self.db.execute(
             stmt
+        )
+        return result.scalar_one_or_none()
+
+    async def _get_latest_comment_business_rule_asset(self, asset_key: str) -> AssetRegistry | None:
+        result = await self.db.execute(
+            select(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type.in_(COMMENT_BUSINESS_RULE_ASSET_TYPES),
+                AssetRegistry.asset_key == asset_key,
+                AssetRegistry.status == "active",
+                AssetRegistry.asset_stage == "production",
+            )
+            .order_by(AssetRegistry.version_no.desc(), AssetRegistry.id.desc())
+            .limit(1)
         )
         return result.scalar_one_or_none()
 
@@ -260,21 +275,21 @@ class AssetService:
         )
         return list(result.scalars().all())
 
-    async def save_comment_angle_rule_draft(self, payload: CommentAngleRuleDraftSave) -> AssetChangeProposal:
-        asset = await self.get_latest_asset(COMMENT_ANGLE_RULE_ASSET_TYPE, payload.asset_key)
+    async def save_comment_business_rule_draft(self, payload: CommentBusinessRuleDraftSave) -> AssetChangeProposal:
+        asset = await self._get_latest_comment_business_rule_asset(payload.asset_key)
         if asset is None:
-            raise ValueError("comment-angle asset not found")
-        _, item = _find_comment_angle_item(asset.content_json, rule_id=payload.rule_id, source_row_no=payload.source_row_no)
+            raise ValueError("comment business rule asset not found")
+        _, item = _find_business_rule_item(asset.content_json, rule_id=payload.rule_id, source_row_no=payload.source_row_no)
         draft_corpus = payload.draft_corpus.strip()
         if not draft_corpus:
             raise ValueError("draft_corpus is required")
 
         request = AssetChangeRequest(
-            source_text=f"业务规则草稿（评论切角）：{payload.asset_key}/{item.get('rule_id')}",
+            source_text=f"业务规则草稿：{payload.asset_key}/{item.get('rule_id')}",
             requester=payload.created_by,
             context_json={
-                "draft_type": "comment_angle_rule_item",
-                "asset_type": COMMENT_ANGLE_RULE_ASSET_TYPE,
+                "draft_type": "comment_business_rule_item",
+                "asset_type": asset.asset_type,
                 "asset_key": payload.asset_key,
                 "base_asset_id": asset.id,
                 "base_version_no": asset.version_no,
@@ -290,10 +305,10 @@ class AssetService:
         proposal = AssetChangeProposal(
             request_id=request.id,
             risk_level="medium",
-            summary=f"评论切角单条草稿：{item.get('rule_id') or item.get('source_row_no')}",
+            summary=f"业务规则单条草稿：{item.get('rule_id') or item.get('source_row_no')}",
             affected_assets_json=[
                 {
-                    "asset_type": COMMENT_ANGLE_RULE_ASSET_TYPE,
+                    "asset_type": asset.asset_type,
                     "asset_key": payload.asset_key,
                     "base_asset_id": asset.id,
                     "base_version_no": asset.version_no,
@@ -302,15 +317,15 @@ class AssetService:
                 }
             ],
             proposed_changes_json={
-                "draft_type": "comment_angle_rule_item",
-                "asset_type": COMMENT_ANGLE_RULE_ASSET_TYPE,
+                "draft_type": "comment_business_rule_item",
+                "asset_type": asset.asset_type,
                 "asset_key": payload.asset_key,
                 "base_asset_id": asset.id,
                 "base_version_no": asset.version_no,
                 "target": {
                     "rule_id": item.get("rule_id"),
                     "source_row_no": item.get("source_row_no"),
-                    "comment_angle": item.get("comment_angle"),
+                    "business_rule": _business_rule_name(item),
                 },
                 "original_corpus": item.get("corpus") or "",
                 "draft_corpus": draft_corpus,
@@ -335,7 +350,7 @@ class AssetService:
         await self.db.flush()
         return proposal
 
-    async def list_comment_angle_rule_drafts(
+    async def list_comment_business_rule_drafts(
         self,
         *,
         asset_key: str,
@@ -352,7 +367,7 @@ class AssetService:
         drafts: list[AssetChangeProposal] = []
         for proposal in result.scalars().all():
             changes = proposal.proposed_changes_json or {}
-            if changes.get("draft_type") != "comment_angle_rule_item":
+            if changes.get("draft_type") != "comment_business_rule_item":
                 continue
             if changes.get("asset_key") != asset_key:
                 continue
@@ -366,7 +381,7 @@ class AssetService:
                 break
         return drafts
 
-    async def publish_comment_angle_rule_draft(
+    async def publish_comment_business_rule_draft(
         self,
         draft_id: int,
         *,
@@ -376,19 +391,19 @@ class AssetService:
         if proposal is None:
             return None, None
         changes = proposal.proposed_changes_json or {}
-        if changes.get("draft_type") != "comment_angle_rule_item":
-            raise ValueError("not a comment-angle rule draft")
+        if changes.get("draft_type") != "comment_business_rule_item":
+            raise ValueError("not a comment business rule draft")
         if proposal.status == "applied" and proposal.applied_asset_ids_json:
             asset = await self.db.get(AssetRegistry, proposal.applied_asset_ids_json[0])
             return proposal, asset
 
         asset_key = str(changes.get("asset_key") or "").strip()
-        current_asset = await self.get_latest_asset(COMMENT_ANGLE_RULE_ASSET_TYPE, asset_key)
+        current_asset = await self._get_latest_comment_business_rule_asset(asset_key)
         if current_asset is None:
-            raise ValueError("comment-angle asset not found")
+            raise ValueError("comment business rule asset not found")
         target = changes.get("target") if isinstance(changes.get("target"), dict) else {}
         content_json = copy.deepcopy(current_asset.content_json or {})
-        _, item = _find_comment_angle_item(
+        _, item = _find_business_rule_item(
             content_json,
             rule_id=str(target.get("rule_id") or "") or None,
             source_row_no=_int_or_none(target.get("source_row_no")),
@@ -403,7 +418,7 @@ class AssetService:
         await self.db.execute(
             update(AssetRegistry)
             .where(
-                AssetRegistry.asset_type == COMMENT_ANGLE_RULE_ASSET_TYPE,
+                AssetRegistry.asset_type.in_(COMMENT_BUSINESS_RULE_ASSET_TYPES),
                 AssetRegistry.asset_key == asset_key,
                 AssetRegistry.asset_stage == "production",
                 AssetRegistry.status == "active",
@@ -414,20 +429,20 @@ class AssetService:
         metadata_json.update(
             {
                 "rule_count": len(content_json.get("items") or []),
-                "example_count": _comment_angle_example_count(content_json),
+                "example_count": _business_rule_example_count(content_json),
                 "last_rule_draft_id": proposal.id,
                 "last_rule_draft_base_asset_id": changes.get("base_asset_id"),
                 "last_rule_draft_base_version_no": changes.get("base_version_no"),
             }
         )
         asset = AssetRegistry(
-            asset_type=COMMENT_ANGLE_RULE_ASSET_TYPE,
+            asset_type=COMMENT_BUSINESS_RULE_ASSET_TYPE,
             asset_key=asset_key,
             display_name=current_asset.display_name,
-            version_no=await self._next_asset_version(COMMENT_ANGLE_RULE_ASSET_TYPE, asset_key),
+            version_no=await self._next_compatible_asset_version(COMMENT_BUSINESS_RULE_ASSET_TYPES, asset_key),
             status="active",
             asset_stage="production",
-            source_name=f"comment_angle_rule_draft:{proposal.id}",
+            source_name=f"comment_business_rule_draft:{proposal.id}",
             source_uri=None,
             source_hash=None,
             content_json=content_json,
@@ -554,13 +569,23 @@ class AssetService:
         current = result.scalar_one_or_none()
         return int(current or 0) + 1
 
+    async def _next_compatible_asset_version(self, asset_types: tuple[str, ...], asset_key: str) -> int:
+        result = await self.db.execute(
+            select(AssetRegistry.version_no)
+            .where(AssetRegistry.asset_type.in_(asset_types), AssetRegistry.asset_key == asset_key)
+            .order_by(AssetRegistry.version_no.desc())
+            .limit(1)
+        )
+        current = result.scalar_one_or_none()
+        return int(current or 0) + 1
+
 
 def _proposed_assets(changes: dict[str, Any]) -> list[dict[str, Any]]:
     assets = changes.get("assets") if isinstance(changes, dict) else None
     return [item for item in assets or [] if isinstance(item, dict) and item.get("asset_type") and item.get("asset_key")]
 
 
-def _find_comment_angle_item(
+def _find_business_rule_item(
     content_json: dict[str, Any] | None,
     *,
     rule_id: str | None,
@@ -568,7 +593,7 @@ def _find_comment_angle_item(
 ) -> tuple[int, dict[str, Any]]:
     items = (content_json or {}).get("items")
     if not isinstance(items, list):
-        raise ValueError("comment-angle asset has no items")
+        raise ValueError("comment business rule asset has no items")
     matches: list[tuple[int, dict[str, Any]]] = []
     for index, item in enumerate(items):
         if not isinstance(item, dict):
@@ -579,10 +604,19 @@ def _find_comment_angle_item(
         if source_row_no is not None and _int_or_none(item.get("source_row_no")) == int(source_row_no):
             matches.append((index, item))
     if not matches:
-        raise ValueError("comment-angle rule item not found")
+        raise ValueError("comment business rule item not found")
     if len(matches) > 1:
-        raise ValueError("comment-angle rule selector matched multiple items")
+        raise ValueError("comment business rule selector matched multiple items")
     return matches[0]
+
+
+def _business_rule_name(item: dict[str, Any]) -> str | None:
+    """Prefer the new field while allowing existing production assets to keep working."""
+    value = item.get("business_rule")
+    if value is None:
+        value = item.get("comment_" + "angle")
+    normalized = str(value or "").strip()
+    return normalized or None
 
 
 def _extract_examples_from_corpus(corpus: str) -> list[str]:
@@ -602,7 +636,7 @@ def _extract_examples_from_corpus(corpus: str) -> list[str]:
     return examples
 
 
-def _comment_angle_example_count(content_json: dict[str, Any] | None) -> int:
+def _business_rule_example_count(content_json: dict[str, Any] | None) -> int:
     total = 0
     for item in (content_json or {}).get("items") or []:
         if not isinstance(item, dict):
@@ -618,7 +652,7 @@ def _int_or_none(value: Any) -> int | None:
         return None
 
 
-def comment_angle_rule_draft_response(proposal: AssetChangeProposal) -> dict[str, Any]:
+def comment_business_rule_draft_response(proposal: AssetChangeProposal) -> dict[str, Any]:
     changes = proposal.proposed_changes_json or {}
     target = changes.get("target") if isinstance(changes.get("target"), dict) else {}
     return {
@@ -629,7 +663,7 @@ def comment_angle_rule_draft_response(proposal: AssetChangeProposal) -> dict[str
         "base_version_no": changes.get("base_version_no"),
         "rule_id": target.get("rule_id"),
         "source_row_no": target.get("source_row_no"),
-        "comment_angle": target.get("comment_angle"),
+        "business_rule": target.get("business_rule"),
         "original_corpus": changes.get("original_corpus"),
         "draft_corpus": str(changes.get("draft_corpus") or ""),
         "created_by": proposal.created_by,

@@ -14,6 +14,7 @@ from app.models.content_agent import ContentBatchItem, ContentBatchJob
 from app.schemas.content_agent import ContentAgentTaskCreate
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.executor_invocation_service import ExecutorInvocationClient
+from app.services.activity_quality_guard_service import ActivityQualityGuardService
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService
 from app.services.unified_content_generation_service import (
     CONTENT_GENERATE_CAPABILITY,
@@ -231,6 +232,7 @@ class ContentBatchExecutionService:
                     executor_code=self.executor_code,
                     content_type="article",
                 )
+                ActivityQualityGuardService().review_item(item)
                 item.error_message = None
                 await db.commit()
                 return _ItemExecutionResult(item_id=item_id, generated=True, failed=False)

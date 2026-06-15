@@ -23,6 +23,7 @@ from app.schemas.content_batch_report import (
 )
 from app.services.business_forbidden_term_service import (
     BusinessForbiddenTermService,
+    normalize_business_forbidden_term_entries,
     normalize_business_forbidden_terms,
 )
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
@@ -176,11 +177,25 @@ class ContentBatchReviewService:
         self.db.add(feedback)
         await self.db.flush()
         business_forbidden_terms = normalize_business_forbidden_terms(request.business_forbidden_terms)
+        business_forbidden_term_entries = normalize_business_forbidden_term_entries(
+            [
+                *(request.business_forbidden_term_entries or []),
+                *[
+                    {
+                        "term": term,
+                        "reason": "运营反馈不希望出现",
+                        "source": "content_batch_feedback",
+                    }
+                    for term in business_forbidden_terms
+                ],
+            ]
+        )
+        business_forbidden_terms = [entry["term"] for entry in business_forbidden_term_entries]
         if business_forbidden_terms:
             job = await self._job_for_item(item)
-            term_result = await BusinessForbiddenTermService(self.db).add_terms(
+            term_result = await BusinessForbiddenTermService(self.db).upsert_entries(
                 asset_key=job.asset_key if job else None,
-                terms=business_forbidden_terms,
+                entries=business_forbidden_term_entries,
                 created_by=request.created_by,
                 source_context={
                     "batch_id": item.batch_id,
@@ -195,6 +210,7 @@ class ContentBatchReviewService:
             metadata_patch = {
                 "business_forbidden_terms": business_forbidden_terms,
                 "business_forbidden_terms_added": term_result.added_terms,
+                "business_forbidden_terms_updated": term_result.updated_terms,
                 "business_forbidden_terms_asset_key": term_result.asset_key,
             }
             version.metadata_json = {**(version.metadata_json or {}), **metadata_patch}
@@ -620,7 +636,7 @@ def _excerpt(value: str | None, *, limit: int = 500) -> str | None:
 
 def _content_type_for_item(item: ContentBatchItem) -> str:
     plan = item.plan_json or {}
-    if plan.get("rule_type") == "comment_angle" or plan.get("output_fields") == ["comment"]:
+    if plan.get("rule_type") == "business_rule" or plan.get("output_fields") == ["comment"]:
         return "comment"
     return "article"
 

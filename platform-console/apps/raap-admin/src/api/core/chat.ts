@@ -12,7 +12,7 @@ export interface ChatContext {
   asset_version?: null | number | string;
   rule_id?: null | string;
   source_row_no?: null | number;
-  comment_angle?: null | string;
+  business_rule?: null | string;
   corpus?: null | string;
   draft_corpus?: null | string;
   examples?: string[];
@@ -21,7 +21,7 @@ export interface ChatContext {
 }
 
 export interface ChatAction {
-  type: 'fill_comment_angle_draft';
+  type: 'fill_business_rule_draft';
   label: string;
   payload: Record<string, any>;
 }

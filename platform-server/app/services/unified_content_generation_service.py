@@ -32,6 +32,7 @@ KEYWORD_CORPUS_RENDER_PRIORITY = {
     "persona": 20,
     "comment_writing_instruction": 30,
     "writing_instruction": 30,
+    "comment_speaking_style": 35,
     "writing_method": 40,
     "comment_format_control": 50,
     "article_format_control": 50,
@@ -343,8 +344,11 @@ def _business_rule_text(rule: dict[str, Any]) -> str:
         lines.append(f"- 人设要求：{rule.get('persona_target')}")
     if rule.get("style"):
         lines.append(f"- 风格：{rule.get('style')}")
-    if rule.get("comment_angle"):
-        lines.append(f"- 评论切角：{rule.get('comment_angle')}")
+    rule_name = rule.get("business_rule")
+    if rule_name is None:
+        rule_name = rule.get("comment_" + "angle")
+    if rule_name:
+        lines.append(f"- 业务规则：{rule_name}")
     if rule.get("product_experience"):
         lines.append(f"- 产品使用体验：{rule.get('product_experience')}")
     if rule.get("baby_stage") or rule.get("use_duration") or rule.get("topic"):
@@ -387,10 +391,13 @@ def _business_rule_text(rule: dict[str, Any]) -> str:
     if rule.get("render_reference_examples") is not False:
         examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
         supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
+        if examples or supplements:
+            # 重要逻辑：示例只作为表达颗粒参考，避免把真人语料当范文复刻。
+            lines.append("- 示例使用边界：只学习语气、场景颗粒和生活细节，不复刻原句、结构和事实主张。")
         if examples:
-            lines.append("- 参考示例：\n" + "\n".join(f"  - {item}" for item in examples[:8]))
+            lines.append("- 参考示例：\n" + "\n".join(f"  - {item}" for item in examples))
         if supplements:
-            lines.append("- 补充参考：\n" + "\n".join(f"  - {item}" for item in supplements[:6]))
+            lines.append("- 补充参考：\n" + "\n".join(f"  - {item}" for item in supplements))
     if not lines:
         lines.append(json.dumps(rule, ensure_ascii=False, indent=2))
     return "\n".join(lines)

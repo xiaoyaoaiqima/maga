@@ -1,6 +1,8 @@
 """Bootstrap helpers for the MAGA content-agent execution boundary."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -13,6 +15,13 @@ from app.core.content_agent_defaults import (
 )
 from app.models.content_agent import ExecutorRegistry
 from app.models.agent import Agent
+from app.models.maga_assets import AssetRegistry
+from app.services.business_forbidden_term_service import (
+    A2_SENTIMENT_COMMENT_ASSET_KEY,
+    A2_SENTIMENT_COMMENT_SEED_TERM,
+    BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
+    BUSINESS_FORBIDDEN_TERMS_SCHEMA_VERSION,
+)
 
 
 async def seed_default_content_agent_executors(
@@ -114,3 +123,101 @@ async def seed_default_realtime_chat_agent(
             .where(Agent.id == existing_id)
             .values(**values)
         )
+
+
+async def seed_a2_sentiment_comment_forbidden_terms(conn: AsyncConnection) -> None:
+    """Seed the A2 comment-scoped business forbidden terms asset."""
+    existing = (
+        await conn.execute(
+            select(AssetRegistry.content_json)
+            .where(
+                AssetRegistry.asset_type == BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
+                AssetRegistry.asset_key == A2_SENTIMENT_COMMENT_ASSET_KEY,
+                AssetRegistry.asset_stage == "production",
+                AssetRegistry.status == "active",
+            )
+            .order_by(AssetRegistry.version_no.desc(), AssetRegistry.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    existing_entries = _business_forbidden_seed_entries(existing or {})
+    seed_term = A2_SENTIMENT_COMMENT_SEED_TERM["term"]
+    existing_seed = next((entry for entry in existing_entries if entry.get("term") == seed_term), None)
+    if existing_seed and existing_seed.get("reason") == A2_SENTIMENT_COMMENT_SEED_TERM["reason"]:
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    if existing_seed:
+        next_entries = [
+            {
+                **entry,
+                **A2_SENTIMENT_COMMENT_SEED_TERM,
+                "created_at": entry.get("created_at") or now,
+                "updated_at": now,
+                "updated_by": "system",
+            }
+            if entry.get("term") == seed_term
+            else entry
+            for entry in existing_entries
+        ]
+    else:
+        next_entries = [
+            *existing_entries,
+            {
+                **A2_SENTIMENT_COMMENT_SEED_TERM,
+                "created_at": now,
+            },
+        ]
+    if existing is not None:
+        await conn.execute(
+            update(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type == BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
+                AssetRegistry.asset_key == A2_SENTIMENT_COMMENT_ASSET_KEY,
+                AssetRegistry.asset_stage == "production",
+                AssetRegistry.status == "active",
+            )
+            .values(status="archived")
+        )
+    current_version = await conn.scalar(
+        select(func.max(AssetRegistry.version_no)).where(
+            AssetRegistry.asset_type == BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
+            AssetRegistry.asset_key == A2_SENTIMENT_COMMENT_ASSET_KEY,
+        )
+    )
+    await conn.execute(
+        insert(AssetRegistry).values(
+            asset_type=BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
+            asset_key=A2_SENTIMENT_COMMENT_ASSET_KEY,
+            display_name="A2舆情改善评论业务违禁词",
+            version_no=int(current_version or 0) + 1,
+            status="active",
+            asset_stage="production",
+            source_name="bootstrap_seed",
+            content_json={
+                "schema_version": BUSINESS_FORBIDDEN_TERMS_SCHEMA_VERSION,
+                "asset_type": BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
+                "terms": next_entries,
+            },
+            metadata_json={
+                "schema_version": BUSINESS_FORBIDDEN_TERMS_SCHEMA_VERSION,
+                "term_count": len([entry for entry in next_entries if entry.get("enabled") is not False]),
+                "added_term_count": 0 if existing_seed else 1,
+                "updated_term_count": 1 if existing_seed else 0,
+            },
+            created_by="system",
+        )
+    )
+
+
+def _business_forbidden_seed_entries(content_json: dict | None) -> list[dict]:
+    raw_terms = (content_json or {}).get("terms")
+    if not isinstance(raw_terms, list):
+        raw_terms = (content_json or {}).get("items")
+    entries: list[dict] = []
+    for item in raw_terms or []:
+        if isinstance(item, str):
+            entries.append({"term": item, "enabled": True})
+        elif isinstance(item, dict):
+            entries.append(item)
+    return entries

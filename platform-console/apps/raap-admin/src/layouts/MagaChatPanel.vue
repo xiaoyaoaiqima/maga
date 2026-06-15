@@ -30,28 +30,30 @@ const emit = defineEmits<{
 }>();
 
 const draft = ref('');
-const commentAngleQuickPrompts = [
-  '检查当前语料，指出太硬、AI味、同质化和越界风险',
+const businessRuleQuickPrompts = [
+  '检查当前语料，指出AI味、同质化和越界风险',
   '基于当前规则改一版更像真人评论区的草稿',
-  '把当前草稿放松一点，减少必须/只写/固定路径',
+  '把当前草稿改得更自然，保留必要边界',
   '结合最近测试报告，给下一版草稿修改建议',
 ];
 
 const canSend = computed(() => {
   return draft.value.trim().length > 0 && !props.sending && !props.agentMissing;
 });
-const isCommentAngleCopilot = computed(() => {
+const isBusinessRuleCopilot = computed(() => {
   return (
     props.activeContext?.page === 'business_rules' &&
-    props.activeContext?.asset_type === 'comment_angle_rule_set'
+    ['comment_business_rule_set'].includes(
+      props.activeContext?.asset_type || '',
+    )
   );
 });
 const contextTitle = computed(() => {
-  if (!isCommentAngleCopilot.value) return '';
+  if (!isBusinessRuleCopilot.value) return '';
   const row = props.activeContext?.source_row_no
     ? `行 ${props.activeContext.source_row_no}`
     : '';
-  return [props.activeContext?.comment_angle || '评论切角', row]
+  return [props.activeContext?.business_rule || '业务规则', row]
     .filter(Boolean)
     .join(' · ');
 });
@@ -95,7 +97,7 @@ function sendQuickPrompt(message: string) {
       <IconifyIcon icon="lucide:circle-alert" />
       <span>未配置实时聊天 Agent，请先在 Agent 管理中启用 REALTIME_CHAT Agent。</span>
     </div>
-    <div v-else-if="isCommentAngleCopilot" class="chat-context">
+    <div v-else-if="isBusinessRuleCopilot" class="chat-context">
       <IconifyIcon icon="lucide:file-pen-line" />
       <span>{{ contextTitle }}</span>
     </div>
@@ -103,11 +105,11 @@ function sendQuickPrompt(message: string) {
     <div class="chat-messages">
       <div v-if="messages.length === 0" class="chat-empty">
         <div class="empty-heading">
-          <span>{{ isCommentAngleCopilot ? '评论切角副驾' : '开始对话' }}</span>
+          <span>{{ isBusinessRuleCopilot ? '业务规则副驾' : '开始对话' }}</span>
         </div>
-        <div v-if="isCommentAngleCopilot" class="quick-prompts">
+        <div v-if="isBusinessRuleCopilot" class="quick-prompts">
           <Button
-            v-for="prompt in commentAngleQuickPrompts"
+            v-for="prompt in businessRuleQuickPrompts"
             :key="prompt"
             block
             size="small"

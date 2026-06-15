@@ -3,6 +3,8 @@ import { requestClient } from '#/api/request';
 export namespace ContentAgentApi {
   export interface BatchStartRequest {
     asset_key?: string;
+    rule_id?: null | string;
+    source_row_no?: null | number;
     product_topic?: null | string;
     target_audience?: null | string;
     persona_target?: null | string;
@@ -18,7 +20,7 @@ export namespace ContentAgentApi {
 
   export interface CommentBatchStartRequest {
     asset_key?: string;
-    comment_angle?: null | string;
+    business_rule?: null | string;
     count?: number;
     executor_code?: string;
     draft_corpus?: null | string;
@@ -328,6 +330,11 @@ export namespace ContentAgentApi {
     body?: null | string;
     created_by?: null | string;
     business_forbidden_terms?: string[];
+    business_forbidden_term_entries?: Array<{
+      reason?: null | string;
+      replacement?: null | string;
+      term: string;
+    }>;
     auto_rewrite?: boolean;
   }
 
@@ -370,8 +377,11 @@ export async function preflightContentGenerationApi(
 }
 
 export async function getContentBatchListApi(params?: {
+  asset_key?: string;
   limit?: number;
   offset?: number;
+  rule_id?: null | string;
+  source_row_no?: null | number;
 }) {
   return requestClient.get<ContentAgentApi.BatchListResponse>(
     '/v1/content-agent/batches',

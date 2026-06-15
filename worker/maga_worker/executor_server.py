@@ -87,8 +87,8 @@ def _stable_comment_from_rule(input_payload: dict[str, Any]) -> str:
             item_no = 1
         return examples[(item_no - 1) % len(examples)]
 
-    comment_angle = str(input_payload.get("comment_angle") or "这个角度").strip()
-    return f"{comment_angle}这个点还挺想听听大家真实感受的，我家也在观望源悦。"
+    business_rule = str(input_payload.get("business_rule") or "这个规则").strip()
+    return f"{business_rule}这个点还挺想听听大家真实感受的，我家也在观望源悦。"
 
 
 def _normalize_comment_text(text: str) -> str:

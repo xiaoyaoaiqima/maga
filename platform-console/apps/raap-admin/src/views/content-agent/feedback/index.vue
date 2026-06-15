@@ -418,6 +418,7 @@ const openBusinessForbiddenTermModal = (
   item: ContentAgentApi.BatchReportItem,
 ) => {
   const state = reactive({
+    reason: '小红书不能出现微信生态的词',
     term: selectedText(),
   });
   Modal.confirm({
@@ -436,17 +437,32 @@ const openBusinessForbiddenTermModal = (
             state.term = value;
           },
         }),
+        h(TextArea, {
+          value: state.reason,
+          placeholder: '输入违禁原因，例如：小红书不能出现微信生态的词',
+          maxlength: 1000,
+          rows: 3,
+          style: 'margin-top: 12px;',
+          'onUpdate:value': (value: string) => {
+            state.reason = value;
+          },
+        }),
         h(
           'div',
           { class: 'business-forbidden-term-hint' },
-          '会保存到当前业务规则的违禁词里，并刷新这篇内容的风险命中。',
+          '会保存到当前业务规则的违禁词台账里，并刷新这篇内容的风险命中。',
         ),
       ]),
     async onOk() {
       const term = state.term.trim();
+      const reason = state.reason.trim();
       if (!term) {
         message.warning('请先输入业务违禁词');
         throw new Error('empty business forbidden term');
+      }
+      if (!reason) {
+        message.warning('请先输入违禁原因');
+        throw new Error('empty business forbidden term reason');
       }
       reviewingItemId.value = item.item_id;
       try {
@@ -454,8 +470,9 @@ const openBusinessForbiddenTermModal = (
           action: 'request_revision',
           title: item.title,
           body: item.body,
-          feedback_text: `加入业务违禁词：${term}`,
+          feedback_text: `加入业务违禁词：${term}；原因：${reason}`,
           business_forbidden_terms: [term],
+          business_forbidden_term_entries: [{ reason, term }],
           created_by: currentOperator.value,
         });
         replaceReportItem(response.item);

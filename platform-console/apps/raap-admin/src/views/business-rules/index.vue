@@ -13,6 +13,8 @@ import { useUserStore } from '@vben/stores';
 import {
   CheckOutlined,
   EditOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   MessageOutlined,
   ReloadOutlined,
   SaveOutlined,
@@ -21,14 +23,13 @@ import {
 import {
   Button,
   Card,
-  Col,
+  Checkbox,
   Drawer,
   Empty,
   Input,
   InputNumber,
   message,
   Modal,
-  Row,
   Select,
   Space,
   Spin,
@@ -42,21 +43,23 @@ import {
 import {
   getAssetDetailApi,
   getAssetSummariesApi,
-  getCommentAngleRuleDraftsApi,
-  importCommentAngleRuleSetApi,
+  getCommentBusinessRuleDraftsApi,
+  importCommentBusinessRuleSetApi,
   importProductExperienceRuleSetApi,
-  publishCommentAngleRuleDraftApi,
-  saveCommentAngleRuleDraftApi,
+  publishCommentBusinessRuleDraftApi,
+  saveCommentBusinessRuleDraftApi,
 } from '#/api/core/assets';
 import {
   getContentBatchListApi,
   getContentBatchReportApi,
   preflightContentGenerationApi,
+  startContentBatchApi,
   startCommentBatchApi,
 } from '#/api/core/content-agent';
 import { useMagaChatStore } from '#/store';
 
-type RulePackageType = 'comment_angle' | 'product_experience';
+type RulePackageType = 'comment_business' | 'article_business' | 'product_experience';
+type BatchScope = 'asset' | 'rule';
 
 interface RulePackageConfig {
   accept: string;
@@ -67,12 +70,19 @@ interface RulePackageConfig {
 }
 
 const rulePackageConfigs: Record<RulePackageType, RulePackageConfig> = {
-  comment_angle: {
+  comment_business: {
     accept: '.csv,.xlsx',
-    assetType: 'comment_angle_rule_set',
+    assetType: 'comment_business_rule_set',
     defaultAssetKey: 'yuanyue_comment_activity',
-    defaultDisplayName: '源悦-业务规则（评论切角）',
-    label: '评论切角',
+    defaultDisplayName: '源悦-评论业务规则',
+    label: '评论业务规则',
+  },
+  article_business: {
+    accept: '.csv,.xlsx',
+    assetType: 'article_business_rule_set',
+    defaultAssetKey: 'a2_sentiment_post_activity',
+    defaultDisplayName: 'A2舆情相关帖子业务规则',
+    label: '帖子业务规则',
   },
   product_experience: {
     accept: '.csv,.xlsx',
@@ -83,9 +93,12 @@ const rulePackageConfigs: Record<RulePackageType, RulePackageConfig> = {
   },
 };
 
-const ruleAssetTypes = Object.values(rulePackageConfigs).map(
-  (item) => item.assetType,
-);
+const ruleAssetTypes = [
+  ...new Set([
+    ...Object.values(rulePackageConfigs).map((item) => item.assetType),
+    'comment_business_rule_set',
+  ]),
+];
 const ruleUploadAccept = [
   ...new Set(
     Object.values(rulePackageConfigs)
@@ -98,8 +111,8 @@ const ruleUploadAccept = [
 const loading = ref(false);
 const importing = ref(false);
 const generating = ref(false);
-const packageType = ref<RulePackageType>('comment_angle');
-const displayName = ref(rulePackageConfigs.comment_angle.defaultDisplayName);
+const packageType = ref<RulePackageType>('comment_business');
+const displayName = ref(rulePackageConfigs.comment_business.defaultDisplayName);
 const pendingFile = ref<File | null>(null);
 const uploadConfirmOpen = ref(false);
 const showHiddenRules = ref(false);
@@ -114,6 +127,19 @@ const reportLoading = ref(false);
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
 const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
 const batchTotal = ref(0);
+const batchScope = ref<BatchScope>('asset');
+const compareBatchIds = ref<number[]>([]);
+const compareDrawerOpen = ref(false);
+const compareLoading = ref(false);
+const compareReports = ref<ContentAgentApi.BatchReport[]>([]);
+const ruleSearchText = ref('');
+const selectedRuleKey = ref('');
+const draftMap = ref<Record<string, AssetsApi.CommentBusinessRuleDraft>>({});
+const inspectorMode = ref<'batches' | 'rule'>('rule');
+const packagePaneCollapsed = ref(false);
+const batchDetailOpen = ref(false);
+const preflightResult = ref<ContentAgentApi.PreflightResponse | null>(null);
+const preflightLoading = ref(false);
 const focusGenerateOpen = ref(false);
 const focusGenerateForm = ref({
   rule_key: '',
@@ -125,7 +151,7 @@ const draftTesting = ref(false);
 const draftPublishing = ref(false);
 const selectedDraftRule = ref<Record<string, any> | null>(null);
 const draftCorpus = ref('');
-const latestDraft = ref<AssetsApi.CommentAngleRuleDraft | null>(null);
+const latestDraft = ref<AssetsApi.CommentBusinessRuleDraft | null>(null);
 const hasUnsavedDraftChanges = computed(
   () =>
     Boolean(latestDraft.value) &&
@@ -137,16 +163,56 @@ const selectedRuleItems = computed(() => {
   return Array.isArray(items) ? items : [];
 });
 const selectedItems = computed(() => selectedRuleItems.value);
+const filteredRuleItems = computed(() => {
+  const keyword = ruleSearchText.value.trim().toLowerCase();
+  if (!keyword) return selectedRuleItems.value;
+  return selectedRuleItems.value.filter((item) => {
+    const haystack = [
+      item.business_rule,
+      item.product_experience,
+      item.corpus,
+      item.rule_id,
+      item.source_row_no,
+      item.topic,
+    ]
+      .map((value) => String(value || '').toLowerCase())
+      .join('\n');
+    return haystack.includes(keyword);
+  });
+});
+const activeRule = computed(() => {
+  if (!selectedRuleKey.value) return filteredRuleItems.value[0] || null;
+  return (
+    selectedRuleItems.value.find((item) => ruleKey(item) === selectedRuleKey.value) ||
+    filteredRuleItems.value[0] ||
+    null
+  );
+});
+const selectedDraftRuleKey = computed(() =>
+  selectedDraftRule.value ? ruleKey(selectedDraftRule.value) : '',
+);
+const activeDraftReady = computed(
+  () => Boolean(activeRule.value) && selectedDraftRuleKey.value === ruleKey(activeRule.value),
+);
 const selectedReportItems = computed(() => selectedReport.value?.items || []);
 const selectedReportSummary = computed(
   () => selectedReport.value?.summary || null,
 );
 const isSelectedCommentRuleSet = computed(
-  () => selectedAsset.value?.asset_type === 'comment_angle_rule_set',
+  () =>
+    ['comment_business_rule_set'].includes(
+      selectedAsset.value?.asset_type || '',
+    ),
 );
-const selectedCommentAngleOptions = computed(() => {
+const isSelectedArticleBusinessRuleSet = computed(
+  () =>
+    ['article_business_rule_set', 'product_experience_rule_set'].includes(
+      selectedAsset.value?.asset_type || '',
+    ),
+);
+const selectedRuleOptions = computed(() => {
   return selectedRuleItems.value
-    .filter((item) => String(item.comment_angle || '').trim())
+    .filter((item) => String(ruleDisplayName(item) || '').trim())
     .map((item) => ({
       label: ruleDisplayName(item),
       value: ruleKey(item),
@@ -161,54 +227,26 @@ const currentOperator = computed(
 );
 
 const packageTypeOptions = computed(() =>
-  Object.entries(rulePackageConfigs).map(([value, config]) => ({
-    label: config.defaultDisplayName,
-    value,
-  })),
+  Object.entries(rulePackageConfigs)
+    .filter(([value]) => value !== 'article_business')
+    .map(([value, config]) => ({
+      label: config.defaultDisplayName,
+      value,
+    })),
 );
 
 const selectedMeta = computed(() => selectedAsset.value?.metadata_json || {});
-const selectedRuleCount = computed(
-  () => selectedMeta.value.rule_count ?? selectedItems.value.length,
-);
-const selectedExampleCount = computed(
-  () =>
-    selectedMeta.value.example_count ??
-    selectedItems.value.reduce(
-      (sum, item) => sum + ((item.examples || []).length || 0),
-      0,
-    ),
-);
 const selectedWarnings = computed(() =>
-  Array.isArray(selectedMeta.value.warnings) ? selectedMeta.value.warnings : [],
-);
-const selectedDefaultGenerationCount = computed(
-  () =>
-    selectedMeta.value.default_generation_count ??
-    selectedAsset.value?.content_json?.default_generation_count ??
-    '-',
+  Array.isArray(selectedMeta.value.warnings)
+    ? selectedMeta.value.warnings.filter(
+        (warning: unknown) => !String(warning).includes('较硬约束'),
+      )
+    : [],
 );
 
 const selectedPackageName = computed(
   () =>
     selectedAsset.value?.display_name || selectedSummary.value?.display_name,
-);
-const selectedPackageTypeLabel = computed(() =>
-  packageLabel(
-    selectedAsset.value?.asset_type || selectedSummary.value?.asset_type,
-  ),
-);
-const selectedSourceName = computed(
-  () =>
-    selectedAsset.value?.source_name ||
-    selectedSummary.value?.source_name ||
-    '-',
-);
-const selectedPackageUpdatedAt = computed(
-  () =>
-    selectedAsset.value?.update_time ||
-    selectedSummary.value?.update_time ||
-    '-',
 );
 const reportFailureCount = computed(() =>
   failedCountOf(selectedReportSummary.value),
@@ -223,11 +261,84 @@ const reportRiskCount = computed(() => {
     (summary.similarity_warning_count || 0)
   );
 });
+const selectedAssetBatches = computed(() => batchList.value);
+const selectedAssetBatchTotal = computed(() => batchTotal.value);
+const batchScopeTitle = computed(() =>
+  batchScope.value === 'rule' ? '当前规则最近测试' : '规则包最近测试',
+);
+const batchScopeEmptyText = computed(() =>
+  batchScope.value === 'rule'
+    ? '当前规则暂无测试批次'
+    : '当前规则包暂无测试批次',
+);
+const canUseRuleBatchScope = computed(() => Boolean(activeRule.value));
+const inspectorReportTitle = computed(() => {
+  if (!inspectorReport.value) return '';
+  return inspectorReport.value.batch_code || `#${inspectorReport.value.batch_id}`;
+});
+const inspectorReport = computed(() => {
+  if (!selectedAsset.value || !selectedReport.value) return null;
+  return selectedReport.value.asset_key === selectedAsset.value.asset_key
+    ? selectedReport.value
+    : null;
+});
+const inspectorReportSummary = computed(() => inspectorReport.value?.summary || null);
+const compareLeftReport = computed(() => compareReports.value[0] || null);
+const compareRightReport = computed(() => compareReports.value[1] || null);
+const compareMetricRows = computed(() => {
+  if (!compareLeftReport.value || !compareRightReport.value) return [];
+  const left = compareLeftReport.value.summary;
+  const right = compareRightReport.value.summary;
+  return [
+    {
+      key: 'total',
+      label: '总数',
+      left: left.total_count,
+      right: right.total_count,
+      delta: right.total_count - left.total_count,
+    },
+    {
+      key: 'generated',
+      label: '生成',
+      left: left.generated_count,
+      right: right.generated_count,
+      delta: right.generated_count - left.generated_count,
+    },
+    {
+      key: 'failed',
+      label: '失败',
+      left: failedCountOf(left),
+      right: failedCountOf(right),
+      delta: failedCountOf(right) - failedCountOf(left),
+    },
+    {
+      key: 'risk',
+      label: '风险',
+      left: batchRiskCount(left),
+      right: batchRiskCount(right),
+      delta: batchRiskCount(right) - batchRiskCount(left),
+    },
+    {
+      key: 'hard_pass_rate',
+      label: '红线通过率',
+      left: hardPassRate(left),
+      right: hardPassRate(right),
+      delta: hardPassRate(right) - hardPassRate(left),
+      percent: true,
+    },
+  ];
+});
+const activeRuleDraft = computed(() => {
+  const rule = activeRule.value;
+  return rule ? draftMap.value[draftKey(rule)] || null : null;
+});
 
 const batchDetailColumns: any[] = [
   { title: '序号', dataIndex: 'item_no', key: 'item_no', width: 72 },
   { title: '状态', dataIndex: 'status', key: 'status', width: 110 },
+  { title: '标题', dataIndex: 'title', key: 'title', width: 180 },
   { title: '正文', dataIndex: 'body', key: 'body', minWidth: 320 },
+  { title: '抽中示例', key: 'selected_examples', width: 220 },
   { title: '红线', dataIndex: 'hard_pass', key: 'hard_pass', width: 90 },
   { title: '风险', key: 'risk', width: 220 },
   { title: '字数', dataIndex: 'body_chars', key: 'body_chars', width: 80 },
@@ -237,34 +348,21 @@ const previewColumns = computed<any[]>(() => {
   if (selectedAsset.value?.asset_type === 'product_experience_rule_set') {
     return [
       {
-        title: '产品使用体验',
-        dataIndex: 'product_experience',
-        key: 'product_experience',
-        width: 230,
+        title: '规则',
+        key: 'rule_summary',
+        minWidth: 280,
       },
-      { title: '月龄', dataIndex: 'baby_stage', key: 'baby_stage', width: 120 },
-      {
-        title: '使用时间',
-        dataIndex: 'use_duration',
-        key: 'use_duration',
-        width: 120,
-      },
-      { title: '主题', dataIndex: 'topic', key: 'topic', width: 130 },
-      { title: '语料', dataIndex: 'corpus', key: 'corpus' },
-      { title: '示例', key: 'examples', width: 80 },
+      { title: '语料', dataIndex: 'corpus', key: 'corpus', minWidth: 320 },
+      { title: '示例', key: 'counts', width: 90 },
     ];
   }
   return [
     {
-      title: '评论切角',
-      dataIndex: 'comment_angle',
-      key: 'comment_angle',
-      width: 240,
+      title: '规则',
+      key: 'rule_summary',
+      minWidth: 300,
     },
-    { title: '语料', dataIndex: 'corpus', key: 'corpus' },
-    { title: '示例', key: 'examples', width: 80 },
-    { title: '补充', key: 'supplements', width: 80 },
-    { fixed: 'right', title: '操作', key: 'action', width: 240 },
+    { fixed: 'right', title: '操作', key: 'action', width: 230 },
   ];
 });
 
@@ -387,7 +485,7 @@ function buildDraftChatContext(): ChatContext | null {
     rule_id: String(selectedDraftRule.value.rule_id || ''),
     source_row_no:
       Number(selectedDraftRule.value.source_row_no || 0) || null,
-    comment_angle: String(selectedDraftRule.value.comment_angle || ''),
+    business_rule: String(selectedDraftRule.value.business_rule || ''),
     corpus: String(selectedDraftRule.value.corpus || ''),
     draft_corpus: draftCorpus.value,
     examples: normalizeTextList(selectedDraftRule.value.examples),
@@ -400,6 +498,23 @@ function syncDraftChatContext() {
   if (!draftEditorOpen.value) return;
   const context = buildDraftChatContext();
   if (context) chatStore.setContext(context);
+}
+
+function setInlineDraftRule(record: Record<string, any>) {
+  selectedDraftRule.value = record;
+  latestDraft.value = draftMap.value[draftKey(record)] || null;
+  draftCorpus.value = latestDraft.value?.draft_corpus || String(record.corpus || '');
+  // 重要逻辑：草稿编辑已内嵌到右侧 Inspector，保留这个状态只用于 Chat 上下文同步。
+  draftEditorOpen.value = true;
+}
+
+function focusInlineDraftEditor() {
+  window.requestAnimationFrame(() => {
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      '.inline-draft-editor textarea',
+    );
+    textarea?.focus();
+  });
 }
 
 async function loadRuleAssets() {
@@ -441,6 +556,18 @@ async function openAsset(row: AssetsApi.AssetSummary | Record<string, any>) {
   selectedAsset.value = await getAssetDetailApi(row.asset_type, row.asset_key, {
     asset_stage: row.asset_stage,
   });
+  preflightResult.value = null;
+  ruleSearchText.value = '';
+  selectedRuleKey.value = selectedRuleItems.value[0]
+    ? ruleKey(selectedRuleItems.value[0])
+    : '';
+  await loadDraftMap();
+  if (selectedRuleItems.value[0]) {
+    setInlineDraftRule(selectedRuleItems.value[0]);
+  }
+  selectedReport.value = null;
+  compareBatchIds.value = [];
+  await loadBatches();
 }
 
 const openReport = async (batchId: number, showLoading = true) => {
@@ -455,9 +582,22 @@ const openReport = async (batchId: number, showLoading = true) => {
 const loadBatches = async () => {
   batchLoading.value = true;
   try {
-    const data = await getContentBatchListApi({ limit: 20, offset: 0 });
+    const params: Parameters<typeof getContentBatchListApi>[0] = {
+      asset_key: selectedAsset.value?.asset_key,
+      limit: 20,
+      offset: 0,
+    };
+    if (batchScope.value === 'rule' && activeRule.value) {
+      params.rule_id = String(activeRule.value.rule_id || '') || null;
+      params.source_row_no =
+        Number(activeRule.value.source_row_no || 0) || null;
+    }
+    const data = await getContentBatchListApi(params);
     batchList.value = data?.items || [];
     batchTotal.value = data?.total || 0;
+    compareBatchIds.value = compareBatchIds.value.filter((batchId) =>
+      batchList.value.some((batch) => batch.batch_id === batchId),
+    );
 
     const queryBatchId = Number(route.query.batch_id || 0);
     if (queryBatchId > 0 && !selectedReport.value) {
@@ -471,19 +611,53 @@ const loadBatches = async () => {
     if (!selectedReport.value && batchList.value[0]) {
       await openReport(batchList.value[0].batch_id, false);
     }
+    await syncAssetRecentReport();
   } finally {
     batchLoading.value = false;
   }
 };
 
+async function syncAssetRecentReport() {
+  const latestBatch = selectedAssetBatches.value[0];
+  if (!latestBatch) return;
+  if (selectedReport.value?.asset_key === selectedAsset.value?.asset_key) return;
+  await openReport(latestBatch.batch_id, false);
+}
+
+async function loadDraftMap() {
+  draftMap.value = {};
+  if (!selectedAsset.value?.asset_key || !isSelectedCommentRuleSet.value) return;
+  try {
+    const drafts = await getCommentBusinessRuleDraftsApi({
+      asset_key: selectedAsset.value.asset_key,
+      limit: 100,
+    });
+    const nextMap: Record<string, AssetsApi.CommentBusinessRuleDraft> = {};
+    for (const draft of drafts) {
+      const key = draftKey({
+        rule_id: draft.rule_id,
+        source_row_no: draft.source_row_no,
+        business_rule: draft.business_rule,
+      });
+      if (key && !nextMap[key]) nextMap[key] = draft;
+    }
+    draftMap.value = nextMap;
+  } catch {
+    draftMap.value = {};
+  }
+}
+
 function openFocusGeneration() {
-  if (!selectedAsset.value || !isSelectedCommentRuleSet.value) {
-    message.warning('请先选择业务规则（评论切角）');
+  if (
+    !selectedAsset.value ||
+    (!isSelectedCommentRuleSet.value && !isSelectedArticleBusinessRuleSet.value)
+  ) {
+    message.warning('请先选择可测试的业务规则');
     return;
   }
-  const firstRuleKey = selectedCommentAngleOptions.value[0]?.value;
+  const firstRuleKey = selectedRuleOptions.value[0]?.value;
   if (!firstRuleKey) {
-    message.warning('当前业务规则没有可测试的评论切角');
+    message.warning('当前业务规则没有可测试的规则');
     return;
   }
   focusGenerateForm.value = {
@@ -494,7 +668,8 @@ function openFocusGeneration() {
 }
 
 function openRuleGeneration(record: Record<string, any>) {
-  if (!isSelectedCommentRuleSet.value) {
+  selectRule(record);
+  if (!isSelectedCommentRuleSet.value && !isSelectedArticleBusinessRuleSet.value) {
     message.warning('当前业务规则类型暂不支持单条测试');
     return;
   }
@@ -505,16 +680,16 @@ function openRuleGeneration(record: Record<string, any>) {
   focusGenerateOpen.value = true;
 }
 
-async function generateFocusedCommentAngle() {
+async function generateFocusedRule() {
   if (!selectedAsset.value?.asset_key) {
-    message.warning('请先选择业务规则（评论切角）');
+    message.warning('请先选择业务规则');
     return;
   }
   const targetRule = selectedRuleItems.value.find(
     (item) => ruleKey(item) === focusGenerateForm.value.rule_key,
   );
-  const commentAngle = String(targetRule?.comment_angle || '').trim();
-  if (!targetRule || !commentAngle) {
+  const businessRuleName = String(targetRule?.business_rule || '').trim();
+  if (!targetRule) {
     message.warning('请选择一条业务规则');
     return;
   }
@@ -524,18 +699,27 @@ async function generateFocusedCommentAngle() {
       asset_key: selectedAsset.value.asset_key,
       asset_type: selectedAsset.value.asset_type,
     });
+    preflightResult.value = preflight;
     if (!preflight.passed) {
       showPreflightFailure(preflight);
       return;
     }
-    const result = await startCommentBatchApi({
-      asset_key: selectedAsset.value.asset_key,
-      comment_angle: commentAngle,
-      count: Number(focusGenerateForm.value.count || 10),
-      created_by: currentOperator.value,
-      rule_id: String(targetRule.rule_id || ''),
-      source_row_no: Number(targetRule.source_row_no || 0) || undefined,
-    });
+    const result = isSelectedCommentRuleSet.value
+      ? await startCommentBatchApi({
+          asset_key: selectedAsset.value.asset_key,
+          business_rule: businessRuleName || null,
+          count: Number(focusGenerateForm.value.count || 10),
+          created_by: currentOperator.value,
+          rule_id: String(targetRule.rule_id || ''),
+          source_row_no: Number(targetRule.source_row_no || 0) || undefined,
+        })
+      : await startContentBatchApi({
+          asset_key: selectedAsset.value.asset_key,
+          count: Number(focusGenerateForm.value.count || 10),
+          created_by: currentOperator.value,
+          rule_id: String(targetRule.rule_id || ''),
+          source_row_no: Number(targetRule.source_row_no || 0) || undefined,
+        });
     message.success(
       `业务规则测试完成：${result.execution.generated_count}/${result.execution.requested_limit}`,
     );
@@ -550,28 +734,33 @@ async function generateFocusedCommentAngle() {
 }
 
 async function openDraftEditor(record: Record<string, any>) {
+  selectRule(record);
   if (!selectedAsset.value?.asset_key || !isSelectedCommentRuleSet.value) {
-    message.warning('请先选择业务规则（评论切角）');
+    message.warning('请先选择评论业务规则');
     return;
   }
-  selectedDraftRule.value = record;
-  draftCorpus.value = String(record.corpus || '');
-  latestDraft.value = null;
-  draftEditorOpen.value = true;
+  setInlineDraftRule(record);
   await loadLatestDraft(record);
   syncDraftChatContext();
+  focusInlineDraftEditor();
 }
 
 async function loadLatestDraft(record = selectedDraftRule.value) {
   if (!selectedAsset.value?.asset_key || !record) return;
   try {
-    const drafts = await getCommentAngleRuleDraftsApi({
+    const drafts = await getCommentBusinessRuleDraftsApi({
       asset_key: selectedAsset.value.asset_key,
       limit: 1,
       rule_id: String(record.rule_id || ''),
       source_row_no: Number(record.source_row_no || 0) || undefined,
     });
     latestDraft.value = drafts[0] || null;
+    if (latestDraft.value) {
+      draftMap.value = {
+        ...draftMap.value,
+        [draftKey(record)]: latestDraft.value,
+      };
+    }
     if (latestDraft.value?.draft_corpus) {
       draftCorpus.value = latestDraft.value.draft_corpus;
     }
@@ -581,13 +770,12 @@ async function loadLatestDraft(record = selectedDraftRule.value) {
 }
 
 async function openRuleChatCopilot(record: Record<string, any>) {
+  selectRule(record);
   if (!selectedAsset.value?.asset_key || !isSelectedCommentRuleSet.value) {
-    message.warning('请先选择业务规则（评论切角）');
+    message.warning('请先选择评论业务规则');
     return;
   }
-  selectedDraftRule.value = record;
-  draftCorpus.value = String(record.corpus || '');
-  latestDraft.value = null;
+  setInlineDraftRule(record);
   await loadLatestDraft(record);
   const context = buildDraftChatContext();
   if (!context) {
@@ -608,7 +796,7 @@ async function saveRuleDraft() {
   }
   draftSaving.value = true;
   try {
-    latestDraft.value = await saveCommentAngleRuleDraftApi({
+    latestDraft.value = await saveCommentBusinessRuleDraftApi({
       asset_key: selectedAsset.value.asset_key,
       created_by: currentOperator.value,
       draft_corpus: draftCorpus.value,
@@ -616,11 +804,98 @@ async function saveRuleDraft() {
       source_row_no:
         Number(selectedDraftRule.value.source_row_no || 0) || undefined,
     });
+    draftMap.value = {
+      ...draftMap.value,
+      [draftKey(selectedDraftRule.value)]: latestDraft.value,
+    };
     message.success(`草稿已保存 #${latestDraft.value.id}`);
   } catch (error: any) {
     message.error(error?.message || '保存草稿失败');
   } finally {
     draftSaving.value = false;
+  }
+}
+
+async function runPreflightCheck() {
+  if (!selectedAsset.value?.asset_key) {
+    message.warning('请先选择业务规则');
+    return;
+  }
+  preflightLoading.value = true;
+  try {
+    preflightResult.value = await preflightContentGenerationApi({
+      asset_key: selectedAsset.value.asset_key,
+      asset_type: selectedAsset.value.asset_type,
+    });
+    if (preflightResult.value.passed) {
+      message.success('生成前检查通过');
+    } else {
+      showPreflightFailure(preflightResult.value);
+    }
+  } catch {
+    message.error('生成前检查失败');
+  } finally {
+    preflightLoading.value = false;
+  }
+}
+
+async function openBatchDetail(batchId?: number) {
+  const targetBatchId =
+    batchId || inspectorReport.value?.batch_id || selectedAssetBatches.value[0]?.batch_id;
+  if (!targetBatchId) {
+    message.warning('暂无可查看的测试批次');
+    return;
+  }
+  await openReport(targetBatchId);
+  batchDetailOpen.value = true;
+}
+
+async function selectRecentBatch(batchId: number) {
+  await openReport(batchId);
+  inspectorMode.value = 'batches';
+}
+
+async function changeBatchScope(scope: BatchScope) {
+  if (scope === 'rule' && !canUseRuleBatchScope.value) {
+    message.warning('请先选择一条业务规则');
+    return;
+  }
+  if (batchScope.value === scope) return;
+  batchScope.value = scope;
+  selectedReport.value = null;
+  compareBatchIds.value = [];
+  await loadBatches();
+}
+
+function isBatchSelectedForCompare(batchId: number) {
+  return compareBatchIds.value.includes(batchId);
+}
+
+function toggleCompareBatch(batchId: number) {
+  if (isBatchSelectedForCompare(batchId)) {
+    compareBatchIds.value = compareBatchIds.value.filter((id) => id !== batchId);
+    return;
+  }
+  if (compareBatchIds.value.length >= 2) {
+    message.warning('最多选择两个批次对比');
+    return;
+  }
+  compareBatchIds.value = [...compareBatchIds.value, batchId];
+}
+
+async function openBatchCompare() {
+  if (compareBatchIds.value.length !== 2) {
+    message.warning('请选择两个批次对比');
+    return;
+  }
+  compareLoading.value = true;
+  compareDrawerOpen.value = true;
+  try {
+    compareReports.value = await Promise.all(
+      compareBatchIds.value.map((batchId) => getContentBatchReportApi(batchId)),
+    );
+  } finally {
+    compareLoading.value = false;
   }
 }
 
@@ -672,7 +947,7 @@ async function publishRuleDraft() {
   }
   draftPublishing.value = true;
   try {
-    const result = await publishCommentAngleRuleDraftApi(latestDraft.value.id, {
+    const result = await publishCommentBusinessRuleDraftApi(latestDraft.value.id, {
       created_by: currentOperator.value,
     });
     latestDraft.value = result.draft;
@@ -682,7 +957,6 @@ async function publishRuleDraft() {
     await loadRuleAssets();
     const summary = ruleAssets.value.find((asset) => asset.id === result.asset.id);
     await openAsset(summary || result.asset);
-    draftEditorOpen.value = false;
   } catch (error: any) {
     message.error(error?.message || '发布草稿失败');
   } finally {
@@ -735,8 +1009,8 @@ async function confirmUpload() {
       file: pendingFile.value,
     };
     const result =
-      packageType.value === 'comment_angle'
-        ? await importCommentAngleRuleSetApi(payload)
+      packageType.value === 'comment_business'
+        ? await importCommentBusinessRuleSetApi(payload)
         : await importProductExperienceRuleSetApi(payload);
     message.success(`导入完成：${result.summary_json?.rule_count || 0} 条规则`);
     selectedSummary.value = null;
@@ -772,25 +1046,103 @@ function supplementsCount(record: Record<string, any>) {
   return Array.isArray(record.supplements) ? record.supplements.length : 0;
 }
 
+function fullExamplePoolCount(record: Record<string, any>) {
+  return examplesCount(record) + supplementsCount(record);
+}
+
+function defaultExampleSampleCount(record: Record<string, any>) {
+  return isSelectedCommentRuleSet.value || record.rule_type === 'business_rule' ? 1 : 3;
+}
+
+function selectedExamplesOf(record: Record<string, any>) {
+  const businessRule = record.generation_snapshot?.business_rule || {};
+  return Array.isArray(businessRule.examples)
+    ? businessRule.examples.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+    : [];
+}
+
 function ruleKey(record: Record<string, any>) {
   return [
     record.rule_id || '',
     record.source_row_no || '',
-    record.comment_angle || '',
+    record.business_rule || '',
     record.product_experience || '',
   ].join('::');
+}
+
+function draftKey(record: Record<string, any>) {
+  return [record.rule_id || '', record.source_row_no || ''].join('::');
+}
+
+function selectRule(record: Record<string, any>) {
+  selectedRuleKey.value = ruleKey(record);
+  inspectorMode.value = 'rule';
+  if (isSelectedCommentRuleSet.value) {
+    setInlineDraftRule(record);
+  }
+}
+
+function isActiveRule(record: Record<string, any>) {
+  return ruleKey(record) === selectedRuleKey.value;
 }
 
 function ruleDisplayName(record: Record<string, any>) {
   return (
     String(
-      record.comment_angle ||
+      record.business_rule ||
         record.product_experience ||
         record.topic ||
         record.rule_id ||
         '',
     ).trim() || `规则 ${record.source_row_no || ''}`.trim()
   );
+}
+
+function batchRiskCount(summary?: ContentAgentApi.BatchReportSummary | null) {
+  if (!summary) return 0;
+  return (
+    failedCountOf(summary) +
+    (summary.forbidden_hit_count || 0) +
+    (summary.remaining_rewrite_required_count || 0) +
+    (summary.similarity_warning_count || 0)
+  );
+}
+
+function hardPassRate(summary?: ContentAgentApi.BatchReportSummary | null) {
+  if (!summary?.generated_count) return 0;
+  return Math.round((summary.hard_pass_count / summary.generated_count) * 1000) / 10;
+}
+
+function compareValue(value: number, percent?: boolean) {
+  return percent ? `${value}%` : String(value);
+}
+
+function compareDelta(value: number, percent?: boolean) {
+  const normalized = percent ? Math.round(value * 10) / 10 : value;
+  const prefix = normalized > 0 ? '+' : '';
+  return `${prefix}${normalized}${percent ? '%' : ''}`;
+}
+
+function compareDeltaClass(value: number, key: string) {
+  if (value === 0) return 'neutral';
+  if (key === 'failed' || key === 'risk') return value > 0 ? 'negative' : 'positive';
+  return value > 0 ? 'positive' : 'negative';
+}
+
+function riskSamplesOf(report?: ContentAgentApi.BatchReport | null, limit = 5) {
+  return (report?.items || [])
+    .filter(
+      (item) =>
+        item.status === 'failed' ||
+        item.hard_pass === false ||
+        riskTagsOf(item).length > 0,
+    )
+    .slice(0, limit);
+}
+
+function formatBatchTime(value?: null | string) {
+  if (!value) return '-';
+  return value.replace('T', ' ').slice(0, 16);
 }
 
 function formatValue(value: unknown) {
@@ -809,10 +1161,10 @@ function inferPackageTypeFromFileName(fileName: string): RulePackageType {
     return 'product_experience';
   }
   if (
-    normalizedFileName.includes('评论切角') ||
+    normalizedFileName.includes('业务规则') ||
     normalizedFileName.includes('评论')
   ) {
-    return 'comment_angle';
+    return 'comment_business';
   }
   return packageType.value;
 }
@@ -841,7 +1193,6 @@ function assetKeyFromDisplayName(name: string, type: RulePackageType) {
 
 onMounted(() => {
   loadRuleAssets();
-  loadBatches();
 });
 
 watch(
@@ -855,6 +1206,32 @@ watch(
 watch(showHiddenRules, () => {
   loadRuleAssets();
 });
+
+watch(
+  () => filteredRuleItems.value.map((item) => ruleKey(item)).join('|'),
+  () => {
+    if (!filteredRuleItems.value.length) {
+      selectedRuleKey.value = '';
+      return;
+    }
+    const selectedVisible = filteredRuleItems.value.some(
+      (item) => ruleKey(item) === selectedRuleKey.value,
+    );
+    if (!selectedVisible) {
+      selectedRuleKey.value = ruleKey(filteredRuleItems.value[0]);
+    }
+  },
+);
+
+watch(
+  () => selectedRuleKey.value,
+  () => {
+    if (batchScope.value !== 'rule') return;
+    selectedReport.value = null;
+    compareBatchIds.value = [];
+    loadBatches();
+  },
+);
 
 watch(
   () => [
@@ -892,11 +1269,9 @@ watch(
         return ruleMatches && sourceMatches;
       });
       if (targetRule) {
-        selectedDraftRule.value = targetRule;
-        draftCorpus.value = String(targetRule.corpus || '');
-        latestDraft.value = null;
+        selectedRuleKey.value = ruleKey(targetRule);
+        setInlineDraftRule(targetRule);
         await loadLatestDraft(targetRule);
-        draftEditorOpen.value = true;
         currentRuleId = String(targetRule.rule_id || '');
         currentSourceRowNo = Number(targetRule.source_row_no || 0) || null;
       }
@@ -909,9 +1284,9 @@ watch(
       chatStore.clearDraftFillPayload(payload.request_id);
       return;
     }
-    draftEditorOpen.value = true;
     draftCorpus.value = payload.draft_corpus;
     syncDraftChatContext();
+    focusInlineDraftEditor();
     message.success('已填入草稿，请确认后再保存或试跑');
     chatStore.clearDraftFillPayload(payload.request_id);
   },
@@ -920,16 +1295,21 @@ watch(
 
 <template>
   <div class="business-rule-page production-workbench p-4">
-    <div class="page-toolbar">
-      <div class="page-title-block">
-        <div class="eyebrow">MAGA CONTENT OPS</div>
-        <h1>生产工作台</h1>
-        <p>业务规则、生成、复盘集中处理。</p>
+    <div class="page-toolbar compact">
+      <div class="page-title-block compact">
+        <h1>业务规则工作台</h1>
+        <span v-if="selectedAsset" class="toolbar-subtitle">
+          {{ selectedPackageName }} · v{{ selectedAsset.version_no }}
+        </span>
       </div>
       <Space wrap>
+        <Button @click="loadRuleAssets">
+          <template #icon><ReloadOutlined /></template>
+          刷新规则
+        </Button>
         <Button @click="loadBatches">
           <template #icon><ReloadOutlined /></template>
-          刷新批次
+          刷新测试
         </Button>
         <Upload
           :accept="ruleUploadAccept"
@@ -945,32 +1325,40 @@ watch(
       </Space>
     </div>
 
-    <div class="workbench-layout">
-      <div class="workbench-sidebar">
-        <Card class="selector-card" title="业务规则" :bordered="false">
-          <template #extra>
-            <Space>
-              <span class="history-toggle-label">历史/调试</span>
+    <div
+      class="rule-workbench-shell"
+      :class="{ 'package-pane-collapsed': packagePaneCollapsed }"
+    >
+      <aside class="rule-package-pane" :class="{ collapsed: packagePaneCollapsed }">
+        <button
+          v-if="packagePaneCollapsed"
+          class="package-pane-expand"
+          type="button"
+          @click="packagePaneCollapsed = false"
+        >
+          <MenuUnfoldOutlined />
+          <span>规则包</span>
+        </button>
+
+        <Card v-else class="pane-card fill-card" :bordered="false">
+          <div class="pane-card-header">
+            <div>
+              <h2>业务规则包</h2>
+              <span>{{ ruleAssets.length }} 个生产/调试版本</span>
+            </div>
+            <Space size="small">
+              <span class="history-toggle-label">历史</span>
               <Switch v-model:checked="showHiddenRules" size="small" />
-              <Button size="small" @click="loadRuleAssets">
-                <template #icon><ReloadOutlined /></template>
-                刷新
+              <Button
+                size="small"
+                type="text"
+                title="收起规则包"
+                @click="packagePaneCollapsed = true"
+              >
+                <template #icon><MenuFoldOutlined /></template>
               </Button>
             </Space>
-          </template>
-          <Space class="rule-form" direction="vertical">
-            <Upload
-              :accept="ruleUploadAccept"
-              :before-upload="beforeUpload"
-              :disabled="importing"
-              :show-upload-list="false"
-            >
-              <Button block type="primary" :loading="importing">
-                <template #icon><UploadOutlined /></template>
-                上传文件
-              </Button>
-            </Upload>
-          </Space>
+          </div>
 
           <Spin :spinning="loading">
             <Empty v-if="ruleAssets.length === 0" description="暂无业务规则" />
@@ -1000,177 +1388,123 @@ watch(
             </div>
           </Spin>
         </Card>
+      </aside>
 
-        <Card class="history-card" title="历史批次" :bordered="false">
-          <template #extra>
-            <Button size="small" @click="loadBatches">
-              <template #icon><ReloadOutlined /></template>
-              刷新
-            </Button>
-          </template>
-          <Spin :spinning="batchLoading">
-            <Empty v-if="batchList.length === 0" description="暂无批次" />
-            <div v-else class="batch-list">
-              <button
-                v-for="batch in batchList"
-                :key="batch.batch_id"
-                class="batch-list-item"
-                :class="{ active: selectedReport?.batch_id === batch.batch_id }"
-                type="button"
-                @click="openReport(batch.batch_id)"
-              >
-                <span class="batch-title">
-                  <span>{{ batch.product_topic }}</span>
-                  <Tag :color="statusColor(batch.status)">
-                    {{ statusLabel(batch.status) }}
-                  </Tag>
-                </span>
-                <span class="batch-meta">
-                  #{{ batch.batch_id }} · {{ batch.batch_code || '-' }}
-                </span>
-                <span class="batch-meta">
-                  {{ batch.summary.generated_count }}/{{
-                    batch.summary.total_count
-                  }}
-                  条 · 失败 {{ failedCountOf(batch.summary) }} · 红线通过
-                  {{ batch.summary.hard_pass_count }}
-                </span>
-              </button>
-            </div>
-            <div v-if="batchTotal" class="batch-total">
-              共 {{ batchTotal }} 个批次
-            </div>
-          </Spin>
-        </Card>
-      </div>
-
-      <div class="workbench-primary">
-        <Card class="control-card" :bordered="false">
-          <template #title>
-            <Space>
-              <span>当前生产配置</span>
-              <Tag v-if="selectedAsset">{{ selectedPackageTypeLabel }}</Tag>
-            </Space>
-          </template>
-          <template #extra>
-            <Space>
-              <Button
-                v-if="isSelectedCommentRuleSet"
-                :disabled="!selectedAsset"
-                :loading="generating"
-                @click="openFocusGeneration"
-              >
-                选择一条业务规则进行测试
-              </Button>
-            </Space>
-          </template>
-
+      <main class="rule-list-pane">
+        <Card class="config-strip-card" :bordered="false">
           <template v-if="selectedAsset">
-            <div class="config-summary">
-              <div class="config-title">
+            <div class="config-strip">
+              <div class="config-heading">
+                <span>当前规则包</span>
                 <strong>{{ selectedPackageName }}</strong>
-                <span>{{ selectedSourceName }}</span>
+                <span>v{{ selectedAsset.version_no }}</span>
               </div>
-              <div class="config-meta-grid">
-                <div class="metric-block">
-                  <span>版本</span>
-                  <strong>v{{ selectedAsset.version_no }}</strong>
-                </div>
-                <div class="metric-block">
-                  <span>规则</span>
-                  <strong>{{ selectedRuleCount }}</strong>
-                </div>
-                <div class="metric-block">
-                  <span>示例</span>
-                  <strong>{{ selectedExampleCount }}</strong>
-                </div>
-                <div class="metric-block">
-                  <span>默认生成</span>
-                  <strong>{{ selectedDefaultGenerationCount }}</strong>
-                </div>
-                <div class="metric-block">
-                  <span>上传人</span>
-                  <strong>{{ selectedAsset.created_by || '-' }}</strong>
-                </div>
-                <div class="metric-block">
-                  <span>更新时间</span>
-                  <strong>{{ selectedPackageUpdatedAt }}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div class="preflight-strip">
-              <div class="preflight-item ready">
-                <span>业务规则</span>
-                <strong>已选</strong>
-              </div>
-              <div class="preflight-item pending">
-                <span>系统关键词</span>
-                <strong>待校验</strong>
-              </div>
-              <div class="preflight-item pending">
-                <span>Expert</span>
-                <strong>待校验</strong>
-              </div>
-              <div class="preflight-item pending">
-                <span>模型路由</span>
-                <strong>待校验</strong>
-              </div>
-            </div>
-
-            <div v-if="selectedWarnings.length > 0" class="warning-row">
-              <Tag
-                v-for="warning in selectedWarnings"
-                :key="warning"
-                color="orange"
-              >
-                {{ warning }}
-              </Tag>
+              <Space class="config-actions" size="small" wrap>
+                <Button
+                  size="small"
+                  :disabled="!selectedAsset"
+                  :loading="preflightLoading"
+                  @click="runPreflightCheck"
+                >
+                  生成前检查
+                </Button>
+                <Tag
+                  v-if="preflightResult"
+                  :color="preflightResult.passed ? 'green' : 'orange'"
+                >
+                  {{ preflightResult.passed ? '检查通过' : '需处理' }}
+                </Tag>
+                <Tag v-for="warning in selectedWarnings" :key="warning" color="orange">
+                  {{ warning }}
+                </Tag>
+              </Space>
             </div>
           </template>
           <Empty v-else description="暂无当前业务规则" />
         </Card>
 
-        <Card class="rule-list-card" title="业务规则列表" :bordered="false">
-          <template #extra>
-            <Space v-if="selectedAsset">
-              <Tag>{{ selectedItems.length }} 条</Tag>
-              <Tag v-if="isSelectedCommentRuleSet" color="blue">可单条测试</Tag>
+        <Card class="rule-list-card fill-card" :bordered="false">
+          <div class="list-card-header">
+            <div>
+              <h2>业务规则列表</h2>
+              <span>
+                {{ filteredRuleItems.length }}/{{ selectedItems.length }} 条
+                <template v-if="isSelectedCommentRuleSet || isSelectedArticleBusinessRuleSet">
+                  · 可单条测试
+                </template>
+              </span>
+            </div>
+            <Space>
+              <Input
+                v-model:value="ruleSearchText"
+                allow-clear
+                class="rule-search"
+                placeholder="搜索业务规则、语料"
+              />
+                <Button
+                  v-if="isSelectedCommentRuleSet || isSelectedArticleBusinessRuleSet"
+                  :disabled="!selectedAsset"
+                  :loading="generating"
+                  @click="activeRule && openRuleGeneration(activeRule)"
+                >
+                用正式语料测试
+                </Button>
             </Space>
-          </template>
+          </div>
+
           <template v-if="selectedAsset">
             <Table
+              class="rule-table"
               :columns="previewColumns"
-              :data-source="selectedItems"
+              :custom-row="(record) => ({ onClick: () => selectRule(record) })"
+              :data-source="filteredRuleItems"
               :pagination="false"
               :row-key="ruleKey"
-              :scroll="{ x: 1120, y: 520 }"
+              :row-class-name="(record) => (isActiveRule(record) ? 'active-rule-row' : '')"
+              :scroll="{ x: isSelectedCommentRuleSet || isSelectedArticleBusinessRuleSet ? 560 : 720, y: 'calc(100vh - 330px)' }"
               size="small"
             >
               <template #bodyCell="{ column, record, text }">
-                <template v-if="column.key === 'corpus'">
+                <template v-if="column.key === 'rule_summary'">
+                  <div class="rule-summary-cell">
+                    <strong>{{ ruleDisplayName(record) }}</strong>
+                    <p>{{ formatValue(record.corpus) }}</p>
+                  </div>
+                </template>
+                <template v-else-if="column.key === 'corpus'">
                   <div class="corpus-cell">
                     {{ formatValue(text) }}
                   </div>
                 </template>
-                <template v-else-if="column.key === 'examples'">
-                  {{ examplesCount(record) }}
-                </template>
-                <template v-else-if="column.key === 'supplements'">
-                  {{ supplementsCount(record) }}
+                <template v-else-if="column.key === 'counts'">
+                  <div class="count-cell">
+                    <span>{{ examplesCount(record) }} 示例</span>
+                    <span v-if="isSelectedCommentRuleSet">
+                      {{ supplementsCount(record) }} 补充
+                    </span>
+                    <span v-else-if="supplementsCount(record)">
+                      {{ supplementsCount(record) }} 补充
+                    </span>
+                    <small>默认抽 {{ defaultExampleSampleCount(record) }} 条</small>
+                  </div>
                 </template>
                 <template v-else-if="column.key === 'action'">
                   <Space>
-                    <Button size="small" @click="openDraftEditor(record)">
+                    <Button
+                      v-if="isSelectedCommentRuleSet"
+                      size="small"
+                      type="primary"
+                      @click.stop="openRuleChatCopilot(record)"
+                    >
+                      <template #icon><MessageOutlined /></template>
+                      去 Chat
+                    </Button>
+                    <Button v-if="isSelectedCommentRuleSet" size="small" @click.stop="openDraftEditor(record)">
                       <template #icon><EditOutlined /></template>
                       编辑
                     </Button>
-                    <Button size="small" type="primary" @click="openRuleGeneration(record)">
-                      测试
-                    </Button>
-                    <Button size="small" @click="openRuleChatCopilot(record)">
-                      <template #icon><MessageOutlined /></template>
-                      去 Chat
+                    <Button size="small" @click.stop="openRuleGeneration(record)">
+                      正式测试
                     </Button>
                   </Space>
                 </template>
@@ -1179,114 +1513,216 @@ watch(
           </template>
           <Empty v-else description="暂无业务规则列表" />
         </Card>
-      </div>
-    </div>
+      </main>
 
-    <Row class="diagnostics-row" :gutter="[16, 16]">
-      <Col :xs="24">
-        <Card class="batch-detail-card" :bordered="false">
-          <template #title>
-            <Space wrap>
-              <span>批次明细</span>
-              <Tag v-if="selectedReport">
-                {{ selectedReport.batch_code || `#${selectedReport.batch_id}` }}
-              </Tag>
-              <Tag v-if="selectedReport" :color="statusColor(selectedReport.status)">
-                {{ statusLabel(selectedReport.status) }}
-              </Tag>
-            </Space>
-          </template>
-          <template #extra>
-            <Button
-              size="small"
-              :disabled="!selectedReport"
-              :loading="reportLoading"
-              @click="selectedReport && openReport(selectedReport.batch_id)"
+      <aside class="rule-inspector-pane">
+        <Card class="inspector-card fill-card" :bordered="false">
+          <div class="inspector-tabs">
+            <button
+              :class="{ active: inspectorMode === 'rule' }"
+              type="button"
+              @click="inspectorMode = 'rule'"
             >
-              <template #icon><ReloadOutlined /></template>
-              刷新
-            </Button>
-          </template>
-          <Spin :spinning="reportLoading">
-            <template v-if="selectedReport">
-              <div class="batch-detail-summary">
-                <div class="metric-block">
-                  <span>业务规则</span>
-                  <strong>{{ selectedReport.asset_key }}</strong>
+              当前规则
+            </button>
+            <button
+              :class="{ active: inspectorMode === 'batches' }"
+              type="button"
+              @click="inspectorMode = 'batches'"
+            >
+              最近测试
+            </button>
+          </div>
+
+          <template v-if="inspectorMode === 'rule'">
+            <template v-if="activeRule">
+              <div class="inspector-section">
+                <div class="inspector-title">
+                  <strong>{{ ruleDisplayName(activeRule) }}</strong>
+                  <Tag v-if="activeRuleDraft" color="blue">
+                    草稿 #{{ activeRuleDraft.id }}
+                  </Tag>
                 </div>
-                <div class="metric-block">
-                  <span>总数</span>
-                  <strong>{{ selectedReportSummary?.total_count ?? '-' }}</strong>
-                </div>
-                <div class="metric-block">
-                  <span>已生成</span>
-                  <strong>{{ selectedReportSummary?.generated_count ?? '-' }}</strong>
-                </div>
-                <div class="metric-block">
-                  <span>失败</span>
-                  <strong>{{ reportFailureCount }}</strong>
-                </div>
-                <div class="metric-block">
-                  <span>红线通过</span>
-                  <strong>{{ selectedReportSummary?.hard_pass_count ?? '-' }}</strong>
-                </div>
-                <div class="metric-block">
-                  <span>待关注</span>
-                  <strong>{{ reportRiskCount }}</strong>
+                <div class="inspector-meta">
+                  <Tag>{{ activeRule.rule_id || '-' }}</Tag>
+                  <Tag>
+                    完整示例池 {{ fullExamplePoolCount(activeRule) }} 条
+                  </Tag>
+                  <Tag>
+                    默认抽 {{ defaultExampleSampleCount(activeRule) }} 条/次
+                  </Tag>
                 </div>
               </div>
 
-              <Table
-                class="batch-detail-table"
-                :columns="batchDetailColumns"
-                :data-source="selectedReportItems"
-                :pagination="{ pageSize: 10, showSizeChanger: false }"
-                :scroll="{ x: 980, y: 520 }"
-                row-key="item_id"
-                size="small"
-              >
-                <template #bodyCell="{ column, record, text }">
-                  <template v-if="column.key === 'status'">
-                    <Tag :color="statusColor(record.status)">
-                      {{ statusLabel(record.status) }}
-                    </Tag>
-                  </template>
-                  <template v-else-if="column.key === 'body'">
-                    <div v-if="record.body" class="batch-body-cell">
-                      {{ record.body }}
+              <div v-if="isSelectedCommentRuleSet" class="inspector-section">
+                <div class="draft-workspace-header">
+                  <div class="field-label">语料对比 / 草稿编辑</div>
+                  <Tag v-if="latestDraft">
+                    {{ latestDraft.status }} · v{{ latestDraft.base_version_no || '-' }}
+                  </Tag>
+                </div>
+                <div class="draft-compare-grid">
+                  <div class="draft-compare-column">
+                    <div class="field-label">正式语料</div>
+                    <div class="readonly-corpus inspector-corpus">
+                      {{ activeRule.corpus || '-' }}
                     </div>
-                    <div v-else class="batch-error-cell">
-                      {{ itemFailureMessage(record) }}
-                    </div>
+                  </div>
+                  <div class="draft-compare-column inline-draft-editor">
+                    <div class="field-label">草稿语料</div>
+                    <Textarea
+                      v-model:value="draftCorpus"
+                      :auto-size="{ minRows: 10, maxRows: 18 }"
+                      :disabled="draftSaving || draftTesting || draftPublishing"
+                      placeholder="在这里修改当前单条业务规则语料。保存草稿不会影响正式业务规则。"
+                    />
+                  </div>
+                </div>
+
+                <div class="draft-hint">
+                  <template v-if="latestDraft">
+                    草稿 #{{ latestDraft.id }}，基于 v{{ latestDraft.base_version_no || '-' }}
+                    <span v-if="hasUnsavedDraftChanges"> · 有未保存修改</span>
                   </template>
-                  <template v-else-if="column.key === 'hard_pass'">
-                    <Tag :color="passColor(record.hard_pass)">
-                      {{ passLabel(record.hard_pass) }}
-                    </Tag>
-                  </template>
-                  <template v-else-if="column.key === 'risk'">
-                    <Space v-if="riskTagsOf(record).length" wrap size="small">
-                      <Tag
-                        v-for="tag in riskTagsOf(record)"
-                        :key="tag.label"
-                        :color="tag.color"
-                      >
-                        {{ tag.label }}
-                      </Tag>
-                    </Space>
-                    <span v-else class="muted">-</span>
-                  </template>
-                  <template v-else>
-                    {{ formatValue(text) }}
-                  </template>
-                </template>
-              </Table>
+                  <template v-else>尚未保存草稿，默认从正式语料开始编辑。</template>
+                </div>
+
+                <Space class="draft-actions inline-draft-actions" wrap>
+                  <Button :icon="h(SaveOutlined)" :loading="draftSaving" @click="saveRuleDraft">
+                    保存草稿
+                  </Button>
+                  <Button :loading="draftTesting" @click="testRuleDraft(10)">
+                    用草稿跑 10 条
+                  </Button>
+                  <Button
+                    danger
+                    type="primary"
+                    :disabled="!latestDraft || hasUnsavedDraftChanges"
+                    :icon="h(CheckOutlined)"
+                    :loading="draftPublishing"
+                    @click="publishRuleDraft"
+                  >
+                    发布为新版本
+                  </Button>
+                </Space>
+              </div>
+
+              <div v-else class="inspector-section">
+                <div class="field-label">正式语料</div>
+                <div class="readonly-corpus inspector-corpus">
+                  {{ activeRule.corpus || '-' }}
+                </div>
+              </div>
             </template>
-            <Empty v-else description="请选择左侧历史批次查看明细" />
-          </Spin>
+            <Empty v-else description="请选择一条业务规则" />
+          </template>
+
+          <template v-else>
+            <Spin :spinning="batchLoading || reportLoading">
+              <div class="inspector-section">
+                <div class="inspector-title">
+                  <strong>{{ batchScopeTitle }}</strong>
+                  <Tag>最近 {{ selectedAssetBatchTotal }} 个</Tag>
+                </div>
+                <div class="batch-scope-switch">
+                  <Button
+                    size="small"
+                    :type="batchScope === 'asset' ? 'primary' : 'default'"
+                    @click="changeBatchScope('asset')"
+                  >
+                    规则包
+                  </Button>
+                  <Button
+                    size="small"
+                    :disabled="!canUseRuleBatchScope"
+                    :type="batchScope === 'rule' ? 'primary' : 'default'"
+                    @click="changeBatchScope('rule')"
+                  >
+                    当前规则
+                  </Button>
+                </div>
+                <template v-if="inspectorReport">
+                  <div class="current-batch-title">
+                    <span>当前批次</span>
+                    <strong>{{ inspectorReportTitle }}</strong>
+                    <Tag :color="statusColor(inspectorReport.status)">
+                      {{ statusLabel(inspectorReport.status) }}
+                    </Tag>
+                  </div>
+                  <div class="mini-metrics">
+                    <div>
+                      <span>总数</span>
+                      <strong>{{ inspectorReportSummary?.total_count ?? '-' }}</strong>
+                    </div>
+                    <div>
+                      <span>生成</span>
+                      <strong>{{ inspectorReportSummary?.generated_count ?? '-' }}</strong>
+                    </div>
+                    <div>
+                      <span>失败</span>
+                      <strong>{{ failedCountOf(inspectorReportSummary) }}</strong>
+                    </div>
+                    <div>
+                      <span>风险</span>
+                      <strong>{{ batchRiskCount(inspectorReportSummary) }}</strong>
+                    </div>
+                  </div>
+                </template>
+              </div>
+
+              <div v-if="selectedAssetBatches.length" class="batch-list compact-list">
+                <button
+                  v-for="batch in selectedAssetBatches.slice(0, 6)"
+                  :key="batch.batch_id"
+                  class="batch-list-item compact"
+                  :class="{ active: inspectorReport?.batch_id === batch.batch_id }"
+                  type="button"
+                  @click="selectRecentBatch(batch.batch_id)"
+                >
+                  <Checkbox
+                    :checked="isBatchSelectedForCompare(batch.batch_id)"
+                    @change="toggleCompareBatch(batch.batch_id)"
+                    @click.stop
+                  />
+                  <span class="batch-title">
+                    <span>#{{ batch.batch_id }}</span>
+                    <Tag :color="statusColor(batch.status)">
+                      {{ statusLabel(batch.status) }}
+                    </Tag>
+                  </span>
+                  <span class="batch-meta">
+                    {{ batch.summary.generated_count }}/{{ batch.summary.total_count }}
+                    条 · 失败 {{ failedCountOf(batch.summary) }} · 风险
+                    {{ batchRiskCount(batch.summary) }}
+                  </span>
+                  <span class="batch-time">
+                    {{ formatBatchTime(batch.create_time) }}
+                  </span>
+                </button>
+              </div>
+              <Empty v-else :description="batchScopeEmptyText" />
+
+              <Space class="batch-footer-actions" direction="vertical">
+                <Button
+                  block
+                  :disabled="compareBatchIds.length !== 2"
+                  @click="openBatchCompare"
+                >
+                  对比批次
+                </Button>
+                <Button
+                  block
+                  :disabled="!selectedAssetBatches.length"
+                  @click="openBatchDetail()"
+                >
+                  查看完整明细
+                </Button>
+              </Space>
+            </Spin>
+          </template>
         </Card>
-      </Col>
-    </Row>
+      </aside>
+    </div>
 
     <Modal
       v-model:open="uploadConfirmOpen"
@@ -1328,7 +1764,7 @@ watch(
       ok-text="开始生成"
       cancel-text="取消"
       :confirm-loading="generating"
-      @ok="generateFocusedCommentAngle"
+      @ok="generateFocusedRule"
     >
       <Space class="confirm-form" direction="vertical">
         <div class="form-field">
@@ -1336,7 +1772,7 @@ watch(
           <Select
             v-model:value="focusGenerateForm.rule_key"
             :disabled="generating"
-            :options="selectedCommentAngleOptions"
+            :options="selectedRuleOptions"
             class="full-width"
             show-search
           />
@@ -1355,186 +1791,443 @@ watch(
     </Modal>
 
     <Drawer
-      v-model:open="draftEditorOpen"
-      class="rule-draft-drawer"
+      v-model:open="batchDetailOpen"
+      class="batch-detail-drawer"
       placement="right"
-      title="单条规则草稿调试"
-      width="720"
+      title="批次明细"
+      width="980"
     >
-      <template v-if="selectedDraftRule">
-        <Space class="draft-meta" direction="vertical">
-          <div>
-            <Tag>{{ selectedDraftRule.rule_id || '-' }}</Tag>
-            <Tag>行 {{ selectedDraftRule.source_row_no || '-' }}</Tag>
-            <Tag v-if="latestDraft">草稿 #{{ latestDraft.id }}</Tag>
-          </div>
-          <div class="draft-title-row">
-            <strong>{{ selectedDraftRule.comment_angle || '-' }}</strong>
-          </div>
-        </Space>
-
-        <div class="draft-section">
-          <div class="field-label">正式版本语料</div>
-          <div class="readonly-corpus">
-            {{ selectedDraftRule.corpus || '-' }}
-          </div>
-        </div>
-
-        <div class="draft-section">
-          <div class="field-label">草稿语料</div>
-          <Textarea
-            v-model:value="draftCorpus"
-            :auto-size="{ minRows: 16, maxRows: 28 }"
-            :disabled="draftSaving || draftTesting || draftPublishing"
-            placeholder="在这里修改当前单条评论切角语料。保存草稿不会影响正式业务规则。"
-          />
-        </div>
-
-        <div v-if="latestDraft" class="draft-hint">
-          基于 v{{ latestDraft.base_version_no || '-' }} 保存，状态：
-          {{ latestDraft.status }}
-          <span v-if="hasUnsavedDraftChanges"> · 有未保存修改</span>
-        </div>
-
-        <Space class="draft-actions" wrap>
-          <Button :icon="h(SaveOutlined)" :loading="draftSaving" @click="saveRuleDraft">
-            保存草稿
-          </Button>
-          <Button :loading="draftTesting" @click="testRuleDraft(10)">
-            用草稿跑10条
-          </Button>
-          <Button :loading="draftTesting" @click="testRuleDraft(50)">
-            用草稿跑50条
-          </Button>
-          <Button
-            danger
-            type="primary"
-            :disabled="!latestDraft || hasUnsavedDraftChanges"
-            :icon="h(CheckOutlined)"
-            :loading="draftPublishing"
-            @click="publishRuleDraft"
-          >
-            发布为新版本
-          </Button>
-        </Space>
+      <template #extra>
+        <Button
+          size="small"
+          :disabled="!selectedReport"
+          :loading="reportLoading"
+          @click="selectedReport && openReport(selectedReport.batch_id)"
+        >
+          <template #icon><ReloadOutlined /></template>
+          刷新
+        </Button>
       </template>
-      <Empty v-else description="请选择一条业务规则" />
+
+      <Spin :spinning="reportLoading">
+        <template v-if="selectedReport">
+          <div class="batch-detail-summary">
+            <div class="metric-block">
+              <span>业务规则</span>
+              <strong>{{ selectedReport.asset_key }}</strong>
+            </div>
+            <div class="metric-block">
+              <span>总数</span>
+              <strong>{{ selectedReportSummary?.total_count ?? '-' }}</strong>
+            </div>
+            <div class="metric-block">
+              <span>已生成</span>
+              <strong>{{ selectedReportSummary?.generated_count ?? '-' }}</strong>
+            </div>
+            <div class="metric-block">
+              <span>失败</span>
+              <strong>{{ reportFailureCount }}</strong>
+            </div>
+            <div class="metric-block">
+              <span>红线通过</span>
+              <strong>{{ selectedReportSummary?.hard_pass_count ?? '-' }}</strong>
+            </div>
+            <div class="metric-block">
+              <span>待关注</span>
+              <strong>{{ reportRiskCount }}</strong>
+            </div>
+          </div>
+
+          <Table
+            class="batch-detail-table"
+            :columns="batchDetailColumns"
+            :data-source="selectedReportItems"
+            :pagination="{ pageSize: 10, showSizeChanger: false }"
+            :scroll="{ x: 980, y: 520 }"
+            row-key="item_id"
+            size="small"
+          >
+            <template #bodyCell="{ column, record, text }">
+              <template v-if="column.key === 'status'">
+                <Tag :color="statusColor(record.status)">
+                  {{ statusLabel(record.status) }}
+                </Tag>
+              </template>
+              <template v-else-if="column.key === 'body'">
+                <div v-if="record.body" class="batch-body-cell">
+                  {{ record.body }}
+                </div>
+                <div v-else class="batch-error-cell">
+                  {{ itemFailureMessage(record) }}
+                </div>
+              </template>
+              <template v-else-if="column.key === 'selected_examples'">
+                <div v-if="selectedExamplesOf(record).length" class="selected-examples-cell">
+                  <p
+                    v-for="example in selectedExamplesOf(record)"
+                    :key="example"
+                  >
+                    {{ example }}
+                  </p>
+                </div>
+                <span v-else class="muted">-</span>
+              </template>
+              <template v-else-if="column.key === 'title'">
+                <span>{{ record.title || '-' }}</span>
+              </template>
+              <template v-else-if="column.key === 'hard_pass'">
+                <Tag :color="passColor(record.hard_pass)">
+                  {{ passLabel(record.hard_pass) }}
+                </Tag>
+              </template>
+              <template v-else-if="column.key === 'risk'">
+                <Space v-if="riskTagsOf(record).length" wrap size="small">
+                  <Tag
+                    v-for="tag in riskTagsOf(record)"
+                    :key="tag.label"
+                    :color="tag.color"
+                  >
+                    {{ tag.label }}
+                  </Tag>
+                </Space>
+                <span v-else class="muted">-</span>
+              </template>
+              <template v-else>
+                {{ formatValue(text) }}
+              </template>
+            </template>
+          </Table>
+        </template>
+        <Empty v-else description="请选择批次查看明细" />
+      </Spin>
     </Drawer>
+
+    <Drawer
+      v-model:open="compareDrawerOpen"
+      class="batch-compare-drawer"
+      placement="right"
+      title="批次对比"
+      width="980"
+    >
+      <Spin :spinning="compareLoading">
+        <template v-if="compareLeftReport && compareRightReport">
+          <div class="batch-compare-head">
+            <div>
+              <span>基准批次</span>
+              <strong>
+                {{ compareLeftReport.batch_code || `#${compareLeftReport.batch_id}` }}
+              </strong>
+            </div>
+            <div>
+              <span>对比批次</span>
+              <strong>
+                {{ compareRightReport.batch_code || `#${compareRightReport.batch_id}` }}
+              </strong>
+            </div>
+          </div>
+
+          <div class="batch-compare-grid">
+            <div
+              v-for="row in compareMetricRows"
+              :key="row.key"
+              class="compare-metric-card"
+            >
+              <span>{{ row.label }}</span>
+              <strong>
+                {{ compareValue(row.left, row.percent) }}
+                <span>→</span>
+                {{ compareValue(row.right, row.percent) }}
+              </strong>
+              <em :class="compareDeltaClass(row.delta, row.key)">
+                {{ compareDelta(row.delta, row.percent) }}
+              </em>
+            </div>
+          </div>
+
+          <div class="compare-samples">
+            <div class="compare-sample-column">
+              <div class="compare-sample-title">
+                <strong>基准失败/风险样例</strong>
+                <Tag>{{ riskSamplesOf(compareLeftReport).length }} 条</Tag>
+              </div>
+              <div v-if="riskSamplesOf(compareLeftReport).length" class="risk-sample-list">
+                <div
+                  v-for="item in riskSamplesOf(compareLeftReport)"
+                  :key="item.item_id"
+                  class="risk-sample-card"
+                >
+                  <div class="risk-sample-title">
+                    <Tag :color="statusColor(item.status)">
+                      样例 {{ item.item_no }} · {{ statusLabel(item.status) }}
+                    </Tag>
+                    <Tag :color="passColor(item.hard_pass)">
+                      {{ passLabel(item.hard_pass) }}
+                    </Tag>
+                  </div>
+                  <p>{{ item.body || itemFailureMessage(item) }}</p>
+                  <Space v-if="riskTagsOf(item).length" wrap size="small">
+                    <Tag
+                      v-for="tag in riskTagsOf(item)"
+                      :key="tag.label"
+                      :color="tag.color"
+                    >
+                      {{ tag.label }}
+                    </Tag>
+                  </Space>
+                </div>
+              </div>
+              <Empty v-else description="暂无失败/风险样例" />
+            </div>
+
+            <div class="compare-sample-column">
+              <div class="compare-sample-title">
+                <strong>对比失败/风险样例</strong>
+                <Tag>{{ riskSamplesOf(compareRightReport).length }} 条</Tag>
+              </div>
+              <div v-if="riskSamplesOf(compareRightReport).length" class="risk-sample-list">
+                <div
+                  v-for="item in riskSamplesOf(compareRightReport)"
+                  :key="item.item_id"
+                  class="risk-sample-card"
+                >
+                  <div class="risk-sample-title">
+                    <Tag :color="statusColor(item.status)">
+                      样例 {{ item.item_no }} · {{ statusLabel(item.status) }}
+                    </Tag>
+                    <Tag :color="passColor(item.hard_pass)">
+                      {{ passLabel(item.hard_pass) }}
+                    </Tag>
+                  </div>
+                  <p>{{ item.body || itemFailureMessage(item) }}</p>
+                  <Space v-if="riskTagsOf(item).length" wrap size="small">
+                    <Tag
+                      v-for="tag in riskTagsOf(item)"
+                      :key="tag.label"
+                      :color="tag.color"
+                    >
+                      {{ tag.label }}
+                    </Tag>
+                  </Space>
+                </div>
+              </div>
+              <Empty v-else description="暂无失败/风险样例" />
+            </div>
+          </div>
+        </template>
+        <Empty v-else description="请选择两个批次对比" />
+      </Spin>
+    </Drawer>
+
   </div>
 </template>
 
 <style scoped>
 .business-rule-page {
-  background: var(--maga-page-bg, #f5f7fb);
+  --maga-page-bg: hsl(var(--background));
+  --maga-surface: hsl(var(--card));
+  --maga-surface-soft: hsl(var(--muted) / 45%);
+  --maga-surface-active: hsl(var(--primary) / 16%);
+  --maga-border: hsl(var(--border));
+  --maga-text: hsl(var(--foreground));
+  --maga-text-muted: hsl(var(--muted-foreground));
+  --maga-text-faint: hsl(var(--muted-foreground) / 72%);
+  --maga-error: hsl(var(--destructive));
+
+  background: var(--maga-page-bg);
   min-height: 100%;
 }
 
 .business-rule-page :deep(.ant-card) {
-  background: var(--maga-surface, #fff);
-  border: 1px solid var(--maga-border, #edf0f5);
+  background: var(--maga-surface);
+  border: 1px solid var(--maga-border);
   border-radius: 8px;
-}
-
-.business-rule-page :deep(.ant-card-head) {
-  border-bottom-color: var(--maga-border, #edf0f5);
-  min-height: 48px;
-}
-
-.business-rule-page :deep(.ant-card-head-title) {
-  color: var(--maga-text, #1f2937);
-  font-weight: 700;
 }
 
 .business-rule-page :deep(.ant-card-body) {
-  padding: 16px;
+  padding: 14px;
 }
 
-.page-toolbar {
-  align-items: flex-end;
-  background: var(--maga-surface, #fff);
-  border: 1px solid var(--maga-border, #edf0f5);
-  border-radius: 8px;
-  display: flex;
-  gap: 16px;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  padding: 16px 18px;
+.business-rule-page :deep(.ant-input),
+.business-rule-page :deep(.ant-input-number),
+.business-rule-page :deep(.ant-select-selector),
+.business-rule-page :deep(textarea.ant-input) {
+  background: var(--maga-surface-soft) !important;
+  border-color: var(--maga-border) !important;
+  color: var(--maga-text) !important;
 }
 
-.page-title-block {
-  min-width: 0;
+.business-rule-page :deep(.ant-input::placeholder),
+.business-rule-page :deep(textarea.ant-input::placeholder) {
+  color: var(--maga-text-faint) !important;
 }
 
-.eyebrow {
-  color: var(--maga-text-faint, #8c8c8c);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  margin-bottom: 4px;
+.business-rule-page :deep(.ant-tag:not(.ant-tag-has-color)) {
+  background: var(--maga-surface-soft);
+  border-color: var(--maga-border);
+  color: var(--maga-text);
 }
 
-.page-title-block h1 {
-  color: var(--maga-text, #1f2937);
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.25;
-  margin: 0;
-}
-
-.page-title-block p {
-  color: var(--maga-text-muted, #667085);
-  font-size: 13px;
-  line-height: 1.7;
-  margin: 6px 0 0;
-}
-
-.workbench-layout {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(280px, 336px) minmax(0, 1fr);
-}
-
-.workbench-sidebar,
-.workbench-primary {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-
-.selector-card,
-.history-card {
-  min-width: 0;
-}
-
-.rule-form,
 .full-width {
   width: 100%;
 }
 
-.form-field,
-.confirm-form {
+.page-toolbar {
+  align-items: center;
+  background: var(--maga-surface);
+  border: 1px solid var(--maga-border);
+  border-radius: 8px;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+}
+
+.page-title-block {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.page-title-block h1 {
+  color: var(--maga-text);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.toolbar-subtitle {
+  color: var(--maga-text-muted);
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-workbench-shell {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 300px minmax(520px, 1fr) 360px;
+  height: calc(100vh - 154px);
+  min-height: 640px;
+}
+
+.rule-workbench-shell.package-pane-collapsed {
+  grid-template-columns: 48px minmax(680px, 1fr) 360px;
+}
+
+.rule-package-pane,
+.rule-list-pane,
+.rule-inspector-pane {
+  min-height: 0;
+  min-width: 0;
+}
+
+.rule-package-pane.collapsed {
+  align-items: stretch;
+  display: flex;
+}
+
+.package-pane-expand {
+  align-items: center;
+  background: var(--maga-surface);
+  border: 1px solid var(--maga-border);
+  border-radius: 8px;
+  color: var(--maga-text-muted);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 8px;
+  justify-content: flex-start;
+  min-height: 0;
+  padding: 12px 6px;
   width: 100%;
 }
 
-.field-label {
-  color: var(--maga-text-muted, #595959);
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 6px;
+.package-pane-expand:hover {
+  background: var(--maga-surface-active);
+  border-color: #1677ff;
+  color: var(--maga-text);
 }
 
-.rule-package-list {
+.package-pane-expand span {
+  line-height: 1.1;
+  writing-mode: vertical-rl;
+}
+
+.rule-list-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fill-card {
+  height: 100%;
+  min-height: 0;
+}
+
+.fill-card :deep(.ant-card-body) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.inspector-card :deep(.ant-card-body) {
+  overflow-y: auto;
+}
+
+.pane-card-header,
+.list-card-header,
+.inspector-title {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.pane-card-header h2,
+.list-card-header h2 {
+  color: var(--maga-text);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.pane-card-header span,
+.list-card-header span,
+.history-toggle-label {
+  color: var(--maga-text-muted);
+  font-size: 12px;
+}
+
+.rule-package-list,
+.batch-list,
+.risk-sample-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 16px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.rule-package-list {
+  margin-top: 12px;
 }
 
 .rule-package-option,
 .batch-list-item {
-  background: var(--maga-surface-soft, #f8fafc);
-  border: 1px solid var(--maga-border, #edf0f5);
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
   border-radius: 8px;
   color: inherit;
   cursor: pointer;
@@ -1555,9 +2248,9 @@ watch(
 .batch-list-item:hover,
 .rule-package-option.active,
 .batch-list-item.active {
-  background: var(--maga-surface-active, #f0f6ff);
+  background: var(--maga-surface-active);
   border-color: #1677ff;
-  box-shadow: 0 0 0 1px rgb(22 119 255 / 8%);
+  box-shadow: 0 0 0 1px rgb(22 119 255 / 10%);
 }
 
 .option-main,
@@ -1571,80 +2264,344 @@ watch(
 
 .option-title,
 .batch-title span {
-  color: var(--maga-text, #1f2937);
+  color: var(--maga-text);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .option-meta,
-.batch-meta,
-.batch-total,
-.content-meta {
-  color: var(--maga-text-muted, #667085);
+.batch-meta {
+  color: var(--maga-text-muted);
   display: block;
   font-size: 12px;
   line-height: 1.5;
 }
 
-.control-card {
-  min-height: 234px;
+.config-strip-card {
+  flex: 0 0 auto;
 }
 
-.config-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.config-title {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.config-title strong {
-  color: var(--maga-text, #1f2937);
-  font-size: 18px;
-}
-
-.config-title span {
-  color: var(--maga-text-muted, #667085);
-  font-size: 13px;
-}
-
-.config-meta-grid,
-.preflight-strip {
+.config-strip {
+  align-items: center;
   display: grid;
   gap: 10px;
+  grid-template-columns: minmax(220px, 1fr) minmax(300px, 1.4fr) auto;
 }
 
-.config-meta-grid {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+.config-heading {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
 }
 
-.metric-block,
-.preflight-item {
-  background: var(--maga-surface-soft, #f8fafc);
-  border: 1px solid var(--maga-border, #edf0f5);
+.config-heading span {
+  color: var(--maga-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.config-heading strong {
+  color: var(--maga-text);
+  font-size: 15px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-actions {
+  justify-content: flex-end;
+}
+
+.rule-list-card {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.rule-search {
+  width: 240px;
+}
+
+.rule-table {
+  flex: 1 1 auto;
+  margin-top: 12px;
+  min-height: 0;
+}
+
+.rule-table :deep(.ant-table),
+.rule-table :deep(.ant-table-container),
+.rule-table :deep(.ant-table-content) {
+  background: var(--maga-surface);
+}
+
+.rule-table :deep(.ant-table-thead > tr > th) {
+  background: var(--maga-surface-soft) !important;
+  border-bottom-color: var(--maga-border) !important;
+  color: var(--maga-text) !important;
+}
+
+.rule-table :deep(.ant-table-tbody > tr > td) {
+  background: var(--maga-surface) !important;
+  border-bottom-color: var(--maga-border) !important;
+  color: var(--maga-text) !important;
+}
+
+.rule-table :deep(.ant-table-row) {
+  cursor: pointer;
+}
+
+.rule-table :deep(.active-rule-row > td) {
+  background: var(--maga-surface-active) !important;
+}
+
+.corpus-cell {
+  display: -webkit-box;
+  line-height: 1.55;
+  max-width: 560px;
+  max-height: 70px;
+  overflow: hidden;
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.rule-summary-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 76px;
+  min-width: 0;
+}
+
+.rule-summary-cell strong {
+  color: var(--maga-text);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-summary-cell p {
+  color: var(--maga-text-muted);
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 0;
+  overflow: hidden;
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.count-cell {
+  color: var(--maga-text-muted);
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.count-cell small {
+  color: var(--maga-text-muted);
+  font-size: 12px;
+}
+
+.selected-examples-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.selected-examples-cell p {
+  color: var(--maga-text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.inspector-tabs {
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 12px;
+  padding: 4px;
+}
+
+.inspector-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--maga-text-muted);
+  cursor: pointer;
+  font-weight: 600;
+  height: 32px;
+}
+
+.inspector-tabs button.active {
+  background: var(--maga-surface);
+  color: var(--maga-text);
+  box-shadow: 0 1px 2px rgb(16 24 40 / 8%);
+}
+
+.inspector-section {
+  margin-bottom: 14px;
+  min-width: 0;
+}
+
+.inspector-title strong {
+  color: var(--maga-text);
+  font-size: 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.inspector-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.field-label {
+  color: var(--maga-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.readonly-corpus {
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
+  border-radius: 8px;
+  color: var(--maga-text);
+  line-height: 1.7;
+  max-height: 180px;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.inspector-corpus {
+  max-height: 320px;
+}
+
+.draft-workspace-header {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.draft-workspace-header .field-label {
+  margin-bottom: 0;
+}
+
+.draft-compare-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.draft-compare-column {
+  min-width: 0;
+}
+
+.inline-draft-editor :deep(textarea.ant-input) {
+  line-height: 1.7;
+}
+
+.inline-draft-actions {
+  margin-top: 12px;
+}
+
+.draft-status-box {
+  align-items: center;
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.draft-status-box span,
+.draft-status-box strong {
+  color: var(--maga-text);
+}
+
+.mini-metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.current-batch-title {
+  align-items: center;
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
+  border-radius: 8px;
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.current-batch-title span {
+  color: var(--maga-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.current-batch-title strong {
+  color: var(--maga-text);
+  flex: 1;
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-scope-switch {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 10px;
+}
+
+.mini-metrics div,
+.metric-block {
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
   border-radius: 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-height: 60px;
+  min-width: 0;
   padding: 10px 12px;
 }
 
-.metric-block span,
-.preflight-item span {
-  color: var(--maga-text-muted, #667085);
+.mini-metrics span,
+.metric-block span {
+  color: var(--maga-text-muted);
   font-size: 12px;
 }
 
-.metric-block strong,
-.preflight-item strong {
-  color: var(--maga-text, #1f2937);
+.mini-metrics strong,
+.metric-block strong {
+  color: var(--maga-text);
   font-size: 14px;
   line-height: 1.35;
   overflow: hidden;
@@ -1652,90 +2609,67 @@ watch(
   white-space: nowrap;
 }
 
-.preflight-strip {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 16px;
-}
-
-.preflight-item {
-  min-height: 52px;
-  position: relative;
-}
-
-.preflight-item::before {
-  border-radius: 999px;
-  content: '';
-  height: 6px;
-  position: absolute;
-  right: 12px;
-  top: 12px;
-  width: 6px;
-}
-
-.preflight-item.ready::before {
-  background: #16a34a;
-}
-
-.preflight-item.pending::before {
-  background: #f59e0b;
-}
-
-.confirm-file {
-  align-items: center;
-  background: var(--maga-surface-soft, #f5f7fb);
-  border: 1px solid var(--maga-border, #edf0f5);
+.risk-sample-card {
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
   border-radius: 8px;
+  padding: 10px;
+}
+
+.risk-sample-title {
   display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  padding: 10px 12px;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
-.confirm-file span {
-  color: var(--maga-text-muted, #8c8c8c);
-}
-
-.confirm-file strong {
-  color: var(--maga-text, #262626);
-  font-weight: 600;
-  min-width: 0;
+.risk-sample-card p {
+  color: var(--maga-text);
+  display: -webkit-box;
+  line-height: 1.6;
+  margin: 0 0 8px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
-.warning-row {
+.compact-list {
   margin-top: 12px;
+  max-height: 260px;
 }
 
-.batch-list {
-  display: flex;
-  font-weight: 600;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 360px;
-  overflow-y: auto;
-  padding-right: 4px;
+.batch-list-item.compact {
+  display: grid;
+  gap: 4px 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 74px;
 }
 
-.batch-list-item {
-  min-height: 92px;
+.batch-list-item.compact :deep(.ant-checkbox-wrapper),
+.batch-list-item.compact :deep(.ant-checkbox) {
+  grid-row: 1 / span 3;
+  margin-top: 2px;
 }
 
-.batch-total {
-  margin-top: 10px;
+.batch-list-item.compact .batch-title,
+.batch-list-item.compact .batch-meta,
+.batch-list-item.compact .batch-time {
+  min-width: 0;
 }
 
-.rule-list-card {
-  min-height: 620px;
+.batch-time {
+  color: var(--maga-text-muted);
+  font-size: 12px;
 }
 
-.diagnostics-row {
-  margin-top: 16px;
+.batch-footer-actions {
+  margin-top: 12px;
+  width: 100%;
 }
 
-.batch-detail-card {
-  min-height: 420px;
+.batch-footer-actions :deep(.ant-space-item) {
+  width: 100%;
 }
 
 .batch-detail-summary {
@@ -1750,7 +2684,7 @@ watch(
 }
 
 .batch-body-cell {
-  color: var(--maga-text, #1f2937);
+  color: var(--maga-text);
   line-height: 1.65;
   max-height: 88px;
   overflow: auto;
@@ -1758,25 +2692,123 @@ watch(
 }
 
 .batch-error-cell {
-  color: var(--maga-error, #cf1322);
+  color: var(--maga-error);
   line-height: 1.6;
   white-space: pre-wrap;
 }
 
-.corpus-cell {
-  display: -webkit-box;
-  line-height: 1.55;
-  max-width: 520px;
-  max-height: 66px;
+.batch-compare-head,
+.batch-compare-grid,
+.compare-samples {
+  display: grid;
+  gap: 12px;
+}
+
+.batch-compare-head {
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 12px;
+}
+
+.batch-compare-head > div,
+.compare-metric-card,
+.compare-sample-column {
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.batch-compare-head span,
+.compare-metric-card span {
+  color: var(--maga-text-muted);
+  display: block;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.batch-compare-head strong,
+.compare-metric-card strong,
+.compare-sample-title strong {
+  color: var(--maga-text);
+}
+
+.batch-compare-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.compare-metric-card strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.compare-metric-card strong span {
+  display: inline;
+  margin: 0 4px;
+}
+
+.compare-metric-card em {
+  font-style: normal;
+  font-weight: 700;
+}
+
+.compare-metric-card em.positive {
+  color: #389e0d;
+}
+
+.compare-metric-card em.negative {
+  color: #cf1322;
+}
+
+.compare-metric-card em.neutral {
+  color: var(--maga-text-muted);
+}
+
+.compare-samples {
+  grid-template-columns: 1fr 1fr;
+}
+
+.compare-sample-title {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.confirm-form,
+.form-field {
+  width: 100%;
+}
+
+.confirm-file {
+  align-items: center;
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.confirm-file span {
+  color: var(--maga-text-muted);
+}
+
+.confirm-file strong {
+  color: var(--maga-text);
+  font-weight: 600;
+  min-width: 0;
   overflow: hidden;
-  white-space: pre-line;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .draft-meta {
-  background: var(--maga-surface-soft, #f8fafc);
-  border: 1px solid var(--maga-border, #edf0f5);
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
   border-radius: 8px;
   margin-bottom: 16px;
   padding: 12px;
@@ -1784,9 +2816,9 @@ watch(
 }
 
 .draft-title-row {
+  align-items: center;
   display: flex;
   gap: 12px;
-  align-items: center;
   justify-content: space-between;
 }
 
@@ -1799,77 +2831,90 @@ watch(
   margin-top: 16px;
 }
 
-.readonly-corpus {
-  background: var(--maga-surface-soft, #f8fafc);
-  border: 1px solid var(--maga-border, #edf0f5);
-  border-radius: 8px;
-  color: var(--maga-text, #1f2937);
-  line-height: 1.7;
-  max-height: 180px;
-  overflow: auto;
-  padding: 12px;
-  white-space: pre-wrap;
+.draft-hint,
+.muted {
+  color: var(--maga-text-muted);
+  font-size: 12px;
 }
 
 .draft-hint {
-  color: var(--maga-text-muted, #667085);
-  font-size: 12px;
   margin-top: 12px;
 }
 
 .draft-actions {
-  border-top: 1px solid var(--maga-border, #edf0f5);
+  border-top: 1px solid var(--maga-border);
   margin-top: 18px;
   padding-top: 14px;
 }
 
-.muted {
-  color: var(--maga-text-muted, #8c8c8c);
-  display: block;
-  font-size: 12px;
-  margin-top: 2px;
-}
+@media (max-width: 1180px) {
+  .rule-workbench-shell {
+    grid-template-columns: 280px minmax(480px, 1fr);
+  }
 
-.history-toggle-label {
-  color: var(--maga-text-muted, #667085);
-  font-size: 12px;
-}
+  .rule-workbench-shell.package-pane-collapsed {
+    grid-template-columns: 48px minmax(520px, 1fr);
+  }
 
-@media (prefers-color-scheme: dark) {
-  .business-rule-page {
-    --maga-page-bg: #060913;
-    --maga-surface: #0b1020;
-    --maga-surface-soft: #111827;
-    --maga-surface-active: #0f2346;
-    --maga-border: #223047;
-    --maga-text: #eef2ff;
-    --maga-text-muted: #9ca3af;
-    --maga-text-faint: #6b7280;
-    --maga-error-soft: #241416;
-    --maga-error-border: #7f1d1d;
+  .rule-inspector-pane {
+    grid-column: 1 / -1;
+    min-height: 420px;
   }
 }
 
 @media (max-width: 768px) {
-  .page-toolbar {
+  .business-rule-page {
+    overflow: auto;
+  }
+
+  .page-toolbar,
+  .page-title-block,
+  .list-card-header,
+  .config-strip {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .workbench-layout,
-  .config-meta-grid,
-  .preflight-strip {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (min-width: 769px) and (max-width: 1180px) {
-  .config-meta-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .page-toolbar,
+  .page-title-block {
+    display: flex;
   }
 
-  .preflight-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .rule-workbench-shell {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+  }
+
+  .rule-package-pane,
+  .rule-list-pane,
+  .rule-inspector-pane,
+  .fill-card {
+    height: auto;
+  }
+
+  .package-pane-expand {
+    flex-direction: row;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .package-pane-expand span {
+    writing-mode: horizontal-tb;
+  }
+
+  .rule-search {
+    width: 100%;
+  }
+
+  .config-strip {
+    display: flex;
+  }
+
+  .batch-detail-summary,
+  .mini-metrics {
+    grid-template-columns: 1fr 1fr;
   }
 }
 </style>

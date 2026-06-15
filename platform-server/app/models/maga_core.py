@@ -23,6 +23,7 @@ from app.models.content_agent import (
     ContentBatchItem,
     ContentBatchItemVersion,
     ContentFeedback,
+    CommentDeliveryLedger,
     ExecutorRegistry,
 )
 from app.models.llm_model_route import LLMModelRoute
@@ -82,6 +83,7 @@ MAGA_CORE_MODELS = (
     ContentBatchItem,
     ContentBatchItemVersion,
     ContentFeedback,
+    CommentDeliveryLedger,
     ContentAgentTask,
     ContentAgentRun,
     ContentAgentStageCall,

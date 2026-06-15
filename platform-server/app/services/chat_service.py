@@ -13,7 +13,7 @@ from app.schemas.chat import ChatAction, ChatMessageRequest, ChatMessageResponse
 from app.services.business_rule_chat_knowledge import (
     build_business_rule_context_block,
     build_business_rule_system_prompt,
-    is_comment_angle_context,
+    is_business_rule_context,
 )
 from app.services.llm_factory import LLMFactory
 from app.utils.model_config import DEFAULT_MODEL, normalize_default_model
@@ -194,12 +194,12 @@ class ChatService:
         return reply or "已生成草稿建议。", actions
 
     def _sanitize_actions(self, actions: object, request: ChatMessageRequest) -> list[ChatAction]:
-        if not is_comment_angle_context(request.context) or not isinstance(actions, list):
+        if not is_business_rule_context(request.context) or not isinstance(actions, list):
             return []
 
         safe_actions: list[ChatAction] = []
         for action in actions:
-            if not isinstance(action, dict) or action.get("type") != "fill_comment_angle_draft":
+            if not isinstance(action, dict) or action.get("type") != "fill_business_rule_draft":
                 continue
             payload = action.get("payload")
             if not isinstance(payload, dict):
@@ -210,7 +210,7 @@ class ChatService:
             # 重要逻辑：Chat 只能填草稿，不能绕过现有保存、试跑、发布按钮。
             safe_actions.append(
                 ChatAction(
-                    type="fill_comment_angle_draft",
+                    type="fill_business_rule_draft",
                     label=str(action.get("label") or "填入草稿"),
                     payload={
                         "draft_corpus": draft_corpus,

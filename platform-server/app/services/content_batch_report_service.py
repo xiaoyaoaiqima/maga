@@ -42,6 +42,7 @@ from app.schemas.content_batch_report import (
 )
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService, find_forbidden_hits
 from app.services.activity_quality_guard_service import build_article_pool_context_list
+from app.services.comment_delivery_ledger_service import CommentDeliveryLedgerService
 
 SIMILARITY_WARNING_THRESHOLD = 0.42
 
@@ -79,16 +80,55 @@ class ContentBatchReportService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def list_batch_reports(self, *, limit: int = 20, offset: int = 0) -> ContentBatchListResponse:
-        total_result = await self.db.execute(select(func.count()).select_from(ContentBatchJob))
-        total = int(total_result.scalar_one() or 0)
-        result = await self.db.execute(
-            select(ContentBatchJob).order_by(ContentBatchJob.create_time.desc(), ContentBatchJob.id.desc()).offset(offset).limit(limit)
+    async def list_batch_reports(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        asset_key: str | None = None,
+        rule_id: str | None = None,
+        source_row_no: int | None = None,
+    ) -> ContentBatchListResponse:
+        conditions = []
+        normalized_asset_key = str(asset_key or "").strip()
+        if normalized_asset_key:
+            conditions.append(ContentBatchJob.asset_key == normalized_asset_key)
+
+        rule_filter_enabled = (
+            bool(str(rule_id or "").strip()) or source_row_no is not None
         )
-        jobs = list(result.scalars().all())
+        base_query = select(ContentBatchJob).order_by(
+            ContentBatchJob.create_time.desc(),
+            ContentBatchJob.id.desc(),
+        )
+        if conditions:
+            base_query = base_query.where(*conditions)
+
+        item_cache: dict[int, list[ContentBatchItem]] = {}
+        if rule_filter_enabled:
+            # 重要逻辑：批次与单条规则的关系目前只存在 item.plan_json，
+            # 首版不新增表和迁移，所以列表按 job 拉取后用计划快照过滤。
+            result = await self.db.execute(base_query)
+            filtered_jobs: list[ContentBatchJob] = []
+            for job in result.scalars().all():
+                items = await self._batch_items(job.id)
+                if self._items_match_rule_filter(items, rule_id=rule_id, source_row_no=source_row_no):
+                    item_cache[job.id] = items
+                    filtered_jobs.append(job)
+            total = len(filtered_jobs)
+            jobs = filtered_jobs[offset : offset + limit]
+        else:
+            total_query = select(func.count()).select_from(ContentBatchJob)
+            if conditions:
+                total_query = total_query.where(*conditions)
+            total_result = await self.db.execute(total_query)
+            total = int(total_result.scalar_one() or 0)
+            result = await self.db.execute(base_query.offset(offset).limit(limit))
+            jobs = list(result.scalars().all())
+
         list_items: list[ContentBatchListItem] = []
         for job in jobs:
-            items = await self._batch_items(job.id)
+            items = item_cache.get(job.id) or await self._batch_items(job.id)
             versions_by_item = await self._versions_for_items(items)
             feedback_counts = await self._feedback_counts_for_items(items)
             forbidden_terms = await self._forbidden_terms_for_job(job)
@@ -121,6 +161,25 @@ class ContentBatchReportService:
                 )
             )
         return ContentBatchListResponse(total=total, items=list_items)
+
+    def _items_match_rule_filter(
+        self,
+        items: list[ContentBatchItem],
+        *,
+        rule_id: str | None,
+        source_row_no: int | None,
+    ) -> bool:
+        normalized_rule_id = str(rule_id or "").strip()
+        for item in items:
+            plan = item.plan_json or {}
+            plan_rule_id = str(plan.get("rule_id") or "").strip()
+            plan_source_row_no = _int_or_none(plan.get("source_row_no"))
+            if normalized_rule_id and plan_rule_id != normalized_rule_id:
+                continue
+            if source_row_no is not None and plan_source_row_no != source_row_no:
+                continue
+            return True
+        return False
 
     async def get_batch_report(self, batch_id: int) -> ContentBatchReportResponse:
         job = await self._require_job(batch_id)
@@ -182,7 +241,35 @@ class ContentBatchReportService:
         output = BytesIO()
         workbook.save(output)
         filename = _article_pool_excel_filename(report)
+        await self._record_article_pool_delivery(report, filename)
         return filename, output.getvalue()
+
+    async def _record_article_pool_delivery(self, report: ContentBatchReportResponse, filename: str) -> None:
+        items = _article_pool_export_items(report.items)
+        if not items:
+            return
+        entries = [
+            {
+                "category": item.content_angle or item.asset_combo_key or "",
+                "comment_text": item.body or "",
+                "batch_id": report.batch_id,
+                "item_id": item.item_id,
+                "metadata_json": {
+                    "batch_code": report.batch_code,
+                    "product_topic": report.product_topic,
+                    "item_no": item.item_no,
+                },
+            }
+            for item in items
+            if str(item.body or "").strip()
+        ]
+        await CommentDeliveryLedgerService(self.db).upsert_many(
+            asset_key=report.asset_key,
+            entries=entries,
+            source_type="maga_batch",
+            source_uri=f"batch:{report.batch_id}/{filename}",
+            delivered_by="content_batch_export",
+        )
 
     async def list_feedback_samples(
         self,
@@ -1090,7 +1177,7 @@ def _evidence_for_categories(evidence_by_category: dict[str, list[str]], categor
 def _batch_content_type(items: list[ContentBatchItem]) -> str:
     for item in items:
         plan = item.plan_json or {}
-        if plan.get("output_fields") == ["comment"] or plan.get("rule_type") == "comment_angle":
+        if plan.get("output_fields") == ["comment"] or plan.get("rule_type") == "business_rule":
             return "comment"
     return "article"
 
@@ -1151,7 +1238,7 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
     headers = [
         "序号",
         "状态",
-        "标题/切角",
+        "标题/业务规则",
         "正文",
         "字数",
         "红线通过",
@@ -1243,7 +1330,7 @@ def _write_article_pool_sheet(sheet: Any, report: ContentBatchReportResponse) ->
             [
                 "",
                 "",
-                "",
+                item.title or "",
                 item.body or "",
                 json.dumps(context_list, ensure_ascii=False),
             ]
@@ -1335,11 +1422,18 @@ def _similarity_text(warnings: list[ContentBatchSimilarityWarning]) -> str:
 def _business_rule_label(value: Any) -> str:
     if not isinstance(value, dict):
         return ""
-    for key in ("comment_angle", "product_experience", "topic", "rule_id"):
+    for key in ("business_rule", "product_experience", "topic", "rule_id"):
         text = str(value.get(key) or "").strip()
         if text:
             return text
     return str(value.get("rule_type") or "")
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _keyword_asset_label(value: Any) -> str:

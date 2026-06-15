@@ -13,8 +13,12 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.maga_assets import AssetImportRun, AssetRegistry
+from app.services.business_rule_asset_types import (
+    ARTICLE_BUSINESS_RULE_ASSET_TYPE,
+    ARTICLE_BUSINESS_RULE_ASSET_TYPES,
+)
 
-PRODUCT_EXPERIENCE_RULE_ASSET_TYPE = "product_experience_rule_set"
+PRODUCT_EXPERIENCE_RULE_ASSET_TYPE = ARTICLE_BUSINESS_RULE_ASSET_TYPE
 DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY = "yuanyue_product_experience"
 DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME = "美素佳儿源悦活动生文"
 DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT = 10
@@ -53,7 +57,7 @@ async def import_product_experience_rule_set(
     if not items:
         raise ValueError("product experience rule set is empty")
 
-    example_count = sum(len(item.get("examples") or []) for item in items)
+    example_count = sum(len(item.get("examples") or []) + len(item.get("supplements") or []) for item in items)
     warnings = _warnings_for_items(items)
     content_json = {
         "rule_type": "product_experience",
@@ -70,7 +74,7 @@ async def import_product_experience_rule_set(
     await db.execute(
         update(AssetRegistry)
         .where(
-            AssetRegistry.asset_type == PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
+            AssetRegistry.asset_type.in_(ARTICLE_BUSINESS_RULE_ASSET_TYPES),
             AssetRegistry.asset_key == normalized_asset_key,
             AssetRegistry.status == "active",
         )
@@ -80,7 +84,7 @@ async def import_product_experience_rule_set(
         asset_type=PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
         asset_key=normalized_asset_key,
         display_name=display_name or "源悦-业务规则（产品使用体验）",
-        version_no=await _next_asset_version(db, PRODUCT_EXPERIENCE_RULE_ASSET_TYPE, normalized_asset_key),
+        version_no=await _next_asset_version(db, ARTICLE_BUSINESS_RULE_ASSET_TYPES, normalized_asset_key),
         status="active",
         asset_stage="production",
         source_name=source_name,
@@ -187,6 +191,8 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
     if not product_experience or not corpus:
         return None
     baby_stage, use_duration, topic = _split_product_experience_key(product_experience)
+    examples = _line_examples(row.get("参考示例")) or _examples_from_corpus(corpus)
+    supplements = _line_examples(row.get("补充参考"))
     return {
         "rule_id": f"product_experience_{index:03d}",
         "product_experience": product_experience,
@@ -194,7 +200,8 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         "use_duration": use_duration,
         "topic": topic,
         "corpus": corpus,
-        "examples": _examples_from_corpus(corpus),
+        "examples": examples,
+        "supplements": supplements,
         "source_row_no": index,
     }
 
@@ -216,6 +223,15 @@ def _examples_from_corpus(corpus: str) -> list[str]:
     return [_clean_example_line(line) for line in body.splitlines() if _clean_example_line(line)]
 
 
+def _line_examples(value: str | None) -> list[str]:
+    examples: list[str] = []
+    for raw in (value or "").splitlines():
+        line = _clean_example_line(raw)
+        if line:
+            examples.append(line)
+    return examples
+
+
 def _clean_example_line(value: str) -> str:
     text = str(value or "").strip()
     text = re.sub(r"^[\-\*•]\s*", "", text)
@@ -225,9 +241,20 @@ def _clean_example_line(value: str) -> str:
 
 def _warnings_for_items(items: list[dict[str, Any]]) -> list[str]:
     warnings: list[str] = []
-    missing_examples = [item["product_experience"] for item in items if not item.get("examples")]
+    missing_examples = [
+        item["product_experience"]
+        for item in items
+        if not item.get("examples") and not item.get("supplements")
+    ]
     if missing_examples:
         warnings.append(f"{len(missing_examples)} 条规则缺少可参考素材")
+    sparse_examples = [
+        item["product_experience"]
+        for item in items
+        if 0 < len(item.get("examples") or []) + len(item.get("supplements") or []) < 3
+    ]
+    if sparse_examples:
+        warnings.append(f"{len(sparse_examples)} 条规则参考示例少于3条")
     malformed_keys = [
         item["product_experience"]
         for item in items
@@ -235,20 +262,13 @@ def _warnings_for_items(items: list[dict[str, Any]]) -> list[str]:
     ]
     if malformed_keys:
         warnings.append(f"{len(malformed_keys)} 条规则未按“月龄，使用时间，体验主题”填写")
-    hard_rule_rows = [
-        item["product_experience"]
-        for item in items
-        if re.search(r"必须|只写|固定数字|生成重点必须|可写方向", item.get("corpus") or "")
-    ]
-    if hard_rule_rows:
-        warnings.append(f"{len(hard_rule_rows)} 条规则含较硬约束，后续可用示例扩展替代加规则")
     return warnings
 
 
-async def _next_asset_version(db: AsyncSession, asset_type: str, asset_key: str) -> int:
+async def _next_asset_version(db: AsyncSession, asset_types: tuple[str, ...], asset_key: str) -> int:
     result = await db.execute(
         select(AssetRegistry.version_no)
-        .where(AssetRegistry.asset_type == asset_type, AssetRegistry.asset_key == asset_key)
+        .where(AssetRegistry.asset_type.in_(asset_types), AssetRegistry.asset_key == asset_key)
         .order_by(AssetRegistry.version_no.desc())
         .limit(1)
     )

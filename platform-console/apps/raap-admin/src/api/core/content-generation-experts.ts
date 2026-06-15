@@ -25,6 +25,43 @@ export namespace ContentGenerationExpertApi {
     rewrite_capability: string;
     static_forbidden_terms: string[];
     business_forbidden_terms: string[];
+    business_forbidden_term_entries: BusinessForbiddenTermEntry[];
+  }
+
+  export interface BusinessForbiddenTermEntry {
+    term: string;
+    reason: string;
+    enabled: boolean;
+    created_at: string;
+    created_by: string;
+    updated_at: string;
+    updated_by: string;
+    replacement: string;
+    source: string;
+    asset_key: string;
+  }
+
+  export interface BusinessForbiddenTermListResponse {
+    asset_key: string;
+    items: BusinessForbiddenTermEntry[];
+  }
+
+  export interface BusinessForbiddenTermUpsertRequest {
+    asset_key?: null | string;
+    entries: Array<{
+      enabled?: boolean;
+      reason?: null | string;
+      replacement?: null | string;
+      term: string;
+    }>;
+    created_by?: null | string;
+  }
+
+  export interface BusinessForbiddenTermStatusRequest {
+    asset_key?: null | string;
+    enabled: boolean;
+    term: string;
+    updated_by?: null | string;
   }
 
   export interface ExpertListResponse {
@@ -52,6 +89,33 @@ export namespace ContentGenerationExpertApi {
 export async function getContentGenerationExpertsApi() {
   return requestClient.get<ContentGenerationExpertApi.ExpertListResponse>(
     '/v1/content-agent/experts',
+  );
+}
+
+export async function getBusinessForbiddenTermsApi(params?: {
+  asset_key?: string;
+}) {
+  return requestClient.get<ContentGenerationExpertApi.BusinessForbiddenTermListResponse>(
+    '/v1/content-agent/business-forbidden-terms',
+    { params },
+  );
+}
+
+export async function saveBusinessForbiddenTermsApi(
+  data: ContentGenerationExpertApi.BusinessForbiddenTermUpsertRequest,
+) {
+  return requestClient.post<ContentGenerationExpertApi.BusinessForbiddenTermListResponse>(
+    '/v1/content-agent/business-forbidden-terms',
+    data,
+  );
+}
+
+export async function updateBusinessForbiddenTermStatusApi(
+  data: ContentGenerationExpertApi.BusinessForbiddenTermStatusRequest,
+) {
+  return requestClient.put<ContentGenerationExpertApi.BusinessForbiddenTermListResponse>(
+    '/v1/content-agent/business-forbidden-terms/status',
+    data,
   );
 }
 

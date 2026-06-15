@@ -42,6 +42,7 @@ import {
   getContentGenerationExpertsApi,
   previewContentGenerationExpertApi,
   saveContentGenerationExpertApi,
+  updateBusinessForbiddenTermStatusApi,
 } from '#/api/core/content-generation-experts';
 import { getProviderListApi, getRouteListApi } from '#/api/core/llm';
 
@@ -49,6 +50,7 @@ const userStore = useUserStore();
 const loading = ref(false);
 const saving = ref(false);
 const previewLoading = ref(false);
+const forbiddenTermUpdating = ref('');
 const activeCode = ref('');
 const experts = ref<ContentGenerationExpertApi.Expert[]>([]);
 const auditFlow = ref<ContentGenerationExpertApi.AuditFlow | null>(null);
@@ -128,6 +130,14 @@ const tableColumns: any[] = [
   { title: '状态', key: 'enabled', width: 86 },
 ];
 
+const businessForbiddenTermColumns: any[] = [
+  { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 132 },
+  { title: '违禁词', dataIndex: 'term', key: 'term', width: 94 },
+  { title: '违禁原因', dataIndex: 'reason', key: 'reason' },
+  { title: '状态', key: 'enabled', width: 84 },
+  { title: '来源', dataIndex: 'source', key: 'source', width: 118 },
+];
+
 const operator = computed(
   () =>
     userStore.userInfo?.realName ||
@@ -141,6 +151,32 @@ function sourceColor(source: string) {
 
 function sourceLabel(source: string) {
   return source === 'expert_config' ? '已保存' : '默认配置';
+}
+
+function formatTermTime(value?: string) {
+  if (!value) return '-';
+  return value.replace('T', ' ').replace(/\.\d+.*$/, '').replace(/\+00:00$/, '');
+}
+
+async function toggleBusinessForbiddenTerm(
+  record: ContentGenerationExpertApi.BusinessForbiddenTermEntry,
+  enabled: boolean,
+) {
+  forbiddenTermUpdating.value = record.term;
+  try {
+    await updateBusinessForbiddenTermStatusApi({
+      asset_key: record.asset_key || 'a2_sentiment_comment_activity',
+      enabled,
+      term: record.term,
+      updated_by: operator.value,
+    });
+    await loadExperts();
+    message.success(enabled ? '已启用业务违禁词' : '已停用业务违禁词');
+  } catch (error: any) {
+    message.error(error?.message || '更新业务违禁词失败');
+  } finally {
+    forbiddenTermUpdating.value = '';
+  }
 }
 
 function optionFromValue(value: string) {
@@ -342,7 +378,7 @@ async function handlePreview() {
         business_rule: {
           product_topic: '美素佳儿源悦活动',
           rule_type: expert.content_type.includes('comment')
-            ? 'comment_angle'
+            ? 'business_rule'
             : 'product_experience',
         },
         content_type:
@@ -478,15 +514,40 @@ onMounted(loadExperts);
           </div>
           <div class="term-block">
             <div class="term-title">业务违禁词</div>
-            <Space v-if="auditFlow?.business_forbidden_terms?.length" wrap>
-              <Tag
-                v-for="term in auditFlow.business_forbidden_terms"
-                :key="term"
-                color="volcano"
-              >
-                {{ term }}
-              </Tag>
-            </Space>
+            <Table
+              v-if="auditFlow?.business_forbidden_term_entries?.length"
+              row-key="term"
+              :columns="businessForbiddenTermColumns"
+              :data-source="auditFlow.business_forbidden_term_entries"
+              :pagination="false"
+              size="small"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'created_at'">
+                  {{ formatTermTime(record.created_at) }}
+                </template>
+                <template v-else-if="column.key === 'term'">
+                  <Tag color="volcano">{{ record.term }}</Tag>
+                </template>
+                <template v-else-if="column.key === 'reason'">
+                  {{ record.reason || '-' }}
+                </template>
+                <template v-else-if="column.key === 'enabled'">
+                  <Switch
+                    size="small"
+                    :checked="record.enabled"
+                    :loading="forbiddenTermUpdating === record.term"
+                    @change="
+                      (checked) =>
+                        toggleBusinessForbiddenTerm(record, Boolean(checked))
+                    "
+                  />
+                </template>
+                <template v-else-if="column.key === 'source'">
+                  {{ record.source || '-' }}
+                </template>
+              </template>
+            </Table>
             <Empty v-else image="simple" description="暂无业务违禁词" />
           </div>
         </Card>

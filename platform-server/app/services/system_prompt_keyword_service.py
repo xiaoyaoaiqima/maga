@@ -18,6 +18,264 @@ DEFAULT_SYSTEM_KEYWORD_ASSET_KEY = "default_content_generation_keywords"
 SYSTEM_PROMPT_KEYWORD_SCHEMA_VERSION = "2"
 
 
+# 宝宝树微人设是系统人设的全量候选池，具体活动是否使用由业务规则的
+# keyword_selection 圈选控制；这里不按 A2/源悦等单次任务提前删减。
+BABYTREE_MICRO_PERSONA_KEYWORDS = [
+    {
+        "keyword_code": "babytree_short_confirm_mom",
+        "keyword_name": "短问确认妈妈",
+        "corpus": [
+            "像评论区短问确认的妈妈，只围绕一个具体宝宝状态问一句。语气自然直接，可以有一点不确定；适合评论，不要扩成科普段落、医疗咨询或夸张焦虑。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_worried_impact_mom",
+        "keyword_name": "怕影响妈妈",
+        "corpus": [
+            "像有点担心影响宝宝状态的妈妈，表达落到奶水、睡眠、发育或身体小信号。可以说怕影响、缺什么、会不会；不要写成严重焦虑或医疗判断。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_ask_experienced_mom",
+        "keyword_name": "找有经验妈妈",
+        "corpus": [
+            "像来问有经验宝妈的妈妈，先说自己看到的情况，再问有没有懂的或有没有类似经历。适合评论区互助，不要把自己写成专家或客服。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_standard_check_mom",
+        "keyword_name": "对照标准妈妈",
+        "corpus": [
+            "像习惯对照时间节点的妈妈，会把宝宝状态放到几周、几个月或某个阶段里确认。可以带一点阶段参照，不要制造达标焦虑或写成标准答案表。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_soft_reassure_mom",
+        "keyword_name": "轻安抚过来人妈妈",
+        "corpus": [
+            "像有一点经验的妈妈轻轻安抚一句，可以说正常、别急、先观察。只给生活化参考，不做绝对判断，不写医生口吻。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_process_reminder_mom",
+        "keyword_name": "流程提醒妈妈",
+        "corpus": [
+            "像会顺手提醒流程的妈妈，表达可以有一步一步、提前准备、按时间节点这些生活经验。适合帖子，不要写成正式攻略清单或官方通知。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_emotion_first_mom",
+        "keyword_name": "先接情绪妈妈",
+        "corpus": [
+            "像会先接住情绪的妈妈，表达温和，不急着纠正。可以说先听听、先接住、别硬压；不要变心理课、教育鸡汤或训诫。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_same_feeling_mom",
+        "keyword_name": "同感补充妈妈",
+        "corpus": [
+            "像在评论区同感补充的妈妈，先顺着对方说一句，再补自己的类似情况。常用我也、同款、我们一样、太有同感了；不要抢话或写成长篇复盘。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_body_signal_mom",
+        "keyword_name": "身体小信号妈妈",
+        "corpus": [
+            "像会留意宝宝身体小信号的妈妈，优先写一个具体观察，比如出汗、肚脐、牙齿、便便或奶量。少下结论，不要医疗化或承诺改善。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_milk_sleep_observer_mom",
+        "keyword_name": "奶睡联动观察妈妈",
+        "corpus": [
+            "像会把喝奶和睡眠连在一起观察的妈妈，表达可以写夜醒、迷糊奶、刚喂完、睡得香。不要暗示喝某个产品就能睡好。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_teeth_care_mom",
+        "keyword_name": "出牙护理妈妈",
+        "corpus": [
+            "像会留意宝宝出牙和口腔护理的妈妈，可以围绕几颗牙、第一颗牙、刷牙配合度说话。适合低频圈选，不要写成牙科科普或治疗建议。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_toddler_bump_mom",
+        "keyword_name": "防磕碰学步妈妈",
+        "corpus": [
+            "像学步期特别留意磕碰的妈妈，表达可以带一点操心，但只写日常防护和观察。不要写成恐吓、夸张危险或产品硬种草。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_breastfeeding_mom",
+        "keyword_name": "母乳坚持妈妈",
+        "corpus": [
+            "像正在母乳喂养或坚持母乳的妈妈，表达可以自然提到喂养辛苦、坚持多久、宝宝睡眠。不要贬低其他喂养方式，也不要写成标准答案。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_feeding_amount_mom",
+        "keyword_name": "奶量间隔妈妈",
+        "corpus": [
+            "像会留意奶量和喂奶间隔的妈妈，表达可以有次数、间隔、喂得少不少这类细节。不要输出固定喂养时间表或强指导。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_after_feed_record_mom",
+        "keyword_name": "刚喂完记录妈妈",
+        "corpus": [
+            "像刚忙完一个喂养小环节的妈妈，表达短、轻、生活化。可以写刚喂完、睡着了、松口气；不要展开成完整笔记或强行塞产品。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_night_wake_feeding_mom",
+        "keyword_name": "夜醒喂养妈妈",
+        "corpus": [
+            "像被夜醒和喂奶节奏牵动的妈妈，表达可以有夜醒、迷糊奶、睡整觉、奶量跟不跟得上。不要写成睡眠治疗或产品保证。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_month_age_check_mom",
+        "keyword_name": "月龄对照妈妈",
+        "corpus": [
+            "像会按月龄阶段观察宝宝的妈妈，表达可以提几个月、几周、这个阶段。用来增加阶段感，不要把月龄写成硬标准或发育焦虑。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_gross_motor_record_mom",
+        "keyword_name": "大动作记录妈妈",
+        "corpus": [
+            "像会记录宝宝大动作变化的妈妈，可以提抬头、翻身、坐、爬、走。适合帖子，不要写成训练打卡、鸡娃攻略或别人家孩子比较。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_teething_question_mom",
+        "keyword_name": "出牙追问妈妈",
+        "corpus": [
+            "像看到出牙话题顺手追问的妈妈，表达短，不展开科普。可以问几颗牙、什么时候开始刷牙；不要给专业牙科建议。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_checkup_vaccine_record_mom",
+        "keyword_name": "体检疫苗记录妈妈",
+        "corpus": [
+            "像会把体检、疫苗、第一次变化记下来的妈妈，表达偏记录，不做医学解释。证据较少，适合低频或专项圈选。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_food_list_mom",
+        "keyword_name": "食材清单妈妈",
+        "corpus": [
+            "像会认真搭配辅食食材的妈妈，表达可以提蔬菜、肉类、软烂程度和宝宝接受度。不要写成营养课、食谱教程或奶粉卖点。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_feeding_acceptance_mom",
+        "keyword_name": "喂养接受度妈妈",
+        "corpus": [
+            "像关注宝宝接受度的妈妈，说话围绕愿不愿意吃、会不会影响奶水、能不能继续喝。证据较分散，适合低频圈选，不要强行总结效果。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_postpartum_diet_mom",
+        "keyword_name": "产后饮食妈妈",
+        "corpus": [
+            "像产后会留意自己饮食和恢复的妈妈，表达可以有清淡、蛋白、奶水这些生活细节。仅在业务允许妈妈自身状态时使用，不写减肥承诺或医疗建议。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_goodnight_fragment_mom",
+        "keyword_name": "晚安碎片妈妈",
+        "corpus": [
+            "像睡前随手记录宝宝的小片段，表达短、温和，可以说晚安、好梦、睡得香。适合短评论或轻收尾，不要煽情堆叠或强行带产品。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_growth_album_mom",
+        "keyword_name": "成长相册妈妈",
+        "corpus": [
+            "像喜欢给宝宝拍照和记成长的妈妈，可以写拍照、相册、每天一点变化。适合帖子，不要堆精致感，也不要写成摄影广告。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_first_time_record_mom",
+        "keyword_name": "第一次记录妈妈",
+        "corpus": [
+            "像会记宝宝第一次变化的妈妈，表达可以有第一次体检、第一次打疫苗、第一次咿呀学语。不要列太多项目或写成空泛纪念。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_light_sigh_mom",
+        "keyword_name": "轻感慨妈妈",
+        "corpus": [
+            "像会轻轻感慨一下带娃不易的妈妈，表达可以有一点情绪，但要收住。不要写成哭诉、长篇煽情或家庭矛盾。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_twin_busy_mom",
+        "keyword_name": "双胎忙乱妈妈",
+        "corpus": [
+            "像双胎家庭里的妈妈，表达可以有一点忙乱、重量、出生顺序或照顾压力。不要展开生产故事，也不要写接龙凤胎或性别执念。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_sibling_compare_mom",
+        "keyword_name": "大宝二宝对照妈妈",
+        "corpus": [
+            "像会把大宝二宝状态放在一起看的妈妈，可以有一点对照感。不要让多娃设定抢走正文主线，也不要制造偏心或家庭矛盾。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_multi_kids_practical_mom",
+        "keyword_name": "多娃省心妈妈",
+        "corpus": [
+            "像多娃家庭里特别在意省心的妈妈，表达可以写终于好带、少折腾、能接上。不要夸张成万能省心，也不要写成强购买理由。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_consumption_volume_mom",
+        "keyword_name": "消耗量妈妈",
+        "corpus": [
+            "像会算家里消耗量的妈妈，表达可以说消耗大、要不要囤、够不够用。适合活动或购买反馈，不要写成促销广告或省钱攻略。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_sale_stockup_mom",
+        "keyword_name": "大促囤货妈妈",
+        "corpus": [
+            "像会留意大促和囤货时机的妈妈，表达可以说等活动、划算、先囤一点。不要喊别人买，不要写成活动公告或制造抢购。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_afraid_soldout_mom",
+        "keyword_name": "怕买不到妈妈",
+        "corpus": [
+            "像担心买不到或不够用的妈妈，表达短一点，落在个人顾虑上。适合活动场景少量圈选，不要制造稀缺焦虑或饥饿营销。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_dad_participation_mom",
+        "keyword_name": "爸爸参与观察妈妈",
+        "corpus": [
+            "像会观察爸爸参与带娃的妈妈，可以轻轻提到爸爸刷牙、陪检、帮忙记录。只写协作，不写吐槽、夫妻矛盾或家庭冲突。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_family_record_mom",
+        "keyword_name": "全家记录妈妈",
+        "corpus": [
+            "像全家一起关注宝宝成长的妈妈，表达可以有全家看、家里人一起记录。适合轻日常帖子，不要写成大家庭矛盾或过度热闹。"
+        ],
+    },
+    {
+        "keyword_code": "babytree_dad_checkup_mom",
+        "keyword_name": "宝爸陪检妈妈",
+        "corpus": [
+            "像会提到宝爸陪检或一起处理检查流程的妈妈，表达克制，只写陪伴和流程。仅在业务覆盖孕期或检查场景时圈选，不写医疗判断。"
+        ],
+    },
+]
+
+
 class SystemPromptKeywordService:
     """Manage extensible system prompt keyword assets in asset_registry."""
 
@@ -271,6 +529,7 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                             "keyword_name": "职场妈妈",
                             "corpus": ["像普通上班族妈妈，说话利落，关注方便和少折腾，但不要把工作身份写成正文主线。"],
                         },
+                        *BABYTREE_MICRO_PERSONA_KEYWORDS,
                     ],
                 },
                 {
@@ -315,7 +574,7 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                             "keyword_code": "specific_comment_question",
                             "keyword_name": "带着具体问题来",
                             "corpus": [
-                                "把泛泛兴趣落到纸尿裤、擦屁屁、转奶第几天、喝奶后状态这类小观察上，让评论像真实交流。"
+                                "把泛泛兴趣落到一个具体观察或个人处理上，让评论像真实交流；别批量套门店位置、剩余罐数或固定天数。"
                             ],
                         },
                         {
@@ -370,17 +629,138 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                         {
                             "keyword_code": "scene_detail",
                             "keyword_name": "场景细节法",
-                            "corpus": ["用一个纸尿裤、擦屁屁、奶瓶剩余、早晚臭臭之类的小细节承接业务规则。"],
+                            "corpus": ["用一个自然小细节承接业务规则，优先写自己的处理或想法，别批量套门店位置、剩余罐数这类固定细节。"],
                         },
                         {
                             "keyword_code": "question_hook",
                             "keyword_name": "问题钩子法",
-                            "corpus": ["可以轻轻带一个真实疑问或确认感，但别每条都写成提问。"],
+                            "corpus": ["可以轻轻带一个真实疑问或确认感，但别每条都写成提问，也别写“到了不、有货不”这类压缩问句。"],
                         },
                         {
                             "keyword_code": "plain_explain",
                             "keyword_name": "白话解释法",
                             "corpus": ["把复杂点说得更白话，但不扩写成硬科普。"],
+                        },
+                    ],
+                },
+                {
+                    "category_code": "comment_speaking_style",
+                    "category_name": "说话方式",
+                    "description": "评论区说话站位和语气抽样，不是业务规则。",
+                    "sort_order": 35,
+                    "applicable_content_types": ["comment"],
+                    "sub_keywords": [
+                        {
+                            "keyword_code": "reply_to_original_post",
+                            "keyword_name": "接楼主一句",
+                            "corpus": [
+                                "像接楼主一句，先顺着原帖里的一个点回半句，再补自己的小动作。可以像“我也去看了下”“刚好家里快喝完”“等我的到了我也扫扫”，不要把业务优势总结成完整观点。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "reply_to_sister_comment",
+                            "keyword_name": "接姐妹评论",
+                            "corpus": [
+                                "像接评论区姐妹一句，优先写“姐妹哪买的”“我也到了”“+1我还在等发货”“我这边也问了”。句子可以短、有接楼感，不要写成客服咨询或品牌解释。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "pass_info",
+                            "keyword_name": "顺手报信",
+                            "corpus": [
+                                "像顺手报一个刚看到/刚问到的信息，比如到了、能拍、问了几家店、导购说快了、还在等发货、罐底能扫。语气像评论区报信，不写“官方通知、大家快去、可以放心买”。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "old_customer_stabilize",
+                            "keyword_name": "老客稳场",
+                            "corpus": [
+                                "像家里一直喝或一直续着的人出来稳一下，写“没换过”“一直喝这个”“能买到就先不换”“别随便转奶”。不要把“老客”这个词写进正文，也不要写成品牌背书。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "self_restocked",
+                            "keyword_name": "自己刚补到",
+                            "corpus": [
+                                "像说自己刚补上、刚拍、刚到、刚扫到，简单带过一个动作。优先“我买的也到了”“刚补到先接上”“拿到后扫了罐底”，不要展开成笔记。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "short_agree",
+                            "keyword_name": "短句附和",
+                            "corpus": [
+                                "像短短附和一下，少解释，保留评论区随手回的感觉。可以是“哪买的啊”“我也到了”“真的能扫到”“原来在里面”，不要硬凑完整因果。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "light_reminder",
+                            "keyword_name": "轻提醒一句",
+                            "corpus": [
+                                "像轻轻提醒一句可以去看看、问问、扫扫自己这罐，别写成吆喝或指挥。少用“先别急”，多用“可以问问”“我回去扫了下”“到手再看”。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "personal_choice",
+                            "keyword_name": "个人处理方式",
+                            "corpus": [
+                                "像说自己这次怎么处理，落在个人选择上，不替别人做决定。可以写“我先买原来的”“我还是慢慢转回来”“我先扫这罐报告”，不要写“我更倾向/就冲这点/这个细节挺放心”。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "same_area_update",
+                            "keyword_name": "同城/附近更新",
+                            "corpus": [
+                                "像补一句自己看到的情况，地点感点到为止，不编具体城市，也别每条都写附近或门店。可以写“我这边店里说到了”“路过看到有”“问了几家说有动静”，不要写公告式补货。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "low_voice_addition",
+                            "keyword_name": "小声补充",
+                            "corpus": [
+                                "像小声补一句信息，语气轻，不抢话，也不喊大家去买。适合写术语记不全、没逐条看完、只看了入口，比如“蜡样那个名字我记不住”“60多项没全看”。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "half_sentence_reply",
+                            "keyword_name": "半句式回复",
+                            "corpus": [
+                                "像评论区半句式回复，可以省掉完整前因后果，但意思要清楚。比如“我也还在等发货”“扫罐底那个码就有”“刚到手就看了”，不要省到看不出对象。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "question_reply",
+                            "keyword_name": "问答感回复",
+                            "corpus": [
+                                "像回答别人问哪里能买、到没到、报告入口在哪，句子自然一点。优先“哪买的”“是扫罐底那个码吗”“我这边店员说能看”，不写客服口吻。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "relieved_reaction",
+                            "keyword_name": "松口气反应",
+                            "corpus": [
+                                "像看到消息后松口气的反应，轻轻带过，不放大紧张感。可以写“有底了也算是”“能买到就先不换”“报告能自己查到这点加分”，不要回忆缺货焦虑。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "practical_mom",
+                            "keyword_name": "务实妈妈口吻",
+                            "corpus": [
+                                "像务实妈妈说话，关注能不能接上、少换来换去，表达利落一点。可以写“转奶太麻烦”“能不换就不换”“先接上原来的”，别写成转奶教程。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "comment_thread_followup",
+                            "keyword_name": "评论串跟进",
+                            "corpus": [
+                                "像在评论串里跟进一句刚问到的结果，不写成独立笔记。可以写“我问的那家说过两天到”“我的还在等发货”“我刚扫到了”，不要从头解释背景。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "soft_reference",
+                            "keyword_name": "给个参考",
+                            "corpus": [
+                                "像给别人一个参考信息，语气克制，别变成建议清单。可以解释一句“Not Detected就是未检出”“原来报告在里面”“那个蜡样什么菌报告里有”，也可以说“入口可以点开”，不要写成标准科普或安全结论。"
+                            ],
                         },
                     ],
                 },
@@ -421,6 +801,20 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                     "sort_order": 55,
                     "applicable_content_types": ["comment"],
                     "sub_keywords": [
+                        {
+                            "keyword_code": "comment_micro_reply",
+                            "keyword_name": "5-8字短接话",
+                            "corpus": [
+                                "评论控制在5到8字，最多10字，像评论区顺手接一句；主要说附近门店有货、准备去拿或已经拿到。可以少量带“还好、可算、赶紧”这类口气，但同批别都用口气词开头，也别都写成动作词；必须带一个到货、门店、店里、刚到、有货、导购、上架或拿到标记。同批开头词和到货标记都要轮换，别都拼成“门店刚到货”；少用“踏实、续上、补上”这类总结词，不加逗号串第二个信息点，喊我句式写成“到了喊我/有货喊我/到店喊我”，别写“店里新到”这种门店货品描述，别把“上架”压成“刚上”，别把“奶瓶快空、导购说到”这类生活细节硬压在一句里。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "comment_micro_batch_check_reply",
+                            "keyword_name": "批批检短接话",
+                            "corpus": [
+                                "评论控制在10到32字，像负面帖下顺手接一句；要带出扫码、罐底码、二维码、报告能看、批批检、每批检测、Not Detected/未检出这类检测保障感，同时轻轻带一个有货、到货、门店、补到货、拿一罐、先试或转奶锚点。每条只抓一两个检测信息点，别在一句里同时塞满扫码、罐底码、每批检测、未检出、心里有底。可以说“有底点、有保障、放心点、敢先试、先拿一罐”，但别写“保证没问题、绝对安全”，也别堆专业数值、指标数量和三方数据。只讲一个简单判断或动作，别写成检测科普或扫码教程。"
+                            ],
+                        },
                         {
                             "keyword_code": "comment_short_clean",
                             "keyword_name": "8-16字",

@@ -181,7 +181,7 @@ async def test_send_chat_message_rejects_blank_message(chat_client):
 
 
 @pytest.mark.asyncio
-async def test_comment_angle_context_injects_by_case_prompt_and_allows_fill_action(chat_client, monkeypatch):
+async def test_business_rule_context_injects_by_case_prompt_and_allows_fill_action(chat_client, monkeypatch):
     client, session_factory = chat_client
     captured = {}
 
@@ -191,7 +191,7 @@ async def test_comment_angle_context_injects_by_case_prompt_and_allows_fill_acti
         actions = {
             "actions": [
                 {
-                    "type": "fill_comment_angle_draft",
+                    "type": "fill_business_rule_draft",
                     "label": "填入草稿",
                     "payload": {
                         "draft_corpus": "子方向标题：\n\n像真实评论。\n\n示例：\n- 有同款吗\n\n注意：示例只作为语义素材，不是正文原句。"
@@ -227,11 +227,11 @@ async def test_comment_angle_context_injects_by_case_prompt_and_allows_fill_acti
             "context": {
                 "page": "business_rules",
                 "asset_key": "a2_sentiment_comment_activity",
-                "asset_type": "comment_angle_rule_set",
+                "asset_type": "comment_business_rule_set",
                 "asset_version": 3,
-                "rule_id": "comment_angle_001",
+                "rule_id": "business_rule_001",
                 "source_row_no": 16,
-                "comment_angle": "剧情讨论",
+                "business_rule": "剧情讨论",
                 "corpus": "正式语料",
                 "draft_corpus": "草稿语料",
                 "examples": ["旧示例"],
@@ -248,10 +248,10 @@ async def test_comment_angle_context_injects_by_case_prompt_and_allows_fill_acti
     )
 
     assert response.status_code == 200
-    assert "评论切角 by-case 语料副驾" in captured["system_prompt"]
+    assert "业务规则 by-case 语料副驾" in captured["system_prompt"]
     assert "用户正在要求放松或修正 AI 味/同质化" in captured["system_prompt"]
     assert "asset_key: a2_sentiment_comment_activity" in captured["user_prompt"]
-    assert "rule_id: comment_angle_001" in captured["user_prompt"]
+    assert "rule_id: business_rule_001" in captured["user_prompt"]
     assert "source_row_no: 16" in captured["user_prompt"]
     assert "正式语料" in captured["user_prompt"]
     assert "旧示例" in captured["user_prompt"]
@@ -260,11 +260,11 @@ async def test_comment_angle_context_injects_by_case_prompt_and_allows_fill_acti
     assert payload["reply"] == "这条规则偏硬，我给你一版更松的草稿。"
     assert payload["actions"] == [
         {
-            "type": "fill_comment_angle_draft",
+            "type": "fill_business_rule_draft",
             "label": "填入草稿",
             "payload": {
                 "draft_corpus": "子方向标题：\n\n像真实评论。\n\n示例：\n- 有同款吗\n\n注意：示例只作为语义素材，不是正文原句。",
-                "rule_id": "comment_angle_001",
+                "rule_id": "business_rule_001",
                 "source_row_no": 16,
             },
         }
@@ -280,7 +280,7 @@ async def test_non_business_rule_context_drops_fill_action(chat_client, monkeypa
             "reply": "普通回答",
             "actions": [
                 {
-                    "type": "fill_comment_angle_draft",
+                    "type": "fill_business_rule_draft",
                     "payload": {"draft_corpus": "不应该返回"},
                 }
             ],
@@ -307,7 +307,7 @@ async def test_non_business_rule_context_drops_fill_action(chat_client, monkeypa
         json={
             "message": "你好",
             "history": [],
-            "context": {"page": "dashboard", "asset_type": "comment_angle_rule_set"},
+            "context": {"page": "dashboard", "asset_type": "comment_business_rule_set"},
         },
     )
 

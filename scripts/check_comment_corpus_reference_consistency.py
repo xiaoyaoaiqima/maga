@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check comment-angle example wording against approved reference comments.
+"""Check comment business-rule example wording against approved reference comments.
 
 The checker is intentionally stricter than a token diff. It reports:
 - high risk: unsupported coined wording or AI-like summary patterns;
@@ -43,7 +43,7 @@ except ImportError as exc:  # pragma: no cover - environment guard
     ) from exc
 
 
-DEFAULT_CSV = REPO_ROOT / "批量生成" / "评论切角_子关键词导出.csv"
+DEFAULT_CSV = REPO_ROOT / "批量生成" / "业务规则_子关键词导出.csv"
 DEFAULT_BRAND = Path("/Users/luxifa/Downloads/品牌反馈-0602-源悦ai评论-25条.xlsx")
 DEFAULT_REFERENCE = Path("/Users/luxifa/Downloads/评论示例-评论区【执行】Y26-1月-源悦-AO seeding.xlsx")
 
@@ -254,14 +254,14 @@ SOFT_TEMPLATE_WATCHES = {
     "没怎么": (5, "改成更具体的小事实，例如少哼唧 / 没鼓起来 / 不用太使劲 / 没掉下来。"),
     "不太": (5, "避免把安全表达换成新的抽象模板，优先写具体行为或数据。"),
     "基本每天": (3, "要写清楚便便/拉粑粑基本每天1次，别只写每天基本有。"),
-    "差不多每天": (3, "同批便便切角不要都用这个频次描述，可换成便便规律 / 基本一天一次 / 拉屎不费劲了。"),
+    "差不多每天": (3, "同批便便业务规则不要都用这个频次描述，可换成便便规律 / 基本一天一次 / 拉屎不费劲了。"),
     "能接受": (3, "拆成性价比高 / 很划算 / 准备再囤一点 / 我觉得很值。"),
     "没抗拒": (3, "拆成很喜欢 / 爱喝 / 接受度不错 / 准备再囤一点，不要都用没抗拒。"),
     "奶瓶里不怎么剩": (2, "运营0603判病句，改成奶粉没剩多少了 / 准备再囤一点 / 很喜欢。"),
     "爱喝": (6, "运营喜欢爱喝，但同批过多会模板化，要和很喜欢 / 喝着可以 / 喝得不错 / 接着喝轮换。"),
     "娃爱喝": (3, "不要把所有认可都写成娃爱喝，可换成家里少折腾、奶量数据、准备再囤、体检数据。"),
     "奶量没掉": (4, "生长发育可用，但同批过多要换成奶量正常 / 每顿量能接上 / 具体 ml / 体检身高数据。"),
-    "少折腾": (3, "容易生病切角可用，但同批过多要换成换季状态、家里少闹、接着喝到三段等不同事实。"),
+    "少折腾": (3, "容易生病业务规则可用，但同批过多要换成换季状态、家里少闹、接着喝到三段等不同事实。"),
     "体检身高": (4, "生长发育要有数据感，但不要都用体检身高，可换成X个月X斤、身高数据在中上、衣服短了点。"),
 }
 SOFT_TEMPLATE_PATTERNS = [
@@ -269,7 +269,7 @@ SOFT_TEMPLATE_PATTERNS = [
         "便便省事模板",
         re.compile(r"(拉屎|嗯嗯|便便|臭臭)[^，。！？]{0,12}(费劲|憋劲|憋着|脸红)"),
         5,
-        "便便切角要打散：便便规律基本一天一次 / 拉屎不费劲了 / 干不干，避免憋着/脸红等怪表达。",
+        "便便业务规则要打散：便便规律基本一天一次 / 拉屎不费劲了 / 干不干，避免憋着/脸红等怪表达。",
     ),
     (
         "短周期接受度模板",
@@ -281,13 +281,13 @@ SOFT_TEMPLATE_PATTERNS = [
         "奶后肚子模板",
         re.compile(r"(奶后|喝完|肚子|拍嗝)[^，。！？]{0,12}(没鼓|不胀|少哼唧|没那么费事|能歇会儿)"),
         4,
-        "消化吸收切角要混用肚子、拍嗝、哼唧、夜里那顿等不同事实，不要都写奶后反应。",
+        "消化吸收业务规则要混用肚子、拍嗝、哼唧、夜里那顿等不同事实，不要都写奶后反应。",
     ),
     (
         "价格接受模板",
         re.compile(r"(能接受|在预算里|我觉得可以|配这个价|价格也能|价格也在)"),
         4,
-        "性价比切角要加入奶源、配料表、渠道价、续罐动作，别都写接受/预算。",
+        "性价比业务规则要加入奶源、配料表、渠道价、续罐动作，别都写接受/预算。",
     ),
 ]
 HOMOGENEITY_SKIP_EDGE_TEXT = {
@@ -485,7 +485,7 @@ def extract_article_pool_items(workbook_path: Path, sheet_name: str) -> list[Cor
             raw_context = sheet.cell(row_no, context_col).value
             if isinstance(raw_context, str) and raw_context.strip():
                 try:
-                    angle = json.loads(raw_context).get("评论切角", "")
+                    angle = json.loads(raw_context).get("业务规则", "")
                 except json.JSONDecodeError:
                     angle = ""
         content_id = sheet.cell(row_no, id_col).value if id_col else row_no
@@ -504,7 +504,7 @@ def extract_article_pool_items(workbook_path: Path, sheet_name: str) -> list[Cor
 def extract_items(rows: list[dict[str, str]], line_map: dict[str, list[int]]) -> list[CorpusItem]:
     items: list[CorpusItem] = []
     for row_no, row in enumerate(rows, start=2):
-        angle = row.get("评论切角", "")
+        angle = row.get("业务规则", "")
         block = row.get("语料", "")
         title = block.split("\n", 1)[0].strip().rstrip("：:")
         in_examples = False
@@ -532,7 +532,7 @@ def extract_items(rows: list[dict[str, str]], line_map: dict[str, list[int]]) ->
 def extract_rule_items(rows: list[dict[str, str]]) -> list[CorpusItem]:
     items: list[CorpusItem] = []
     for row_no, row in enumerate(rows, start=2):
-        angle = row.get("评论切角", "")
+        angle = row.get("业务规则", "")
         block = row.get("语料", "")
         title = block.split("\n", 1)[0].strip().rstrip("：:")
         in_examples = False
@@ -632,9 +632,9 @@ def hard_redline_reasons(item: CorpusItem) -> list[str]:
         if re.search(r"(奶量.*接上|再称|称重|再量|下次体检|再看|体重也没往下掉|奶量没掉.*再看)", text):
             reasons.append("运营0603：生长发育不能只写观察/没掉，要体现对源悦的认可或给出具体身高体重数据")
         if not re.search(r"(源悦|这款|奶粉|喝着|爱喝|奶量|体检|身高|体重|斤|cm|厘米|长个|长高|个子|肉)", text):
-            reasons.append("运营0603：生长发育切角缺少奶粉认可或生长事实")
+            reasons.append("运营0603：生长发育业务规则缺少奶粉认可或生长事实")
     if "容易生病" in item.angle and not re.search(r"(宝宝|娃|体质|感冒|生病|阿秋|闹|接受|爱喝|状态)", text):
-        reasons.append("运营0603：容易生病切角不能只写跟风/喝到三段/没换，要带宝宝状态或体质相关事实")
+        reasons.append("运营0603：容易生病业务规则不能只写跟风/喝到三段/没换，要带宝宝状态或体质相关事实")
     return reasons
 
 
@@ -715,7 +715,7 @@ def duplicate_example_findings(items: list[CorpusItem]) -> list[Finding]:
                     "high",
                     item,
                     [f"示例重复：去标点后与 {first_line} 相同"],
-                    "同一份评论切角语料里保留一个入口，其余改成不同语义点，避免生文同质化。",
+                    "同一份业务规则语料里保留一个入口，其余改成不同语义点，避免生文同质化。",
                 )
             )
     return findings
@@ -870,7 +870,7 @@ def collect_homogeneity_observations(args: argparse.Namespace) -> list[Homogenei
 
 
 def print_text_report(findings: list[Finding], stats: dict[str, int], max_items: int) -> None:
-    print("评论切角参考语料一致性监测")
+    print("业务规则参考语料一致性监测")
     print(
         "stats: "
         + ", ".join(f"{key}={value}" for key, value in stats.items())

@@ -8,7 +8,14 @@ from typing import Any
 
 
 A2_SENTIMENT_COMMENT_PROFILE_KEY = "a2_sentiment_comment_202606"
+A2_SENTIMENT_POST_PROFILE_KEY = "a2_sentiment_post_202606"
+A2_NEGATIVE_POST_COMMENT_PROFILE_KEY = "a2_negative_post_comment_202606"
 A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY = "a2_plot_discussion_comment_202606"
+A2_COMMENT_PROFILE_KEYS = {
+    A2_SENTIMENT_COMMENT_PROFILE_KEY,
+    A2_NEGATIVE_POST_COMMENT_PROFILE_KEY,
+    A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY,
+}
 
 
 @dataclass(frozen=True)
@@ -31,6 +38,7 @@ A2_SENTIMENT_COMMENT_FORBIDDEN_TERMS = (
     "断货",
     "缺货",
     "断粮",
+    "断档",
     "焦虑",
     "恐慌",
     "慌",
@@ -42,6 +50,8 @@ A2_SENTIMENT_COMMENT_FORBIDDEN_TERMS = (
     "抱娃",
     "睡不着",
     "直接着喝",
+    "愿意喝着",
+    "愿意喝上",
     "专家",
     "专业指标",
     "盲信",
@@ -60,7 +70,183 @@ A2_SENTIMENT_COMMENT_FORBIDDEN_TERMS = (
     "全球最严格",
 )
 
+A2_NEGATIVE_POST_COMMENT_FORBIDDEN_TERMS = (
+    "断货",
+    "缺货",
+    "焦虑",
+    "恐慌",
+    "犹豫",
+    "纠结",
+    "慌",
+    "急",
+    "担心",
+    "不确定",
+    "屁粮",
+    "投资",
+    "职场",
+    "租房",
+    "上学",
+    "硬数据",
+    "检测单",
+    "记一下",
+    "记了一下",
+    "留意下",
+    "留意一下",
+    "省得再跑一趟",
+    "给需要的妈妈说一声",
+    "愿意喝着",
+    "要不要换",
+    "要不要再换",
+    "要不要转",
+    "要不要再转",
+    "官方公告",
+    "公告",
+    "客服通知",
+    "教程",
+    "步骤",
+    "半勺",
+    "一勺",
+    "两勺",
+    "一两勺",
+    "勺",
+    "绝对",
+    "保证没问题",
+    "无风险",
+    "治疗",
+    "马上适应",
+    "立刻适应",
+)
+A2_NEGATIVE_POST_KEYWORDS = ("到货安抚", "转奶安抚")
+A2_NEGATIVE_POST_ARRIVAL_MARKERS = (
+    "有货",
+    "到货",
+    "补货",
+    "门店",
+    "母婴店",
+    "店里",
+    "店员",
+    "导购",
+    "新批次",
+    "新到",
+    "刚到",
+    "到了",
+    "到店",
+    "上架",
+    "货架",
+    "摆出来",
+    "买到",
+    "能买",
+    "补到",
+    "能补到",
+    "快喝完",
+    "续上",
+    "补上",
+    "问问",
+)
+A2_NEGATIVE_POST_TRANSFER_MARKERS = (
+    "转奶",
+    "换奶",
+    "转回来",
+    "转回",
+    "拉回来",
+    "拉回来了",
+    "不转",
+    "不转了",
+    "换回来",
+    "换回",
+    "回到a2",
+    "回a2",
+    "过渡",
+    "慢慢来",
+    "慢慢加",
+    "慢慢换",
+    "慢慢转",
+    "一步步来",
+    "一点一点来",
+    "一点点来",
+    "混着来",
+    "混着",
+    "先试",
+    "试一罐",
+    "一罐试试",
+    "一罐让宝宝试试看",
+    "一罐试试看",
+    "买罐试试看",
+    "拿一罐",
+    "接一罐看看",
+    "喝喝看",
+    "换着喝",
+    "换一小罐",
+    "先补一罐",
+    "老客",
+    "一直喝",
+    "继续喝",
+    "喝至初",
+    "先喝至初",
+    "继续至初",
+    "继续喝至初",
+    "续罐",
+    "续着",
+    "先看批次",
+    "批次信息",
+    "批次报告",
+    "批次问题",
+    "检测报告",
+    "看报告",
+    "报告能查",
+    "报告",
+    "自己这罐",
+    "自己手上这罐",
+    "自己家这罐",
+    "这罐情况",
+    "相信a2",
+    "继续a2",
+    "换别的",
+    "转别的",
+    "不转别的",
+    "换牌子",
+    "不换牌子",
+    "换别的牌子",
+    "试下别的牌子",
+    "先不换",
+    "不换了",
+    "不太想换",
+    "能续上",
+    "又能续上",
+    "接着喝",
+    "质量一直挺稳",
+    "质量挺稳",
+    "不想折腾",
+    "不折腾",
+    "少换一次",
+    "少换牌子",
+    "喝得好好的",
+    "喝得好好",
+    "不用急着换",
+    "自家节奏",
+    "被带偏",
+    "被带跑",
+    "先别急着换",
+    "别急着换",
+    "跟着评论走",
+    "跟风换",
+    "马上换",
+    "别跟风转",
+    "跟风转",
+    "不急着换",
+    "不急着转",
+    "别乱换",
+    "不用乱换",
+)
+A2_NEGATIVE_POST_NOTE_LIKE_DAILY_PURCHASE_PATTERN = re.compile(
+    r"(?:今天|刚才|昨天)[^，。！？；;]{0,12}(?:买|囤|挑|补)[^，。！？；;]{0,12}(?:宝宝|娃|辅食|沐浴露|磨牙|果泥|袜子)[^，。！？；;]{0,18}(?:发现|瞥见|看到|瞅见)a2",
+    re.IGNORECASE,
+)
+A2_NEGATIVE_POST_BAD_BATCH_CHECK_ATTRIBUTION_PATTERN = re.compile(
+    r"(?:带批批检的姐妹|批批检的姐妹|带批批检的宝妈|批批检的宝妈)"
+)
 A2_COMBO_KEYWORDS = ("有货+批批检", "批批检+转奶", "有货+转奶")
+A2_BATCH_REPORT_REQUIRED_KEYWORDS = ("有货+批批检", "批批检+转奶")
 A2_COMPETITOR_GROUPS: dict[str, tuple[str, ...]] = {
     "达能组": ("爱他美", "达能"),
     "雀巢组": ("雀巢", "超启能恩"),
@@ -105,6 +291,83 @@ A2_VAGUE_APTAMIL_COMPARISON_PATTERN = re.compile(
     r"爱他美[^，。！？；;]{0,18}(?:也)?(?:看|问|研究|对比|比|参考|查|翻)"
     r"|(?:看|问|研究|对比|比|参考|查|翻)[^，。！？；;]{0,18}爱他美"
 )
+A2_ZHICHU_PRODUCT_SPLIT_PATTERN = re.compile(
+    # a2至初是完整产品名；“至初这边有a2现货”会把产品名拆成两个对象，交付前直接拦截。
+    r"(?<!a2)至初(?:这边|那边|这儿|那儿|这里|那里|店里|门店|母婴店|导购|柜上|货架)?"
+    r"[^，。！？；;]{0,8}a2[^，。！？；;]{0,8}"
+    r"(?:现货|有货|到货|补货|新到|上架|调货|能买|买到|到了|来货)",
+    re.IGNORECASE,
+)
+A2_STOCK_OVERCLAIM_PATTERN = re.compile(
+    r"官方(?:公告|通知)|客服通知|(?:全网|全国)(?:有货|补货|到货)|保证(?:能)?买到|现货充足"
+)
+A2_SUPPLY_TREND_CLAIM_PATTERN = re.compile(
+    r"货源[^，。！？；;]{0,10}(?:慢慢)?(?:动起来|在动)"
+    r"|(?:陆续|慢慢)(?:有货|到货|补货|回货|到)"
+    r"|(?:会|还会|应该|估计|感觉)[^，。！？；;]{0,12}(?:陆续到|陆续补|补货|有货|回货)"
+    r"|(?:有点|开始|正在)?回货|放货"
+)
+A2_PERSONAL_SUPPLY_TREND_CONTEXT_PATTERN = re.compile(
+    # 确认真人 demo 里会用“问了几家店/导购说快了/抱点希望”表达个人问到的供货感。
+    # 这类保留为个人来源，不等同于官方补货或品牌承诺。
+    r"问了几家店(?:[，,]\s*)?(?:说)?[^，。！？；;]{0,10}(?:陆续有货|有货)"
+    r"|导购[^，。！？；;]{0,12}(?:说|跟我说)[^，。！？；;]{0,12}(?:快了|过两天回来货|回来货)"
+    r"|我这边导购[^，。！？；;]{0,12}说快了"
+    r"|对放货抱点希望"
+)
+A2_BRAND_BAD_STOCK_WORDING_PATTERN = re.compile(
+    r"赶紧来报个信|付款不犹豫|后面再说后面"
+    r"|闭眼冲|可以冲了|直接冲|先冲"
+    r"|调货|能调到|能调货|帮忙留货|帮.*留(?:一罐|这罐)|能留(?:一罐|这罐)|留(?:一罐|这罐)"
+    # “囤几罐”是正常用户表达，只拦“囤这罐”这类生硬指代。
+    r"|囤这罐"
+    r"|多跑[一二两三四五六七八九十\d几]?家店|跑[一二两三四五六七八九十\d几]?家店|跑店"
+    r"|(?:我这边|我们这边|我这里|我们这里)[^，。！？；;]{0,8}(?:还没消息|还没看到有?a2|没看到有?a2)"
+)
+A2_TRANSFER_TUTORIAL_PATTERN = re.compile(
+    r"半勺|一勺|两勺|一两勺|按比例|(?:第[一二三四五六七八九十\d]+天|[一二三四五六七八九十\d]+天后)[^，。！？；;]{0,6}(?:全换|全转)"
+    r"|直接换|马上适应|立刻适应"
+)
+A2_BRAND_BAD_TRANSFER_FRAMING_PATTERN = re.compile(
+    r"本来[^，。！？；;]{0,12}(?:想换|准备换|说服自己换)"
+    r"|(?:看到|看见)[^，。！？；;]{0,8}(?:有货|可下单)[^，。！？；;]{0,8}(?:立刻|马上)?打消念头"
+    r"|转奶[^，。！？；;]{0,12}(?:够乱|乱了|乱)"
+    r"|转来转去"
+    r"|(?:买到|买了|补到)(?:a2至初|至初|a2)[^，。！？；;]{0,8}回去"
+)
+A2_AI_TEMPLATE_CONDITIONAL_QUESTION_PATTERN = re.compile(
+    # 拦截“能买到a2的话，是不是先继续原来的就行”这类把规则拼成条件问句的模板腔。
+    r"(?:如果|要是)?(?:(?:a2|A2|至初)[^，。！？；;]{0,6}(?:能买到|能补到|能拍到|能下单|有货)"
+    r"|(?:能买到|能补到|能拍到|能下单)[^，。！？；;]{0,6}(?:a2|A2|至初))的话[，,]?(?:我)?是不是"
+    r"|(?:如果|要是)(?:a2|A2|至初)[^，。！？；;]{0,6}(?:能买到|能补到|能拍到|能下单|有货)[，,]?(?:我)?是不是"
+    r"|(?:如果|要是)(?:能买到|能补到|能拍到|能下单)[^，。！？；;]{0,6}(?:a2|A2|至初)[，,]?(?:我)?是不是"
+    r"[^，。！？；;]{0,18}(?:继续原来的|先拍|先买|不换|不转|就行|比较稳|比较好|没必要急着换)"
+)
+A2_PRODUCT_EFFECT_CLAIM_PATTERN = re.compile(
+    r"(?:喝|换|转|用了|试了)?(?:a2至初|A2至初|a2|A2|至初)[^，。！？；;]{0,8}(?:后|以后|之后)"
+    r"[^，。！？；;]{0,12}(?:便便|肚肚|过敏|奶量|长肉|体重)[^，。！？；;]{0,8}"
+    r"(?:好|好了|改善|稳了|规律|顺了|涨|上来|长)"
+)
+A2_REPORT_OVERCLAIM_PATTERN = re.compile(
+    r"(?:报告|检测报告|检测单)[^，。！？；;]{0,10}(?:证明|保证|代表|说明)[^，。！？；;]{0,12}(?:安全|没问题|放心喝|可以放心)"
+    r"|未检出[^，。！？；;]{0,8}(?:所以|就)[^，。！？；;]{0,8}(?:放心喝|安全|没问题)"
+    r"|每批[^，。！？；;]{0,8}过检"
+    r"|批批[^，。！？；;]{0,8}过检"
+)
+A2_SCAN_BEFORE_CAN_IN_HAND_PATTERN = re.compile(
+    r"(?:下单后|付款后|拍下后)[^，。！？；;]{0,12}(?:扫|扫码|扫一下)[^，。！？；;]{0,12}(?:物流码|罐底码|罐底)"
+)
+A2_SUPPLY_PRESSURE_TRANSFER_PATTERN = re.compile(
+    # 拦截“过往供应压力 -> 被动转/换奶 -> 现在有货又稳住”的回忆链路，
+    # 避免有货+转奶评论重新勾起货少、买不到等负面记忆。
+    r"(?:被)?(?:缺货|断货|断粮|货少|没货|买不到|不好买|难买|等货|抢货)"
+    r"[^，。！？；;]{0,20}(?:逼|想转|想换|换奶|转奶|做功课|看别[家个的]?|看其他|备选|先不看|稳住|踏实)"
+    r"|(?:逼|想转|想换|换奶|转奶|做功课|看别[家个的]?|看其他|备选)"
+    r"[^，。！？；;]{0,20}(?:缺货|断货|断粮|货少|没货|买不到|不好买|难买|等货|抢货)"
+    r"|(?:调货|有货|到货|补货)[^，。！？；;]{0,12}(?:又稳住|稳住了|又踏实|踏实了|转回来|换回来|先不看了)"
+)
+A2_HOUSEHOLD_STOCK_MARKERS = ("家里", "家中", "家里的", "手里", "手上", "手头", "那罐", "这罐")
+A2_FEEDING_ANXIETY_STOCK_PATTERN = re.compile(r"断顿|没奶喝|没奶粉喝|奶粉接不上|口粮接不上|接不上奶")
 A2_003_CONTEXT_PATTERN = re.compile(
     r"蜡样|蜡毒|那个检测|那项检测|报告里那项|报告里的那项|报告里那条|检测数值|检测这条线|检测线|检测那条线"
 )
@@ -276,6 +539,33 @@ A2_PLOT_DISCUSSION_ACTIVITY_MISSTATEMENT_TERMS = (
     "盲盒",
     "补两罐",
 )
+A2_POST_AI_TITLE_PATTERN = re.compile(
+    r"(?:妈妈|宝妈|姐妹|转奶期)[^，。！？；;]{0,8}(?:别|不用|不要|不必|少点)(?:焦虑|纠结|慌)"
+    r"|(?:别|不用|不要|不必|少点)(?:焦虑|纠结|慌)[^，。！？；;]{0,8}(?:妈妈|宝妈|姐妹)"
+    r"|(?:别|不用|不要|不必|少点)(?:再)?(?:焦虑|纠结|慌)[^，。！？；;]{0,8}(?:转奶|换奶|报告|扫码|罐底)"
+    r"|(?:转奶|换奶|报告|扫码|罐底)[^，。！？；;]{0,8}(?:别|不用|不要|不必|少点)(?:再)?(?:焦虑|纠结|慌)"
+    r"|(?:扫|看|查)(?:一下|下)?(?:罐底|报告|码|物流码)[^，。！？；;]{0,8}(?:就行|就够|就安心|才安心)"
+    r"|(?:攻略|指南|教程|科普|避坑|必看|收藏|一篇搞懂|看完就懂)"
+)
+A2_POST_JSON_LEAK_PATTERN = re.compile(
+    r'^\s*[{[]\s*$|["“]?(?:title|标题|body|正文)["”]?\s*[:：]',
+    re.IGNORECASE,
+)
+A2_POST_TRANSFER_DECISION_PATTERN = re.compile(
+    r"(?:我该|该不该|要不要|适合不|合适不|合不合适)[^，。！？；;]{0,12}(?:转|换|试)(?:a2|A2|奶)"
+    r"|(?:转|换|试)(?:a2|A2|奶)[^，。！？；;]{0,12}(?:适合不|合适不|合不合适)"
+)
+A2_POST_REPORT_SAFETY_DECISION_PATTERN = re.compile(
+    r"(?:报告|检测|蜡样|质检)[^。！？；;]{0,32}(?:没问题|安全|放心喝)"
+    r"|(?:没问题|安全|放心喝)[^。！？；;]{0,32}(?:报告|检测|蜡样|质检)"
+)
+A2_POST_REPORT_MARKERS = ("报告", "检测", "蜡样", "质检")
+A2_POST_REPORT_SAFETY_DECISION_TERMS = ("没问题", "这样就行", "放心喝", "安不安全", "安全吗")
+A2_POST_FEEDING_DECISION_PATTERN = re.compile(
+    r"(?:会不会|会|能不能|可不可以|可以|该不该)[^。！？；;]{0,12}(?:给)?(?:宝宝|娃)[^。！？；;]{0,8}(?:喝|转|换)"
+    r"|(?:给)?(?:宝宝|娃)[^。！？；;]{0,8}(?:能不能|可不可以|可以|该不该)[^。！？；;]{0,8}(?:喝|转|换)"
+    r"|(?:给)?(?:宝宝|娃)?[^。！？；;]{0,8}喝这款吗"
+)
 
 
 QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
@@ -283,7 +573,7 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
         profile_key=A2_SENTIMENT_COMMENT_PROFILE_KEY,
         label="A2舆情改善评论专项守卫",
         forbidden_terms=A2_SENTIMENT_COMMENT_FORBIDDEN_TERMS,
-        context_required_fields=("人设", "关键词", "扰动规则", "生文指令", "评论切角", "生文输出格式"),
+        context_required_fields=("人设", "关键词", "扰动规则", "生文指令", "业务规则", "生文输出格式"),
         context_keyword_allowlist=A2_COMBO_KEYWORDS,
         keyword_markers={
             "有货+批批检": ("有货", "到货", "补货", "问货", "按需补", "快喝完", "物流码", "报告", "批次"),
@@ -341,8 +631,6 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
             "补一罐": "补货",
             "拿一罐": "补货拿",
             "新的一罐": "新到手的",
-            "几罐": "几件",
-            "两罐": "两件",
             "一罐": "这罐",
             "先先不忙": "先不忙",
             "没慌，": "",
@@ -373,6 +661,10 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
             "重金属报告": "报告细节",
             "继续喂": "继续喝",
             "批批报告": "批批检报告",
+            "三方检测报告": "三方检测数据",
+            "第三方检测报告": "三方检测数据",
+            "三方报告": "三方检测数据",
+            "第三方报告": "三方检测数据",
             "对上报文": "对上报告",
             "看说": "看到",
             "不不悬": "踏实些",
@@ -382,10 +674,59 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
         context_replacements={"蜡毒": "蜡样那项"},
         export_profile="article_pool_5_columns",
     ),
+    A2_NEGATIVE_POST_COMMENT_PROFILE_KEY: QualityGuardProfile(
+        profile_key=A2_NEGATIVE_POST_COMMENT_PROFILE_KEY,
+        label="A2既存负面帖铺评论轻守卫",
+        forbidden_terms=A2_NEGATIVE_POST_COMMENT_FORBIDDEN_TERMS,
+        context_required_fields=("人设", "关键词", "扰动规则", "生文指令", "业务规则", "生文输出格式"),
+        context_keyword_allowlist=A2_NEGATIVE_POST_KEYWORDS,
+        keyword_markers={
+            "到货安抚": ("到货安抚", *A2_NEGATIVE_POST_ARRIVAL_MARKERS),
+            "转奶安抚": ("转奶安抚", *A2_NEGATIVE_POST_TRANSFER_MARKERS),
+        },
+        default_keyword="到货安抚",
+        body_must_include_any_by_keyword={
+            "到货安抚": A2_NEGATIVE_POST_ARRIVAL_MARKERS,
+            "转奶安抚": A2_NEGATIVE_POST_TRANSFER_MARKERS,
+        },
+        body_replacements={
+            "A2": "a2",
+            "三方检测报告": "三方检测数据",
+            "第三方检测报告": "三方检测数据",
+            "三方报告": "三方检测数据",
+            "第三方报告": "三方检测数据",
+            "转一罐": "先试一罐",
+            "换一罐": "先试一罐",
+            "换一小罐": "先试一罐",
+            "屯一罐": "囤一罐",
+            "先先试一罐试试": "先试一罐",
+        },
+        export_profile="article_pool_5_columns",
+    ),
+    A2_SENTIMENT_POST_PROFILE_KEY: QualityGuardProfile(
+        profile_key=A2_SENTIMENT_POST_PROFILE_KEY,
+        label="A2舆情相关UGC帖子轻守卫",
+        forbidden_terms=(
+            "愿意喝着",
+            "愿意喝上",
+            "习惯性",
+            "断档",
+        ),
+        body_replacements={
+            "A2": "a2",
+            "a2至补货": "a2至初",
+            "三方检测报告": "三方检测数据",
+            "第三方检测报告": "三方检测数据",
+            "三方报告": "三方检测数据",
+            "第三方报告": "三方检测数据",
+            "屯": "囤",
+        },
+        export_profile="article_pool_5_columns",
+    ),
     A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY: QualityGuardProfile(
         profile_key=A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY,
         label="A2剧情讨论评论专项守卫",
-        context_required_fields=("人设", "扰动规则", "生文指令", "评论切角", "生文输出格式"),
+        context_required_fields=("人设", "扰动规则", "生文指令", "业务规则", "生文输出格式"),
         keyword_markers={
             A2_PLOT_DISCUSSION_KEYWORD: (
                 "奶宝",
@@ -452,7 +793,7 @@ def build_article_pool_context_list(item: Any, profile_key: Any = None) -> dict[
             names=("生文指令", "写作指令"),
         )
         or "评论-短句",
-        "评论切角": _derive_comment_angle(item, plan, keyword=keyword, profile=profile),
+        "业务规则": _derive_business_rule(item, plan, keyword=keyword, profile=profile),
         "生文输出格式": _keyword_name(
             selected_keywords,
             codes=("comment_format_control", "format_control"),
@@ -475,6 +816,8 @@ class ActivityQualityGuardService:
             return None
         context = build_article_pool_context_list(item, profile.profile_key)
         repairs = self._repair_item_body(item, profile, context)
+        title_repairs = self._repair_item_title(item, profile)
+        repairs.extend(title_repairs)
         if repairs:
             context = build_article_pool_context_list(item, profile.profile_key)
         issues = self._item_issues(item, profile, context)
@@ -540,6 +883,10 @@ class ActivityQualityGuardService:
             )
         if profile.profile_key == A2_SENTIMENT_COMMENT_PROFILE_KEY:
             issues.extend(_a2_combo_item_issues(item, body, keyword or ""))
+        if profile.profile_key == A2_SENTIMENT_POST_PROFILE_KEY:
+            issues.extend(_a2_sentiment_post_item_issues(item, body))
+        if profile.profile_key == A2_NEGATIVE_POST_COMMENT_PROFILE_KEY:
+            issues.extend(_a2_negative_post_item_issues(body))
         if profile.profile_key == A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY:
             issues.extend(_a2_plot_discussion_item_issues(body))
         return issues
@@ -601,7 +948,33 @@ class ActivityQualityGuardService:
                     }
                 )
         if repaired != body:
-            item.body = _trim_activity_comment(repaired)
+            # 只有评论链路需要把守卫修复后的正文收口；帖子链路正文不做长度裁剪。
+            if profile.profile_key in A2_COMMENT_PROFILE_KEYS:
+                item.body = _trim_activity_comment(repaired)
+            else:
+                item.body = repaired.strip()
+        return repairs
+
+    def _repair_item_title(self, item: Any, profile: QualityGuardProfile) -> list[dict[str, Any]]:
+        title = str(getattr(item, "title", "") or "")
+        if not title:
+            return []
+        repaired = title
+        repairs: list[dict[str, Any]] = []
+        for source, replacement in profile.body_replacements.items():
+            if source != "A2":
+                continue
+            if source and source in repaired:
+                repaired = repaired.replace(source, replacement)
+                repairs.append(
+                    {
+                        "code": "activity_title_replacement",
+                        "source": source,
+                        "replacement": replacement,
+                    }
+                )
+        if repaired != title:
+            item.title = repaired.strip()
         return repairs
 
 def _guard_payload(
@@ -667,7 +1040,7 @@ def _derive_keyword(item: Any, plan: dict[str, Any], profile: QualityGuardProfil
         for value in (
             getattr(item, "title", None),
             getattr(item, "body", None),
-            plan.get("comment_angle"),
+            _plan_business_rule(plan),
             plan.get("corpus"),
             " ".join(str(example) for example in plan.get("examples") or []),
         )
@@ -680,18 +1053,27 @@ def derive_profile_keyword_from_text(text: str, profile: QualityGuardProfile) ->
     source = str(text or "")
     if profile.profile_key == A2_SENTIMENT_COMMENT_PROFILE_KEY:
         return _derive_a2_combo_keyword(source, profile)
+    if profile.profile_key == A2_NEGATIVE_POST_COMMENT_PROFILE_KEY:
+        return _derive_a2_negative_post_keyword(source, profile)
     for keyword, markers in profile.keyword_markers.items():
         if any(marker and marker in source for marker in markers):
             return keyword
     return profile.default_keyword or ""
 
 
-def _derive_comment_angle(item: Any, plan: dict[str, Any], *, keyword: str, profile: QualityGuardProfile | None) -> str:
-    base = str(plan.get("comment_angle") or getattr(item, "title", "") or "").strip()
+def _derive_business_rule(item: Any, plan: dict[str, Any], *, keyword: str, profile: QualityGuardProfile | None) -> str:
+    base = str(_plan_business_rule(plan) or getattr(item, "title", "") or "").strip()
     heading = _corpus_heading(plan.get("corpus"))
     if profile and profile.profile_key == A2_SENTIMENT_COMMENT_PROFILE_KEY and base and heading:
         return f"{base}，{keyword}-{heading}" if keyword else f"{base}，{heading}"
     return base or heading
+
+
+def _plan_business_rule(plan: dict[str, Any]) -> Any:
+    value = plan.get("business_rule")
+    if value is None:
+        value = plan.get("comment_" + "angle")
+    return value
 
 
 def _corpus_heading(corpus: Any) -> str:
@@ -841,6 +1223,16 @@ def _derive_a2_combo_keyword(source: str, profile: QualityGuardProfile) -> str:
     return profile.default_keyword or ""
 
 
+def _derive_a2_negative_post_keyword(source: str, profile: QualityGuardProfile) -> str:
+    for keyword in A2_NEGATIVE_POST_KEYWORDS:
+        if keyword in source:
+            return keyword
+    for keyword, markers in profile.keyword_markers.items():
+        if any(marker and marker in source for marker in markers):
+            return keyword
+    return profile.default_keyword or ""
+
+
 def _a2_plot_discussion_item_issues(body: str) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     body_chars = len(str(body or "").strip())
@@ -923,9 +1315,152 @@ def _a2_plot_discussion_item_issues(body: str) -> list[dict[str, Any]]:
     return issues
 
 
+def _a2_negative_post_item_issues(body: str) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    if A2_NEGATIVE_POST_NOTE_LIKE_DAILY_PURCHASE_PATTERN.search(body):
+        issues.append(
+            {
+                "code": "activity_body_note_like_daily_purchase",
+                "message": "正文像生活笔记流水账，不像评论区接话",
+                "evidence": [A2_NEGATIVE_POST_NOTE_LIKE_DAILY_PURCHASE_PATTERN.pattern],
+                "risk_level": "high",
+            }
+        )
+    if A2_NEGATIVE_POST_BAD_BATCH_CHECK_ATTRIBUTION_PATTERN.search(body):
+        issues.append(
+            {
+                "code": "activity_body_bad_batch_check_attribution",
+                "message": "批批检是每批检测/报告，不要写成姐妹或人群属性",
+                "evidence": [A2_NEGATIVE_POST_BAD_BATCH_CHECK_ATTRIBUTION_PATTERN.pattern],
+                "risk_level": "high",
+            }
+        )
+    return issues
+
+
 def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
-    if keyword in A2_COMBO_KEYWORDS:
+    product_split_hit = _a2_zhichu_product_split_hit(body)
+    if product_split_hit:
+        issues.append(
+            {
+                "code": "activity_body_bad_a2_zhichu_product_split",
+                "message": "a2至初是一个产品名，不能写成“至初这边有a2现货”这类拆分表达",
+                "evidence": [product_split_hit],
+                "risk_level": "high",
+            }
+        )
+    stock_overclaim_hit = _a2_stock_overclaim_hit(body)
+    if stock_overclaim_hit:
+        issues.append(
+            {
+                "code": "activity_body_bad_stock_claim",
+                "message": "库存消息不要写成官方公告、全国补货或保证买到这类确定性表达",
+                "evidence": [stock_overclaim_hit],
+                "risk_level": "high",
+            }
+        )
+    supply_trend_claim_hit = _a2_supply_trend_claim_hit(body)
+    if supply_trend_claim_hit:
+        issues.append(
+            {
+                "code": "activity_body_supply_trend_claim",
+                "message": "有货评论只讲个人买到/问到事实，不判断货源趋势、陆续到货、回货或放货",
+                "evidence": [supply_trend_claim_hit],
+                "risk_level": "high",
+            }
+        )
+    bad_stock_wording_hit = _a2_brand_bad_stock_wording_hit(body)
+    if bad_stock_wording_hit:
+        issues.append(
+            {
+                "code": "activity_body_brand_bad_stock_wording",
+                "message": "品牌反馈不建议这类库存/渠道承诺话术，改成我刚买到、我刚问到、直接下单了等个人事实",
+                "evidence": [bad_stock_wording_hit],
+                "risk_level": "high",
+            }
+        )
+    transfer_tutorial_hit = _a2_transfer_tutorial_hit(body)
+    if transfer_tutorial_hit:
+        issues.append(
+            {
+                "code": "activity_body_transfer_tutorial",
+                "message": "评论不要写具体转奶教程、勺量比例或适应承诺",
+                "evidence": [transfer_tutorial_hit],
+                "risk_level": "high",
+            }
+        )
+    bad_transfer_framing_hit = _a2_brand_bad_transfer_framing_hit(body)
+    if bad_transfer_framing_hit:
+        issues.append(
+            {
+                "code": "activity_body_brand_bad_transfer_framing",
+                "message": "有货+转奶评论不要写本来想换、转奶很乱、打消念头或回到至初这类负面转奶框架",
+                "evidence": [bad_transfer_framing_hit],
+                "risk_level": "high",
+            }
+        )
+    ai_template_question_hit = _a2_ai_template_conditional_question_hit(body)
+    if ai_template_question_hit:
+        issues.append(
+            {
+                "code": "activity_body_ai_template_conditional_question",
+                "message": "评论不要写成“能买到a2的话，是不是先继续原来的就行”这类条件式模板问句",
+                "evidence": [ai_template_question_hit],
+                "risk_level": "high",
+            }
+        )
+    product_effect_hit = _a2_product_effect_claim_hit(body)
+    if product_effect_hit:
+        issues.append(
+            {
+                "code": "activity_body_product_effect_claim",
+                "message": "不要把a2/a2至初写成解决便便、肚肚、奶量或长肉问题的确定原因",
+                "evidence": [product_effect_hit],
+                "risk_level": "high",
+            }
+        )
+    report_overclaim_hit = _a2_report_overclaim_hit(body)
+    if report_overclaim_hit:
+        issues.append(
+            {
+                "code": "activity_body_report_overclaim",
+                "message": "报告只能作为可查看信息点，不能写成安全证明或保证没问题",
+                "evidence": [report_overclaim_hit],
+                "risk_level": "high",
+            }
+        )
+    scan_before_can_hit = _a2_scan_before_can_in_hand_hit(body)
+    if scan_before_can_hit:
+        issues.append(
+            {
+                "code": "activity_body_scan_before_can_in_hand",
+                "message": "罐底物流码应是到手/拿到后扫，不写成下单后就能扫",
+                "evidence": [scan_before_can_hit],
+                "risk_level": "high",
+            }
+        )
+    supply_pressure_transfer_hit = _a2_supply_pressure_transfer_hit(body)
+    if supply_pressure_transfer_hit:
+        issues.append(
+            {
+                "code": "activity_body_supply_pressure_transfer_memory",
+                "message": "有货/转奶评论不要回忆货少、买不到或被动换奶这类过往供应压力",
+                "evidence": [supply_pressure_transfer_hit],
+                "risk_level": "high",
+            }
+        )
+    feeding_anxiety_stock_hit = _a2_feeding_anxiety_stock_hit(body)
+    if feeding_anxiety_stock_hit:
+        issues.append(
+            {
+                "code": "activity_body_feeding_anxiety_stock",
+                "message": "家庭库存可以写快空/见底，不要写成断顿、没奶喝或接不上这类喂养焦虑",
+                "evidence": [feeding_anxiety_stock_hit],
+                "risk_level": "high",
+            }
+        )
+    if keyword in A2_BATCH_REPORT_REQUIRED_KEYWORDS:
         if (
             not _has_any_marker(body, A2_BATCH_REPORT_MARKERS)
             and not _a2_has_wax_standard_advantage_for_rule(item, body)
@@ -940,6 +1475,10 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
                     "risk_level": "high",
                 }
             )
+    if (
+        keyword in A2_BATCH_REPORT_REQUIRED_KEYWORDS
+        or (keyword == "有货+转奶" and _has_any_marker(body, A2_BATCH_REPORT_MARKERS))
+    ):
         if (
             not _a2_has_specific_advantage(body)
             and not _a2_has_wax_standard_advantage_for_rule(item, body)
@@ -1062,6 +1601,16 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
                 "risk_level": "high",
             }
         )
+    vague_deictic_reason = _a2_vague_deictic_without_product_reason(body)
+    if vague_deictic_reason:
+        issues.append(
+            {
+                "code": "activity_body_vague_deictic_without_product",
+                "message": "正文只说这罐/刚收到但没有a2或评论区接话对象，像孤立残句",
+                "evidence": [vague_deictic_reason],
+                "risk_level": "high",
+            }
+        )
     if body.count("蜡毒") > 1:
         issues.append(
             {
@@ -1074,15 +1623,270 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
     return issues
 
 
+def _a2_zhichu_product_split_hit(body: str) -> str | None:
+    match = A2_ZHICHU_PRODUCT_SPLIT_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
+def _a2_stock_overclaim_hit(body: str) -> str | None:
+    match = A2_STOCK_OVERCLAIM_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
+def _a2_supply_trend_claim_hit(body: str) -> str | None:
+    text = str(body or "")
+    if A2_PERSONAL_SUPPLY_TREND_CONTEXT_PATTERN.search(text):
+        return None
+    match = A2_SUPPLY_TREND_CLAIM_PATTERN.search(text)
+    return match.group(0) if match else None
+
+
+def _a2_brand_bad_stock_wording_hit(body: str) -> str | None:
+    match = A2_BRAND_BAD_STOCK_WORDING_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
+def _a2_transfer_tutorial_hit(body: str) -> str | None:
+    match = A2_TRANSFER_TUTORIAL_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
+def _a2_brand_bad_transfer_framing_hit(body: str) -> str | None:
+    match = A2_BRAND_BAD_TRANSFER_FRAMING_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
+def _a2_ai_template_conditional_question_hit(body: str) -> str | None:
+    match = A2_AI_TEMPLATE_CONDITIONAL_QUESTION_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
+def _a2_product_effect_claim_hit(body: str) -> str | None:
+    match = A2_PRODUCT_EFFECT_CLAIM_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
+def _a2_report_overclaim_hit(body: str) -> str | None:
+    match = A2_REPORT_OVERCLAIM_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
+def _a2_scan_before_can_in_hand_hit(body: str) -> str | None:
+    match = A2_SCAN_BEFORE_CAN_IN_HAND_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
+def _a2_supply_pressure_transfer_hit(body: str) -> str | None:
+    text = str(body or "")
+    for match in A2_SUPPLY_PRESSURE_TRANSFER_PATTERN.finditer(text):
+        hit = match.group(0)
+        prefix = text[max(0, match.start() - 8) : match.start()]
+        window = f"{prefix}{hit}"
+        if "没货" in hit and any(marker in window for marker in A2_HOUSEHOLD_STOCK_MARKERS):
+            continue
+        return hit
+    return None
+
+
+def _a2_feeding_anxiety_stock_hit(body: str) -> str | None:
+    match = A2_FEEDING_ANXIETY_STOCK_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
 def _a2_incomplete_comment_reason(body: str) -> str | None:
-    text = str(body or "").strip().strip("，。！？,!?；;、 ")
+    raw_text = str(body or "").strip()
+    if raw_text.endswith(("，", ",", "、", "；", ";")):
+        return "结尾标点像残句"
+    text = raw_text.strip("，。！？,!?；;、 ")
     if not text:
         return "空正文"
-    if len(text) < 12:
+    if len(text) < 12 and not _a2_is_complete_supply_transfer_comment(text):
         return "正文过短"
     for suffix in A2_INCOMPLETE_COMMENT_SUFFIXES:
         if text.endswith(suffix):
+            if suffix in {"a2", "A2"} and _a2_is_complete_supply_transfer_comment(text):
+                continue
             return f"结尾残句：{suffix}"
+    return None
+
+
+def _a2_vague_deictic_without_product_reason(body: str) -> str | None:
+    text = str(body or "").strip()
+    if any(marker in text for marker in ("a2", "A2", "至初")):
+        return None
+    if any(marker in text for marker in ("姐妹", "哪买", "哪里买", "哪家", "求问", "+1", "我也")):
+        return None
+    if "这罐" in text and any(marker in text for marker in ("刚收", "收到", "喝完", "补上", "拿了")):
+        return "缺少产品对象"
+    return None
+
+
+def _a2_is_complete_supply_transfer_comment(text: str) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return False
+    has_product = any(marker in normalized for marker in ("a2", "A2", "至初"))
+    has_supply = any(
+        marker in normalized
+        for marker in (
+            "能买到",
+            "买到",
+            "想买",
+            "接着买",
+            "先买",
+            "我也买",
+            "我就买",
+            "先拍",
+            "我就先拍",
+            "刚下单",
+            "下单",
+            "订到",
+            "预定",
+            "到了",
+            "有货",
+            "到货",
+            "现货",
+            "能补",
+            "补到",
+            "能拿",
+            "能调",
+            "可下单",
+        )
+    )
+    has_transfer_decision = any(
+        marker in normalized
+        for marker in (
+            "先不转",
+            "不转了",
+            "先不换",
+            "不换了",
+            "继续喝",
+            "接着喝",
+            "接着买",
+            "先买",
+            "先拍",
+            "先拿",
+            "先下单",
+            "先订",
+            "喝原来的",
+            "按原来的",
+        )
+    )
+    has_question_or_thread_tone = any(marker in normalized for marker in ("哪家店", "哪里买", "哪买", "求问", "姐妹"))
+    return has_product and has_supply and (has_transfer_decision or has_question_or_thread_tone)
+
+
+def _a2_sentiment_post_item_issues(item: Any, body: str) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    title = str(getattr(item, "title", "") or "")
+    json_leak_hit = _a2_post_json_leak_hit(title, body)
+    if json_leak_hit:
+        issues.append(
+            {
+                "code": "activity_output_json_leak",
+                "message": "A2帖子生成结果不能把JSON字段或括号漏进标题/正文",
+                "evidence": [json_leak_hit],
+                "risk_level": "high",
+            }
+        )
+    ai_title_hit = _a2_post_ai_title_hit(title)
+    if ai_title_hit:
+        issues.append(
+            {
+                "code": "activity_title_ai_advice_tone",
+                "message": "A2帖子标题不要写成安抚建议、攻略指南或一句话解决问题的AI口吻",
+                "evidence": [ai_title_hit],
+                "risk_level": "high",
+            }
+        )
+    transfer_decision_hit = _a2_post_transfer_decision_hit(title, body)
+    if transfer_decision_hit:
+        issues.append(
+            {
+                "code": "activity_body_transfer_decision_advice",
+                "message": "A2帖子可以写个人慢慢转，但不要向姐妹求该不该转、适不适合转这类决策建议",
+                "evidence": [transfer_decision_hit],
+                "risk_level": "high",
+            }
+        )
+    report_safety_hit = _a2_post_report_safety_decision_hit(body)
+    if report_safety_hit:
+        issues.append(
+            {
+                "code": "activity_body_report_safety_decision",
+                "message": "报告只能写能查到和看不太懂，不要让姐妹判断没问题、安全或放心喝",
+                "evidence": [report_safety_hit],
+                "risk_level": "high",
+            }
+        )
+    feeding_decision_hit = _a2_post_feeding_decision_hit(body)
+    if feeding_decision_hit:
+        issues.append(
+            {
+                "code": "activity_body_feeding_decision_advice",
+                "message": "A2帖子不要让姐妹判断能不能给宝宝喝、该不该喝这款这类喂养决策",
+                "evidence": [feeding_decision_hit],
+                "risk_level": "high",
+            }
+        )
+    incomplete_reason = _a2_incomplete_post_reason(body)
+    if incomplete_reason:
+        issues.append(
+            {
+                "code": "activity_body_incomplete_post",
+                "message": "正文像被截断的残句",
+                "evidence": [incomplete_reason],
+                "risk_level": "high",
+            }
+        )
+    return issues
+
+
+def _a2_post_ai_title_hit(title: str) -> str | None:
+    text = str(title or "").strip()
+    match = A2_POST_AI_TITLE_PATTERN.search(text)
+    return match.group(0) if match else None
+
+
+def _a2_post_json_leak_hit(title: str, body: str) -> str | None:
+    text = f"{str(title or '').strip()}\n{str(body or '').strip()}"
+    match = A2_POST_JSON_LEAK_PATTERN.search(text)
+    return match.group(0) if match else None
+
+
+def _a2_post_transfer_decision_hit(title: str, body: str) -> str | None:
+    text = f"{str(title or '').strip()}\n{str(body or '').strip()}"
+    match = A2_POST_TRANSFER_DECISION_PATTERN.search(text)
+    return match.group(0) if match else None
+
+
+def _a2_post_report_safety_decision_hit(body: str) -> str | None:
+    text = str(body or "")
+    match = A2_POST_REPORT_SAFETY_DECISION_PATTERN.search(text)
+    if match:
+        return match.group(0)
+    if any(marker in text for marker in A2_POST_REPORT_MARKERS):
+        for term in A2_POST_REPORT_SAFETY_DECISION_TERMS:
+            if term in text:
+                return term
+    return None
+
+
+def _a2_post_feeding_decision_hit(body: str) -> str | None:
+    match = A2_POST_FEEDING_DECISION_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
+def _a2_incomplete_post_reason(body: str) -> str | None:
+    text = str(body or "").strip()
+    if text.endswith(("，", ",", "、", "；", ";")):
+        return "结尾标点像残句"
+    if not text:
+        return "空正文"
+    if len(text.strip("。！？!? ")) < 20:
+        return "正文过短"
+    if text.strip("。！？!? ").endswith(("每条细", "逐条细", "来说", "而言", "感觉", "觉得", "其")):
+        return "结尾残句：逐条细看"
     return None
 
 
@@ -1101,7 +1905,7 @@ def _a2_rule_requires_competitor_group(item: Any) -> bool:
         str(value or "")
         for value in (
             getattr(item, "title", None),
-            plan.get("comment_angle"),
+            _plan_business_rule(plan),
             heading,
         )
     )
@@ -1119,9 +1923,19 @@ def _profile_forbidden_term_hits(profile: QualityGuardProfile, *, body: str, con
     for term in profile.forbidden_terms:
         if not term:
             continue
-        if profile.profile_key == A2_SENTIMENT_COMMENT_PROFILE_KEY and term == "急":
-            # “急/着急”本身偏负面，硬拦；“不着急”是运营认可的正向转折，不误伤。
-            if _a2_has_forbidden_negative_term(body, term) or _a2_has_forbidden_negative_term(context_text, term):
+        if profile.profile_key in {A2_SENTIMENT_COMMENT_PROFILE_KEY, A2_NEGATIVE_POST_COMMENT_PROFILE_KEY} and term in {
+            "急",
+            "慌",
+        }:
+            # “急/慌”本身偏负面，硬拦；“不着急/别慌”这类安抚转折不误伤。
+            if _a2_has_forbidden_negative_term(body, term) or (
+                profile.profile_key == A2_SENTIMENT_COMMENT_PROFILE_KEY
+                and _a2_has_forbidden_negative_term(context_text, term)
+            ):
+                hits.append(term)
+            continue
+        if profile.profile_key == A2_NEGATIVE_POST_COMMENT_PROFILE_KEY:
+            if term in body:
                 hits.append(term)
             continue
         if term in body or term in context_text:
@@ -1135,7 +1949,27 @@ def _a2_has_forbidden_negative_term(text: str, term: str) -> bool:
         start = match.start()
         if start > 0 and value[start - 1] == "不":
             continue
+        if start > 0 and value[start - 1] == "别":
+            continue
+        if term == "急":
+            prefix = value[max(0, start - 5) : start]
+            if any(marker in prefix for marker in ("不", "别", "不能", "不用", "不要")):
+                continue
+        if term == "急" and start >= 2 and value[start - 2 : start] in {"别着", "不着"}:
+            continue
         if term == "急" and start >= 2 and value[start - 2 : start] == "不着":
+            continue
+        if term == "急" and start >= 3 and value[start - 3 : start] in {"别太着", "不要着", "不用着", "别着"}:
+            continue
+        if term == "急" and start > 0 and value[start - 1] == "没":
+            after = value[match.end() : match.end() + 1]
+            if after == "着":
+                continue
+        if term == "急":
+            after = value[match.end() : match.end() + 2]
+            if after == "不来":
+                continue
+        if term == "慌" and start >= 2 and value[start - 2 : start] == "不用":
             continue
         return True
     return False
@@ -1155,7 +1989,7 @@ def _a2_has_specific_advantage(body: str) -> bool:
     normalized = re.sub(r"\s+", "", str(body or ""))
     if any(marker in normalized for marker in A2_SPECIFIC_ADVANTAGE_MARKERS):
         return True
-    # 运营确认：评论区自然短评里，若切角上下文已是 A2，正文出现
+    # 运营确认：评论区自然短评里，若业务规则上下文已是 A2，正文出现
     # “扫罐底/物流码 + 报告/蜡样检测/批次”即可视为讲清了 A2 的可查优势，
     # 不强制每条都露出 a2，否则会误杀更像真人的短句。
     if _a2_has_self_scan_report_action_chain(normalized):
@@ -1199,7 +2033,7 @@ def _a2_has_wax_standard_advantage_for_rule(item: Any, body: str) -> bool:
         str(value or "")
         for value in (
             getattr(item, "title", None),
-            plan.get("comment_angle"),
+            _plan_business_rule(plan),
             _corpus_heading(plan.get("corpus")),
         )
     )
@@ -1219,7 +2053,7 @@ def _a2_has_third_party_data_advantage_for_rule(item: Any, body: str) -> bool:
         str(value or "")
         for value in (
             getattr(item, "title", None),
-            plan.get("comment_angle"),
+            _plan_business_rule(plan),
             _corpus_heading(plan.get("corpus")),
         )
     )
@@ -1228,8 +2062,8 @@ def _a2_has_third_party_data_advantage_for_rule(item: Any, body: str) -> bool:
     normalized = re.sub(r"\s+", "", str(body or ""))
     if not re.search(r"a2|A2|至初", normalized):
         return False
-    # 027 切角主打三方检测/实验室/60多项数据，允许不强制带扫码或批次报告。
-    third_party_markers = ("新西兰三方", "三方检测", "第三方检测", "第三方实验室", "三方报告", "第三方报告")
+    # 027 业务规则主打三方检测/实验室/60多项数据，允许不强制带扫码或批次报告。
+    third_party_markers = ("新西兰三方", "三方检测", "第三方检测", "第三方实验室", "三方检测数据", "第三方检测数据")
     data_markers = ("60多项", "六十多项", "检测数据", "质检数据", "检测", "质检", "实验室", "数据")
     if any(marker in normalized for marker in third_party_markers) and any(marker in normalized for marker in data_markers):
         return True
@@ -1290,7 +2124,7 @@ def _a2_has_contextual_report_advantage(normalized: str) -> bool:
     )
     if any(re.search(pattern, normalized) for pattern in detailed_report_patterns):
         return True
-    # 当前切角上下文已是 A2 时，评论区常省略品牌；只说“有货/补货/转奶 + 报告 + 放心/踏实”
+    # 当前业务规则上下文已是 A2 时，评论区常省略品牌；只说“有货/补货/转奶 + 报告 + 放心/踏实”
     # 也能表达报告可见带来的决策感，但单独一句“看到报告”仍不直接放行。
     scene_markers = (
         "有货",

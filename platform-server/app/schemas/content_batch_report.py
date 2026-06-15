@@ -152,6 +152,8 @@ class ContentBatchModelConfig(BaseSchema):
 class ContentBatchStartRequest(BaseSchema):
     asset_key: str = Field(default=DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY, max_length=128)
     keyword_asset_key: str | None = Field(default=None, max_length=128)
+    rule_id: str | None = Field(default=None, max_length=128)
+    source_row_no: int | None = Field(default=None, ge=1)
     product_topic: str | None = Field(default=None, max_length=255)
     target_audience: str | None = Field(default=None, max_length=255)
     persona_target: str | None = Field(default=None, max_length=255)
@@ -169,7 +171,7 @@ class ContentCommentBatchStartRequest(BaseSchema):
     asset_key: str = Field(default="yuanyue_comment_activity", max_length=128)
     keyword_asset_key: str | None = Field(default=None, max_length=128)
     quality_guard_profile_key: str | None = Field(default=None, max_length=128)
-    comment_angle: str | None = Field(default=None, max_length=255)
+    business_rule: str | None = Field(default=None, max_length=255)
     rule_id: str | None = Field(default=None, max_length=128)
     source_row_no: int | None = Field(default=None, ge=1)
     draft_corpus: str | None = None
@@ -314,6 +316,7 @@ class ContentBatchItemFeedbackRequest(BaseSchema):
     body: str | None = Field(default=None, max_length=20000)
     created_by: str | None = Field(default=None, max_length=100)
     business_forbidden_terms: list[str] = Field(default_factory=list)
+    business_forbidden_term_entries: list[dict] = Field(default_factory=list)
     auto_rewrite: bool = False
 
 

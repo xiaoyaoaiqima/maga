@@ -177,7 +177,7 @@ async function sendChatMessage(message: string) {
 }
 
 function handleChatAction(action: ChatAction) {
-  if (action.type === 'fill_comment_angle_draft') {
+  if (action.type === 'fill_business_rule_draft') {
     chatStore.requestDraftFill(action);
   }
 }

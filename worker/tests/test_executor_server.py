@@ -125,7 +125,7 @@ def test_content_generate_fake_mode_returns_comment_from_unified_input(monkeypat
                 "output_fields": ["comment"],
                 "business_rule": {
                     "item_no": 1,
-                    "comment_angle": "整体适应",
+                    "business_rule": "整体适应",
                     "corpus": "整体适应：\n像妈妈在评论区聊刚开始喝源悦的观察。",
                     "examples": ["我家刚开始也在看源悦，想蹲蹲真实反馈"],
                 },
@@ -168,7 +168,7 @@ def test_content_generate_runtime_keeps_empty_comment_when_model_returns_empty(m
                 "output_fields": ["comment"],
                 "business_rule": {
                     "item_no": 1,
-                    "comment_angle": "奶量补充",
+                    "business_rule": "奶量补充",
                     "examples": ["第一口愿意喝，我就放心点了"],
                 },
                 "model_config": {

@@ -13,10 +13,10 @@ from app.schemas.assets import (
     AssetChangeProposalResponse,
     AssetChangeRequestCreate,
     AssetChangeRequestResponse,
-    CommentAngleRuleDraftPublish,
-    CommentAngleRuleDraftPublishResponse,
-    CommentAngleRuleDraftResponse,
-    CommentAngleRuleDraftSave,
+    CommentBusinessRuleDraftPublish,
+    CommentBusinessRuleDraftPublishResponse,
+    CommentBusinessRuleDraftResponse,
+    CommentBusinessRuleDraftSave,
     AssetGenerationOptionsResponse,
     AssetImportResponse,
     AssetImportRunResponse,
@@ -30,13 +30,13 @@ from app.schemas.assets import (
     SystemPromptKeywordRollback,
     SystemPromptKeywordUpdate,
 )
-from app.services.asset_service import AssetService, comment_angle_rule_draft_response, normalize_asset_content
+from app.services.asset_service import AssetService, comment_business_rule_draft_response, normalize_asset_content
 from app.services.activity_quality_guard_service import resolve_quality_guard_profile
-from app.services.comment_angle_rule_service import (
-    COMMENT_ANGLE_RULE_ASSET_TYPE,
-    DEFAULT_COMMENT_ANGLE_ASSET_KEY,
-    comment_angle_import_summary,
-    import_comment_angle_rule_set,
+from app.services.comment_business_rule_service import (
+    COMMENT_BUSINESS_RULE_ASSET_TYPE,
+    DEFAULT_COMMENT_BUSINESS_RULE_ASSET_KEY,
+    business_rule_import_summary,
+    import_comment_business_rule_set,
 )
 from app.services.product_experience_rule_service import (
     DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY,
@@ -182,10 +182,10 @@ async def list_asset_change_proposals(
     )
 
 
-@router.post("/imports/comment-angle-rule-set", response_model=ResponseData)
-async def import_comment_angle_rule_set_endpoint(
+@router.post("/imports/comment-business-rule-set", response_model=ResponseData)
+async def import_comment_business_rule_set_endpoint(
     file: UploadFile = File(...),
-    asset_key: str = Form(default=DEFAULT_COMMENT_ANGLE_ASSET_KEY),
+    asset_key: str = Form(default=DEFAULT_COMMENT_BUSINESS_RULE_ASSET_KEY),
     display_name: str | None = Form(default=None),
     keyword_asset_key: str | None = Form(default=None),
     quality_guard_profile_key: str | None = Form(default=None),
@@ -193,7 +193,7 @@ async def import_comment_angle_rule_set_endpoint(
     created_by: str = Form(default="maga-operator"),
     db: AsyncSession = Depends(get_db),
 ):
-    filename = file.filename or "评论切角_子关键词导出.csv"
+    filename = file.filename or "业务规则_子关键词导出.csv"
     if not filename.lower().endswith((".csv", ".xlsx")):
         raise HTTPException(status_code=400, detail="only .csv and .xlsx files are supported")
     if quality_guard_profile_key and not resolve_quality_guard_profile(quality_guard_profile_key):
@@ -201,7 +201,7 @@ async def import_comment_angle_rule_set_endpoint(
 
     file_content = await file.read()
     try:
-        result = await import_comment_angle_rule_set(
+        result = await import_comment_business_rule_set(
             db,
             file_content,
             source_name=filename,
@@ -219,9 +219,9 @@ async def import_comment_angle_rule_set_endpoint(
             data=AssetImportResponse(
                 import_run_id=result.import_run_id,
                 imported_assets=1,
-                asset_keys=[(COMMENT_ANGLE_RULE_ASSET_TYPE, result.asset_key)],
+                asset_keys=[(COMMENT_BUSINESS_RULE_ASSET_TYPE, result.asset_key)],
                 source_hash=result.source_hash,
-                summary_json=comment_angle_import_summary(result),
+                summary_json=business_rule_import_summary(result),
             ).model_dump(mode="json"),
         )
     except ValueError as exc:
@@ -480,8 +480,8 @@ async def preview_content_generation_keywords(
     db: AsyncSession = Depends(get_db),
 ):
     business_rule = payload.business_rule or {
-        "rule_type": "comment_angle" if payload.content_type == "comment" else "product_experience",
-        "comment_angle": "示例评论切角" if payload.content_type == "comment" else None,
+        "rule_type": "business_rule" if payload.content_type == "comment" else "product_experience",
+        "business_rule": "示例业务规则" if payload.content_type == "comment" else None,
         "product_experience": "示例产品使用体验" if payload.content_type != "comment" else None,
         "corpus": "这里是本次业务规则里的语料，用于预览系统关键词会如何进入最终 prompt。",
         "examples": ["这是一条用于预览的参考示例。"],
@@ -533,8 +533,8 @@ async def create_candidate_asset(payload: AssetCandidateCreate, db: AsyncSession
     )
 
 
-@router.get("/comment-angle-rule-drafts", response_model=ResponseData)
-async def list_comment_angle_rule_drafts(
+@router.get("/comment-business-rule-drafts", response_model=ResponseData)
+async def list_comment_business_rule_drafts(
     asset_key: str = Query(..., min_length=1),
     rule_id: str | None = Query(default=None),
     source_row_no: int | None = Query(default=None, ge=1),
@@ -542,7 +542,7 @@ async def list_comment_angle_rule_drafts(
     db: AsyncSession = Depends(get_db),
 ):
     service = AssetService(db)
-    drafts = await service.list_comment_angle_rule_drafts(
+    drafts = await service.list_comment_business_rule_drafts(
         asset_key=asset_key,
         rule_id=rule_id,
         source_row_no=source_row_no,
@@ -552,17 +552,17 @@ async def list_comment_angle_rule_drafts(
         code=200,
         message="success",
         data=[
-            CommentAngleRuleDraftResponse(**comment_angle_rule_draft_response(draft)).model_dump(mode="json")
+            CommentBusinessRuleDraftResponse(**comment_business_rule_draft_response(draft)).model_dump(mode="json")
             for draft in drafts
         ],
     )
 
 
-@router.post("/comment-angle-rule-drafts", response_model=ResponseData)
-async def save_comment_angle_rule_draft(payload: CommentAngleRuleDraftSave, db: AsyncSession = Depends(get_db)):
+@router.post("/comment-business-rule-drafts", response_model=ResponseData)
+async def save_comment_business_rule_draft(payload: CommentBusinessRuleDraftSave, db: AsyncSession = Depends(get_db)):
     service = AssetService(db)
     try:
-        draft = await service.save_comment_angle_rule_draft(payload)
+        draft = await service.save_comment_business_rule_draft(payload)
         await db.commit()
         await db.refresh(draft)
     except ValueError as exc:
@@ -571,19 +571,19 @@ async def save_comment_angle_rule_draft(payload: CommentAngleRuleDraftSave, db: 
     return ResponseData(
         code=200,
         message="success",
-        data=CommentAngleRuleDraftResponse(**comment_angle_rule_draft_response(draft)).model_dump(mode="json"),
+        data=CommentBusinessRuleDraftResponse(**comment_business_rule_draft_response(draft)).model_dump(mode="json"),
     )
 
 
-@router.post("/comment-angle-rule-drafts/{draft_id}/publish", response_model=ResponseData)
-async def publish_comment_angle_rule_draft(
+@router.post("/comment-business-rule-drafts/{draft_id}/publish", response_model=ResponseData)
+async def publish_comment_business_rule_draft(
     draft_id: int,
-    payload: CommentAngleRuleDraftPublish,
+    payload: CommentBusinessRuleDraftPublish,
     db: AsyncSession = Depends(get_db),
 ):
     service = AssetService(db)
     try:
-        draft, asset = await service.publish_comment_angle_rule_draft(
+        draft, asset = await service.publish_comment_business_rule_draft(
             draft_id,
             created_by=payload.created_by or "maga-operator",
         )
@@ -598,8 +598,8 @@ async def publish_comment_angle_rule_draft(
     return ResponseData(
         code=200,
         message="success",
-        data=CommentAngleRuleDraftPublishResponse(
-            draft=CommentAngleRuleDraftResponse(**comment_angle_rule_draft_response(draft)),
+        data=CommentBusinessRuleDraftPublishResponse(
+            draft=CommentBusinessRuleDraftResponse(**comment_business_rule_draft_response(draft)),
             asset=AssetRegistryResponse.model_validate(asset),
         ).model_dump(mode="json"),
     )

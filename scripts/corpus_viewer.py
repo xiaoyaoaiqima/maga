@@ -30,7 +30,7 @@ EXCLUDED_DIRS = {
     ".pnpm-store",
 }
 PRIMARY_COLUMNS = (
-    "评论切角",
+    "业务规则",
     "产品使用体验",
     "子关键词",
     "关键词",

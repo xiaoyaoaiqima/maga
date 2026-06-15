@@ -89,7 +89,7 @@ MAGA 平台默认 executor code：`maga_direct_llm_executor`。
 业务规则：
 
 - `POST /api/v1/assets/imports/business-rule-set`
-- `POST /api/v1/assets/imports/comment-angle-rule-set`
+- `POST /api/v1/assets/imports/comment-business-rule-set`
 - `GET /api/v1/assets/business-rule-sets`
 
 系统关键词与 Expert：

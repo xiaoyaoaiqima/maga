@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from secrets import SystemRandom
 from typing import Any
 
 from sqlalchemy import select
@@ -10,14 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
 from app.models.content_agent import ContentBatchItem, ContentBatchJob
 from app.models.maga_assets import AssetRegistry
-from app.services.product_experience_rule_service import (
-    DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME,
-    PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
-)
+from app.services.business_rule_asset_types import ARTICLE_BUSINESS_RULE_ASSET_TYPES
+from app.services.product_experience_rule_service import DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME
 from app.services.system_prompt_keyword_service import DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
 
 DEFAULT_CONTENT_WORD_COUNT = "150-250"
 DEFAULT_CONTENT_EMOJI = "少量"
+ARTICLE_RULE_EXAMPLE_SAMPLE_COUNT = 3
 
 
 OPENING_TYPES = [
@@ -68,6 +68,46 @@ PERSONA_LENSES = ["新手妈妈", "谨慎型妈妈", "二胎妈妈", "过来人�
 SCENE_TYPES = ["日常喂养", "便便观察", "夜间照护", "换季适应", "转奶过渡", "外出照护"]
 EVIDENCE_TYPES = ["经验记录", "清单建议", "对比判断", "边界提醒", "观察指标", "场景复盘"]
 
+A2_SENTIMENT_POST_PROFILE_KEY = "a2_sentiment_post_202606"
+A2_POST_OPENING_TYPES = ["刚看到", "顺手记一下", "别人提醒", "更新一下", "求帮忙看", "补个记录"]
+A2_POST_STRUCTURE_TYPES = ["进展-动作-感受", "提醒-确认-记录", "等到-松口气-补充", "碎碎念-求确认"]
+A2_POST_EMOTIONS = ["松口气", "顺手记录", "踏实一点", "真实", "想核对"]
+A2_POST_CTA_TYPES = ["求帮忙看", "同款交流", "记录一下", "无明显CTA"]
+A2_POST_NARRATIVE_FOCUSES = ["先说进展", "先说动作", "先说入口", "先说提醒", "先说终于等到"]
+A2_POST_CONTENT_ANGLES = ["动作记录", "到货记录", "求确认", "续上记录", "现场记录"]
+A2_POST_PERSONA_LENSES = ["碎碎念妈妈", "细节观察型妈妈", "老用户妈妈", "谨慎但不科普妈妈"]
+A2_POST_SCENE_TYPES = ["到手后", "门店里", "线上看到", "家里续上", "评论求确认"]
+A2_POST_EVIDENCE_TYPES = ["个人动作", "他人转述", "页面入口", "自己核对", "能对应到手里"]
+
+
+def _article_business_diversity_slot(zero: int, *, quality_guard_profile_key: str | None) -> dict[str, str]:
+    """Keep A2短帖 away from generic advice-slot labels that leak into AI-like titles."""
+    if quality_guard_profile_key == A2_SENTIMENT_POST_PROFILE_KEY:
+        return {
+            "opening_type": A2_POST_OPENING_TYPES[zero % len(A2_POST_OPENING_TYPES)],
+            "structure_type": A2_POST_STRUCTURE_TYPES[(zero // len(A2_POST_OPENING_TYPES) + zero) % len(A2_POST_STRUCTURE_TYPES)],
+            "emotion": A2_POST_EMOTIONS[(zero * 2 + zero // 11) % len(A2_POST_EMOTIONS)],
+            "cta_type": A2_POST_CTA_TYPES[(zero * 3 + zero // 13) % len(A2_POST_CTA_TYPES)],
+            "narrative_focus": A2_POST_NARRATIVE_FOCUSES[(zero + zero // len(A2_POST_OPENING_TYPES)) % len(A2_POST_NARRATIVE_FOCUSES)],
+            "content_angle": A2_POST_CONTENT_ANGLES[(zero * 3 + zero // len(A2_POST_OPENING_TYPES)) % len(A2_POST_CONTENT_ANGLES)],
+            "persona_lens": A2_POST_PERSONA_LENSES[(zero + zero // len(A2_POST_PERSONA_LENSES)) % len(A2_POST_PERSONA_LENSES)],
+            "scene_type": A2_POST_SCENE_TYPES[(zero * 2 + zero // len(A2_POST_SCENE_TYPES)) % len(A2_POST_SCENE_TYPES)],
+            "evidence_type": A2_POST_EVIDENCE_TYPES[(zero * 5 + zero // len(A2_POST_EVIDENCE_TYPES)) % len(A2_POST_EVIDENCE_TYPES)],
+            "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
+        }
+    return {
+        "opening_type": OPENING_TYPES[zero % len(OPENING_TYPES)],
+        "structure_type": STRUCTURE_TYPES[(zero // len(OPENING_TYPES) + zero) % len(STRUCTURE_TYPES)],
+        "emotion": EMOTIONS[(zero * 2 + zero // 11) % len(EMOTIONS)],
+        "cta_type": CTA_TYPES[(zero * 3 + zero // 13) % len(CTA_TYPES)],
+        "narrative_focus": NARRATIVE_FOCUSES[(zero + zero // len(OPENING_TYPES)) % len(NARRATIVE_FOCUSES)],
+        "content_angle": CONTENT_ANGLES[(zero * 3 + zero // len(OPENING_TYPES)) % len(CONTENT_ANGLES)],
+        "persona_lens": PERSONA_LENSES[(zero + zero // len(PERSONA_LENSES)) % len(PERSONA_LENSES)],
+        "scene_type": SCENE_TYPES[(zero * 2 + zero // len(SCENE_TYPES)) % len(SCENE_TYPES)],
+        "evidence_type": EVIDENCE_TYPES[(zero * 5 + zero // len(EVIDENCE_TYPES)) % len(EVIDENCE_TYPES)],
+        "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
+    }
+
 
 class ContentBatchPlanner:
     """Create item-level generation plans from MAGA asset snapshots."""
@@ -79,6 +119,8 @@ class ContentBatchPlanner:
         self,
         *,
         asset_key: str,
+        rule_id: str | None = None,
+        source_row_no: int | None = None,
         product_topic: str | None,
         target_audience: str | None,
         persona_target: str | None = None,
@@ -91,17 +133,19 @@ class ContentBatchPlanner:
         if count <= 0:
             raise ValueError("count must be positive")
 
-        rule_asset = await self._latest_product_experience_rule_asset(asset_key)
+        rule_asset = await self._latest_article_business_rule_asset(asset_key)
         if rule_asset is not None:
-            return await self._create_product_experience_rule_plan(
+            return await self._create_article_business_rule_plan(
                 rule_asset,
                 requested_count=count,
+                rule_id=rule_id,
+                source_row_no=source_row_no,
                 keyword_asset_key=keyword_asset_key,
                 model_config=model_config,
                 created_by=created_by,
             )
         if not product_topic:
-            raise ValueError(f"missing product_experience_rule_set for {asset_key}")
+            raise ValueError(f"missing article_business_rule_set for {asset_key}")
 
         painpoints_asset = await self._latest_asset("painpoint_model", asset_key)
         selling_asset = await self._latest_asset("product_selling_points", asset_key)
@@ -171,11 +215,11 @@ class ContentBatchPlanner:
         await self.db.flush()
         return job
 
-    async def _latest_product_experience_rule_asset(self, asset_key: str) -> AssetRegistry | None:
+    async def _latest_article_business_rule_asset(self, asset_key: str) -> AssetRegistry | None:
         result = await self.db.execute(
             select(AssetRegistry)
             .where(
-                AssetRegistry.asset_type == PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
+                AssetRegistry.asset_type.in_(ARTICLE_BUSINESS_RULE_ASSET_TYPES),
                 AssetRegistry.asset_key == asset_key,
                 AssetRegistry.status == "active",
                 AssetRegistry.asset_stage == "production",
@@ -185,21 +229,38 @@ class ContentBatchPlanner:
         )
         return result.scalar_one_or_none()
 
-    async def _create_product_experience_rule_plan(
+    async def _create_article_business_rule_plan(
         self,
         asset: AssetRegistry,
         *,
         requested_count: int,
+        rule_id: str | None,
+        source_row_no: int | None,
         keyword_asset_key: str | None,
         model_config: dict[str, Any] | None,
         created_by: str | None,
     ) -> ContentBatchJob:
-        rules = self._product_experience_rule_items(asset)
+        rules = self._article_business_rule_items(asset)
+        focus_rules = _filter_rules(rules, rule_id=rule_id, source_row_no=source_row_no)
+        if rule_id or source_row_no is not None:
+            rules = focus_rules
         if not rules:
-            raise ValueError(f"product_experience_rule_set is empty for {asset.asset_key}")
-        limit = self._product_experience_generation_limit(asset, rules, requested_count=requested_count)
-        product_topic = (asset.content_json or {}).get("activity_name") or DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME
+            raise ValueError(f"article_business_rule_set is empty for {asset.asset_key}")
+        focus_single_rule = bool(rule_id) or source_row_no is not None
+        limit = self._article_business_generation_limit(
+            asset,
+            rules,
+            requested_count=requested_count,
+            allow_repeat=focus_single_rule,
+        )
+        product_topic = (
+            (asset.content_json or {}).get("activity_name")
+            or asset.display_name
+            or DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME
+        )
         resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, asset)
+        quality_guard_profile_key = _resolve_quality_guard_profile_key(asset)
+        source_type = asset.asset_type
         job = ContentBatchJob(
             batch_code=f"batch_{uuid.uuid4().hex[:12]}",
             asset_key=asset.asset_key,
@@ -209,12 +270,15 @@ class ContentBatchPlanner:
             count=limit,
             status="planned",
             strategy_json={
-                "source": PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
+                "source": source_type,
                 "rule_asset_id": asset.id,
                 "rule_asset_version": asset.version_no,
                 "executor": DEFAULT_EXECUTOR_CODE,
                 "generation_mode": "unified_content_generate",
                 "keyword_asset_key": resolved_keyword_asset_key,
+                "quality_guard_profile_key": quality_guard_profile_key,
+                "rule_id_filter": rule_id,
+                "source_row_no_filter": source_row_no,
             },
             diversity_plan_json={
                 "opening_types": OPENING_TYPES,
@@ -228,7 +292,8 @@ class ContentBatchPlanner:
         self.db.add(job)
         await self.db.flush()
 
-        for index, rule in enumerate(rules[:limit]):
+        selected_rules = [rules[index % len(rules)] for index in range(limit)] if focus_single_rule else rules[:limit]
+        for index, rule in enumerate(selected_rules):
             self.db.add(
                 ContentBatchItem(
                     batch_id=job.id,
@@ -239,6 +304,7 @@ class ContentBatchPlanner:
                         asset=asset,
                         item_no=index + 1,
                         keyword_asset_key=resolved_keyword_asset_key,
+                        quality_guard_profile_key=quality_guard_profile_key,
                         model_config=model_config,
                     ),
                 )
@@ -355,20 +421,23 @@ class ContentBatchPlanner:
             "model_config": model_config or {},
         }
 
-    def _product_experience_rule_items(self, asset: AssetRegistry) -> list[dict[str, Any]]:
+    def _article_business_rule_items(self, asset: AssetRegistry) -> list[dict[str, Any]]:
         items = (asset.content_json or {}).get("items")
         return [
             item
             for item in items or []
-            if isinstance(item, dict) and item.get("product_experience") and item.get("corpus")
+            if isinstance(item, dict)
+            and item.get("corpus")
+            and (item.get("product_experience") or item.get("business_rule") or item.get("article_rule"))
         ]
 
-    def _product_experience_generation_limit(
+    def _article_business_generation_limit(
         self,
         asset: AssetRegistry,
         rules: list[dict[str, Any]],
         *,
         requested_count: int,
+        allow_repeat: bool = False,
     ) -> int:
         metadata_limit = (asset.metadata_json or {}).get("default_generation_count")
         content_limit = (asset.content_json or {}).get("default_generation_count")
@@ -377,7 +446,17 @@ class ContentBatchPlanner:
             limit = int(value)
         except (TypeError, ValueError):
             limit = requested_count
-        return max(1, min(limit, len(rules)))
+        limit = max(1, limit)
+        return limit if allow_repeat else min(limit, len(rules))
+
+    def _product_experience_generation_limit(
+        self,
+        asset: AssetRegistry,
+        rules: list[dict[str, Any]],
+        *,
+        requested_count: int,
+    ) -> int:
+        return self._article_business_generation_limit(asset, rules, requested_count=requested_count)
 
     def _product_experience_plan_from_rule(
         self,
@@ -386,43 +465,70 @@ class ContentBatchPlanner:
         asset: AssetRegistry,
         item_no: int,
         keyword_asset_key: str,
+        quality_guard_profile_key: str | None,
         model_config: dict[str, Any] | None,
     ) -> dict[str, Any]:
         zero = item_no - 1
+        asset_content = asset.content_json or {}
+        asset_metadata = asset.metadata_json or {}
+        rule_type = (
+            rule.get("rule_type")
+            or asset_content.get("rule_type")
+            or ("product_experience" if rule.get("product_experience") else "article_business")
+        )
+        diversity_slot = _article_business_diversity_slot(
+            zero,
+            quality_guard_profile_key=quality_guard_profile_key,
+        )
+        selected_examples, example_meta = self._selected_rule_examples(rule)
         return {
-            "rule_type": "product_experience",
+            "rule_type": rule_type,
             "item_no": item_no,
             "asset_key": asset.asset_key,
             "keyword_asset_key": keyword_asset_key,
+            "quality_guard_profile_key": quality_guard_profile_key,
+            "keyword_selection": _resolve_keyword_selection(asset),
+            "generation_requirements": _resolve_generation_requirements(asset),
             "rule_asset_id": asset.id,
             "rule_asset_version": asset.version_no,
             "rule_id": rule.get("rule_id"),
+            "business_rule": rule.get("business_rule"),
+            "article_rule": rule.get("article_rule"),
             "product_experience": rule.get("product_experience"),
             "baby_stage": rule.get("baby_stage"),
             "use_duration": rule.get("use_duration"),
             "topic": rule.get("topic"),
             "corpus": rule.get("corpus"),
-            "examples": rule.get("examples") or [],
+            "examples": selected_examples,
+            "supplements": [],
+            **example_meta,
             "source_row_no": rule.get("source_row_no"),
             "output_fields": ["title", "body"],
-            "diversity_slot": {
-                "opening_type": OPENING_TYPES[zero % len(OPENING_TYPES)],
-                "structure_type": STRUCTURE_TYPES[(zero // len(OPENING_TYPES) + zero) % len(STRUCTURE_TYPES)],
-                "emotion": EMOTIONS[(zero * 2 + zero // 11) % len(EMOTIONS)],
-                "cta_type": CTA_TYPES[(zero * 3 + zero // 13) % len(CTA_TYPES)],
-                "narrative_focus": NARRATIVE_FOCUSES[(zero + zero // len(OPENING_TYPES)) % len(NARRATIVE_FOCUSES)],
-                "content_angle": CONTENT_ANGLES[(zero * 3 + zero // len(OPENING_TYPES)) % len(CONTENT_ANGLES)],
-                "persona_lens": PERSONA_LENSES[(zero + zero // len(PERSONA_LENSES)) % len(PERSONA_LENSES)],
-                "scene_type": SCENE_TYPES[(zero * 2 + zero // len(SCENE_TYPES)) % len(SCENE_TYPES)],
-                "evidence_type": EVIDENCE_TYPES[(zero * 5 + zero // len(EVIDENCE_TYPES)) % len(EVIDENCE_TYPES)],
-                "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
-            },
+            "diversity_slot": diversity_slot,
             "brief_constraints": {
-                "word_count": DEFAULT_CONTENT_WORD_COUNT,
+                "word_count": asset_content.get("word_count")
+                or asset_metadata.get("word_count")
+                or ("50-90" if rule_type == "article_business" else DEFAULT_CONTENT_WORD_COUNT),
                 "emoji": DEFAULT_CONTENT_EMOJI,
                 "output_fields": ["title", "body"],
             },
             "model_config": model_config or {},
+        }
+
+    def _selected_rule_examples(self, rule: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+        examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
+        supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
+        pool = examples or supplements
+        selected_indices = _sample_indices(len(pool), ARTICLE_RULE_EXAMPLE_SAMPLE_COUNT)
+        # 重要逻辑：业务规则资产保留完整示例池，计划层只抽少量例句进入 prompt，
+        # 避免模型把全量真人语料平均成模板或复刻原句。
+        selected = [pool[index] for index in selected_indices]
+        return selected, {
+            "example_pool_count": len(examples),
+            "supplement_pool_count": len(supplements),
+            "example_sample_count": len(selected),
+            "selected_example_source": "examples" if examples else ("supplements" if supplements else "none"),
+            "selected_example_indices": selected_indices,
         }
 
     def _asset_indices(
@@ -526,6 +632,39 @@ def _topic_to_plan_item(topic: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _filter_rules(
+    rules: list[dict[str, Any]],
+    *,
+    rule_id: str | None,
+    source_row_no: int | None,
+) -> list[dict[str, Any]]:
+    normalized_rule_id = str(rule_id or "").strip()
+    normalized_source_row_no = _int_or_none(source_row_no)
+    if not normalized_rule_id and normalized_source_row_no is None:
+        return rules
+    return [
+        rule
+        for rule in rules
+        if (not normalized_rule_id or str(rule.get("rule_id") or "") == normalized_rule_id)
+        and (normalized_source_row_no is None or _int_or_none(rule.get("source_row_no")) == normalized_source_row_no)
+    ]
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sample_indices(pool_size: int, sample_count: int) -> list[int]:
+    if pool_size <= 0 or sample_count <= 0:
+        return []
+    if pool_size <= sample_count:
+        return list(range(pool_size))
+    return sorted(SystemRandom().sample(range(pool_size), sample_count))
+
+
 def _pattern_match_score(
     pattern: dict[str, Any],
     *,
@@ -568,6 +707,30 @@ def _resolve_keyword_asset_key(explicit_key: str | None, asset: AssetRegistry | 
         if normalized:
             return normalized
     return DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
+
+
+def _resolve_quality_guard_profile_key(asset: AssetRegistry | None) -> str | None:
+    for source in ((asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        normalized = _normalize_keyword_asset_key(source.get("quality_guard_profile_key"))
+        if normalized:
+            return normalized
+    return None
+
+
+def _resolve_keyword_selection(asset: AssetRegistry | None) -> dict[str, Any]:
+    for source in ((asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        value = source.get("keyword_selection")
+        if isinstance(value, dict):
+            return dict(value)
+    return {}
+
+
+def _resolve_generation_requirements(asset: AssetRegistry | None) -> str | None:
+    for source in ((asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        normalized = str(source.get("generation_requirements") or "").strip()
+        if normalized:
+            return normalized
+    return None
 
 
 def _normalize_keyword_asset_key(value: Any) -> str | None:

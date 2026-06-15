@@ -91,7 +91,7 @@ export namespace AssetsApi {
     created_asset_ids: number[];
   }
 
-  export interface CommentAngleRuleDraft {
+  export interface CommentBusinessRuleDraft {
     id: number;
     status: string;
     asset_key: string;
@@ -99,7 +99,7 @@ export namespace AssetsApi {
     base_version_no?: null | number;
     rule_id?: null | string;
     source_row_no?: null | number;
-    comment_angle?: null | string;
+    business_rule?: null | string;
     original_corpus?: null | string;
     draft_corpus: string;
     created_by?: null | string;
@@ -108,8 +108,8 @@ export namespace AssetsApi {
     update_time?: null | string;
   }
 
-  export interface CommentAngleRuleDraftPublishResult {
-    draft: CommentAngleRuleDraft;
+  export interface CommentBusinessRuleDraftPublishResult {
+    draft: CommentBusinessRuleDraft;
     asset: AssetRegistry;
   }
 
@@ -248,42 +248,42 @@ export async function applyAssetChangeProposalApi(proposalId: number) {
   );
 }
 
-export async function getCommentAngleRuleDraftsApi(params: {
+export async function getCommentBusinessRuleDraftsApi(params: {
   asset_key: string;
   limit?: number;
   rule_id?: string;
   source_row_no?: number;
 }) {
-  return requestClient.get<AssetsApi.CommentAngleRuleDraft[]>(
-    '/v1/assets/comment-angle-rule-drafts',
+  return requestClient.get<AssetsApi.CommentBusinessRuleDraft[]>(
+    '/v1/assets/comment-business-rule-drafts',
     { params },
   );
 }
 
-export async function saveCommentAngleRuleDraftApi(data: {
+export async function saveCommentBusinessRuleDraftApi(data: {
   asset_key: string;
   created_by?: string;
   draft_corpus: string;
   rule_id?: string;
   source_row_no?: number;
 }) {
-  return requestClient.post<AssetsApi.CommentAngleRuleDraft>(
-    '/v1/assets/comment-angle-rule-drafts',
+  return requestClient.post<AssetsApi.CommentBusinessRuleDraft>(
+    '/v1/assets/comment-business-rule-drafts',
     data,
   );
 }
 
-export async function publishCommentAngleRuleDraftApi(
+export async function publishCommentBusinessRuleDraftApi(
   draftId: number,
   data: { created_by?: string },
 ) {
-  return requestClient.post<AssetsApi.CommentAngleRuleDraftPublishResult>(
-    `/v1/assets/comment-angle-rule-drafts/${draftId}/publish`,
+  return requestClient.post<AssetsApi.CommentBusinessRuleDraftPublishResult>(
+    `/v1/assets/comment-business-rule-drafts/${draftId}/publish`,
     data,
   );
 }
 
-export async function importCommentAngleRuleSetApi(data: {
+export async function importCommentBusinessRuleSetApi(data: {
   asset_key: string;
   created_by?: string;
   display_name?: string;
@@ -297,7 +297,7 @@ export async function importCommentAngleRuleSetApi(data: {
   }
   formData.append('created_by', data.created_by || 'maga-operator');
   return requestClient.post<AssetsApi.AssetImportResult>(
-    '/v1/assets/imports/comment-angle-rule-set',
+    '/v1/assets/imports/comment-business-rule-set',
     formData,
     {
       headers: {

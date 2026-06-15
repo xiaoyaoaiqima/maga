@@ -155,6 +155,81 @@ async def test_run_single_capability_attaches_provider_config_only_to_invoke_env
 
 
 @pytest.mark.asyncio
+async def test_run_content_rewrite_stage_falls_back_to_model_route_when_provider_code_is_stale(db_session):
+    db_session.add(
+        ExecutorRegistry(
+            executor_code="maga_direct_llm_executor",
+            executor_type="direct_llm",
+            invoke_url="https://executor.example.com/invoke",
+            supported_capabilities_json=[
+                {"capability": "content.generate", "schema_version": "1"},
+                {"capability": "content.rewrite", "schema_version": "1"},
+            ],
+        )
+    )
+    db_session.add(
+        LLMProviderConfig(
+            id=1,
+            provider_code="aihubmix",
+            provider_name="AIHubMix",
+            provider_type="openai_compatible",
+            base_url="https://aihubmix.example/v1",
+            api_key="db-key",
+            default_model="deepseek-v4-flash",
+            priority=100,
+            enabled=1,
+        )
+    )
+    db_session.add(
+        LLMModelRoute(
+            id=1,
+            model_code="deepseek-v4-flash",
+            model_name="DeepSeek V4 Flash",
+            provider_code="aihubmix",
+            provider_model="deepseek-v4-flash",
+            priority=100,
+            enabled=1,
+        )
+    )
+    await db_session.flush()
+    invocation_client = FakeInvocationClient(
+        InvokeResult(mode="sync", stage_call_id="stage-fixed", output={"comment": "改写后的评论"})
+    )
+    orchestrator = ContentAgentOrchestrator(
+        db_session,
+        invocation_client=invocation_client,
+        callback_base_url="https://maga.example.com/api/v1/content-agent",
+    )
+    run_result = await orchestrator.run_single_capability(
+        ContentAgentTaskCreate(
+            task_type="content_generate",
+            executor_code="maga_direct_llm_executor",
+            input_snapshot={"content_type": "comment", "model_config": {"model_code": "deepseek-v4-flash"}},
+        ),
+        capability="content.generate",
+    )
+
+    rewrite_result = await orchestrator.run_content_rewrite_stage(
+        run_id=run_result.run.id,
+        executor_code="maga_direct_llm_executor",
+        input_payload={
+            "content_type": "comment",
+            "previous_content": {"comment": "原评论"},
+            "model_config": {"provider_code": "deepseek", "model_code": "deepseek-v4-flash"},
+        },
+    )
+
+    outbound_model_config = invocation_client.calls[-1]["envelope"]["input"]["model_config"]
+    assert outbound_model_config["provider_code"] == "aihubmix"
+    assert outbound_model_config["base_url"] == "https://aihubmix.example/v1"
+    assert outbound_model_config["api_key"] == "db-key"
+    assert rewrite_result.stage_calls[0].input_snapshot["model_config"] == {
+        "provider_code": "deepseek",
+        "model_code": "deepseek-v4-flash",
+    }
+
+
+@pytest.mark.asyncio
 async def test_run_single_capability_uses_direct_llm_executor_without_worker(db_session, monkeypatch):
     async def fake_call(**kwargs):
         return '{"title":"直连标题","body":"直连正文"}'

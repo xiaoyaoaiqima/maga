@@ -452,10 +452,10 @@ async function runPreview() {
       business_rule: {
         rule_type:
           previewContentType.value === 'comment'
-            ? 'comment_angle'
+            ? 'business_rule'
             : 'product_experience',
-        comment_angle:
-          previewContentType.value === 'comment' ? '预览评论切角' : undefined,
+        business_rule:
+          previewContentType.value === 'comment' ? '预览业务规则' : undefined,
         product_experience:
           previewContentType.value === 'article'
             ? '预览产品使用体验'

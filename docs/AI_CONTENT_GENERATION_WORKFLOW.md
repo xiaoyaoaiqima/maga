@@ -26,7 +26,7 @@ Demo 主线调整为：
 
 这里的 `expert` 不是人设，也不是业务规则；它是“提示词模版 + 模型参数配置”。业务规则负责告诉模型写什么，系统提示词关键词负责告诉模型怎么写，expert 负责把这些输入组装成最终提示词。
 
-通用系统关键词要保持轻量，尤其是 `人设`、`生文指令`、`生评论指令`、`扰动规则`、`格式控制/评论格式控制` 这些与具体业务事实无关的类别。它们只描述语气、生成动作、随机性和输出形态，不承载产品卖点、活动机制、剧情事实、禁写清单或重业务边界。重业务规则应放在业务规则包或评论切角语料里；可跨业务复用的表达边界放到表达写作规则；必须强约束的底线再放到硬性规则。
+通用系统关键词要保持轻量，尤其是 `人设`、`生文指令`、`生评论指令`、`扰动规则`、`格式控制/评论格式控制` 这些与具体业务事实无关的类别。它们只描述语气、生成动作、随机性和输出形态，不承载产品卖点、活动机制、剧情事实、禁写清单或重业务边界。重业务规则应放在业务规则包或业务规则语料里；可跨业务复用的表达边界放到表达写作规则；必须强约束的底线再放到硬性规则。
 
 系统关键词可以维护全局子关键词池，具体业务规则包通过 `keyword_selection` 圈选本次可用子集。例如剧情讨论评论可以从全局 `人设` 池中只圈选 `家庭妈妈`、`经验型妈妈`、`碎碎念妈妈`、`新手妈妈`、`职场妈妈`，生成时只在这个子集里轮换；不要为了单个业务复制一套重系统关键词。
 
@@ -34,23 +34,23 @@ Demo 主线调整为：
 
 ### 源悦活动评论
 
-源悦活动评论使用评论切角规则包：
+源悦活动评论使用业务规则规则包：
 
-- 资产类型：`comment_angle_rule_set`
+- 资产类型：`comment_business_rule_set`
 - 默认 `asset_key`：`yuanyue_comment_activity`
-- 本地规则来源：`批量生成/评论切角_子关键词导出.csv`
-- 历史兼容来源：`源悦种草活动-ai训练规则-评论切角.csv`
+- 本地规则来源：`批量生成/业务规则_子关键词导出.csv`
+- 历史兼容来源：`源悦种草活动-ai训练规则-业务规则.csv`
 - 默认生成主题：`美素佳儿源悦活动评论`
 - Demo 默认生成前 10 条规则对应的评论
 
 每行规则保存：
 
-- `评论切角`
+- `业务规则`
 - `语料`
 - 可选 `评论示例`
 - 可选 `评论补充`
 
-生成时每条 item 的计划中带完整切角规则、语料、示例和补充。系统再自动选择启用的系统提示词关键词，并把最终组装结果写入 `plan_json.unified_generation`，worker 只输出评论正文。
+生成时每条 item 的计划中带完整业务规则规则、语料、示例和补充。系统再自动选择启用的系统提示词关键词，并把最终组装结果写入 `plan_json.unified_generation`，worker 只输出评论正文。
 
 ### 源悦活动生文
 
@@ -69,10 +69,10 @@ Demo 主线调整为：
 
 ### 妈妈班活动
 
-妈妈班活动规则包是另一类活动内容规则，不和源悦评论切角混用。
+妈妈班活动规则包是另一类活动内容规则，不和源悦业务规则混用。
 
 - 妈妈班活动使用妈妈班活动内容规则。
-- 源悦活动评论使用评论切角规则。
+- 源悦活动评论使用业务规则规则。
 - 源悦活动生文使用产品使用体验规则。
 - 各类规则包分开导入、分开管理、分开生成。
 
@@ -80,7 +80,7 @@ Demo 主线调整为：
 
 规则要轻，示例负责横向扩展。
 
-运营写规则时不需要把所有角度拆成复杂表单，也不要把提示词写成死板大纲。一个规则块只说明这个切角在聊什么、语气像什么、边界在哪里；多样性主要靠示例增加，而不是靠堆更多限制。
+运营写规则时不需要把所有角度拆成复杂表单，也不要把提示词写成死板大纲。一个规则块只说明这个业务规则在聊什么、语气像什么、边界在哪里；多样性主要靠示例增加，而不是靠堆更多限制。
 
 当生成结果重复时，优先补充更多不同方向的自然示例；不要把规则改成很长的“必须/只能/固定写法”。
 
@@ -121,15 +121,15 @@ PYTHONPATH=. ../.venv/bin/python scripts/update_asset_config.py \
 
 默认发布模式是 `--mode new-version`：归档旧 active 资产，复制一份新 active 版本并写入配置，脚本会在 `.local/asset-config-backups` 保存旧版本备份。只在本地快速试验时使用 `--mode in-place`。
 
-如果只需要修改某一条评论切角语料，使用 `platform-server/scripts/update_comment_angle_rule_item.py`，避免手写 SQL 或临时脚本。它支持按 `rule_id`、`source_row_no` 或 `comment_angle` 定位 `content_json.items[]` 里的单条规则；默认 dry-run，真正发布需加 `--apply`。
+如果只需要修改某一条业务规则语料，使用 `platform-server/scripts/update_comment_business_rule_item.py`，避免手写 SQL 或临时脚本。它支持按 `rule_id`、`source_row_no` 或 `business_rule` 定位 `content_json.items[]` 里的单条规则；默认 dry-run，真正发布需加 `--apply`。
 
 查看当前语料：
 
 ```bash
 cd platform-server
-PYTHONPATH=. ../.venv/bin/python scripts/update_comment_angle_rule_item.py \
+PYTHONPATH=. ../.venv/bin/python scripts/update_comment_business_rule_item.py \
   --asset-key a2_sentiment_comment_activity \
-  --rule-id comment_angle_015 \
+  --rule-id business_rule_015 \
   --show-current
 ```
 
@@ -137,20 +137,20 @@ PYTHONPATH=. ../.venv/bin/python scripts/update_comment_angle_rule_item.py \
 
 ```bash
 cd platform-server
-PYTHONPATH=. ../.venv/bin/python scripts/update_comment_angle_rule_item.py \
+PYTHONPATH=. ../.venv/bin/python scripts/update_comment_business_rule_item.py \
   --asset-key a2_sentiment_comment_activity \
-  --rule-id comment_angle_015 \
-  --corpus-file /tmp/comment_angle_015.txt
+  --rule-id business_rule_015 \
+  --corpus-file /tmp/business_rule_015.txt
 ```
 
 发布单条更新：
 
 ```bash
 cd platform-server
-PYTHONPATH=. ../.venv/bin/python scripts/update_comment_angle_rule_item.py \
+PYTHONPATH=. ../.venv/bin/python scripts/update_comment_business_rule_item.py \
   --asset-key a2_sentiment_comment_activity \
-  --rule-id comment_angle_015 \
-  --corpus-file /tmp/comment_angle_015.txt \
+  --rule-id business_rule_015 \
+  --corpus-file /tmp/business_rule_015.txt \
   --apply
 ```
 
@@ -164,10 +164,10 @@ PYTHONPATH=. ../.venv/bin/python scripts/update_comment_angle_rule_item.py \
 
 运营可以在这里管理多个业务规则包，例如 `源悦-评论` 和 `源悦-生文`。不同生文需求可以使用不同 `asset_key` 单独上传和版本化。
 
-### 导入评论切角规则包
+### 导入业务规则规则包
 
 ```http
-POST /api/v1/assets/imports/comment-angle-rule-set
+POST /api/v1/assets/imports/comment-business-rule-set
 ```
 
 请求：
@@ -267,7 +267,7 @@ GET /api/v1/assets/exports/content-generation-keywords
 
 每个关键词类别默认自动轮换选择 1 个启用子关键词；当某次活动需要稳定使用某个方向时，可以把类别的选择模式改为“固定选择”，并指定 `固定子关键词Code`。固定选择只影响该类别，其他类别仍可继续自动轮换。
 
-Prompt 预览用于在保存前查看“业务规则 + 当前页面关键词配置 + expert 模版”最终组装出的 prompt，帮助运营确认语料是否真的进入了生成上下文。预览时需要额外检查系统关键词是否过重：如果 `人设`、`生文指令/生评论指令`、`扰动规则` 或 `格式控制/评论格式控制` 里出现具体产品、活动、剧情、门店、禁写长清单，优先移回业务规则包、评论切角、表达写作规则或硬性规则。
+Prompt 预览用于在保存前查看“业务规则 + 当前页面关键词配置 + expert 模版”最终组装出的 prompt，帮助运营确认语料是否真的进入了生成上下文。预览时需要额外检查系统关键词是否过重：如果 `人设`、`生文指令/生评论指令`、`扰动规则` 或 `格式控制/评论格式控制` 里出现具体产品、活动、剧情、门店、禁写长清单，优先移回业务规则包、业务规则、表达写作规则或硬性规则。
 
 ## 生文 Expert 管理
 
@@ -297,9 +297,9 @@ Prompt 预览用于在保存前查看“业务规则 + 当前页面关键词配�
 
 - `ContentBatchJob.product_topic`：`美素佳儿源悦活动评论`
 - `ContentBatchJob.product_topic`：文章为 `美素佳儿源悦活动生文`
-- `ContentBatchItem.title`：评论存评论切角，文章存生成标题
+- `ContentBatchItem.title`：评论存业务规则，文章存生成标题
 - `ContentBatchItem.body`：生成正文
-- `ContentBatchItem.plan_json.rule_type`：评论为 `comment_angle`，文章为 `product_experience`
+- `ContentBatchItem.plan_json.rule_type`：评论为 `business_rule`，文章为 `product_experience`
 
 暂不新增独立评论表。后续如果评论审核、投放、归因需要独立生命周期，再单独建表。
 
@@ -350,15 +350,15 @@ content.rewrite
 ## Demo 流程
 
 1. 打开内容生成工作台。
-2. 上传文章规则包 `关键词语料/产品使用体验_子关键词导出.csv`，或上传评论规则包 `批量生成/评论切角_子关键词导出.csv`。
+2. 上传文章规则包 `关键词语料/产品使用体验_子关键词导出.csv`，或上传评论规则包 `批量生成/业务规则_子关键词导出.csv`。
 3. 查看导入摘要：规则条数、示例数量、默认生成量、风险提示。
-4. 点击“按业务规则包生成文章”或“按评论切角生成评论”。
+4. 点击“按业务规则包生成文章”或“按业务规则生成评论”。
 5. 在批量报告中查看每条内容、对应规则和执行 trace。
 6. 运营对内容做通过、修改意见、人工编辑保存，或把不希望出现的词加入业务违禁词。
 
 ## 回归边界
 
-- 源悦评论切角只走 `comment_angle_rule_set`。
+- 源悦业务规则只走 `comment_business_rule_set`。
 - 妈妈班活动规则包继续作为活动内容规则，不被评论生成读取。
 - 产品使用体验生文入口走 `/content-agent/batches/start`，主执行链路已经统一到 `content.generate`。
 - 旧 `xhs.*` chain、`comment.generate`、单篇 `/generation/start` 已下线；文章和评论统一使用 `content.generate`，审核改写统一使用 `content.rewrite`。
