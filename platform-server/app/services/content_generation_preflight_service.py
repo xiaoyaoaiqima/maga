@@ -456,7 +456,7 @@ def _usable_rule_count(asset: AssetRegistry) -> int:
             for item in items or []
             if isinstance(item, dict)
             and item.get("corpus")
-            and (item.get("product_experience") or item.get("business_rule") or item.get("article_rule"))
+            and (item.get("business_rule") or item.get("article_rule"))
         )
     return 0
 

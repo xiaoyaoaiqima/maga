@@ -225,8 +225,8 @@ def _mock_unified_content_generation(input_payload: dict[str, Any]) -> dict[str,
 
     business_rule = input_payload.get("business_rule") or {}
     selected = input_payload.get("selected_keywords") or []
-    topic = business_rule.get("product_topic") or business_rule.get("product_experience") or "源悦体验"
-    target = business_rule.get("target_audience") or business_rule.get("baby_stage") or "妈妈"
+    topic = business_rule.get("product_topic") or business_rule.get("business_rule") or "业务规则"
+    target = business_rule.get("target_audience") or "妈妈"
     persona = _selected_keyword_name(selected, "persona") or "真实妈妈"
     method = _selected_keyword_name(selected, "writing_method") or "自然表达"
     return {

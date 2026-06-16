@@ -249,6 +249,37 @@ def test_comment_focus_selection_repeats_rules_for_requested_count():
     assert all(rule["business_rule"] == "整体适应" for rule in selected)
 
 
+def test_a2_supply_transfer_short_reply_rule_overrides_half_item_keyword_selection():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rule = {
+        "business_rule": "A2舆情改善评论",
+        "corpus": "写什么：妈妈说自己等到或买到 a2 了，所以先继续喝 a2，转奶先放一放。\n怎么说：像评论区接一句或顺手报个信，可以很短，不用把流程都讲全。",
+        "examples": ["终于到了", "先不转了", "有底了"],
+        "source_row_no": 16,
+    }
+    asset = SimpleNamespace(
+        id=7,
+        version_no=3,
+        asset_key="a2_sentiment_comment_activity",
+        content_json={
+            "keyword_selection": {
+                "comment_format_control": ["comment_short_clean", "comment_21_35"],
+                "comment_speaking_style": ["pass_info"],
+            }
+        },
+        metadata_json={},
+    )
+
+    plans = [service._plan_from_rule(rule, asset=asset, item_no=item_no) for item_no in range(1, 7)]
+
+    short_plans = [plan for plan in plans if plan["keyword_selection"]["comment_format_control"] == ["comment_thread_short_reply"]]
+    assert [plan["item_no"] for plan in short_plans] == [2, 4, 6]
+    assert all("half_sentence_reply" in plan["keyword_selection"]["comment_speaking_style"] for plan in short_plans)
+    assert all(plan["keyword_selection_override"]["reason"] == "supply_transfer_thread_short_reply" for plan in short_plans)
+    assert plans[0]["keyword_selection"]["comment_format_control"] == ["comment_short_clean", "comment_21_35"]
+    assert asset.content_json["keyword_selection"]["comment_format_control"] == ["comment_short_clean", "comment_21_35"]
+
+
 def test_comment_single_rule_filter_supports_by_case_generation():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
     rules = [
@@ -293,17 +324,18 @@ def test_comment_draft_rule_override_keeps_active_rule_unchanged():
     assert rules[0]["corpus"] == "旧语料"
     assert rules[0]["examples"] == ["旧示例"]
     assert updated[0]["corpus"].startswith("新语料")
+    assert "示例：" not in updated[0]["corpus"]
     assert updated[0]["examples"] == ["新示例1", "新示例2"]
     assert updated[0]["draft_rule_override"]["enabled"] is True
 
 
-def test_comment_plan_injects_one_reference_example_from_pool():
+def test_comment_plan_injects_three_reference_examples_from_pool():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
     rule = {
         "rule_id": "business_rule_001",
         "business_rule": "便便问题",
         "corpus": "像评论区宝妈接话，聊便便频率和软硬。",
-        "examples": ["同款，崽崽都是香蕉软便便", "加一，现在固定一天一次"],
+        "examples": ["同款，崽崽都是香蕉软便便", "加一，现在固定一天一次", "我家最近也顺了", "蹲一个真实反馈"],
         "supplements": ["我家拉得挺轻松的，没有那么费劲"],
         "source_row_no": 1,
     }
@@ -311,14 +343,15 @@ def test_comment_plan_injects_one_reference_example_from_pool():
 
     plan = service._plan_from_rule(rule, asset=asset, item_no=1)
 
-    assert len(plan["examples"]) == 1
-    assert plan["examples"][0] in rule["examples"]
+    assert plan["render_reference_examples"] is True
+    assert len(plan["examples"]) == 3
+    assert set(plan["examples"]).issubset(set(rule["examples"]))
     assert plan["supplements"] == []
-    assert plan["example_pool_count"] == 2
+    assert plan["example_pool_count"] == 4
     assert plan["supplement_pool_count"] == 1
-    assert plan["example_sample_count"] == 1
+    assert plan["example_sample_count"] == 3
     assert plan["selected_example_source"] == "examples"
-    assert len(plan["selected_example_indices"]) == 1
+    assert len(plan["selected_example_indices"]) == 3
 
 
 def test_comment_plan_copies_generation_requirements_from_rule_asset():
@@ -486,6 +519,52 @@ def test_comment_micro_batch_check_reply_has_empty_generation_fallback():
 
     assert fallback == "准备转回来先看罐底报告"
     assert 8 <= len(fallback) <= 32
+
+
+def test_comment_thread_short_reply_caps_generated_comment_at_twelve_chars():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    item = ContentBatchItem(
+        item_no=4,
+        plan_json={
+            "keyword_selection": {"comment_format_control": ["comment_thread_short_reply"]},
+        },
+    )
+
+    normalized = service._normalize_comment_length(item, "导购刚说我的a2到了，先继续喝着，换奶啥的晚点再想吧。")
+
+    assert normalized == "导购刚说我的a2到了"
+    assert len(normalized) <= 12
+    assert service._comment_max_chars(item) == 12
+
+
+def test_comment_thread_short_reply_replaces_dangling_overlong_clause():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    item = ContentBatchItem(
+        item_no=8,
+        plan_json={
+            "keyword_selection": {"comment_format_control": ["comment_thread_short_reply"]},
+        },
+    )
+
+    normalized = service._normalize_comment_length(item, "问了几家店，先继续喝这个吧，转奶的事后面再说。")
+
+    assert normalized == "不折腾了"
+    assert 3 <= len(normalized) <= 12
+
+
+def test_comment_thread_short_reply_has_empty_generation_fallback():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    item = ContentBatchItem(
+        item_no=5,
+        plan_json={
+            "keyword_selection": {"comment_format_control": ["comment_thread_short_reply"]},
+        },
+    )
+
+    fallback = service._fallback_empty_thread_short_reply(item)
+
+    assert fallback == "等发货中"
+    assert 3 <= len(fallback) <= 12
 
 
 def test_comment_micro_batch_check_reply_keeps_too_short_comment_for_guard_or_rewrite():
@@ -1263,6 +1342,7 @@ def test_a2_activity_guard_accepts_uppercase_a2_zhichu_product_name():
         ("如果能补到a2，是不是就没必要急着换", "activity_body_ai_template_conditional_question"),
         ("能买到a2的话，是不是先拍一罐比较稳", "activity_body_ai_template_conditional_question"),
         ("囤这罐接着喝就安心了，先不急着换", "activity_body_brand_bad_stock_wording"),
+        ("旧的那罐囤货喝完再说", "activity_body_brand_bad_stock_wording"),
         ("宝妈们可以多跑两家店看看，我这边也能订到了", "activity_body_brand_bad_stock_wording"),
         ("我这边a2还没消息，你们问到货了吗", "activity_body_brand_bad_stock_wording"),
         ("我这边还没看到有a2，大家有消息吗", "activity_body_brand_bad_stock_wording"),
@@ -1372,6 +1452,20 @@ def test_a2_activity_guard_keeps_natural_stockpile_quantity_wording():
     assert payload["pass"] is True
     assert item.body == "a2有货了，我赶紧囤几罐接着喝"
     assert not any(repair.get("source") == "几罐" for repair in payload["repairs"])
+
+
+def test_a2_activity_guard_keeps_take_one_can_wording_natural():
+    item = ContentBatchItem(
+        body="店里说有货，我先拿一罐a2接着喝",
+        plan_json=_a2_guard_plan("有货后准备转奶：\n关键词方向是有货+转奶，像妈妈看到有货后先做转奶功课。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert "补货拿" not in item.body
+    assert not any(repair.get("replacement") == "补货拿" for repair in payload["repairs"])
 
 
 @pytest.mark.asyncio
@@ -2533,6 +2627,78 @@ def test_a2_activity_guard_accepts_contextual_this_can_tested_short_comment():
     assert not payload["issues"]
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        "这次a2的检测报告列得挺清楚的。",
+        "刚对比了下，a2这批的检测报告挺细的，看到这样心里踏实些。",
+        "a2这次能直接扫到报告，省心点。",
+        "这批检测报告挺详细的，蜡样检测也有，透明多了。",
+    ],
+)
+def test_a2_activity_guard_accepts_report_detail_short_comments(body):
+    item = ContentBatchItem(
+        body=body,
+        plan_json=_a2_guard_plan("检测报告更透明：\n关键词方向是有货+批批检，像妈妈短短聊这批检测报告。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_accepts_generic_batch_report_confidence_sentence():
+    item = ContentBatchItem(
+        body="这个批次有检测报告，心里有数了。",
+        plan_json=_a2_guard_plan("检测报告更透明：\n关键词方向是有货+批批检，像妈妈短短聊这批检测报告。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_accepts_short_report_detail_without_subject():
+    item = ContentBatchItem(
+        body="这次检测报告挺详细的。",
+        plan_json=_a2_guard_plan("检测报告更透明：\n关键词方向是有货+批批检，像妈妈短短聊这批检测报告。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_soft_repairs_that_batch_report_wording():
+    item = ContentBatchItem(
+        body="补货前扫一下罐底，那批报告就跳出来了",
+        plan_json=_a2_guard_plan("检测报告更透明：\n关键词方向是有货+批批检，像妈妈短短聊这批检测报告。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert "那批报告" not in item.body
+    assert "这批报告" in item.body
+    assert any(repair["source"] == "那批报告" and repair["replacement"] == "这批报告" for repair in payload["repairs"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+
+
 def test_a2_activity_guard_accepts_every_batch_check_short_comment_without_emotion_word():
     item = ContentBatchItem(
         body="这次补a2是因为听店员说他们每批都查，不是抽测",
@@ -2708,6 +2874,68 @@ def test_a2_activity_guard_rejects_vague_deictic_comment_without_product():
     assert payload is not None
     assert payload["pass"] is False
     assert any(issue["code"] == "activity_body_vague_deictic_without_product" for issue in payload["issues"])
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "终于到了",
+        "我的也快到了",
+        "先不转了",
+        "有底了",
+        "我也等发货",
+        "等发货中",
+        "能不换就不换",
+        "转奶先放放",
+        "不折腾了",
+        "a2终于到了",
+        "刚看到a2到了",
+        "a2到了，不过不着急转",
+        "刚看到a2能拍了",
+        "我的也到了，先喝着旧的",
+        "到货了先不急着换",
+        "a2刚到了，先不急着换",
+        "我的到货了，先喝着a2",
+        "刚看到a2到货了",
+        "a2到货了，转奶先缓缓",
+        "刚刷到a2有货了",
+        "刚问了一下，a2到了",
+        "刚问了客服说a2有货了",
+        "刚问柜姐说有货了，立马去下单",
+        "刚问了几家店都说有货",
+        "刚问了导购，说a2到了",
+        "昨天导购说到货了",
+        "我订的那罐也到了",
+    ],
+)
+def test_a2_activity_guard_accepts_contextual_supply_transfer_short_replies(body):
+    item = ContentBatchItem(
+        body=body,
+        plan_json=_a2_guard_plan("有货后继续原来的：\n关键词方向是有货+转奶，像妈妈在评论区短接楼。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_incomplete_comment" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_vague_deictic_without_product" for issue in payload["issues"])
+
+
+@pytest.mark.parametrize("body", ["导", "这个挺好", "先喝着", "再等等"])
+def test_a2_activity_guard_rejects_empty_short_replies(body):
+    item = ContentBatchItem(
+        body=body,
+        plan_json=_a2_guard_plan("有货后继续原来的：\n关键词方向是有货+转奶，像妈妈在评论区短接楼。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is False
+    assert any(issue["code"] == "activity_body_incomplete_comment" for issue in payload["issues"])
 
 
 def test_a2_activity_guard_rejects_scan_before_can_in_hand():
@@ -3713,6 +3941,29 @@ async def test_a2_comment_realness_review_allows_real_report_sentiment_wording()
 
 
 @pytest.mark.asyncio
+async def test_a2_comment_realness_rewrites_stiff_003_value_wording():
+    item = ContentBatchItem(
+        title="批批检+转奶",
+        body="a2物流码扫出来能看蜡样那项，数值0.03，算是个参考依据",
+        plan_json={
+            "asset_key": "a2_sentiment_comment_activity",
+            "quality_guard_profile_key": "a2_sentiment_comment_202606",
+        },
+        quality_json={"hard_pass": True},
+    )
+
+    payload = await CommentRealnessReviewService().review_and_rewrite_item(
+        item=item,
+        orchestrator=None,
+        executor_code=None,
+    )
+
+    assert "数值0.03" in payload["initial_hits"]
+    assert "数值0.03" not in item.body
+    assert "<0.03这个数" in item.body
+
+
+@pytest.mark.asyncio
 async def test_a2_comment_realness_review_catches_stiff_report_summary_wording():
     item = ContentBatchItem(
         title="有货+批批检",
@@ -3954,7 +4205,7 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
     assert report["asset_key"] == "yuanyue_comment_activity"
     assert report["product_topic"] == "美素佳儿源悦活动评论"
     assert report["items"][0]["title"] == "整体适应"
-    assert report["items"][0]["body"] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
+    assert report["items"][0]["body"] == "我家刚开始也在看源悦"
     assert report["items"][0]["quality"]["rule_type"] == "business_rule"
     assert report["items"][0]["generation_snapshot"]["rule_type"] == "business_rule"
     assert report["items"][0]["generation_snapshot"]["business_rule"]["business_rule"] == "整体适应"
@@ -3971,11 +4222,12 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
         ).scalars().first()
 
     assert item.plan_json["rule_type"] == "business_rule"
-    assert item.plan_json["render_reference_examples"] is False
+    assert item.plan_json["render_reference_examples"] is True
     assert item.plan_json["business_rule"] == "整体适应"
     assert "像妈妈在评论区聊刚开始喝源悦" in item.plan_json["corpus"]
     assert item.plan_json["examples"] == ["我家刚开始也在看源悦，想蹲蹲真实反馈"]
-    assert "- 参考示例：" not in item.plan_json["unified_generation"]["rendered_prompt"]
+    assert "- 示例：" in item.plan_json["unified_generation"]["rendered_prompt"]
+    assert "我家刚开始也在看源悦，想蹲蹲真实反馈" in item.plan_json["unified_generation"]["rendered_prompt"]
     assert item.plan_json["unified_generation"]["capability"] == "content.generate"
     assert [kw["category_code"] for kw in item.plan_json["unified_generation"]["selected_keywords"]] == [
         "comment_generation_requirement",
@@ -4101,6 +4353,7 @@ async def test_batch_report_can_export_generated_results_excel(content_agent_wor
     assert overview["A1"].value == "字段"
     assert overview["B5"].value == "美素佳儿源悦活动评论"
     assert result["A1"].value == "序号"
+    assert result["C1"].value == "标题"
     assert result["D1"].value == "正文"
     assert result["D2"].value == "我家刚开始也在看源悦，想蹲蹲真实反馈"
     assert result["R1"].value == "系统语料包"
@@ -4259,7 +4512,7 @@ async def test_a2_comment_batch_applies_activity_quality_guard_and_article_pool_
 
 
 @pytest.mark.asyncio
-async def test_article_batch_can_start_from_product_experience_rule_asset_key_only(content_agent_workbench_client):
+async def test_article_batch_can_start_from_article_business_rule_asset_key_only(content_agent_workbench_client):
     client, session_factory = content_agent_workbench_client
     response = await client.post(
         "/api/v1/content-agent/batches/start",
@@ -4285,8 +4538,9 @@ async def test_article_batch_can_start_from_product_experience_rule_asset_key_on
             )
         ).scalars().first()
 
-    assert item.plan_json["rule_type"] == "product_experience"
-    assert item.plan_json["product_experience"] == "0-6个月，3个月内，奶量补充"
+    assert item.plan_json["rule_type"] == "business_rule"
+    assert item.plan_json["business_rule"] == "奶量补充"
+    assert "product_experience" not in item.plan_json
     assert item.plan_json["unified_generation"]["capability"] == "content.generate"
     assert [kw["category_code"] for kw in item.plan_json["unified_generation"]["selected_keywords"]] == [
         "persona",
@@ -5015,32 +5269,28 @@ def _yuanyue_assets() -> list[AssetRegistry]:
             },
         ),
         AssetRegistry(
-            asset_type="product_experience_rule_set",
+            asset_type="article_business_rule_set",
             asset_key="yuanyue_product_experience",
-            display_name="源悦产品使用体验规则",
+            display_name="源悦生文业务规则",
             version_no=1,
             status="active",
             asset_stage="production",
             content_json={
-                "rule_type": "product_experience",
+                "rule_type": "business_rule",
                 "activity_name": "美素佳儿源悦活动生文",
                 "default_generation_count": 10,
                 "items": [
                     {
-                        "rule_id": "product_experience_001",
-                        "product_experience": "0-6个月，3个月内，奶量补充",
-                        "baby_stage": "0-6个月",
-                        "use_duration": "3个月内",
+                        "rule_id": "business_rule_001",
+                        "business_rule": "奶量补充",
                         "topic": "奶量补充",
-                        "corpus": "围绕0-6个月宝宝的奶量补充体验自然展开。",
+                        "corpus": "围绕宝宝的奶量补充体验自然展开。",
                         "examples": ["刚换源悦那阵子，喂奶没之前那么拉扯。"],
                         "source_row_no": 1,
                     },
                     {
-                        "rule_id": "product_experience_002",
-                        "product_experience": "7-12个月，3-6个月，消化吸收",
-                        "baby_stage": "7-12个月",
-                        "use_duration": "3-6个月",
+                        "rule_id": "business_rule_002",
+                        "business_rule": "消化吸收",
                         "topic": "消化吸收",
                         "corpus": "围绕喝完后的肚肚状态和便便节奏自然展开。",
                         "examples": ["主要看喝完后的肚肚状态和便便节奏。"],
@@ -5049,7 +5299,7 @@ def _yuanyue_assets() -> list[AssetRegistry]:
                 ],
             },
             metadata_json={
-                "rule_type": "product_experience",
+                "rule_type": "business_rule",
                 "default_generation_count": 10,
                 "rule_count": 2,
                 "example_count": 2,

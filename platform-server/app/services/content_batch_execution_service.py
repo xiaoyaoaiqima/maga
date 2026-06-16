@@ -16,6 +16,11 @@ from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.executor_invocation_service import ExecutorInvocationClient
 from app.services.activity_quality_guard_service import ActivityQualityGuardService
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService
+from app.services.product_experience_phrase_guard_service import (
+    ProductExperiencePhraseReview,
+    review_product_experience_phrase,
+    should_review_product_experience,
+)
 from app.services.unified_content_generation_service import (
     CONTENT_GENERATE_CAPABILITY,
     UnifiedContentGenerationService,
@@ -24,7 +29,44 @@ from app.services.unified_content_generation_service import (
 SIMILARITY_REWRITE_THRESHOLD = 0.42
 HISTORY_SIMILARITY_REWRITE_THRESHOLD = 0.48
 MAX_SIMILARITY_REWRITE_ROUNDS = 2
+MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS = 1
 HISTORY_SIMILARITY_LOOKBACK_LIMIT = 50
+TITLE_GUARD_FORBIDDEN_SUBSTRINGS = (
+    "这杯",
+    "安排上",
+    "留着",
+    "省心",
+    "踏实",
+    "安心",
+    "老母亲",
+    "搭子",
+    "别踩坑",
+    "我这样",
+    "选对了",
+    "悄悄",
+    "成长关键期",
+    "日常保护力",
+    "营养后路",
+    "精力不够别硬撑",
+    "妈妈坦白说",
+    "幼儿园季",
+    "户外放电",
+    "看过来",
+    "跟风",
+    "坐得住了",
+    "坐不住",
+    "专注力提升",
+    "少请假",
+    "不生病",
+    "长高",
+    "窜个",
+    "旺玥4段",
+)
+TITLE_GUARD_BAD_PATTERNS = (
+    re.compile(r"(?:我家|孩子|娃).{0,6}(?:快|刚)?[0-9一二三四五六七八九十]+个?月了"),
+    re.compile(r"[0-9一二三四五六七八九十]+个月宝宝"),
+    re.compile(r"[0-9一二三四五六七八九十]+个月\+?旺玥"),
+)
 
 
 def _default_unified_review_report() -> dict[str, Any]:
@@ -109,6 +151,8 @@ class ContentBatchExecutionService:
 
         results = await asyncio.gather(*(run_item(item_id) for item_id in item_ids))
         await self._rewrite_similar_generated_items(batch_id, job)
+        await self._rewrite_product_experience_phrase_items(batch_id, job)
+        await self._repair_generated_titles(batch_id, job)
         generated = sum(1 for result in results if result.generated)
         failed = sum(1 for result in results if result.failed)
 
@@ -251,6 +295,63 @@ class ContentBatchExecutionService:
             raise ValueError("batch item not found")
         return item
 
+    async def _repair_article_length_if_needed(
+        self,
+        item: ContentBatchItem,
+        *,
+        orchestrator: ContentAgentOrchestrator,
+        run_id: int,
+    ) -> dict[str, Any] | None:
+        target = _article_length_target(item.plan_json or {})
+        if not target:
+            return None
+        kind, min_chars, max_chars = target
+        before_chars = _compact_len(item.body)
+        if min_chars <= before_chars <= max_chars:
+            return None
+        after_chars = before_chars
+        attempts = 0
+        last_error = None
+        for attempts in range(1, 3):
+            rewrite_input = _length_rewrite_input(
+                item,
+                kind=kind,
+                min_chars=min_chars,
+                max_chars=max_chars,
+                before_chars=after_chars,
+                rewrite_round=attempts,
+            )
+            try:
+                result = await orchestrator.run_content_rewrite_stage(
+                    run_id=run_id,
+                    executor_code=self.executor_code,
+                    input_payload=rewrite_input,
+                )
+            except Exception as exc:  # noqa: BLE001 - keep generated item when optional repair fails
+                last_error = str(exc)
+                break
+            output = result.output or {}
+            final = output.get("final") if isinstance(output.get("final"), dict) else {}
+            title = str(output.get("title") or final.get("title") or "").strip()
+            body = str(output.get("body") or final.get("body") or "").strip()
+            if title:
+                item.title = title
+            if body:
+                item.body = body
+            after_chars = _compact_len(item.body)
+            if min_chars <= after_chars <= max_chars:
+                break
+        return {
+            "kind": kind,
+            "before_chars": before_chars,
+            "after_chars": after_chars,
+            "target_min": min_chars,
+            "target_max": max_chars,
+            "attempts": attempts,
+            **({"error": last_error} if last_error else {}),
+            "status": "passed" if min_chars <= after_chars <= max_chars else "still_out_of_range",
+        }
+
     def _executor_label(self, stage_calls: list[Any]) -> str:
         for stage_call in stage_calls:
             output = getattr(stage_call, "output_snapshot", None) or {}
@@ -283,6 +384,215 @@ class ContentBatchExecutionService:
                     if review_report.get("similarity_rewrite_passed") is True:
                         break
             return rewrite_count
+
+    async def _repair_generated_titles(self, batch_id: int, job: ContentBatchJob) -> int:
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(ContentBatchItem)
+                .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
+                .order_by(ContentBatchItem.item_no)
+            )
+            items = list(result.scalars().all())
+            if not _should_apply_title_guard(job, items):
+                return 0
+
+            used_titles: set[str] = set()
+            repair_count = 0
+            for item in items:
+                reasons = _title_guard_reasons(item.title or "", used_titles)
+                if not reasons:
+                    used_titles.add(_normalize_title(item.title or ""))
+                    continue
+
+                before = item.title or ""
+                item.title = _fallback_title_for_item(item, used_titles)
+                used_titles.add(_normalize_title(item.title or ""))
+                quality = dict(item.quality_json or {})
+                repairs = list(quality.get("title_guard_repairs") or [])
+                repairs.append({"before": before, "after": item.title, "reasons": reasons})
+                quality["title_guard_repairs"] = repairs
+                quality["title_guard"] = {"pass": True, "repair_count": len(repairs)}
+                item.quality_json = quality
+                repair_count += 1
+            if repair_count:
+                await db.commit()
+            return repair_count
+
+    async def _rewrite_product_experience_phrase_items(self, batch_id: int, job: ContentBatchJob) -> int:
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(ContentBatchItem)
+                .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
+                .order_by(ContentBatchItem.item_no)
+            )
+            items = list(result.scalars().all())
+            rewrite_count = 0
+            for item in items:
+                if not should_review_product_experience(item.plan_json):
+                    continue
+                review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                rewrite_rounds = self._product_experience_phrase_rewrite_rounds(item)
+                while review.rewrite_required and item.run_id and rewrite_rounds < MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS:
+                    rewritten = await self._rewrite_item_for_product_experience_phrase(db, item, review)
+                    if not rewritten:
+                        break
+                    rewrite_count += 1
+                    rewrite_rounds += 1
+                    review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                self._mark_product_experience_phrase_review(item, review)
+            if items:
+                await db.commit()
+            return rewrite_count
+
+    async def _rewrite_item_for_product_experience_phrase(
+        self,
+        db: AsyncSession,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+    ) -> bool:
+        if not item.run_id or not item.body:
+            return False
+        orchestrator = ContentAgentOrchestrator(
+            db,
+            invocation_client=self.invocation_client,
+            callback_base_url=self.callback_base_url,
+        )
+        try:
+            input_payload = self._product_experience_phrase_rewrite_input(item, review)
+            result = await orchestrator.run_content_rewrite_stage(
+                run_id=item.run_id,
+                executor_code=self.executor_code,
+                input_payload=input_payload,
+            )
+            final = result.output or {}
+            final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
+            title = str(final.get("title") or final_content.get("title") or "").strip()
+            body = str(final.get("body") or final_content.get("body") or "").strip()
+            if not title or not body:
+                raise ValueError("content.rewrite returned empty article")
+            item.title = title
+            item.body = body
+            post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+            quality = dict(item.quality_json or {})
+            rewrites = list(quality.get("product_experience_phrase_rewrites") or [])
+            rewrite_round = self._product_experience_phrase_rewrite_rounds(item) + 1
+            rewrites.append(
+                {
+                    "rewrite_round": rewrite_round,
+                    "pre_review": review.model_dump(),
+                    "post_review": post_review.model_dump(),
+                    "passed": post_review.pass_,
+                }
+            )
+            quality["product_experience_phrase_rewrites"] = rewrites
+            quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + len(result.stage_calls)
+            quality["run_status"] = result.run.status
+            item.quality_json = quality
+            self._mark_product_experience_phrase_review(item, post_review)
+            item.error_message = None
+            await db.flush()
+            return True
+        except Exception as exc:  # pragma: no cover - defensive path for flaky external workers
+            quality = dict(item.quality_json or {})
+            failures = list(quality.get("product_experience_phrase_rewrite_failures") or [])
+            failures.append({"review": review.model_dump(), "error_message": str(exc)})
+            quality["product_experience_phrase_rewrite_failures"] = failures
+            item.quality_json = quality
+            await db.flush()
+            return False
+
+    def _product_experience_phrase_rewrite_input(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+    ) -> dict[str, Any]:
+        unified_generation = (item.plan_json or {}).get("unified_generation") or {}
+        target = review.length_target
+        length_instruction = ""
+        if target:
+            kind, min_chars, max_chars = target
+            if review.body_chars < min_chars:
+                length_instruction = (
+                    f"当前正文约{review.body_chars}字，偏短；补到{min_chars}-{max_chars}字，"
+                    "直接重写成4个自然短句：场景、孩子动作、妈妈观察、收住；不补购买过程和功效结论。"
+                )
+            elif review.body_chars > max_chars:
+                length_instruction = (
+                    f"当前正文约{review.body_chars}字，偏长；删到{min_chars}-{max_chars}字，"
+                    "优先删解释、重复观察和统一收口，不要再扩写。"
+                )
+            else:
+                length_instruction = f"{kind}正文保持在{min_chars}-{max_chars}字内，不要为了改写额外扩写。"
+        hit_summary = "；".join(
+            f"{part}:{'/'.join(hits)}" for part, hits in review.skeleton_hits.items() if hits
+        )
+        phrase_instruction = (
+            f"本轮命中的口癖骨架是 {hit_summary}；至少删掉其中两个维度，尤其别把购买判断、价格、孩子接受、安心收口连在一起。"
+            if hit_summary
+            else "如果没有完整口癖骨架，只处理本轮命中的长度或 AI 收口问题；长度是硬性验收，必须先满足字数范围。"
+        )
+        ai_phrase_instruction = (
+            f"本轮命中的 AI 收口词是 {'/'.join(review.ai_phrase_hits)}；改写后不要再出现这些词。"
+            if review.ai_phrase_hits
+            else "不要新增省心、踏实、心里有数、先这样、固定下来这类统一收口词。"
+        )
+        return {
+            "previous_content": {"title": item.title or "", "body": item.body or ""},
+            "content_type": "article",
+            "output_fields": ["title", "body"],
+            "business_rule": dict(item.plan_json or {}),
+            "selected_keywords": unified_generation.get("selected_keywords") or [],
+            "model_config": dict((item.plan_json or {}).get("model_config") or {}),
+            "rewrite_source": "product_experience_phrase_guard",
+            "rewrite_round": self._product_experience_phrase_rewrite_rounds(item) + 1,
+            "review_report": {
+                "rewrite_required": True,
+                "rewrite_reason": "业务规则口癖骨架或长度超限",
+                "product_experience_phrase_review": review.model_dump(),
+            },
+        "rewrite_instructions": [
+                length_instruction or "正文长度服从业务规则，标题尽量不改；正文单段不换行。",
+                phrase_instruction,
+                ai_phrase_instruction,
+                "返回的 body 必须和原 body 不同；必要时可以整段重写，不要逐句改写原文。",
+                "如果正文已经有购买过程、价格和孩子接受度，只保留其中一个观察点，其他改成放学、饭桌、户外、杯子、剩半杯这类生活细节。",
+                "不要用“省心、踏实、固定下来、心里有数、先这样”作为统一收口。",
+                "长个、少请假、不生病、抵抗力、坐不住这类真人强表达可以保留为观察或别人问，不能写成确定因果。",
+                "标题尽量不改；正文单段不换行；不要写成导购或品牌介绍。",
+                "只输出 JSON：title, body。",
+            ],
+        }
+
+    def _mark_product_experience_phrase_review(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+    ) -> None:
+        quality = dict(item.quality_json or {})
+        review_report = dict(quality.get("review_report") or {})
+        review_report["product_experience_phrase_review"] = review.model_dump()
+        if review.rewrite_required:
+            review_report.update(
+                {
+                    "rewrite_required": True,
+                    "rewrite_reason": "业务规则口癖骨架或长度仍需人工处理",
+                }
+            )
+        elif review_report.get("rewrite_reason") == "业务规则口癖骨架或长度仍需人工处理":
+            review_report["rewrite_required"] = False
+            review_report.pop("rewrite_reason", None)
+        quality["review_report"] = review_report
+        quality["product_experience_phrase_guard"] = {
+            "pass": review.pass_,
+            "rewrite_required": review.rewrite_required,
+            "reasons": review.reasons,
+        }
+        item.quality_json = quality
+
+    @staticmethod
+    def _product_experience_phrase_rewrite_rounds(item: ContentBatchItem) -> int:
+        quality = item.quality_json or {}
+        return len(quality.get("product_experience_phrase_rewrites") or [])
 
     async def _history_items_for_similarity(self, db: AsyncSession, job: ContentBatchJob) -> list[ContentBatchItem]:
         result = await db.execute(
@@ -493,3 +803,145 @@ class ContentBatchExecutionService:
         batch_context = ((item.plan_json or {}).get("batch_context") or {})
         value = batch_context.get("batch_code")
         return value if isinstance(value, str) and value else None
+
+
+def _article_length_target(plan: dict[str, Any]) -> tuple[str, int, int] | None:
+    corpus = str(plan.get("corpus") or "")
+    if "篇幅类型：中短文" in corpus:
+        return "中短文", 120, 150
+    if "篇幅类型：短文" in corpus:
+        return "短文", 40, 80
+    return None
+
+
+def _length_rewrite_input(
+    item: ContentBatchItem,
+    *,
+    kind: str,
+    min_chars: int,
+    max_chars: int,
+    before_chars: int,
+    rewrite_round: int,
+) -> dict[str, Any]:
+    missing_chars = max(min_chars - before_chars, 0)
+    if before_chars > max_chars:
+        action = (
+            f"当前正文约{before_chars}个中文字符，偏长；删到{min_chars}-{max_chars}个中文字符。"
+            "优先删重复解释、购买过程、价格纠结、统一收口和功效感强的句子；不要新增内容。"
+        )
+    elif kind == "中短文":
+        action = (
+            f"当前正文只有{before_chars}个中文字符，至少还要补{missing_chars + 8}个中文字符；"
+            f"把正文补到{min_chars}-{max_chars}个中文字符，优先补具体生活动作、饭桌/出门/放学后的观察、"
+            "还在观望的语气；不要补购买过程、价格纠结、孩子愿意喝或统一收口，也不要新增功效结论。"
+        )
+    else:
+        action = (
+            f"当前正文只有{before_chars}个中文字符；把正文调整到{min_chars}-{max_chars}个中文字符，"
+            "保留一个生活瞬间和一句选择理由。"
+        )
+    return {
+        "previous_content": {"title": item.title or "", "body": item.body or ""},
+        "content_type": "article",
+        "output_fields": ["title", "body"],
+        "business_rule": dict(item.plan_json or {}),
+        "selected_keywords": ((item.plan_json or {}).get("unified_generation") or {}).get("selected_keywords") or [],
+        "model_config": dict((item.plan_json or {}).get("model_config") or {}),
+        "rewrite_source": "article_length_guard",
+        "rewrite_round": rewrite_round,
+        "review_report": {
+            "rewrite_required": True,
+            "rewrite_reason": f"{kind}正文长度不在{min_chars}-{max_chars}字",
+        },
+        "rewrite_instructions": [
+            action,
+            f"返回的 body 必须和原 body 不同，且正文必须落在{min_chars}-{max_chars}个中文字符。",
+            "标题尽量不改；正文单段不换行。",
+            "保持小红书真实用户语气，不写品牌介绍、攻略清单、专业科普或确定功效。",
+            "只输出 JSON：title, body。",
+        ],
+    }
+
+
+def _compact_len(value: str | None) -> int:
+    return len(re.sub(r"\s+", "", str(value or "")))
+
+
+def _should_apply_title_guard(job: ContentBatchJob, items: list[ContentBatchItem]) -> bool:
+    if "wangyue" in (job.asset_key or "").lower() or "旺玥" in (job.product_topic or ""):
+        return True
+    return any("0705旺玥活动" in str((item.plan_json or {}).get("corpus") or "") for item in items)
+
+
+def _title_guard_reasons(title: str, used_titles: set[str]) -> list[str]:
+    reasons: list[str] = []
+    normalized = _normalize_title(title)
+    if normalized and normalized in used_titles:
+        reasons.append("duplicate_title")
+    for phrase in TITLE_GUARD_FORBIDDEN_SUBSTRINGS:
+        if phrase in title:
+            reasons.append(f"forbidden_title_phrase:{phrase}")
+    for pattern in TITLE_GUARD_BAD_PATTERNS:
+        if pattern.search(title):
+            reasons.append("ambiguous_age_or_duration")
+            break
+    return reasons
+
+
+def _fallback_title_for_item(item: ContentBatchItem, used_titles: set[str]) -> str:
+    plan = item.plan_json or {}
+    corpus = str(plan.get("corpus") or "")
+    scene = _corpus_field(corpus, "场景")
+    topic = str(plan.get("topic") or plan.get("business_rule") or "")
+    duration = str(_corpus_field(corpus, "喝旺玥时间"))
+    duration_label = _duration_title_label(duration)
+    candidates = _title_candidates(scene=scene, topic=topic, duration_label=duration_label)
+    start = max((item.item_no or 1) - 1, 0)
+    for offset in range(len(candidates)):
+        candidate = candidates[(start + offset) % len(candidates)]
+        if not _title_guard_reasons(candidate, used_titles):
+            return candidate
+    return f"旺玥喝了{duration_label}记录"
+
+
+def _title_candidates(*, scene: str, topic: str, duration_label: str) -> list[str]:
+    candidates = [
+        f"旺玥喝了{duration_label}记录",
+        "给娃选奶纠结了一阵",
+        "儿童奶粉换到旺玥",
+        "又开一听旺玥奶粉",
+        "喝了一阵旺玥来聊聊",
+        "皇家美素佳儿旺玥",
+        "三岁后奶粉怎么选",
+        "旺玥和原来那罐怎么选",
+    ]
+    if "幼儿园" in scene or "集体" in scene:
+        candidates.extend(["上幼儿园后开始看旺玥", "幼儿园后的选奶记录"])
+    if "户外" in scene:
+        candidates.extend(["户外玩得多后的选奶记录", "出去玩多了开始看旺玥"])
+    if "挑食" in scene or "饭" in scene or "营养不足" in topic:
+        candidates.extend(["挑食那阵子开始看旺玥", "挑食娃的旺玥记录"])
+    if "选奶" in scene or "纠结" in topic:
+        candidates.extend(["选儿童奶粉纠结了一圈", "旺玥喝了一阵的反馈"])
+    if "注意" in topic or "眼脑" in topic:
+        candidates.extend(["上学后看儿童奶粉", "写写画画多了以后看奶粉"])
+    return candidates
+
+
+def _duration_title_label(duration: str) -> str:
+    if "6个月以上" in duration:
+        return "大半年"
+    if "3-6个月" in duration:
+        return "几个月"
+    if "3个月内" in duration:
+        return "一阵"
+    return "一阵"
+
+
+def _corpus_field(corpus: str, field_name: str) -> str:
+    match = re.search(rf"{re.escape(field_name)}[:：]([^；\n]+)", corpus)
+    return match.group(1).strip() if match else ""
+
+
+def _normalize_title(title: str) -> str:
+    return re.sub(r"\s+", "", title or "").strip().lower()

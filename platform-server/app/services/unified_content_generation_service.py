@@ -344,20 +344,23 @@ def _business_rule_text(rule: dict[str, Any]) -> str:
         lines.append(f"- 人设要求：{rule.get('persona_target')}")
     if rule.get("style"):
         lines.append(f"- 风格：{rule.get('style')}")
-    rule_name = rule.get("business_rule")
-    if rule_name is None:
-        rule_name = rule.get("comment_" + "angle")
+    rule_name = (
+        rule.get("business_rule")
+        or rule.get("comment_" + "angle")
+        or rule.get("article_rule")
+        or rule.get("topic")
+    )
     if rule_name:
         lines.append(f"- 业务规则：{rule_name}")
-    if rule.get("product_experience"):
-        lines.append(f"- 产品使用体验：{rule.get('product_experience')}")
-    if rule.get("baby_stage") or rule.get("use_duration") or rule.get("topic"):
-        lines.append(
-            "- 体验拆解："
-            f"月龄={rule.get('baby_stage') or '-'}，"
-            f"使用时间={rule.get('use_duration') or '-'}，"
-            f"主题={rule.get('topic') or '-'}"
-        )
+    if rule.get("baby_stage") or rule.get("use_duration"):
+        parts = []
+        if rule.get("baby_stage"):
+            parts.append(f"月龄={rule.get('baby_stage')}")
+        if rule.get("use_duration"):
+            parts.append(f"使用时间={rule.get('use_duration')}")
+        if rule.get("topic"):
+            parts.append(f"主题={rule.get('topic')}")
+        lines.append(f"- 体验拆解：{'，'.join(parts)}")
     if rule.get("corpus"):
         lines.append(f"- 业务语料：\n{rule.get('corpus')}")
     for label, key in [
@@ -391,13 +394,14 @@ def _business_rule_text(rule: dict[str, Any]) -> str:
     if rule.get("render_reference_examples") is not False:
         examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
         supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
-        if examples or supplements:
+        prompt_examples = examples + supplements
+        if prompt_examples:
             # 重要逻辑：示例只作为表达颗粒参考，避免把真人语料当范文复刻。
-            lines.append("- 示例使用边界：只学习语气、场景颗粒和生活细节，不复刻原句、结构和事实主张。")
-        if examples:
-            lines.append("- 参考示例：\n" + "\n".join(f"  - {item}" for item in examples))
-        if supplements:
-            lines.append("- 补充参考：\n" + "\n".join(f"  - {item}" for item in supplements))
+            lines.append(
+                "- 示例使用边界：只学习语气、场景颗粒和生活细节；只借一个观察点，"
+                "不复刻原句、结构和事实主张，也不要沿用示例的叙述顺序或固定句式骨架。"
+            )
+            lines.append("- 示例：\n" + "\n".join(f"  - {item}" for item in prompt_examples))
     if not lines:
         lines.append(json.dumps(rule, ensure_ascii=False, indent=2))
     return "\n".join(lines)

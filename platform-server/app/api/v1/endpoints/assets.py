@@ -17,6 +17,7 @@ from app.schemas.assets import (
     CommentBusinessRuleDraftPublishResponse,
     CommentBusinessRuleDraftResponse,
     CommentBusinessRuleDraftSave,
+    CommentBusinessRuleExamplesUpdate,
     AssetGenerationOptionsResponse,
     AssetImportResponse,
     AssetImportRunResponse,
@@ -229,7 +230,7 @@ async def import_comment_business_rule_set_endpoint(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/imports/product-experience-rule-set", response_model=ResponseData)
+@router.post("/imports/article-business-rule-set", response_model=ResponseData)
 async def import_product_experience_rule_set_endpoint(
     file: UploadFile = File(...),
     asset_key: str = Form(default=DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY),
@@ -238,7 +239,7 @@ async def import_product_experience_rule_set_endpoint(
     created_by: str = Form(default="maga-operator"),
     db: AsyncSession = Depends(get_db),
 ):
-    filename = file.filename or "产品使用体验_子关键词导出.csv"
+    filename = file.filename or "业务规则_子关键词导出.csv"
     if not filename.lower().endswith((".csv", ".xlsx")):
         raise HTTPException(status_code=400, detail="only .csv and .xlsx files are supported")
 
@@ -480,9 +481,8 @@ async def preview_content_generation_keywords(
     db: AsyncSession = Depends(get_db),
 ):
     business_rule = payload.business_rule or {
-        "rule_type": "business_rule" if payload.content_type == "comment" else "product_experience",
-        "business_rule": "示例业务规则" if payload.content_type == "comment" else None,
-        "product_experience": "示例产品使用体验" if payload.content_type != "comment" else None,
+        "rule_type": "business_rule",
+        "business_rule": "示例业务规则",
         "corpus": "这里是本次业务规则里的语料，用于预览系统关键词会如何进入最终 prompt。",
         "examples": ["这是一条用于预览的参考示例。"],
     }
@@ -605,6 +605,47 @@ async def publish_comment_business_rule_draft(
     )
 
 
+@router.post("/comment-business-rule-examples", response_model=ResponseData)
+async def update_comment_business_rule_examples(
+    payload: CommentBusinessRuleExamplesUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    try:
+        asset = await service.update_comment_business_rule_examples(payload)
+        await db.commit()
+        await db.refresh(asset)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetRegistryResponse.model_validate(asset).model_dump(mode="json"),
+    )
+
+
+@router.post("/business-rule-examples", response_model=ResponseData)
+async def update_business_rule_examples(
+    payload: CommentBusinessRuleExamplesUpdate,
+    asset_type: str | None = Query(default=None, pattern="^(comment|article)$"),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    try:
+        asset = await service.update_business_rule_examples(payload, asset_type=asset_type)
+        await db.commit()
+        await db.refresh(asset)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetRegistryResponse.model_validate(asset).model_dump(mode="json"),
+    )
+
+
 @router.get("/{asset_type}/{asset_key}", response_model=ResponseData)
 async def get_latest_asset(
     asset_type: str,
@@ -613,7 +654,12 @@ async def get_latest_asset(
     db: AsyncSession = Depends(get_db),
 ):
     service = AssetService(db)
-    asset = await service.get_latest_asset(asset_type, asset_key, asset_stage=asset_stage)
+    asset = await service.get_latest_asset(
+        asset_type,
+        asset_key,
+        asset_stage=asset_stage,
+        compatible=True,
+    )
     if asset is None:
         raise HTTPException(status_code=404, detail="asset not found")
     response_data = AssetRegistryResponse.model_validate(asset).model_dump(mode="json")

@@ -130,6 +130,85 @@ async def test_batch_execution_generates_first_n_items_and_links_runs():
 
 
 @pytest.mark.asyncio
+async def test_wangyue_batch_execution_repairs_duplicate_titles():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    class DuplicateTitleClient:
+        async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
+            input_payload = envelope.get("input") or {}
+            business_rule = input_payload.get("business_rule") or {}
+            item_no = business_rule.get("item_no") or 1
+            return InvokeResult(
+                mode="sync",
+                stage_call_id=envelope["stage_call_id"],
+                output={
+                    "title": "旺玥和4段怎么选",
+                    "body": f"旺玥喝了一阵，孩子口味能接受，选奶时主要看日常补充。第{item_no}次记录。",
+                    "runtime_result": {"mode": "content_fake"},
+                },
+                stats={"fake": True},
+            )
+
+    async with session_factory() as session:
+        session.add(
+            ExecutorRegistry(
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
+                display_name="Hermes MAGA worker",
+                invoke_url="mock://maga-worker/invoke",
+                enabled=1,
+                config_json={},
+            )
+        )
+        job = ContentBatchJob(
+            batch_code="batch_wangyue_title_guard",
+            asset_key="wangyue_article_business_rules",
+            product_topic="0705旺玥活动",
+            count=3,
+            status="planned",
+        )
+        session.add(job)
+        await session.flush()
+        for item_no in range(1, 4):
+            plan = {
+                **_plan(item_no),
+                "asset_key": "wangyue_article_business_rules",
+                "business_rule": "容易中招，选奶判断",
+                "topic": "容易中招，选奶判断",
+                "corpus": "活动：0705旺玥活动。\n痛点词：容易中招；场景：选奶判断；卖点方向：进阶保护力；主题：选奶判断。",
+            }
+            session.add(ContentBatchItem(batch_id=job.id, item_no=item_no, status="planned", plan_json=plan))
+        await session.commit()
+
+        service = ContentBatchExecutionService(
+            session,
+            invocation_client=DuplicateTitleClient(),
+            callback_base_url="http://maga.test/api/v1/executor",
+        )
+        result = await service.execute_batch_items(job.id, limit=3, concurrency=3, created_by="test")
+        await session.commit()
+
+    assert result.generated_count == 3
+    async with session_factory() as session:
+        items = (
+            await session.execute(select(ContentBatchItem).where(ContentBatchItem.batch_id == job.id).order_by(ContentBatchItem.item_no))
+        ).scalars().all()
+
+    titles = [item.title for item in items]
+    assert len(set(titles)) == 3
+    assert titles[0] == "旺玥和4段怎么选"
+    assert all(title != "旺玥和4段怎么选" for title in titles[1:])
+    assert items[1].quality_json["title_guard_repairs"][0]["reasons"] == ["duplicate_title"]
+    assert items[2].quality_json["title_guard"]["pass"] is True
+
+
+@pytest.mark.asyncio
 async def test_batch_execution_rewrites_business_forbidden_terms():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
@@ -310,6 +389,35 @@ class StillSimilarRewriteClient(SimilarDraftRewriteClient):
     async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
         if envelope.get("capability") == "content.rewrite":
             output = {"title": "仍然相似", "body": "第一段相同。第二段也相同。第三段继续相同。"}
+            return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
+        return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
+
+
+class ProductExperiencePhraseRewriteClient(RuntimeFastDraftReviewClient):
+    async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
+        capability = envelope.get("capability")
+        if capability == "content.generate":
+            output = {
+                "title": "接娃回来先换件衣服",
+                "body": (
+                    "接娃回来先换衣服，杯子放餐边柜上。当初选旺玥也是纠结了一阵，跟4段比了半天，"
+                    "价格不算便宜，但孩子愿意喝，每次都喝完，最后我就固定下来，心里踏实点。"
+                    "最近集体生活接触多，我也没敢说什么效果，先按这个节奏观察。晚饭后再冲一杯，"
+                    "孩子捧着杯子坐一会儿。"
+                ),
+                "runtime_result": {"mode": "runtime_fast"},
+            }
+            return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
+        if capability == "content.rewrite":
+            output = {
+                "title": "接娃回来先换件衣服",
+                "body": (
+                    "接娃回家先换衣服，杯子顺手放餐边柜上。最近集体生活接触的人多，"
+                    "我把早上那顿旺玥当日常补给，没敢说什么效果。天气热的时候他会先喝水，"
+                    "晚点再看奶量，有时剩半杯我也不催，就按当天状态记一记。饭桌上如果吃得少，"
+                    "我会看看一天整体有没有补回来，晚上再顺手记一笔。"
+                ),
+            }
             return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
         return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
 
@@ -624,6 +732,72 @@ async def test_batch_execution_marks_manual_review_when_similarity_rewrite_still
     assert item.quality_json["similarity_rewrites"][-1]["similarity_rewrite_passed"] is False
     assert item.quality_json["review_report"]["rewrite_required"] is True
     assert "需要人工处理" in item.quality_json["review_report"]["rewrite_reason"]
+
+
+@pytest.mark.asyncio
+async def test_batch_execution_rewrites_article_business_phrase_skeleton():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add(
+            ExecutorRegistry(
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
+                display_name="Hermes MAGA worker",
+                invoke_url="http://maga-worker.test/invoke",
+                enabled=1,
+                config_json={},
+            )
+        )
+        job = ContentBatchJob(
+            batch_code="batch_product_phrase_guard",
+            asset_key="wangyue_article_business_rules",
+            product_topic="0705旺玥活动",
+            count=1,
+            status="planned",
+        )
+        session.add(job)
+        await session.flush()
+        plan = {
+            **_plan(1),
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_article_business_rules",
+            "business_rule": "容易中招，日常保护力",
+            "topic": "容易中招，日常保护力",
+            "corpus": "## 业务规则\n篇幅类型：中短文；正文按130字左右写，可在120-150字之间。\n活动：0705旺玥活动。",
+        }
+        session.add(ContentBatchItem(batch_id=job.id, item_no=1, status="planned", plan_json=plan))
+        await session.commit()
+
+        service = ContentBatchExecutionService(
+            session,
+            invocation_client=ProductExperiencePhraseRewriteClient(),
+            callback_base_url="http://maga.test/api/v1/executor",
+            session_factory=session_factory,
+        )
+        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
+        await session.commit()
+
+    assert result.generated_count == 1
+    async with session_factory() as session:
+        item = (await session.execute(select(ContentBatchItem))).scalar_one()
+        stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
+
+    assert "价格不算便宜" not in item.body
+    assert "固定下来" not in item.body
+    guard = item.quality_json["product_experience_phrase_guard"]
+    assert guard["pass"] is True
+    rewrites = item.quality_json["product_experience_phrase_rewrites"]
+    assert rewrites[0]["pre_review"]["rewrite_required"] is True
+    assert rewrites[0]["post_review"]["rewrite_required"] is False
+    assert item.quality_json["review_report"]["rewrite_required"] is False
+    assert sum(1 for stage in stage_calls if stage.capability == "content.rewrite") == 1
 
 
 @pytest.mark.asyncio

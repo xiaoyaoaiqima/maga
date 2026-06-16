@@ -45,9 +45,10 @@ import {
   getAssetSummariesApi,
   getCommentBusinessRuleDraftsApi,
   importCommentBusinessRuleSetApi,
-  importProductExperienceRuleSetApi,
+  importArticleBusinessRuleSetApi,
   publishCommentBusinessRuleDraftApi,
   saveCommentBusinessRuleDraftApi,
+  updateBusinessRuleExamplesApi,
 } from '#/api/core/assets';
 import {
   getContentBatchListApi,
@@ -58,7 +59,7 @@ import {
 } from '#/api/core/content-agent';
 import { useMagaChatStore } from '#/store';
 
-type RulePackageType = 'comment_business' | 'article_business' | 'product_experience';
+type RulePackageType = 'comment_business' | 'article_business';
 type BatchScope = 'asset' | 'rule';
 
 interface RulePackageConfig {
@@ -80,16 +81,9 @@ const rulePackageConfigs: Record<RulePackageType, RulePackageConfig> = {
   article_business: {
     accept: '.csv,.xlsx',
     assetType: 'article_business_rule_set',
-    defaultAssetKey: 'a2_sentiment_post_activity',
-    defaultDisplayName: 'A2舆情相关帖子业务规则',
-    label: '帖子业务规则',
-  },
-  product_experience: {
-    accept: '.csv,.xlsx',
-    assetType: 'product_experience_rule_set',
     defaultAssetKey: 'yuanyue_product_experience',
-    defaultDisplayName: '源悦-业务规则（产品使用体验）',
-    label: '产品使用体验',
+    defaultDisplayName: '源悦生文业务规则',
+    label: '帖子/生文业务规则',
   },
 };
 
@@ -114,6 +108,7 @@ const generating = ref(false);
 const packageType = ref<RulePackageType>('comment_business');
 const displayName = ref(rulePackageConfigs.comment_business.defaultDisplayName);
 const pendingFile = ref<File | null>(null);
+const uploadAssetKeyOverride = ref('');
 const uploadConfirmOpen = ref(false);
 const showHiddenRules = ref(false);
 const ruleAssets = ref<AssetsApi.AssetSummary[]>([]);
@@ -151,6 +146,8 @@ const draftTesting = ref(false);
 const draftPublishing = ref(false);
 const selectedDraftRule = ref<Record<string, any> | null>(null);
 const draftCorpus = ref('');
+const exampleSaving = ref(false);
+const examplesText = ref('');
 const latestDraft = ref<AssetsApi.CommentBusinessRuleDraft | null>(null);
 const hasUnsavedDraftChanges = computed(
   () =>
@@ -169,7 +166,6 @@ const filteredRuleItems = computed(() => {
   return selectedRuleItems.value.filter((item) => {
     const haystack = [
       item.business_rule,
-      item.product_experience,
       item.corpus,
       item.rule_id,
       item.source_row_no,
@@ -206,9 +202,10 @@ const isSelectedCommentRuleSet = computed(
 );
 const isSelectedArticleBusinessRuleSet = computed(
   () =>
-    ['article_business_rule_set', 'product_experience_rule_set'].includes(
-      selectedAsset.value?.asset_type || '',
-    ),
+    ['article_business_rule_set'].includes(selectedAsset.value?.asset_type || ''),
+);
+const isSelectedBusinessRuleSet = computed(
+  () => isSelectedCommentRuleSet.value || isSelectedArticleBusinessRuleSet.value,
 );
 const selectedRuleOptions = computed(() => {
   return selectedRuleItems.value
@@ -228,9 +225,8 @@ const currentOperator = computed(
 
 const packageTypeOptions = computed(() =>
   Object.entries(rulePackageConfigs)
-    .filter(([value]) => value !== 'article_business')
     .map(([value, config]) => ({
-      label: config.defaultDisplayName,
+      label: config.label,
       value,
     })),
 );
@@ -248,6 +244,19 @@ const selectedPackageName = computed(
   () =>
     selectedAsset.value?.display_name || selectedSummary.value?.display_name,
 );
+const uploadTargetAssetKey = computed(() => {
+  if (packageType.value === 'article_business' && uploadAssetKeyOverride.value) {
+    return uploadAssetKeyOverride.value;
+  }
+  const config = rulePackageConfigs[packageType.value];
+  if (
+    selectedAsset.value?.asset_type === config.assetType &&
+    packageTypeOfAsset(selectedAsset.value) === packageType.value
+  ) {
+    return selectedAsset.value.asset_key;
+  }
+  return config.defaultAssetKey;
+});
 const reportFailureCount = computed(() =>
   failedCountOf(selectedReportSummary.value),
 );
@@ -345,7 +354,7 @@ const batchDetailColumns: any[] = [
 ];
 
 const previewColumns = computed<any[]>(() => {
-  if (selectedAsset.value?.asset_type === 'product_experience_rule_set') {
+  if (isSelectedArticleBusinessRuleSet.value) {
     return [
       {
         title: '规则',
@@ -504,8 +513,22 @@ function setInlineDraftRule(record: Record<string, any>) {
   selectedDraftRule.value = record;
   latestDraft.value = draftMap.value[draftKey(record)] || null;
   draftCorpus.value = latestDraft.value?.draft_corpus || String(record.corpus || '');
+  syncExampleEditorFromRule(record);
   // 重要逻辑：草稿编辑已内嵌到右侧 Inspector，保留这个状态只用于 Chat 上下文同步。
   draftEditorOpen.value = true;
+}
+
+function syncExampleEditorFromRule(record: Record<string, any> | null) {
+  const examples = normalizeTextList(record?.examples);
+  const supplements = normalizeTextList(record?.supplements);
+  examplesText.value = [...examples, ...supplements].join('\n');
+}
+
+function textToLines(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.replace(/^[\s\-*•\d.、．]+/, '').trim())
+    .filter(Boolean);
 }
 
 function focusInlineDraftEditor() {
@@ -539,6 +562,15 @@ async function loadRuleAssets() {
     if (!selectedStillVisible) {
       selectedSummary.value = null;
       selectedAsset.value = null;
+    } else if (selectedSummary.value) {
+      selectedSummary.value =
+        ruleAssets.value.find((asset) => asset.id === selectedSummary.value?.id) ||
+        ruleAssets.value.find(
+          (asset) =>
+            asset.asset_type === selectedSummary.value?.asset_type &&
+            asset.asset_key === selectedSummary.value?.asset_key,
+        ) ||
+        selectedSummary.value;
     }
     const firstAsset = ruleAssets.value[0];
     if (!selectedSummary.value && firstAsset) {
@@ -626,7 +658,7 @@ async function syncAssetRecentReport() {
 
 async function loadDraftMap() {
   draftMap.value = {};
-  if (!selectedAsset.value?.asset_key || !isSelectedCommentRuleSet.value) return;
+  if (!selectedAsset.value?.asset_key || !isSelectedBusinessRuleSet.value) return;
   try {
     const drafts = await getCommentBusinessRuleDraftsApi({
       asset_key: selectedAsset.value.asset_key,
@@ -735,8 +767,8 @@ async function generateFocusedRule() {
 
 async function openDraftEditor(record: Record<string, any>) {
   selectRule(record);
-  if (!selectedAsset.value?.asset_key || !isSelectedCommentRuleSet.value) {
-    message.warning('请先选择评论业务规则');
+  if (!selectedAsset.value?.asset_key || !isSelectedBusinessRuleSet.value) {
+    message.warning('请先选择业务规则');
     return;
   }
   setInlineDraftRule(record);
@@ -813,6 +845,38 @@ async function saveRuleDraft() {
     message.error(error?.message || '保存草稿失败');
   } finally {
     draftSaving.value = false;
+  }
+}
+
+async function saveRuleExamples() {
+  if (!selectedAsset.value?.asset_key || !activeRule.value) {
+    message.warning('请先选择一条业务规则');
+    return;
+  }
+  exampleSaving.value = true;
+  try {
+    const updatedAsset = await updateBusinessRuleExamplesApi({
+      asset_key: selectedAsset.value.asset_key,
+      asset_type: isSelectedArticleBusinessRuleSet.value ? 'article' : 'comment',
+      created_by: currentOperator.value,
+      examples: textToLines(examplesText.value),
+      supplements: [],
+      rule_id: String(activeRule.value.rule_id || ''),
+      source_row_no: Number(activeRule.value.source_row_no || 0) || undefined,
+    });
+    selectedAsset.value = updatedAsset;
+    const updatedRule = selectedRuleItems.value.find(
+      (item) => ruleKey(item) === selectedRuleKey.value,
+    );
+    if (updatedRule) {
+      setInlineDraftRule(updatedRule);
+    }
+    message.success('示例已保存为规则包新版本');
+    await loadRuleAssets();
+  } catch (error: any) {
+    message.error(error?.message || '保存示例失败');
+  } finally {
+    exampleSaving.value = false;
   }
 }
 
@@ -911,7 +975,7 @@ async function testRuleDraft(count: number) {
   draftTesting.value = true;
   generating.value = true;
   try {
-    const result = await startCommentBatchApi({
+    const sharedPayload = {
       asset_key: selectedAsset.value.asset_key,
       count,
       created_by: currentOperator.value,
@@ -922,7 +986,10 @@ async function testRuleDraft(count: number) {
       rule_id: String(selectedDraftRule.value.rule_id || ''),
       source_row_no:
         Number(selectedDraftRule.value.source_row_no || 0) || undefined,
-    });
+    };
+    const result = isSelectedArticleBusinessRuleSet.value
+      ? await startContentBatchApi(sharedPayload)
+      : await startCommentBatchApi(sharedPayload);
     message.success(
       `草稿测试完成：${result.execution.generated_count}/${result.execution.requested_limit}`,
     );
@@ -985,10 +1052,35 @@ const beforeUpload: UploadProps['beforeUpload'] = async (file) => {
 
   pendingFile.value = file;
   packageType.value = inferPackageTypeFromFileName(file.name);
-  displayName.value = displayNameFromFile(file.name);
+  const config = rulePackageConfigs[packageType.value];
+  const inferredArticleTarget =
+    packageType.value === 'article_business'
+      ? inferArticleBusinessTargetFromFileName(file.name)
+      : null;
+  uploadAssetKeyOverride.value = inferredArticleTarget?.assetKey || '';
+  displayName.value =
+    inferredArticleTarget?.displayName ||
+    (selectedAsset.value?.asset_type === config.assetType &&
+    packageTypeOfAsset(selectedAsset.value) === packageType.value
+      ? selectedPackageName.value || config.defaultDisplayName
+      : config.defaultDisplayName || displayNameFromFile(file.name));
   uploadConfirmOpen.value = true;
   return Upload.LIST_IGNORE;
 };
+
+function downloadSimpleRuleTemplate() {
+  const csv = [
+    '业务规则名称,规则语料,示例',
+    '"有货后先不急着转奶","写什么：妈妈问到、买到、等到或收到 a2 了，所以先继续喝 a2，转奶这事先放一放。\n怎么说：像评论区接一句或顺手报个信，可以很短；别写成官方补货通知、催别人囤货、库存焦虑或转奶教程。","刚问柜姐说有货了，立马去下单。\n能买到的话我还是先不换了\n转奶太麻烦了，买到就继续喝a2"',
+  ].join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = '业务规则_三列模板.csv';
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 async function confirmUpload() {
   if (!pendingFile.value) {
@@ -1003,7 +1095,8 @@ async function confirmUpload() {
   importing.value = true;
   try {
     const payload = {
-      asset_key: assetKeyFromDisplayName(displayName.value, packageType.value),
+      // 重要逻辑：业务规则包导入应生成“同一包的新版本”，不能按文件名新建单条规则包。
+      asset_key: uploadTargetAssetKey.value,
       created_by: currentOperator.value,
       display_name: displayName.value.trim(),
       file: pendingFile.value,
@@ -1011,12 +1104,13 @@ async function confirmUpload() {
     const result =
       packageType.value === 'comment_business'
         ? await importCommentBusinessRuleSetApi(payload)
-        : await importProductExperienceRuleSetApi(payload);
+        : await importArticleBusinessRuleSetApi(payload);
     message.success(`导入完成：${result.summary_json?.rule_count || 0} 条规则`);
     selectedSummary.value = null;
     selectedAsset.value = null;
     uploadConfirmOpen.value = false;
     pendingFile.value = null;
+    uploadAssetKeyOverride.value = '';
     await loadRuleAssets();
   } catch {
     message.error('导入失败，请检查文件格式');
@@ -1029,9 +1123,20 @@ function cancelUpload() {
   if (importing.value) return;
   uploadConfirmOpen.value = false;
   pendingFile.value = null;
+  uploadAssetKeyOverride.value = '';
 }
 
-function packageLabel(assetType?: string) {
+function packageTypeOfAsset(asset?: Pick<AssetsApi.AssetSummary, 'asset_key' | 'asset_type' | 'display_name' | 'source_name'> | null) {
+  if (!asset?.asset_type) return null;
+  if (asset.asset_type === 'comment_business_rule_set') return 'comment_business';
+  if (asset.asset_type === 'article_business_rule_set') return 'article_business';
+  return null;
+}
+
+function packageLabel(asset?: Pick<AssetsApi.AssetSummary, 'asset_key' | 'asset_type' | 'display_name' | 'source_name'> | string) {
+  const assetType = typeof asset === 'string' ? asset : asset?.asset_type;
+  const inferredType = typeof asset === 'string' ? null : packageTypeOfAsset(asset);
+  if (inferredType) return rulePackageConfigs[inferredType].label;
   const config = Object.values(rulePackageConfigs).find(
     (item) => item.assetType === assetType,
   );
@@ -1039,7 +1144,7 @@ function packageLabel(assetType?: string) {
 }
 
 function examplesCount(record: Record<string, any>) {
-  return Array.isArray(record.examples) ? record.examples.length : 0;
+  return normalizeTextList(record.examples).length + normalizeTextList(record.supplements).length;
 }
 
 function supplementsCount(record: Record<string, any>) {
@@ -1047,11 +1152,11 @@ function supplementsCount(record: Record<string, any>) {
 }
 
 function fullExamplePoolCount(record: Record<string, any>) {
-  return examplesCount(record) + supplementsCount(record);
+  return examplesCount(record);
 }
 
-function defaultExampleSampleCount(record: Record<string, any>) {
-  return isSelectedCommentRuleSet.value || record.rule_type === 'business_rule' ? 1 : 3;
+function defaultExampleSampleCount(_record: Record<string, any>) {
+  return 3;
 }
 
 function selectedExamplesOf(record: Record<string, any>) {
@@ -1066,7 +1171,6 @@ function ruleKey(record: Record<string, any>) {
     record.rule_id || '',
     record.source_row_no || '',
     record.business_rule || '',
-    record.product_experience || '',
   ].join('::');
 }
 
@@ -1090,7 +1194,6 @@ function ruleDisplayName(record: Record<string, any>) {
   return (
     String(
       record.business_rule ||
-        record.product_experience ||
         record.topic ||
         record.rule_id ||
         '',
@@ -1157,38 +1260,48 @@ function displayNameFromFile(fileName: string) {
 
 function inferPackageTypeFromFileName(fileName: string): RulePackageType {
   const normalizedFileName = fileName.toLowerCase();
-  if (normalizedFileName.includes('产品使用体验')) {
-    return 'product_experience';
+  if (normalizedFileName.includes('评论')) {
+    return 'comment_business';
   }
   if (
-    normalizedFileName.includes('业务规则') ||
-    normalizedFileName.includes('评论')
+    normalizedFileName.includes('帖子') ||
+    normalizedFileName.includes('文章') ||
+    normalizedFileName.includes('生文') ||
+    normalizedFileName.includes('产品使用体验') ||
+    normalizedFileName.includes('源悦') ||
+    normalizedFileName.includes('旺玥') ||
+    normalizedFileName.includes('a2')
   ) {
-    return 'comment_business';
+    return 'article_business';
   }
   return packageType.value;
 }
 
-function shortHash(text: string) {
-  let hash = 0;
-  for (const char of text) {
-    hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0;
+function inferArticleBusinessTargetFromFileName(fileName: string) {
+  const normalizedFileName = fileName.toLowerCase();
+  if (
+    normalizedFileName.includes('源悦') ||
+    normalizedFileName.includes('产品使用体验') ||
+    normalizedFileName.includes('生文')
+  ) {
+    return {
+      assetKey: 'yuanyue_product_experience',
+      displayName: '源悦生文业务规则',
+    };
   }
-  return hash.toString(36);
-}
-
-function assetKeyFromDisplayName(name: string, type: RulePackageType) {
-  const normalizedName = name.trim();
-  const asciiSlug = normalizedName
-    .normalize('NFKD')
-    .replaceAll(/[\u0300-\u036F]/g, '')
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, '_')
-    .replaceAll(/^_+|_+$/g, '')
-    .slice(0, 48);
-  // asset_key 是内部版本化资产标识，运营只维护名称；中文文件名用短 hash 保持稳定。
-  const suffix = asciiSlug || shortHash(normalizedName);
-  return `${rulePackageConfigs[type].defaultAssetKey}_${suffix}`.slice(0, 120);
+  if (normalizedFileName.includes('旺玥')) {
+    return {
+      assetKey: 'wangyue_article_business_rules',
+      displayName: '0705旺玥活动-UGC业务规则',
+    };
+  }
+  if (normalizedFileName.includes('a2')) {
+    return {
+      assetKey: 'a2_sentiment_post_activity',
+      displayName: 'A2舆情相关帖子业务规则',
+    };
+  }
+  return null;
 }
 
 onMounted(() => {
@@ -1231,6 +1344,14 @@ watch(
     compareBatchIds.value = [];
     loadBatches();
   },
+);
+
+watch(
+  () => [selectedAsset.value?.id, activeRule.value ? ruleKey(activeRule.value) : ''],
+  () => {
+    syncExampleEditorFromRule(activeRule.value);
+  },
+  { immediate: true },
 );
 
 watch(
@@ -1311,6 +1432,9 @@ watch(
           <template #icon><ReloadOutlined /></template>
           刷新测试
         </Button>
+        <Button @click="downloadSimpleRuleTemplate">
+          下载规则模板
+        </Button>
         <Upload
           :accept="ruleUploadAccept"
           :before-upload="beforeUpload"
@@ -1344,10 +1468,10 @@ watch(
           <div class="pane-card-header">
             <div>
               <h2>业务规则包</h2>
-              <span>{{ ruleAssets.length }} 个生产/调试版本</span>
+              <span>{{ ruleAssets.length }} 个{{ showHiddenRules ? '规则包' : '可见规则包' }}</span>
             </div>
             <Space size="small">
-              <span class="history-toggle-label">历史</span>
+              <span class="history-toggle-label">含隐藏</span>
               <Switch v-model:checked="showHiddenRules" size="small" />
               <Button
                 size="small"
@@ -1373,9 +1497,9 @@ watch(
               >
                 <span class="option-main">
                   <span class="option-title">
-                    {{ asset.display_name || packageLabel(asset.asset_type) }}
+                    {{ asset.display_name || packageLabel(asset) }}
                   </span>
-                  <Tag>{{ packageLabel(asset.asset_type) }}</Tag>
+                  <Tag>{{ packageLabel(asset) }}</Tag>
                   <Tag v-if="asset.hidden" color="orange">历史/调试</Tag>
                 </span>
                 <span class="option-meta">
@@ -1479,13 +1603,7 @@ watch(
                 <template v-else-if="column.key === 'counts'">
                   <div class="count-cell">
                     <span>{{ examplesCount(record) }} 示例</span>
-                    <span v-if="isSelectedCommentRuleSet">
-                      {{ supplementsCount(record) }} 补充
-                    </span>
-                    <span v-else-if="supplementsCount(record)">
-                      {{ supplementsCount(record) }} 补充
-                    </span>
-                    <small>默认抽 {{ defaultExampleSampleCount(record) }} 条</small>
+                    <small>生成时抽 {{ defaultExampleSampleCount(record) }} 条</small>
                   </div>
                 </template>
                 <template v-else-if="column.key === 'action'">
@@ -1499,7 +1617,7 @@ watch(
                       <template #icon><MessageOutlined /></template>
                       去 Chat
                     </Button>
-                    <Button v-if="isSelectedCommentRuleSet" size="small" @click.stop="openDraftEditor(record)">
+                    <Button v-if="isSelectedBusinessRuleSet" size="small" @click.stop="openDraftEditor(record)">
                       <template #icon><EditOutlined /></template>
                       编辑
                     </Button>
@@ -1546,35 +1664,35 @@ watch(
                 <div class="inspector-meta">
                   <Tag>{{ activeRule.rule_id || '-' }}</Tag>
                   <Tag>
-                    完整示例池 {{ fullExamplePoolCount(activeRule) }} 条
+                    示例 {{ fullExamplePoolCount(activeRule) }} 条
                   </Tag>
                   <Tag>
-                    默认抽 {{ defaultExampleSampleCount(activeRule) }} 条/次
+                    生成时抽 {{ defaultExampleSampleCount(activeRule) }} 条/次
                   </Tag>
                 </div>
               </div>
 
-              <div v-if="isSelectedCommentRuleSet" class="inspector-section">
+              <div v-if="isSelectedBusinessRuleSet" class="inspector-section">
                 <div class="draft-workspace-header">
-                  <div class="field-label">语料对比 / 草稿编辑</div>
+                  <div class="field-label">规则语料</div>
                   <Tag v-if="latestDraft">
                     {{ latestDraft.status }} · v{{ latestDraft.base_version_no || '-' }}
                   </Tag>
                 </div>
                 <div class="draft-compare-grid">
                   <div class="draft-compare-column">
-                    <div class="field-label">正式语料</div>
+                    <div class="field-label">当前正式规则语料</div>
                     <div class="readonly-corpus inspector-corpus">
                       {{ activeRule.corpus || '-' }}
                     </div>
                   </div>
                   <div class="draft-compare-column inline-draft-editor">
-                    <div class="field-label">草稿语料</div>
+                    <div class="field-label">草稿规则语料</div>
                     <Textarea
                       v-model:value="draftCorpus"
                       :auto-size="{ minRows: 10, maxRows: 18 }"
                       :disabled="draftSaving || draftTesting || draftPublishing"
-                      placeholder="在这里修改当前单条业务规则语料。保存草稿不会影响正式业务规则。"
+                      placeholder="只写这条规则要表达什么、怎么说；示例在下方单独维护。保存草稿不会影响正式规则。"
                     />
                   </div>
                 </div>
@@ -1603,6 +1721,27 @@ watch(
                     @click="publishRuleDraft"
                   >
                     发布为新版本
+                  </Button>
+                </Space>
+              </div>
+
+              <div v-if="isSelectedBusinessRuleSet" class="inspector-section">
+                <div class="draft-workspace-header">
+                  <div class="field-label">示例</div>
+                  <Tag>{{ fullExamplePoolCount(activeRule) }} 条</Tag>
+                </div>
+                <Textarea
+                  v-model:value="examplesText"
+                  :auto-size="{ minRows: 8, maxRows: 16 }"
+                  :disabled="exampleSaving"
+                  placeholder="可为空，一行一条。生成时从这里随机抽 3 条作为 few-shot；示例只提供语气、场景颗粒和生活细节。"
+                />
+                <div class="draft-hint">
+                  保存示例会生成规则包新版本；不会改动上方规则语料。
+                </div>
+                <Space class="draft-actions inline-draft-actions" wrap>
+                  <Button :icon="h(SaveOutlined)" :loading="exampleSaving" @click="saveRuleExamples">
+                    保存示例
                   </Button>
                 </Space>
               </div>
@@ -1738,6 +1877,12 @@ watch(
           <span>文件</span>
           <strong>{{ pendingFile?.name || '-' }}</strong>
         </div>
+        <div class="upload-format-hint">
+          <strong>推荐格式：业务规则名称 / 规则语料 / 示例</strong>
+          <span>
+            示例可以为空；有示例时一行一条，生成时会从示例中抽 3 条作为 few-shot。
+          </span>
+        </div>
         <div class="form-field">
           <div class="field-label">上传为</div>
           <Select
@@ -1746,6 +1891,10 @@ watch(
             :options="packageTypeOptions"
             class="full-width"
           />
+        </div>
+        <div class="form-field">
+          <div class="field-label">目标规则包</div>
+          <Input :value="uploadTargetAssetKey" disabled />
         </div>
         <div class="form-field">
           <div class="field-label">业务规则名称</div>
@@ -2804,6 +2953,27 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.upload-format-hint {
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
+  border-radius: 8px;
+  color: var(--maga-text-muted);
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.upload-format-hint strong {
+  color: var(--maga-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.upload-format-hint span {
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .draft-meta {

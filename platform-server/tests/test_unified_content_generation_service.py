@@ -126,7 +126,8 @@ def test_model_config_keeps_timeout_and_retry_controls():
 def test_business_rule_text_renders_only_supplied_examples_with_usage_boundary():
     text = _business_rule_text(
         {
-            "rule_type": "product_experience",
+            "rule_type": "business_rule",
+            "business_rule": "奶量补充",
             "topic": "奶量补充",
             "examples": ["抽中示例1", "抽中示例2", "抽中示例3"],
             "example_pool_count": 20,
@@ -134,7 +135,8 @@ def test_business_rule_text_renders_only_supplied_examples_with_usage_boundary()
         }
     )
 
-    assert "示例使用边界：只学习语气、场景颗粒和生活细节，不复刻原句、结构和事实主张。" in text
+    assert "示例使用边界：只学习语气、场景颗粒和生活细节；只借一个观察点" in text
+    assert "不要沿用示例的叙述顺序或固定句式骨架" in text
     assert "抽中示例1" in text
     assert "抽中示例2" in text
     assert "抽中示例3" in text
@@ -208,7 +210,7 @@ async def test_unified_generation_splits_article_and_comment_instructions(unifie
         )
         article_snapshot = await UnifiedContentGenerationService(session).build_snapshot(
             content_type="article",
-            business_rule={"rule_type": "product_experience", "topic": "宝宝便便不规律"},
+            business_rule={"rule_type": "business_rule", "business_rule": "宝宝便便不规律"},
             item_no=1,
             output_fields=["title", "body"],
         )

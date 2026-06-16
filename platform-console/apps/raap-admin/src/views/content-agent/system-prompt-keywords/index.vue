@@ -450,16 +450,8 @@ async function runPreview() {
     previewResult.value = await previewContentGenerationKeywordsApi({
       asset_key: assetKey.value,
       business_rule: {
-        rule_type:
-          previewContentType.value === 'comment'
-            ? 'business_rule'
-            : 'product_experience',
-        business_rule:
-          previewContentType.value === 'comment' ? '预览业务规则' : undefined,
-        product_experience:
-          previewContentType.value === 'article'
-            ? '预览产品使用体验'
-            : undefined,
+        rule_type: 'business_rule',
+        business_rule: '预览业务规则',
         corpus: previewRuleText.value,
       },
       categories: categories.value,

@@ -10,14 +10,14 @@ from app.models.content_agent import ContentBatchJob, ContentBatchItem
 from app.services.content_batch_planner import ContentBatchPlanner
 
 
-def test_product_experience_generation_limit_prefers_requested_count():
+def test_article_business_generation_limit_prefers_requested_count():
     service = ContentBatchPlanner.__new__(ContentBatchPlanner)
     asset = AssetRegistry(
         metadata_json={"default_generation_count": 10},
         content_json={"default_generation_count": 20},
     )
     rules = [
-        {"product_experience": f"体验{i}", "corpus": "像真实妈妈分享产品使用体验。"}
+        {"business_rule": f"体验{i}", "corpus": "像真实妈妈分享业务规则。"}
         for i in range(1200)
     ]
 
@@ -29,8 +29,8 @@ def test_product_experience_generation_limit_prefers_requested_count():
 def test_article_business_rule_plan_samples_three_examples_from_pool():
     service = ContentBatchPlanner.__new__(ContentBatchPlanner)
     rule = {
-        "rule_id": "product_experience_001",
-        "product_experience": "0-6个月，3个月内，奶量补充",
+        "rule_id": "business_rule_001",
+        "business_rule": "奶量补充",
         "corpus": "围绕奶量补充写真实使用体验。",
         "examples": [f"参考示例{i}" for i in range(20)],
         "supplements": ["补充参考1"],
@@ -39,7 +39,7 @@ def test_article_business_rule_plan_samples_three_examples_from_pool():
     asset = AssetRegistry(
         asset_type="article_business_rule_set",
         asset_key="yuanyue_product_experience",
-        content_json={"rule_type": "product_experience"},
+        content_json={"rule_type": "business_rule"},
         metadata_json={},
     )
 

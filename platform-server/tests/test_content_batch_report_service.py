@@ -147,7 +147,8 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
                     item_no=1,
                     status="generated",
                     plan_json={
-                        "rule_type": "product_experience",
+                        "rule_type": "business_rule",
+                        "business_rule": "宝宝便便不规律",
                         "product_topic": "宝宝便便不规律",
                         "asset_combo_key": "pain:0|sell:0|example:0",
                         "unified_generation": {
@@ -340,7 +341,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
     assert first.evidence_type == "观察指标"
     assert first.asset_combo_key == "pain:0|sell:0|example:0"
     assert first.generation_snapshot is not None
-    assert first.generation_snapshot["rule_type"] == "product_experience"
+    assert first.generation_snapshot["rule_type"] == "business_rule"
     assert first.generation_snapshot["business_rule"]["product_topic"] == "宝宝便便不规律"
     assert first.generation_snapshot["selected_keywords"][0]["keyword_name"] == "真实妈妈"
     assert first.generation_snapshot["expert"]["expert_config_code"] == "article_generator_v1"

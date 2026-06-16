@@ -1177,7 +1177,12 @@ def _evidence_for_categories(evidence_by_category: dict[str, list[str]], categor
 def _batch_content_type(items: list[ContentBatchItem]) -> str:
     for item in items:
         plan = item.plan_json or {}
-        if plan.get("output_fields") == ["comment"] or plan.get("rule_type") == "business_rule":
+        output_fields = plan.get("output_fields") or []
+        if output_fields == ["comment"]:
+            return "comment"
+        if "body" in output_fields:
+            return "article"
+        if plan.get("rule_type") == "business_rule":
             return "comment"
     return "article"
 
@@ -1238,7 +1243,7 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
     headers = [
         "序号",
         "状态",
-        "标题/业务规则",
+        "标题",
         "正文",
         "字数",
         "红线通过",
@@ -1422,7 +1427,7 @@ def _similarity_text(warnings: list[ContentBatchSimilarityWarning]) -> str:
 def _business_rule_label(value: Any) -> str:
     if not isinstance(value, dict):
         return ""
-    for key in ("business_rule", "product_experience", "topic", "rule_id"):
+    for key in ("business_rule", "topic", "rule_id"):
         text = str(value.get(key) or "").strip()
         if text:
             return text

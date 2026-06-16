@@ -283,6 +283,37 @@ export async function publishCommentBusinessRuleDraftApi(
   );
 }
 
+export async function updateCommentBusinessRuleExamplesApi(data: {
+  asset_key: string;
+  created_by?: string;
+  examples: string[];
+  rule_id?: string;
+  source_row_no?: number;
+  supplements?: string[];
+}) {
+  return requestClient.post<AssetsApi.AssetRegistry>(
+    '/v1/assets/comment-business-rule-examples',
+    data,
+  );
+}
+
+export async function updateBusinessRuleExamplesApi(data: {
+  asset_key: string;
+  asset_type?: 'article' | 'comment';
+  created_by?: string;
+  examples: string[];
+  rule_id?: string;
+  source_row_no?: number;
+  supplements?: string[];
+}) {
+  const params = data.asset_type ? `?asset_type=${data.asset_type}` : '';
+  const { asset_type: _assetType, ...payload } = data;
+  return requestClient.post<AssetsApi.AssetRegistry>(
+    `/v1/assets/business-rule-examples${params}`,
+    payload,
+  );
+}
+
 export async function importCommentBusinessRuleSetApi(data: {
   asset_key: string;
   created_by?: string;
@@ -308,7 +339,7 @@ export async function importCommentBusinessRuleSetApi(data: {
   );
 }
 
-export async function importProductExperienceRuleSetApi(data: {
+export async function importArticleBusinessRuleSetApi(data: {
   asset_key: string;
   created_by?: string;
   display_name?: string;
@@ -322,7 +353,7 @@ export async function importProductExperienceRuleSetApi(data: {
   }
   formData.append('created_by', data.created_by || 'maga-operator');
   return requestClient.post<AssetsApi.AssetImportResult>(
-    '/v1/assets/imports/product-experience-rule-set',
+    '/v1/assets/imports/article-business-rule-set',
     formData,
     {
       headers: {

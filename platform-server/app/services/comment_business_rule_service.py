@@ -247,30 +247,62 @@ def _read_xlsx_rows(file_content: bytes) -> list[dict[str, str]]:
 
 
 def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
-    business_rule, corpus = _business_rule_and_corpus(row)
-    if not business_rule or not corpus:
+    business_rule, raw_corpus = _business_rule_and_corpus(row)
+    if not business_rule or not raw_corpus:
         return None
-    examples = _line_examples(row.get("评论示例")) or _examples_from_corpus(corpus)
-    supplements = _line_examples(row.get("评论补充"))
+    corpus, corpus_examples = _split_examples_from_corpus(raw_corpus)
+    corpus = _clean_corpus_for_prompt(corpus, business_rule=business_rule)
+    has_canonical_examples = "示例" in row
+    examples = (
+        _line_examples(row.get("示例"))
+        if has_canonical_examples
+        else _line_examples(row.get("评论示例")) or corpus_examples
+    )
+    if not has_canonical_examples:
+        examples.extend(_line_examples(row.get("评论补充")))
     return {
         "rule_id": f"business_rule_{index:03d}",
         "business_rule": business_rule,
         "corpus": corpus,
         "examples": examples,
-        "supplements": supplements,
+        "supplements": [],
         "source_row_no": index,
     }
 
 
 def _business_rule_and_corpus(row: dict[str, str]) -> tuple[str, str]:
     """Read new business_rule columns while accepting old operator exports."""
-    rule_value = row.get("业务规则") or row.get("business_rule") or row.get(LEGACY_RULE_HEADER) or ""
-    corpus_value = row.get("语料") or row.get("corpus") or ""
-    if row.get("语料"):
+    rule_value = (
+        row.get("业务规则名称")
+        or row.get("业务规则")
+        or row.get("规则名称")
+        or row.get("标题")
+        or row.get("business_rule")
+        or row.get(LEGACY_RULE_HEADER)
+        or ""
+    )
+    simple_corpus = _simple_operator_corpus(row)
+    if simple_corpus:
+        return str(rule_value).strip(), simple_corpus
+    corpus_value = row.get("规则语料") or row.get("语料") or row.get("corpus") or ""
+    if row.get("规则语料") or row.get("语料"):
         return str(rule_value).strip(), str(corpus_value).strip()
     if row.get("评论类型") and (row.get("业务规则") or row.get(LEGACY_RULE_HEADER)):
         return row.get("评论类型", "").strip(), str(rule_value).strip()
     return str(rule_value).strip(), str(corpus_value).strip()
+
+
+def _simple_operator_corpus(row: dict[str, str]) -> str:
+    write_what = str(row.get("写什么") or "").strip()
+    how_to_say = str(row.get("怎么说") or "").strip()
+    if not write_what and not how_to_say:
+        return ""
+    parts: list[str] = []
+    if write_what:
+        parts.append(f"写什么：{write_what}")
+    if how_to_say:
+        parts.append(f"怎么说：{how_to_say}")
+    return "\n\n".join(parts).strip()
 
 
 def _line_examples(value: str | None) -> list[str]:
@@ -283,19 +315,76 @@ def _line_examples(value: str | None) -> list[str]:
 
 
 def _examples_from_corpus(corpus: str) -> list[str]:
+    return _split_examples_from_corpus(corpus)[1]
+
+
+def _split_examples_from_corpus(corpus: str) -> tuple[str, list[str]]:
     if "示例" not in corpus:
-        return []
+        return corpus, []
     after = re.split(r"示例[:：]", corpus, maxsplit=1)
     if len(after) < 2:
-        return []
-    body = re.split(r"\n\s*注意[:：]", after[1], maxsplit=1)[0]
-    return [_clean_example_line(line) for line in body.splitlines() if _clean_example_line(line)]
+        return corpus, []
+    before = after[0].rstrip()
+    remainder = after[1]
+    note_match = re.search(r"\n\s*注意[:：]", remainder)
+    if note_match:
+        body = remainder[: note_match.start()]
+        note = remainder[note_match.start() :].strip()
+    else:
+        body = remainder
+        note = ""
+    examples = [_clean_example_line(line) for line in body.splitlines() if _clean_example_line(line)]
+    if not examples:
+        return corpus, []
+    # 重要逻辑：旧导出会把“示例”嵌在语料里；导入时先拆开，
+    # 否则评论链路即使计划层只抽少量示例，也会通过 corpus 把全量示例塞进 prompt。
+    cleaned_corpus = "\n\n".join(part for part in (before, note) if part).strip()
+    return cleaned_corpus, examples
+
+
+def _clean_corpus_for_prompt(corpus: str, *, business_rule: str | None = None) -> str:
+    """Drop operator routing notes that should never be rendered into prompts."""
+    lines: list[str] = []
+    previous_blank = False
+    stripped_rule = str(business_rule or "").strip().rstrip(":：")
+    seen_rule_heading = False
+    seen_headings: set[str] = set()
+    for raw_line in str(corpus or "").splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if _is_operator_note_line(stripped):
+            continue
+        normalized_heading = stripped.rstrip(":：")
+        if stripped.endswith((":", "：")) and normalized_heading:
+            if normalized_heading in seen_headings:
+                continue
+            seen_headings.add(normalized_heading)
+        if stripped_rule and stripped.rstrip(":：") == stripped_rule:
+            if seen_rule_heading:
+                continue
+            seen_rule_heading = True
+        if not stripped:
+            if previous_blank:
+                continue
+            previous_blank = True
+            lines.append("")
+            continue
+        previous_blank = False
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def _is_operator_note_line(text: str) -> bool:
+    if not text:
+        return False
+    return bool(re.match(r"^(?:关键词方向|关键词方向是)\s*[:：是]?.*", text))
 
 
 def _clean_example_line(value: str) -> str:
     text = str(value or "").strip()
     text = re.sub(r"^[\-\*•]\s*", "", text)
-    text = re.sub(r"^\d+[、.．]\s*", "", text)
+    text = re.sub(r"^\d+[、．]\s*", "", text)
+    text = re.sub(r"^\d+\.\s+", "", text)
     return text.strip()
 
 
@@ -303,7 +392,7 @@ def _warnings_for_items(items: list[dict[str, Any]]) -> list[str]:
     warnings: list[str] = []
     missing_examples = [item["business_rule"] for item in items if not item.get("examples") and not item.get("supplements")]
     if missing_examples:
-        warnings.append(f"{len(missing_examples)} 条规则缺少参考示例")
+        warnings.append(f"{len(missing_examples)} 条规则缺少示例")
     return warnings
 
 

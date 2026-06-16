@@ -319,8 +319,10 @@ A2_BRAND_BAD_STOCK_WORDING_PATTERN = re.compile(
     r"赶紧来报个信|付款不犹豫|后面再说后面"
     r"|闭眼冲|可以冲了|直接冲|先冲"
     r"|调货|能调到|能调货|帮忙留货|帮.*留(?:一罐|这罐)|能留(?:一罐|这罐)|留(?:一罐|这罐)"
-    # “囤几罐”是正常用户表达，只拦“囤这罐”这类生硬指代。
+    # “囤几罐”是正常用户表达，只拦“囤这罐/那罐囤货喝完”这类生硬指代。
     r"|囤这罐"
+    r"|(?:旧的|原来的|手上|手里|这罐|那罐)[^，。！？；;]{0,4}囤货"
+    r"|囤货[^，。！？；;]{0,6}(?:喝完|喝着|接着喝)"
     r"|多跑[一二两三四五六七八九十\d几]?家店|跑[一二两三四五六七八九十\d几]?家店|跑店"
     r"|(?:我这边|我们这边|我这里|我们这里)[^，。！？；;]{0,8}(?:还没消息|还没看到有?a2|没看到有?a2)"
 )
@@ -576,7 +578,7 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
         context_required_fields=("人设", "关键词", "扰动规则", "生文指令", "业务规则", "生文输出格式"),
         context_keyword_allowlist=A2_COMBO_KEYWORDS,
         keyword_markers={
-            "有货+批批检": ("有货", "到货", "补货", "问货", "按需补", "快喝完", "物流码", "报告", "批次"),
+            "有货+批批检": ("有货", "到货", "补货", "问货", "按需补", "快喝完", "物流码", "报告", "批次", "检测", "质检", "蜡样", "透明"),
             "批批检+转奶": ("批批检", "物流码", "报告", "批次", "质检", "蜡样", "转奶", "换奶", "过渡", "适应"),
             "有货+转奶": ("有货", "到货", "补货", "问货", "快喝完", "转奶", "换奶", "过渡", "适应"),
         },
@@ -629,7 +631,6 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
             "a2每罐": "a2每批",
             "每罐": "这罐",
             "补一罐": "补货",
-            "拿一罐": "补货拿",
             "新的一罐": "新到手的",
             "一罐": "这罐",
             "先先不忙": "先不忙",
@@ -655,6 +656,7 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
             "物流码的码": "物流码",
             "码的码": "码",
             "批次码": "物流码",
+            "那批报告": "这批报告",
             "60+": "60多项",
             "蜡样报告细节": "蜡样检测标准",
             "检测项目": "检测项",
@@ -1488,8 +1490,8 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
             issues.append(
                 {
                     "code": "activity_body_missing_a2_specific_advantage",
-                    "message": "正文只做泛泛对比，没有讲清a2的批次报告/物流码/每批检测优势",
-                    "evidence": ["a2具体优势"],
+                    "message": "正文只做泛泛表达，没有讲清a2检测报告可见、报告细节或每批检测优势",
+                    "evidence": ["a2检测报告/报告细节"],
                     "risk_level": "high",
                 }
             )
@@ -1591,7 +1593,7 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
                 "risk_level": "high",
             }
         )
-    incomplete_reason = _a2_incomplete_comment_reason(body)
+    incomplete_reason = _a2_incomplete_comment_reason(body, keyword=keyword)
     if incomplete_reason:
         issues.append(
             {
@@ -1601,7 +1603,7 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
                 "risk_level": "high",
             }
         )
-    vague_deictic_reason = _a2_vague_deictic_without_product_reason(body)
+    vague_deictic_reason = _a2_vague_deictic_without_product_reason(body, keyword=keyword)
     if vague_deictic_reason:
         issues.append(
             {
@@ -1693,7 +1695,7 @@ def _a2_feeding_anxiety_stock_hit(body: str) -> str | None:
     return match.group(0) if match else None
 
 
-def _a2_incomplete_comment_reason(body: str) -> str | None:
+def _a2_incomplete_comment_reason(body: str, *, keyword: str | None = None) -> str | None:
     raw_text = str(body or "").strip()
     if raw_text.endswith(("，", ",", "、", "；", ";")):
         return "结尾标点像残句"
@@ -1701,6 +1703,10 @@ def _a2_incomplete_comment_reason(body: str) -> str | None:
     if not text:
         return "空正文"
     if len(text) < 12 and not _a2_is_complete_supply_transfer_comment(text):
+        if keyword == "有货+转奶" and _a2_is_contextual_supply_transfer_short_reply(text):
+            return None
+        if _a2_has_report_detail_short_advantage(re.sub(r"\s+", "", text)):
+            return None
         return "正文过短"
     for suffix in A2_INCOMPLETE_COMMENT_SUFFIXES:
         if text.endswith(suffix):
@@ -1710,15 +1716,57 @@ def _a2_incomplete_comment_reason(body: str) -> str | None:
     return None
 
 
-def _a2_vague_deictic_without_product_reason(body: str) -> str | None:
+def _a2_vague_deictic_without_product_reason(body: str, *, keyword: str | None = None) -> str | None:
     text = str(body or "").strip()
     if any(marker in text for marker in ("a2", "A2", "至初")):
+        return None
+    if keyword == "有货+转奶" and _a2_is_contextual_supply_transfer_short_reply(text):
         return None
     if any(marker in text for marker in ("姐妹", "哪买", "哪里买", "哪家", "求问", "+1", "我也")):
         return None
     if "这罐" in text and any(marker in text for marker in ("刚收", "收到", "喝完", "补上", "拿了")):
         return "缺少产品对象"
     return None
+
+
+def _a2_is_contextual_supply_transfer_short_reply(text: str) -> bool:
+    """放行有货+转奶评论串里的短接楼，但不放空泛残句。"""
+    normalized = re.sub(r"\s+", "", str(text or "").strip("，。！？,!?；;、 "))
+    if len(normalized) < 3 or len(normalized) > 14:
+        return False
+    if normalized in {"导", "这个", "这罐", "不错", "挺好", "还行", "可以", "先喝着", "再等等"}:
+        return False
+    anchored_patterns = (
+        r"^(终于)?到了$",
+        r"^(a2|A2)(终于|总算|可算)?到了$",
+        r"^(刚看到|刚问到)?(a2|A2)(终于|总算|可算)?(到了|到货了)$",
+        r"^(a2|A2)到货了，?转奶先(缓缓|放放|等等|不急)$",
+        r"^刚刷到(a2|A2)有货了$",
+        r"^刚问了?(一下|下)，?(a2|A2)到了$",
+        r"^(刚看到|刚问到)?(a2|A2)?能拍了$",
+        r"^(a2|A2)?刚?到了，?先不(着急|急)着?(转|换|转奶|换奶)$",
+        r"^到货了?先不(着急|急)着?(转|换|转奶|换奶)$",
+        r"^我的到货了，?先喝着(a2|A2|至初)$",
+        r"^刚问了?几家店?(都)?说有货$",
+        r"^刚问了?客服说(a2|A2)有货了$",
+        r"^刚问了?导购，?说(a2|A2)到了$",
+        r"^(昨天|今天)?导购说到货了$",
+        r"^我订的那罐也到了$",
+        r"^(a2|A2)到了.{0,4}不(着急|急)(转|换|转奶|换奶)$",
+        r"^(到货|有货)了?$",
+        r"^(我的|我这边|这边|这单|预定的)?.{0,3}(快到了|到了|到货了|发货了)$",
+        r"^我的也到了，?先喝着.{0,3}$",
+        r"^(等|还在等|继续等).{0,4}(货|发货|到货)(中)?$",
+        r"^我也等(发货|到货)(中)?$",
+        r"^(先)?不(转|换)了?$",
+        r"^先不(转奶|换奶)$",
+        r"^转奶先(放放|等等|不急)$",
+        r"^换奶(先)?(放放|等等|不急)$",
+        r"^有底了(也算是)?$",
+        r"^能不换就不换$",
+        r"^不折腾了$",
+    )
+    return any(re.search(pattern, normalized) for pattern in anchored_patterns)
 
 
 def _a2_is_complete_supply_transfer_comment(text: str) -> bool:
@@ -1996,6 +2044,8 @@ def _a2_has_specific_advantage(body: str) -> bool:
         return True
     if _a2_has_contextual_report_advantage(normalized):
         return True
+    if _a2_has_report_detail_short_advantage(normalized):
+        return True
     if not re.search(r"a2|A2|至初", normalized):
         return False
     # 真人评论里常把“a2”“店里有货/导购提示”“扫物流码”“这罐报告”
@@ -2025,6 +2075,57 @@ def _a2_has_specific_advantage(body: str) -> bool:
     ):
         return True
     return False
+
+
+def _a2_has_report_detail_short_advantage(normalized: str) -> bool:
+    """识别“报告挺详细/能看到报告”这类真人短句，不强制写完整扫码流程。"""
+    if not normalized:
+        return False
+    has_brand_subject = bool(re.search(r"a2|A2|至初", normalized))
+    has_batch_subject = any(marker in normalized for marker in ("这批", "这罐", "这个批次", "那批", "新批次", "批次"))
+    if not any(marker in normalized for marker in ("报告", "检测", "质检", "蜡样")):
+        return False
+
+    specific_report_markers = ("质检报告", "蜡样检测", "蜡样报告", "检测报告", "批次报告")
+    detail_markers = (
+        "详细",
+        "挺细",
+        "很细",
+        "挺清楚",
+        "很清楚",
+        "列得",
+        "列出来",
+        "挺全",
+        "透明",
+        "具体数据",
+        "项目",
+        "加分",
+    )
+    visibility_markers = (
+        "能看到",
+        "能看",
+        "能查到",
+        "查得到",
+        "直接扫到",
+        "能直接扫到",
+        "扫到报告",
+        "能点开",
+        "入口",
+        "出来",
+        "跳出来",
+    )
+    confidence_markers = ("放心", "安心", "踏实", "心里有数", "有底", "省心")
+
+    has_specific_report = any(marker in normalized for marker in specific_report_markers)
+    has_detail = any(marker in normalized for marker in detail_markers)
+    has_visibility = any(marker in normalized for marker in visibility_markers)
+    has_confidence = any(marker in normalized for marker in confidence_markers)
+    if has_brand_subject:
+        return (has_specific_report and (has_detail or has_visibility or has_confidence)) or (
+            has_visibility and has_confidence
+        )
+    # 当前 A2 规则上下文里，真人短句常省略品牌；只要不是空泛“有报告”，报告细节/可见/轻情绪都可放行。
+    return has_detail or has_visibility or has_confidence or "质检" in normalized or "蜡样" in normalized or has_batch_subject
 
 
 def _a2_has_wax_standard_advantage_for_rule(item: Any, body: str) -> bool:

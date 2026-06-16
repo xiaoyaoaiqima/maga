@@ -245,6 +245,15 @@ class CommentBusinessRuleDraftPublishResponse(BaseModel):
     asset: AssetRegistryResponse
 
 
+class CommentBusinessRuleExamplesUpdate(BaseModel):
+    asset_key: str = Field(..., min_length=1)
+    rule_id: str | None = None
+    source_row_no: int | None = Field(default=None, ge=1)
+    examples: list[str] = Field(default_factory=list)
+    supplements: list[str] = Field(default_factory=list)
+    created_by: str | None = "maga-operator"
+
+
 class ReferenceElementExtractRequest(BaseModel):
     asset_key: str = Field(..., min_length=1)
     limit: int | None = Field(default=20, ge=1, le=200)

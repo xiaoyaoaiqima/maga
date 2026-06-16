@@ -377,9 +377,8 @@ async function handlePreview() {
       {
         business_rule: {
           product_topic: '美素佳儿源悦活动',
-          rule_type: expert.content_type.includes('comment')
-            ? 'business_rule'
-            : 'product_experience',
+          rule_type: 'business_rule',
+          business_rule: '预览业务规则',
         },
         content_type:
           expert.content_type === 'article,comment'

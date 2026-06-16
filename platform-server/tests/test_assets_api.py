@@ -396,6 +396,7 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
     assert [item["keyword_name"] for item in fallback_by_code["comment_format_control"]["sub_keywords"]] == [
         "5-8字短接话",
         "批批检短接话",
+        "评论串短接楼",
         "8-16字",
         "10-20字",
         "21-30字少量",
@@ -418,11 +419,13 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
     assert "扫码、罐底码、二维码" in fallback_by_code["comment_format_control"]["sub_keywords"][1]["corpus"][0]
     assert "有货、到货、门店、补到货、拿一罐、先试或转奶锚点" in fallback_by_code["comment_format_control"]["sub_keywords"][1]["corpus"][0]
     assert "别写“保证没问题、绝对安全”" in fallback_by_code["comment_format_control"]["sub_keywords"][1]["corpus"][0]
-    assert "21到30字" in fallback_by_code["comment_format_control"]["sub_keywords"][4]["corpus"][0]
-    assert "21到35字" in fallback_by_code["comment_format_control"]["sub_keywords"][5]["corpus"][0]
-    assert "21到50字" in fallback_by_code["comment_format_control"]["sub_keywords"][6]["corpus"][0]
-    assert "剧情锚点" not in fallback_by_code["comment_format_control"]["sub_keywords"][6]["corpus"][0]
-    assert "门店活动" not in fallback_by_code["comment_format_control"]["sub_keywords"][6]["corpus"][0]
+    assert "3到12字" in fallback_by_code["comment_format_control"]["sub_keywords"][2]["corpus"][0]
+    assert "先不转了" in fallback_by_code["comment_format_control"]["sub_keywords"][2]["corpus"][0]
+    assert "21到30字" in fallback_by_code["comment_format_control"]["sub_keywords"][5]["corpus"][0]
+    assert "21到35字" in fallback_by_code["comment_format_control"]["sub_keywords"][6]["corpus"][0]
+    assert "21到50字" in fallback_by_code["comment_format_control"]["sub_keywords"][7]["corpus"][0]
+    assert "剧情锚点" not in fallback_by_code["comment_format_control"]["sub_keywords"][7]["corpus"][0]
+    assert "门店活动" not in fallback_by_code["comment_format_control"]["sub_keywords"][7]["corpus"][0]
 
     payload = {
         "asset_key": "default_content_generation_keywords",
@@ -809,11 +812,17 @@ async def test_upload_comment_business_rule_set_imports_rule_asset(asset_client)
             "# 运营本地说明行会被导入器忽略",
             "业务规则,语料",
             '"整体适应","整体适应：',
+            '关键词方向是有货+真实反馈。',
+            '整体适应：',
             '像妈妈在评论区聊刚开始喝源悦的观察，语气自然一点。',
             '',
             '示例：',
             '- 我家刚开始也在看源悦，想蹲蹲真实反馈',
-            '- 有同款宝宝吗，喝着接受度咋样"',
+            '- 0.03这个数我记住了，单位别问我哈哈',
+            '- 1. 这种编号前缀要清理',
+            '- 有同款宝宝吗，喝着接受度咋样',
+            '',
+            '注意：示例只作为语气参考，不要照抄"',
             '"成分讨论","成分讨论：',
             '像在确认信息，别写成科普长文。',
             '',
@@ -841,7 +850,7 @@ async def test_upload_comment_business_rule_set_imports_rule_asset(asset_client)
     assert data["imported_assets"] == 1
     assert ["comment_business_rule_set", "yuanyue_comment_activity"] in data["asset_keys"]
     assert data["summary_json"]["rule_count"] == 2
-    assert data["summary_json"]["example_count"] == 3
+    assert data["summary_json"]["example_count"] == 5
     assert data["summary_json"]["default_generation_count"] == 10
     assert data["summary_json"]["keyword_asset_key"] == "a2_plot_discussion_comment_keywords"
     assert data["summary_json"]["quality_guard_profile_key"] == "a2_sentiment_comment_202606"
@@ -862,6 +871,66 @@ async def test_upload_comment_business_rule_set_imports_rule_asset(asset_client)
     assert asset["content_json"]["rule_type"] == "business_rule"
     assert asset["content_json"]["items"][0]["business_rule"] == "整体适应"
     assert asset["content_json"]["items"][0]["examples"][0] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
+    assert any("0.03这个数我记住了" in item for item in asset["content_json"]["items"][0]["examples"])
+    assert "这种编号前缀要清理" in asset["content_json"]["items"][0]["examples"]
+    assert "注意：示例只作为语气参考，不要照抄" in asset["content_json"]["items"][0]["corpus"]
+    assert "示例：" not in asset["content_json"]["items"][0]["corpus"]
+    assert "关键词方向" not in asset["content_json"]["items"][0]["corpus"]
+    assert asset["content_json"]["items"][0]["corpus"].count("整体适应：") == 1
+    assert "我家刚开始也在看源悦" not in asset["content_json"]["items"][0]["corpus"]
+
+
+@pytest.mark.asyncio
+async def test_upload_comment_business_rule_set_accepts_three_column_rule_then_updates_examples(asset_client):
+    csv_content = "\n".join(
+        [
+            "业务规则名称,规则语料,示例",
+            '"有货后先不急着转奶","写什么：妈妈说自己问到或买到 a2 了，所以先继续喝 a2，转奶先放一放。\n\n怎么说：像评论区接一句或顺手报个信，可以很短。",""',
+        ]
+    )
+    import_response = await asset_client.post(
+        "/api/v1/assets/imports/comment-business-rule-set",
+        data={
+            "asset_key": "a2_simple_comment_rules",
+            "display_name": "A2极简评论业务规则",
+            "created_by": "ops",
+        },
+        files={"file": ("a2_极简规则.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+
+    assert import_response.status_code == 200
+    detail_response = await asset_client.get(
+        "/api/v1/assets/comment_business_rule_set/a2_simple_comment_rules"
+    )
+    asset = detail_response.json()["data"]
+    item = asset["content_json"]["items"][0]
+    assert item["business_rule"] == "有货后先不急着转奶"
+    assert item["corpus"] == (
+        "写什么：妈妈说自己问到或买到 a2 了，所以先继续喝 a2，转奶先放一放。\n\n"
+        "怎么说：像评论区接一句或顺手报个信，可以很短。"
+    )
+    assert item["examples"] == []
+
+    update_response = await asset_client.post(
+        "/api/v1/assets/comment-business-rule-examples",
+        json={
+            "asset_key": "a2_simple_comment_rules",
+            "rule_id": item["rule_id"],
+            "source_row_no": item["source_row_no"],
+            "examples": ["我的也快到了", "能不换就不换", "我也买到了"],
+            "supplements": ["刚问了客服说a2有货了"],
+            "created_by": "ops",
+        },
+    )
+
+    assert update_response.status_code == 200
+    updated_asset = update_response.json()["data"]
+    assert updated_asset["version_no"] == asset["version_no"] + 1
+    updated_item = updated_asset["content_json"]["items"][0]
+    assert updated_item["corpus"] == item["corpus"]
+    assert updated_item["examples"] == ["我的也快到了", "能不换就不换", "我也买到了", "刚问了客服说a2有货了"]
+    assert updated_item["supplements"] == []
+    assert updated_asset["metadata_json"]["example_count"] == 4
 
 
 @pytest.mark.asyncio
@@ -949,7 +1018,8 @@ async def test_comment_business_rule_draft_save_list_and_publish(asset_client):
 
     items = published["asset"]["content_json"]["items"]
     assert items[0]["corpus"] == before_asset["content_json"]["items"][0]["corpus"]
-    assert items[1]["corpus"] == draft_corpus
+    assert items[1]["corpus"] == "艾尔博士讲A1/A2型奶牛："
+    assert "示例：" not in items[1]["corpus"]
     assert items[1]["examples"] == [
         "娃听艾尔博士讲A1/A2型奶牛，正好我路过门店补奶粉",
         "群里有人晒对讲机，我准备带娃去门店续上奶粉",
@@ -960,23 +1030,21 @@ async def test_comment_business_rule_draft_save_list_and_publish(asset_client):
     )
     latest = latest_response.json()["data"]
     assert latest["version_no"] == 2
-    assert latest["content_json"]["items"][1]["corpus"] == draft_corpus
+    assert latest["content_json"]["items"][1]["corpus"] == "艾尔博士讲A1/A2型奶牛："
 
 
 @pytest.mark.asyncio
-async def test_upload_product_experience_rule_set_imports_rule_asset(asset_client):
+async def test_upload_article_business_rule_set_imports_rule_asset(asset_client):
     csv_content = "\n".join(
         [
             "# 运营本地说明行会被导入器忽略",
-            "产品使用体验,语料,参考示例,补充参考",
-            '"0-6个月，3个月内，奶量补充","## 产品使用体验',
+            "业务规则,语料,参考示例,补充参考",
+            '"奶量补充","## 业务规则',
             "",
-            "你宝宝的月龄：0-6个月。",
-            "喝源悦时间：3个月内。",
             "本文围绕奶量补充相关体验来写。",
             "",
             "提示：",
-            "- 像在聊0-6个月宝宝的喝奶变化。",
+            "- 像在聊宝宝的喝奶变化。",
             "",
             "可参考素材：",
             "- 刚换源悦那阵子，喂奶没之前那么拉扯。",
@@ -985,10 +1053,8 @@ async def test_upload_product_experience_rule_set_imports_rule_asset(asset_clien
             '注意：参考素材只提供语义方向，生成时换一种自然说法。","- 新列示例1',
             "- 新列示例2",
             '- 新列示例3","- 新列补充1"',
-            '"7-12个月，3-6个月，消化吸收","## 产品使用体验',
+            '"消化吸收","## 业务规则',
             "",
-            "你宝宝的月龄：7-12个月。",
-            "喝源悦时间：3-6个月。",
             "本文围绕消化吸收相关体验来写。",
             "",
             "可参考素材：",
@@ -1000,13 +1066,13 @@ async def test_upload_product_experience_rule_set_imports_rule_asset(asset_clien
     )
 
     response = await asset_client.post(
-        "/api/v1/assets/imports/product-experience-rule-set",
+        "/api/v1/assets/imports/article-business-rule-set",
         data={
             "created_by": "ops",
-            "display_name": "源悦-生文",
-            "keyword_asset_key": "yuanyue_product_experience_keywords",
+            "display_name": "源悦生文业务规则",
+            "keyword_asset_key": "yuanyue_article_business_keywords",
         },
-        files={"file": ("产品使用体验_子关键词导出.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+        files={"file": ("业务规则_子关键词导出.csv", csv_content.encode("utf-8-sig"), "text/csv")},
     )
 
     assert response.status_code == 200
@@ -1017,7 +1083,7 @@ async def test_upload_product_experience_rule_set_imports_rule_asset(asset_clien
     assert ["article_business_rule_set", "yuanyue_product_experience"] in data["asset_keys"]
     assert data["summary_json"]["rule_count"] == 2
     assert data["summary_json"]["example_count"] == 5
-    assert data["summary_json"]["keyword_asset_key"] == "yuanyue_product_experience_keywords"
+    assert data["summary_json"]["keyword_asset_key"] == "yuanyue_article_business_keywords"
 
     detail_response = await asset_client.get(
         "/api/v1/assets/article_business_rule_set/yuanyue_product_experience"
@@ -1025,15 +1091,183 @@ async def test_upload_product_experience_rule_set_imports_rule_asset(asset_clien
     assert detail_response.status_code == 200
     asset = detail_response.json()["data"]
     assert asset["asset_type"] == "article_business_rule_set"
-    assert asset["display_name"] == "源悦-生文"
-    assert asset["content_json"]["keyword_asset_key"] == "yuanyue_product_experience_keywords"
-    assert asset["metadata_json"]["keyword_asset_key"] == "yuanyue_product_experience_keywords"
-    assert asset["content_json"]["rule_type"] == "product_experience"
-    assert asset["content_json"]["items"][0]["product_experience"] == "0-6个月，3个月内，奶量补充"
-    assert asset["content_json"]["items"][0]["baby_stage"] == "0-6个月"
-    assert asset["content_json"]["items"][0]["use_duration"] == "3个月内"
+    assert asset["display_name"] == "源悦生文业务规则"
+    assert asset["content_json"]["keyword_asset_key"] == "yuanyue_article_business_keywords"
+    assert asset["metadata_json"]["keyword_asset_key"] == "yuanyue_article_business_keywords"
+    assert asset["content_json"]["rule_type"] == "business_rule"
+    assert asset["content_json"]["items"][0]["business_rule"] == "奶量补充"
+    assert "product_experience" not in asset["content_json"]["items"][0]
+    assert "baby_stage" not in asset["content_json"]["items"][0]
+    assert "use_duration" not in asset["content_json"]["items"][0]
     assert asset["content_json"]["items"][0]["topic"] == "奶量补充"
-    assert asset["content_json"]["items"][0]["examples"] == ["新列示例1", "新列示例2", "新列示例3"]
-    assert asset["content_json"]["items"][0]["supplements"] == ["新列补充1"]
+    assert asset["content_json"]["items"][0]["examples"] == ["新列示例1", "新列示例2", "新列示例3", "新列补充1"]
+    assert asset["content_json"]["items"][0]["supplements"] == []
     assert asset["content_json"]["items"][1]["examples"] == ["主要看喝完后的肚肚状态和便便节奏。"]
-    assert "1 条规则参考示例少于3条" in asset["metadata_json"]["warnings"]
+    assert "1 条规则示例少于3条" in asset["metadata_json"]["warnings"]
+
+
+@pytest.mark.asyncio
+async def test_update_article_business_rule_examples_creates_new_asset_version(asset_client):
+    csv_content = "\n".join(
+        [
+            "业务规则名称,规则语料,示例",
+            '"到手看报告","写什么：妈妈收到 a2 后看了罐底报告。","- 原示例1\n- 原示例2\n- 原示例3"',
+        ]
+    )
+    import_response = await asset_client.post(
+        "/api/v1/assets/imports/article-business-rule-set",
+        data={
+            "asset_key": "a2_article_examples",
+            "created_by": "ops",
+            "display_name": "A2帖子示例维护",
+        },
+        files={"file": ("A2帖子业务规则.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+    assert import_response.status_code == 200
+    before_asset = (
+        await asset_client.get("/api/v1/assets/article_business_rule_set/a2_article_examples")
+    ).json()["data"]
+    before_item = before_asset["content_json"]["items"][0]
+
+    update_response = await asset_client.post(
+        "/api/v1/assets/business-rule-examples",
+        params={"asset_type": "article"},
+        json={
+            "asset_key": "a2_article_examples",
+            "source_row_no": before_item["source_row_no"],
+            "examples": ["这批报告我扫到了", "罐底一扫信息挺全", "看完心里有数点"],
+            "supplements": ["有姐妹会看这种报告吗"],
+            "created_by": "ops",
+        },
+    )
+
+    assert update_response.status_code == 200
+    updated_asset = update_response.json()["data"]
+    assert updated_asset["asset_type"] == "article_business_rule_set"
+    assert updated_asset["version_no"] == before_asset["version_no"] + 1
+    updated_item = updated_asset["content_json"]["items"][0]
+    assert updated_item["corpus"] == before_item["corpus"]
+    assert updated_item["examples"] == ["这批报告我扫到了", "罐底一扫信息挺全", "看完心里有数点", "有姐妹会看这种报告吗"]
+    assert updated_item["supplements"] == []
+    assert updated_asset["metadata_json"]["example_count"] == 4
+    assert updated_asset["metadata_json"]["last_examples_rule_id"] == before_item["rule_id"]
+
+
+@pytest.mark.asyncio
+async def test_article_business_rule_draft_publish_updates_corpus_only(asset_client):
+    csv_content = "\n".join(
+        [
+            "业务规则,语料,参考示例",
+            '"有货后看报告","旧规则语料","- 示例1\n- 示例2\n- 示例3"',
+        ]
+    )
+    import_response = await asset_client.post(
+        "/api/v1/assets/imports/article-business-rule-set",
+        data={
+            "asset_key": "a2_article_draft",
+            "created_by": "ops",
+            "display_name": "A2帖子规则草稿",
+        },
+        files={"file": ("A2帖子业务规则.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+    assert import_response.status_code == 200
+    before_asset = (
+        await asset_client.get("/api/v1/assets/article_business_rule_set/a2_article_draft")
+    ).json()["data"]
+    before_item = before_asset["content_json"]["items"][0]
+
+    save_response = await asset_client.post(
+        "/api/v1/assets/comment-business-rule-drafts",
+        json={
+            "asset_key": "a2_article_draft",
+            "source_row_no": before_item["source_row_no"],
+            "draft_corpus": "新规则语料，只改写什么和怎么说",
+            "created_by": "ops",
+        },
+    )
+    assert save_response.status_code == 200
+    draft = save_response.json()["data"]
+
+    publish_response = await asset_client.post(
+        f"/api/v1/assets/comment-business-rule-drafts/{draft['id']}/publish",
+        json={"created_by": "ops"},
+    )
+    assert publish_response.status_code == 200
+    published_asset = publish_response.json()["data"]["asset"]
+    assert published_asset["asset_type"] == "article_business_rule_set"
+    assert published_asset["version_no"] == before_asset["version_no"] + 1
+    updated_item = published_asset["content_json"]["items"][0]
+    assert updated_item["corpus"] == "新规则语料，只改写什么和怎么说"
+    assert updated_item["examples"] == before_item["examples"]
+
+
+@pytest.mark.asyncio
+async def test_upload_article_business_rule_set_rejects_old_product_experience_header(asset_client):
+    csv_content = "\n".join(
+        [
+            "产品使用体验,语料",
+            '"容易中招","## 业务规则',
+            "",
+            "活动：0705旺玥活动。",
+            '可参考素材：\n- 接娃回来先换衣服。"',
+        ]
+    )
+
+    response = await asset_client.post(
+        "/api/v1/assets/imports/article-business-rule-set",
+        data={
+            "asset_key": "wangyue_article_business_topic_only",
+            "created_by": "ops",
+            "display_name": "旺玥-主题粒度",
+        },
+        files={"file": ("旺玥-旧表头.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+
+    assert response.status_code == 400
+    assert "article business rule set is empty" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_upload_article_business_rule_set_infers_activity_and_word_count(asset_client):
+    mid_corpus = (
+        "## 业务规则\n\n"
+        "活动：0705旺玥活动。篇幅类型：中短文；正文按130字左右写，"
+        "建议125-145字，可在120-150字之间；只写一段，不换行。\n\n"
+        "可参考素材：\n- 接娃回家先换衣服，出门前这杯旺玥也安排上。"
+    )
+    short_corpus = (
+        "## 业务规则\n\n"
+        "活动：0705旺玥活动。篇幅类型：短文；正文必须40-80字，"
+        "建议45-65字；只写一段，不换行。\n\n"
+        "可参考素材：\n- 晚饭又挑两口，睡前那杯旺玥我就没省。"
+    )
+    csv_content = "\n".join(
+        [
+            "业务规则,语料",
+            f'"容易中招，日常保护力","{mid_corpus}"',
+            f'"营养不足，挑食营养补充","{short_corpus}"',
+        ]
+    )
+
+    response = await asset_client.post(
+        "/api/v1/assets/imports/article-business-rule-set",
+        data={
+            "asset_key": "wangyue_article_business_rules",
+            "display_name": "0705旺玥活动",
+            "created_by": "ops",
+        },
+        files={"file": ("旺玥-业务规则_子关键词导出.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+
+    assert response.status_code == 200
+    detail_response = await asset_client.get(
+        "/api/v1/assets/article_business_rule_set/wangyue_article_business_rules"
+    )
+    asset = detail_response.json()["data"]
+    assert asset["content_json"]["activity_name"] == "0705旺玥活动"
+    assert asset["metadata_json"]["activity_name"] == "0705旺玥活动"
+    assert (
+        asset["content_json"]["word_count"]
+        == "逐条参考：中短文约120-150字，短一点但像真人不要硬扩写；短文40-80字；标题不计；正文单段不换行"
+    )
+    assert asset["metadata_json"]["word_count"] == asset["content_json"]["word_count"]

@@ -9,16 +9,26 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.maga_assets import AssetChangeProposal, AssetChangeRequest, AssetImportRun, AssetRegistry
-from app.services.business_rule_asset_types import COMMENT_BUSINESS_RULE_ASSET_TYPES
-from app.services.comment_business_rule_service import COMMENT_BUSINESS_RULE_ASSET_TYPE
+from app.services.business_rule_asset_types import (
+    ARTICLE_BUSINESS_RULE_ASSET_TYPE,
+    ARTICLE_BUSINESS_RULE_ASSET_TYPES,
+    COMMENT_BUSINESS_RULE_ASSET_TYPES,
+)
+from app.services.comment_business_rule_service import (
+    COMMENT_BUSINESS_RULE_ASSET_TYPE,
+    _clean_corpus_for_prompt,
+    _split_examples_from_corpus,
+)
 from app.schemas.assets import (
     AssetCandidateCreate,
     AssetChangeProposalCreate,
     AssetChangeRequestCreate,
+    CommentBusinessRuleExamplesUpdate,
     CommentBusinessRuleDraftSave,
     AssetGenerationOptionsResponse,
 )
 
+LEGACY_PRODUCT_EXPERIENCE_RULE_ASSET_TYPE = "product_experience_rule_set"
 
 class AssetService:
     def __init__(self, db: AsyncSession):
@@ -78,7 +88,17 @@ class AssetService:
         asset_key: str,
         *,
         asset_stage: str | None = "production",
+        compatible: bool = False,
     ) -> AssetRegistry | None:
+        if compatible and asset_type == LEGACY_PRODUCT_EXPERIENCE_RULE_ASSET_TYPE:
+            compatible_asset = await self.get_latest_asset(
+                ARTICLE_BUSINESS_RULE_ASSET_TYPE,
+                asset_key,
+                asset_stage=asset_stage,
+                compatible=False,
+            )
+            if compatible_asset is not None:
+                return compatible_asset
         stmt = (
             select(AssetRegistry)
             .where(
@@ -101,6 +121,20 @@ class AssetService:
             select(AssetRegistry)
             .where(
                 AssetRegistry.asset_type.in_(COMMENT_BUSINESS_RULE_ASSET_TYPES),
+                AssetRegistry.asset_key == asset_key,
+                AssetRegistry.status == "active",
+                AssetRegistry.asset_stage == "production",
+            )
+            .order_by(AssetRegistry.version_no.desc(), AssetRegistry.id.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def _get_latest_article_business_rule_asset(self, asset_key: str) -> AssetRegistry | None:
+        result = await self.db.execute(
+            select(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type.in_(ARTICLE_BUSINESS_RULE_ASSET_TYPES),
                 AssetRegistry.asset_key == asset_key,
                 AssetRegistry.status == "active",
                 AssetRegistry.asset_stage == "production",
@@ -277,8 +311,14 @@ class AssetService:
 
     async def save_comment_business_rule_draft(self, payload: CommentBusinessRuleDraftSave) -> AssetChangeProposal:
         asset = await self._get_latest_comment_business_rule_asset(payload.asset_key)
+        draft_type = "comment_business_rule_item"
+        smoke_endpoint = "/api/v1/content-agent/comment-batches/start"
         if asset is None:
-            raise ValueError("comment business rule asset not found")
+            asset = await self._get_latest_article_business_rule_asset(payload.asset_key)
+            draft_type = "article_business_rule_item"
+            smoke_endpoint = "/api/v1/content-agent/batches/start"
+        if asset is None:
+            raise ValueError("business rule asset not found")
         _, item = _find_business_rule_item(asset.content_json, rule_id=payload.rule_id, source_row_no=payload.source_row_no)
         draft_corpus = payload.draft_corpus.strip()
         if not draft_corpus:
@@ -288,7 +328,7 @@ class AssetService:
             source_text=f"业务规则草稿：{payload.asset_key}/{item.get('rule_id')}",
             requester=payload.created_by,
             context_json={
-                "draft_type": "comment_business_rule_item",
+                "draft_type": draft_type,
                 "asset_type": asset.asset_type,
                 "asset_key": payload.asset_key,
                 "base_asset_id": asset.id,
@@ -317,7 +357,7 @@ class AssetService:
                 }
             ],
             proposed_changes_json={
-                "draft_type": "comment_business_rule_item",
+                "draft_type": draft_type,
                 "asset_type": asset.asset_type,
                 "asset_key": payload.asset_key,
                 "base_asset_id": asset.id,
@@ -336,7 +376,7 @@ class AssetService:
                 "发布时会复制当前 active 规则包，只替换目标规则并生成新版本。",
             ],
             smoke_test_json={
-                "endpoint": "/api/v1/content-agent/comment-batches/start",
+                "endpoint": smoke_endpoint,
                 "asset_key": payload.asset_key,
                 "rule_id": item.get("rule_id"),
                 "source_row_no": item.get("source_row_no"),
@@ -367,7 +407,7 @@ class AssetService:
         drafts: list[AssetChangeProposal] = []
         for proposal in result.scalars().all():
             changes = proposal.proposed_changes_json or {}
-            if changes.get("draft_type") != "comment_business_rule_item":
+            if changes.get("draft_type") not in ("comment_business_rule_item", "article_business_rule_item"):
                 continue
             if changes.get("asset_key") != asset_key:
                 continue
@@ -391,16 +431,24 @@ class AssetService:
         if proposal is None:
             return None, None
         changes = proposal.proposed_changes_json or {}
-        if changes.get("draft_type") != "comment_business_rule_item":
-            raise ValueError("not a comment business rule draft")
+        draft_type = changes.get("draft_type")
+        if draft_type not in ("comment_business_rule_item", "article_business_rule_item"):
+            raise ValueError("not a business rule draft")
         if proposal.status == "applied" and proposal.applied_asset_ids_json:
             asset = await self.db.get(AssetRegistry, proposal.applied_asset_ids_json[0])
             return proposal, asset
 
         asset_key = str(changes.get("asset_key") or "").strip()
-        current_asset = await self._get_latest_comment_business_rule_asset(asset_key)
+        is_article_draft = draft_type == "article_business_rule_item"
+        current_asset = (
+            await self._get_latest_article_business_rule_asset(asset_key)
+            if is_article_draft
+            else await self._get_latest_comment_business_rule_asset(asset_key)
+        )
         if current_asset is None:
-            raise ValueError("comment business rule asset not found")
+            raise ValueError("business rule asset not found")
+        compatible_types = ARTICLE_BUSINESS_RULE_ASSET_TYPES if is_article_draft else COMMENT_BUSINESS_RULE_ASSET_TYPES
+        source_prefix = "article_business_rule_draft" if is_article_draft else "comment_business_rule_draft"
         target = changes.get("target") if isinstance(changes.get("target"), dict) else {}
         content_json = copy.deepcopy(current_asset.content_json or {})
         _, item = _find_business_rule_item(
@@ -411,14 +459,21 @@ class AssetService:
         draft_corpus = str(changes.get("draft_corpus") or "").strip()
         if not draft_corpus:
             raise ValueError("draft_corpus is empty")
-        # 重要逻辑：发布草稿只替换目标单条规则，保留当前 active 版本中的其他运营改动。
-        item["corpus"] = draft_corpus
-        item["examples"] = _extract_examples_from_corpus(draft_corpus)
+        if is_article_draft:
+            # 重要逻辑：帖子/生文的规则语料与示例池分开维护；发布草稿只替换 corpus。
+            item["corpus"] = draft_corpus
+        else:
+            clean_corpus, draft_examples = _split_examples_from_corpus(draft_corpus)
+            # 重要逻辑：发布草稿只替换目标单条规则，保留当前 active 版本中的其他运营改动；
+            # 同时沿用导入器清洗，避免“关键词方向/全量示例”等运营备注进入生产 prompt。
+            item["corpus"] = _clean_corpus_for_prompt(clean_corpus, business_rule=_business_rule_name(item))
+            if draft_examples:
+                item["examples"] = draft_examples
 
         await self.db.execute(
             update(AssetRegistry)
             .where(
-                AssetRegistry.asset_type.in_(COMMENT_BUSINESS_RULE_ASSET_TYPES),
+                AssetRegistry.asset_type.in_(compatible_types),
                 AssetRegistry.asset_key == asset_key,
                 AssetRegistry.asset_stage == "production",
                 AssetRegistry.status == "active",
@@ -436,13 +491,13 @@ class AssetService:
             }
         )
         asset = AssetRegistry(
-            asset_type=COMMENT_BUSINESS_RULE_ASSET_TYPE,
+            asset_type=current_asset.asset_type,
             asset_key=asset_key,
             display_name=current_asset.display_name,
-            version_no=await self._next_compatible_asset_version(COMMENT_BUSINESS_RULE_ASSET_TYPES, asset_key),
+            version_no=await self._next_compatible_asset_version(compatible_types, asset_key),
             status="active",
             asset_stage="production",
-            source_name=f"comment_business_rule_draft:{proposal.id}",
+            source_name=f"{source_prefix}:{proposal.id}",
             source_uri=None,
             source_hash=None,
             content_json=content_json,
@@ -460,6 +515,79 @@ class AssetService:
             request.status = "applied"
         await self.db.flush()
         return proposal, asset
+
+    async def update_comment_business_rule_examples(
+        self,
+        payload: CommentBusinessRuleExamplesUpdate,
+    ) -> AssetRegistry:
+        return await self.update_business_rule_examples(payload, asset_type="comment")
+
+    async def update_business_rule_examples(
+        self,
+        payload: CommentBusinessRuleExamplesUpdate,
+        *,
+        asset_type: str | None = None,
+    ) -> AssetRegistry:
+        asset = await self._get_latest_comment_business_rule_asset(payload.asset_key)
+        compatible_types = COMMENT_BUSINESS_RULE_ASSET_TYPES
+        new_asset_type = COMMENT_BUSINESS_RULE_ASSET_TYPE
+        source_prefix = "comment_business_rule_examples"
+        if asset_type == "article" or (asset is None and asset_type != "comment"):
+            asset = await self._get_latest_article_business_rule_asset(payload.asset_key)
+            compatible_types = ARTICLE_BUSINESS_RULE_ASSET_TYPES
+            new_asset_type = ARTICLE_BUSINESS_RULE_ASSET_TYPE
+            source_prefix = "article_business_rule_examples"
+        if asset is None:
+            raise ValueError("business rule asset not found")
+        content_json = copy.deepcopy(asset.content_json or {})
+        _, item = _find_business_rule_item(
+            content_json,
+            rule_id=payload.rule_id,
+            source_row_no=payload.source_row_no,
+        )
+        examples = _clean_text_list(payload.examples) + _clean_text_list(payload.supplements)
+        supplements: list[str] = []
+        item["examples"] = examples
+        item["supplements"] = supplements
+
+        await self.db.execute(
+            update(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type.in_(compatible_types),
+                AssetRegistry.asset_key == payload.asset_key,
+                AssetRegistry.asset_stage == "production",
+                AssetRegistry.status == "active",
+            )
+            .values(status="archived")
+        )
+        metadata_json = copy.deepcopy(asset.metadata_json or {})
+        metadata_json.update(
+            {
+                "rule_count": len(content_json.get("items") or []),
+                "example_count": _business_rule_example_count(content_json),
+                "last_examples_rule_id": item.get("rule_id"),
+                "last_examples_source_row_no": item.get("source_row_no"),
+                "last_examples_base_asset_id": asset.id,
+                "last_examples_base_version_no": asset.version_no,
+            }
+        )
+        new_asset = AssetRegistry(
+            asset_type=new_asset_type,
+            asset_key=payload.asset_key,
+            display_name=asset.display_name,
+            version_no=await self._next_compatible_asset_version(compatible_types, payload.asset_key),
+            status="active",
+            asset_stage="production",
+            source_name=f"{source_prefix}:{item.get('rule_id') or item.get('source_row_no')}",
+            source_uri=None,
+            source_hash=None,
+            content_json=content_json,
+            metadata_json=metadata_json,
+            created_by=payload.created_by,
+        )
+        self.db.add(new_asset)
+        await self.db.flush()
+        return new_asset
 
     async def create_compliance_rule_proposal_from_request(
         self,
@@ -615,6 +743,10 @@ def _business_rule_name(item: dict[str, Any]) -> str | None:
     value = item.get("business_rule")
     if value is None:
         value = item.get("comment_" + "angle")
+    if value is None:
+        value = item.get("article_rule")
+    if value is None:
+        value = item.get("topic")
     normalized = str(value or "").strip()
     return normalized or None
 
@@ -643,6 +775,10 @@ def _business_rule_example_count(content_json: dict[str, Any] | None) -> int:
             continue
         total += len(item.get("examples") or []) + len(item.get("supplements") or [])
     return total
+
+
+def _clean_text_list(values: list[Any] | None) -> list[str]:
+    return [str(value or "").strip() for value in values or [] if str(value or "").strip()]
 
 
 def _int_or_none(value: Any) -> int | None:

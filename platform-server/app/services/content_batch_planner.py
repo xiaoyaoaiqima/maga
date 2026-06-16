@@ -79,8 +79,20 @@ A2_POST_PERSONA_LENSES = ["碎碎念妈妈", "细节观察型妈妈", "老用户
 A2_POST_SCENE_TYPES = ["到手后", "门店里", "线上看到", "家里续上", "评论求确认"]
 A2_POST_EVIDENCE_TYPES = ["个人动作", "他人转述", "页面入口", "自己核对", "能对应到手里"]
 
+WANGYUE_POST_OPENING_TYPES = ["随手记录", "当天小记", "家里日常", "评论区聊到", "补个观察", "问问同款"]
+WANGYUE_POST_STRUCTURE_TYPES = ["以前担心-现在安排-轻收口", "场景-一杯奶-还在观察", "评论讨论-自己做法-不说满"]
+WANGYUE_POST_EMOTIONS = ["真实", "碎碎念", "有点纠结", "松一点", "克制", "观察中"]
+WANGYUE_POST_NARRATIVE_FOCUSES = ["先说场景", "先说孩子动作", "先说妈妈担心", "先说评论区讨论", "先说喝奶习惯"]
+WANGYUE_POST_CONTENT_ANGLES = ["日常喝奶动作", "痛点轻提", "强表达收回来", "评论区讨论", "孩子愿意喝"]
+WANGYUE_POST_SCENE_TYPES = ["早上出门", "接娃回家", "户外回来", "晚饭前后", "睡前", "评论区"]
+WANGYUE_POST_EVIDENCE_TYPES = ["个人观察", "当天记录", "家里动作", "评论转述", "不说满"]
 
-def _article_business_diversity_slot(zero: int, *, quality_guard_profile_key: str | None) -> dict[str, str]:
+def _article_business_diversity_slot(
+    zero: int,
+    *,
+    quality_guard_profile_key: str | None,
+    asset_key: str | None = None,
+) -> dict[str, str]:
     """Keep A2短帖 away from generic advice-slot labels that leak into AI-like titles."""
     if quality_guard_profile_key == A2_SENTIMENT_POST_PROFILE_KEY:
         return {
@@ -93,6 +105,27 @@ def _article_business_diversity_slot(zero: int, *, quality_guard_profile_key: st
             "persona_lens": A2_POST_PERSONA_LENSES[(zero + zero // len(A2_POST_PERSONA_LENSES)) % len(A2_POST_PERSONA_LENSES)],
             "scene_type": A2_POST_SCENE_TYPES[(zero * 2 + zero // len(A2_POST_SCENE_TYPES)) % len(A2_POST_SCENE_TYPES)],
             "evidence_type": A2_POST_EVIDENCE_TYPES[(zero * 5 + zero // len(A2_POST_EVIDENCE_TYPES)) % len(A2_POST_EVIDENCE_TYPES)],
+            "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
+        }
+    if str(asset_key or "").startswith("wangyue_"):
+        # 旺玥UGC更像短小生活记录，避免通用槽位里的“收藏提示/细节控/二胎妈”
+        # 泄漏成标题或正文口癖。
+        return {
+            "opening_type": WANGYUE_POST_OPENING_TYPES[zero % len(WANGYUE_POST_OPENING_TYPES)],
+            "structure_type": WANGYUE_POST_STRUCTURE_TYPES[
+                (zero // len(WANGYUE_POST_OPENING_TYPES) + zero) % len(WANGYUE_POST_STRUCTURE_TYPES)
+            ],
+            "emotion": WANGYUE_POST_EMOTIONS[(zero * 2 + zero // 11) % len(WANGYUE_POST_EMOTIONS)],
+            "narrative_focus": WANGYUE_POST_NARRATIVE_FOCUSES[
+                (zero + zero // len(WANGYUE_POST_OPENING_TYPES)) % len(WANGYUE_POST_NARRATIVE_FOCUSES)
+            ],
+            "content_angle": WANGYUE_POST_CONTENT_ANGLES[
+                (zero * 3 + zero // len(WANGYUE_POST_OPENING_TYPES)) % len(WANGYUE_POST_CONTENT_ANGLES)
+            ],
+            "scene_type": WANGYUE_POST_SCENE_TYPES[(zero * 2 + zero // len(WANGYUE_POST_SCENE_TYPES)) % len(WANGYUE_POST_SCENE_TYPES)],
+            "evidence_type": WANGYUE_POST_EVIDENCE_TYPES[
+                (zero * 5 + zero // len(WANGYUE_POST_EVIDENCE_TYPES)) % len(WANGYUE_POST_EVIDENCE_TYPES)
+            ],
             "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
         }
     return {
@@ -428,7 +461,7 @@ class ContentBatchPlanner:
             for item in items or []
             if isinstance(item, dict)
             and item.get("corpus")
-            and (item.get("product_experience") or item.get("business_rule") or item.get("article_rule"))
+            and (item.get("business_rule") or item.get("article_rule"))
         ]
 
     def _article_business_generation_limit(
@@ -474,13 +507,19 @@ class ContentBatchPlanner:
         rule_type = (
             rule.get("rule_type")
             or asset_content.get("rule_type")
-            or ("product_experience" if rule.get("product_experience") else "article_business")
+            or "business_rule"
         )
         diversity_slot = _article_business_diversity_slot(
             zero,
             quality_guard_profile_key=quality_guard_profile_key,
+            asset_key=asset.asset_key,
         )
         selected_examples, example_meta = self._selected_rule_examples(rule)
+        business_rule = (
+            rule.get("business_rule")
+            or rule.get("article_rule")
+            or rule.get("topic")
+        )
         return {
             "rule_type": rule_type,
             "item_no": item_no,
@@ -492,11 +531,8 @@ class ContentBatchPlanner:
             "rule_asset_id": asset.id,
             "rule_asset_version": asset.version_no,
             "rule_id": rule.get("rule_id"),
-            "business_rule": rule.get("business_rule"),
+            "business_rule": business_rule,
             "article_rule": rule.get("article_rule"),
-            "product_experience": rule.get("product_experience"),
-            "baby_stage": rule.get("baby_stage"),
-            "use_duration": rule.get("use_duration"),
             "topic": rule.get("topic"),
             "corpus": rule.get("corpus"),
             "examples": selected_examples,
