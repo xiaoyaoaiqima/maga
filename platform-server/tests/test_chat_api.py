@@ -192,9 +192,16 @@ async def test_business_rule_context_injects_by_case_prompt_and_allows_fill_acti
             "actions": [
                 {
                     "type": "fill_business_rule_draft",
-                    "label": "填入草稿",
+                    "label": "填入规则语料",
                     "payload": {
-                        "draft_corpus": "子方向标题：\n\n像真实评论。\n\n示例：\n- 有同款吗\n\n注意：示例只作为语义素材，不是正文原句。"
+                        "draft_corpus": "剧情讨论：\n\n像真实评论。可以短一点，但别写成广告。"
+                    },
+                },
+                {
+                    "type": "fill_business_rule_examples",
+                    "label": "填入示例",
+                    "payload": {
+                        "examples": ["有同款吗", "我家也在等", "这个说法自然点"]
                     },
                 },
                 {"type": "publish_rule", "payload": {"draft_id": 1}},
@@ -255,17 +262,100 @@ async def test_business_rule_context_injects_by_case_prompt_and_allows_fill_acti
     assert "source_row_no: 16" in captured["user_prompt"]
     assert "正式语料" in captured["user_prompt"]
     assert "旧示例" in captured["user_prompt"]
+    assert "旧补充" in captured["user_prompt"]
     assert "生成正文" in captured["user_prompt"]
+    assert "supplements:" not in captured["user_prompt"]
     payload = response.json()["data"]
     assert payload["reply"] == "这条规则偏硬，我给你一版更松的草稿。"
     assert payload["actions"] == [
         {
             "type": "fill_business_rule_draft",
-            "label": "填入草稿",
+            "label": "填入规则语料",
             "payload": {
-                "draft_corpus": "子方向标题：\n\n像真实评论。\n\n示例：\n- 有同款吗\n\n注意：示例只作为语义素材，不是正文原句。",
+                "draft_corpus": "剧情讨论：\n\n像真实评论。可以短一点，但别写成广告。",
                 "rule_id": "business_rule_001",
                 "source_row_no": 16,
+            },
+        },
+        {
+            "type": "fill_business_rule_examples",
+            "label": "填入示例",
+            "payload": {
+                "examples": ["有同款吗", "我家也在等", "这个说法自然点"],
+                "rule_id": "business_rule_001",
+                "source_row_no": 16,
+            },
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_article_business_rule_context_also_activates_copilot(chat_client, monkeypatch):
+    client, session_factory = chat_client
+    captured = {}
+
+    async def fake_call_llm(config, system_prompt, user_prompt, **kwargs):
+        captured["system_prompt"] = system_prompt
+        captured["user_prompt"] = user_prompt
+        return json.dumps(
+            {
+                "reply": "帖子规则也可以这样改。",
+                "actions": [
+                    {
+                        "type": "fill_business_rule_examples",
+                        "payload": {"examples_text": "- 这次检测报告挺详细的\n- 看完报告心里有数了"},
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(LLMFactory, "call_llm", fake_call_llm)
+    async with session_factory() as session:
+        session.add(
+            Agent(
+                id=1,
+                agent_code="chat-agent",
+                agent_name="实时聊天 Agent",
+                agent_type="REALTIME_CHAT",
+                expert_config_code_list=[],
+                default_model_code="deepseek-v4-flash",
+                enabled=1,
+                is_deleted=0,
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/chat/messages",
+        json={
+            "message": "这条帖子规则短句不够",
+            "history": [],
+            "context": {
+                "page": "business_rules",
+                "asset_key": "a2_sentiment_post_activity",
+                "asset_type": "article_business_rule_set",
+                "rule_id": "business_rule_003",
+                "source_row_no": 3,
+                "business_rule": "检测报告更透明",
+                "corpus": "写检测报告安心感",
+                "examples": ["这批报告我扫到了"],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert "业务规则 by-case 语料副驾" in captured["system_prompt"]
+    assert "asset_type: article_business_rule_set" in captured["user_prompt"]
+    payload = response.json()["data"]
+    assert payload["actions"] == [
+        {
+            "type": "fill_business_rule_examples",
+            "label": "填入示例",
+            "payload": {
+                "examples": ["这次检测报告挺详细的", "看完报告心里有数了"],
+                "rule_id": "business_rule_003",
+                "source_row_no": 3,
             },
         }
     ]

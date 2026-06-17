@@ -148,11 +148,32 @@ def read_rows(path: Path) -> list[dict[str, str]]:
     return list(csv.DictReader(io.StringIO(content)))
 
 
+def row_key(row: dict[str, str]) -> str:
+    return (
+        row.get("产品使用体验")
+        or row.get("业务规则名称")
+        or row.get("业务规则")
+        or row.get("规则名称")
+        or ""
+    )
+
+
+def row_corpus(row: dict[str, str]) -> str:
+    return row.get("语料") or row.get("规则语料") or row.get("corpus") or ""
+
+
 def extract_references(rows: list[dict[str, str]]) -> list[Reference]:
     refs: list[Reference] = []
     for row_no, row in enumerate(rows, 1):
+        examples = row.get("示例") if "示例" in row else row.get("参考示例")
+        if examples is not None:
+            for line in examples.splitlines():
+                s = line.strip()
+                if s:
+                    refs.append(Reference(row_no, row_key(row), re.sub(r"^[\-\*•]\s*", "", s)))
+            continue
         in_ref = False
-        for line in row["语料"].splitlines():
+        for line in row_corpus(row).splitlines():
             s = line.strip()
             if s == "可参考素材：":
                 in_ref = True
@@ -160,7 +181,7 @@ def extract_references(rows: list[dict[str, str]]) -> list[Reference]:
             if in_ref and s.startswith("注意："):
                 in_ref = False
             if in_ref and s.startswith("- "):
-                refs.append(Reference(row_no, row["产品使用体验"], s[2:].strip()))
+                refs.append(Reference(row_no, row_key(row), s[2:].strip()))
     return refs
 
 
@@ -181,7 +202,7 @@ def main() -> int:
     for term in TIME_TERMS + LIFE_TERMS:
         count = sum(term in ref.text for ref in refs)
         term_limit = TERM_LIMIT_OVERRIDES.get(term, limit)
-        block_count = sum(term in row["语料"] for row in rows) if term in TERM_LIMIT_OVERRIDES else count
+        block_count = sum(term in row_corpus(row) for row in rows) if term in TERM_LIMIT_OVERRIDES else count
         if count > term_limit or block_count > term_limit:
             failures.append(("term", f"{term} (refs {count}, blocks {block_count}, limit {term_limit})", max(count, block_count)))
         elif args.show_ok and count:
@@ -197,7 +218,7 @@ def main() -> int:
 
     for phrase in BANNED_PHRASES:
         ref_count = sum(phrase in ref.text for ref in refs)
-        block_count = sum(phrase in row["语料"] for row in rows)
+        block_count = sum(phrase in row_corpus(row) for row in rows)
         if ref_count or block_count:
             failures.append(("banned", f"{phrase} (refs {ref_count}, blocks {block_count})", ref_count + block_count))
 

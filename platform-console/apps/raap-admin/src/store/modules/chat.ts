@@ -11,10 +11,18 @@ export interface ChatDraftFillPayload {
   source_row_no?: null | number;
 }
 
+export interface ChatExamplesFillPayload {
+  examples: string[];
+  request_id: string;
+  rule_id?: null | string;
+  source_row_no?: null | number;
+}
+
 export const useMagaChatStore = defineStore('maga-chat', () => {
   const open = ref(false);
   const context = ref<ChatContext | null>(null);
   const draftFillPayload = ref<ChatDraftFillPayload | null>(null);
+  const examplesFillPayload = ref<ChatExamplesFillPayload | null>(null);
 
   function setOpen(value: boolean) {
     open.value = value;
@@ -47,9 +55,29 @@ export const useMagaChatStore = defineStore('maga-chat', () => {
     };
   }
 
+  function requestExamplesFill(action: ChatAction) {
+    const examples = normalizeActionExamples(action.payload);
+    if (!examples.length) return;
+    examplesFillPayload.value = {
+      examples,
+      request_id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      rule_id: action.payload?.rule_id ? String(action.payload.rule_id) : null,
+      source_row_no:
+        typeof action.payload?.source_row_no === 'number'
+          ? action.payload.source_row_no
+          : null,
+    };
+  }
+
   function clearDraftFillPayload(requestId?: string) {
     if (!requestId || draftFillPayload.value?.request_id === requestId) {
       draftFillPayload.value = null;
+    }
+  }
+
+  function clearExamplesFillPayload(requestId?: string) {
+    if (!requestId || examplesFillPayload.value?.request_id === requestId) {
+      examplesFillPayload.value = null;
     }
   }
 
@@ -57,11 +85,27 @@ export const useMagaChatStore = defineStore('maga-chat', () => {
     open,
     context,
     draftFillPayload,
+    examplesFillPayload,
     setOpen,
     openWithContext,
     setContext,
     clearContext,
     requestDraftFill,
+    requestExamplesFill,
     clearDraftFillPayload,
+    clearExamplesFillPayload,
   };
 });
+
+function normalizeActionExamples(payload: Record<string, any> | undefined): string[] {
+  if (!payload) return [];
+  if (Array.isArray(payload.examples)) {
+    return payload.examples
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+  }
+  return String(payload.examples_text || payload.content || '')
+    .split(/\r?\n/)
+    .map((item) => item.replace(/^[\s\-*•\d.、．]+/, '').trim())
+    .filter(Boolean);
+}

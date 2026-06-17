@@ -198,28 +198,51 @@ class ChatService:
             return []
 
         safe_actions: list[ChatAction] = []
+        seen_action_types: set[str] = set()
         for action in actions:
-            if not isinstance(action, dict) or action.get("type") != "fill_business_rule_draft":
+            if not isinstance(action, dict):
+                continue
+            action_type = str(action.get("type") or "")
+            if action_type in seen_action_types:
                 continue
             payload = action.get("payload")
             if not isinstance(payload, dict):
                 continue
-            draft_corpus = str(payload.get("draft_corpus") or payload.get("content") or "").strip()
-            if not draft_corpus:
-                continue
-            # 重要逻辑：Chat 只能填草稿，不能绕过现有保存、试跑、发布按钮。
-            safe_actions.append(
-                ChatAction(
-                    type="fill_business_rule_draft",
-                    label=str(action.get("label") or "填入草稿"),
-                    payload={
-                        "draft_corpus": draft_corpus,
-                        "rule_id": request.context.rule_id,
-                        "source_row_no": request.context.source_row_no,
-                    },
+            if action_type == "fill_business_rule_draft":
+                draft_corpus = str(payload.get("draft_corpus") or payload.get("content") or "").strip()
+                if not draft_corpus:
+                    continue
+                # 重要逻辑：Chat 只能填入页面草稿，不能绕过现有保存、试跑、发布按钮。
+                safe_actions.append(
+                    ChatAction(
+                        type="fill_business_rule_draft",
+                        label=str(action.get("label") or "填入规则语料"),
+                        payload={
+                            "draft_corpus": draft_corpus,
+                            "rule_id": request.context.rule_id,
+                            "source_row_no": request.context.source_row_no,
+                        },
+                    )
                 )
-            )
-        return safe_actions[:1]
+                seen_action_types.add(action_type)
+                continue
+            if action_type == "fill_business_rule_examples":
+                examples = _action_examples(payload)
+                if not examples:
+                    continue
+                safe_actions.append(
+                    ChatAction(
+                        type="fill_business_rule_examples",
+                        label=str(action.get("label") or "填入示例"),
+                        payload={
+                            "examples": examples,
+                            "rule_id": request.context.rule_id,
+                            "source_row_no": request.context.source_row_no,
+                        },
+                    )
+                )
+                seen_action_types.add(action_type)
+        return safe_actions[:2]
 
 
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(?P<json>.*?)\s*```", re.DOTALL | re.IGNORECASE)
@@ -230,3 +253,18 @@ def _json_loads(value: str) -> object:
         return json.loads(value)
     except json.JSONDecodeError:
         return None
+
+
+def _action_examples(payload: dict) -> list[str]:
+    raw_examples = payload.get("examples")
+    if isinstance(raw_examples, list):
+        return [str(item or "").strip() for item in raw_examples if str(item or "").strip()][:50]
+    text = str(payload.get("examples_text") or payload.get("content") or "").strip()
+    if not text:
+        return []
+    examples: list[str] = []
+    for raw_line in text.splitlines():
+        line = re.sub(r"^[\s\-*•\d.、．]+", "", raw_line).strip()
+        if line:
+            examples.append(line)
+    return examples[:50]

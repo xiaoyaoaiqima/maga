@@ -587,6 +587,85 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                     ],
                 },
                 {
+                    "category_code": "article_speaking_style",
+                    "category_name": "帖子说话方式",
+                    "description": "帖子里的表达姿态抽样，只控制像什么人在发帖，不承载具体业务事实。",
+                    "sort_order": 27,
+                    "applicable_content_types": ["article"],
+                    "sub_keywords": [
+                        {
+                            "keyword_code": "plain_product_title_record",
+                            "keyword_name": "产品名直给记录",
+                            "corpus": [
+                                "像真实用户标题直接写产品名、品类名或一句很短的记录，正文再补一点家里使用情况。不要把标题包装成攻略、测评或品牌宣传。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "price_complaint",
+                            "keyword_name": "价格吐槽式",
+                            "corpus": [
+                                "像妈妈一边吐槽不便宜、一边承认孩子吃喝要花钱的真实语气。可以有肉疼、贵、账单感，但不要自动收成“贵但值得/闭眼入/省心”。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "decision_help",
+                            "keyword_name": "纠结求助式",
+                            "corpus": [
+                                "像发帖时还没完全想明白，边写边问同款怎么选。可以有纠结、求建议、准备先试一罐，但不要替别人做喂养决定，也不要写成客服问答。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "homework_comparison",
+                            "keyword_name": "做功课对比式",
+                            "corpus": [
+                                "像用户自己翻表、看评价、做对比后的碎碎念。可以说看了半天、对比来对比去、我不专业，但不要展开成专业测评表或营养科普课。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "routine_log",
+                            "keyword_name": "日常流水账式",
+                            "corpus": [
+                                "像记录一天里的喝奶、吃饭、上学、睡前这些小安排，句子可以松散一点。不要为了完整结构硬凑起承转合，也不要把流水账写成品牌介绍。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "new_can_record",
+                            "keyword_name": "又开一听记录",
+                            "corpus": [
+                                "像家里又开一罐、刚换一罐、刚补一罐时顺手记一下。重点是当下动作和小观察，不要默认写囤货推荐、活动促销或购买攻略。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "kid_reaction_record",
+                            "keyword_name": "孩子反应记录",
+                            "corpus": [
+                                "像妈妈只抓孩子愿不愿喝、喝几口、剩不剩、说好不好喝这类反应来写。不要把孩子反应直接推成确定功效，也不要夸成神奇变化。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "short_strong_feeling",
+                            "keyword_name": "短句强感受",
+                            "corpus": [
+                                "像真人短帖那样只抛一个很强的主观感受或一句吐槽，再补一两句日常。强表达可以存在，但要像个人感受，别写成品牌承诺或客观结论。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "expectation_observation",
+                            "keyword_name": "期待观察式",
+                            "corpus": [
+                                "像用户还在观察，带一点期待和不确定。可以写希望、看看、先这样、继续观察，但不要写成已经确定有效或保证结果。"
+                            ],
+                        },
+                        {
+                            "keyword_code": "same_style_question",
+                            "keyword_name": "同款提问式",
+                            "corpus": [
+                                "像发帖最后轻轻问一句有没有同款、你们家怎么喝、哪里买的。问题要自然，不要每篇都强行互动，也不要写成销售引导。"
+                            ],
+                        },
+                    ],
+                },
+                {
                     "category_code": "perturbation_rule",
                     "category_name": "扰动规则",
                     "description": "默认多样性控制，不是类别上限。",

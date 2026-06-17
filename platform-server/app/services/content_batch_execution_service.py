@@ -67,6 +67,24 @@ TITLE_GUARD_BAD_PATTERNS = (
     re.compile(r"[0-9一二三四五六七八九十]+个月宝宝"),
     re.compile(r"[0-9一二三四五六七八九十]+个月\+?旺玥"),
 )
+PERSONA_STYLE_REWRITE_PRESETS = (
+    {
+        "code": "roommate_direct",
+        "prompt": "爽快、直给、不端着的熟人聊天口吻；句子短一点，可以有一点轻微吐槽感。",
+    },
+    {
+        "code": "mother_soft_observer",
+        "prompt": "像妈妈随手记孩子状态，温柔但不铺开；别堆场景，也别压成提纲。",
+    },
+    {
+        "code": "yuuka_strict_friend",
+        "prompt": "理性负责、带一点嘴硬吐槽的熟人聊天口吻，句子利落；可以调整叙述顺序。",
+    },
+    {
+        "code": "amber_sunny_friend",
+        "prompt": "轻快、有行动感的熟人聊天口吻，别太甜。",
+    },
+)
 
 
 def _default_unified_review_report() -> dict[str, Any]:
@@ -269,6 +287,11 @@ class ContentBatchExecutionService:
                     "forbidden_overlap_group": diversity_slot.get("forbidden_overlap_group"),
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                 }
+                await self._rewrite_item_for_persona_style(
+                    item=item,
+                    orchestrator=orchestrator,
+                    run_id=result.run.id,
+                )
                 await ForbiddenTermReviewService(db).review_and_rewrite_item(
                     item=item,
                     asset_key=item.plan_json.get("asset_key"),
@@ -287,6 +310,62 @@ class ContentBatchExecutionService:
                 item.error_message = str(exc)
                 await db.commit()
                 return _ItemExecutionResult(item_id=item_id, generated=False, failed=True)
+
+    async def _rewrite_item_for_persona_style(
+        self,
+        *,
+        item: ContentBatchItem,
+        orchestrator: ContentAgentOrchestrator,
+        run_id: int,
+    ) -> None:
+        if not item.body or not _persona_style_rewrite_enabled(item.plan_json):
+            return
+        preset = _persona_style_preset_for_item(item)
+        input_payload = _persona_style_rewrite_input(item, preset=preset)
+        try:
+            result = await orchestrator.run_content_rewrite_stage(
+                run_id=run_id,
+                executor_code=self.executor_code,
+                input_payload=input_payload,
+            )
+            output = result.output or {}
+            final = output.get("final") if isinstance(output.get("final"), dict) else {}
+            title = str(output.get("title") or final.get("title") or "").strip()
+            body = str(output.get("body") or final.get("body") or "").strip()
+            if not title or not body:
+                raise ValueError("content.rewrite returned empty article")
+            before = {"title": item.title or "", "body": item.body or ""}
+            item.title = title
+            item.body = body
+            quality = dict(item.quality_json or {})
+            rewrites = list(quality.get("persona_style_rewrites") or [])
+            rewrites.append(
+                {
+                    "preset_code": preset["code"],
+                    "preset_prompt": preset["prompt"],
+                    "before": before,
+                    "after": {"title": item.title, "body": item.body},
+                    "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
+                }
+            )
+            quality["persona_style_rewrites"] = rewrites
+            quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + len(result.stage_calls)
+            quality["run_status"] = result.run.status
+            item.quality_json = quality
+            await orchestrator.db.flush()
+        except Exception as exc:  # noqa: BLE001 - keep generated content if style rewrite fails
+            quality = dict(item.quality_json or {})
+            failures = list(quality.get("persona_style_rewrite_failures") or [])
+            failures.append(
+                {
+                    "preset_code": preset["code"],
+                    "preset_prompt": preset["prompt"],
+                    "error_message": str(exc),
+                }
+            )
+            quality["persona_style_rewrite_failures"] = failures
+            item.quality_json = quality
+            await orchestrator.db.flush()
 
     async def _require_item(self, db: AsyncSession, item_id: int) -> ContentBatchItem:
         result = await db.execute(select(ContentBatchItem).where(ContentBatchItem.id == item_id))
@@ -309,6 +388,16 @@ class ContentBatchExecutionService:
         before_chars = _compact_len(item.body)
         if min_chars <= before_chars <= max_chars:
             return None
+        if before_chars < min_chars:
+            return {
+                "kind": kind,
+                "before_chars": before_chars,
+                "after_chars": before_chars,
+                "target_min": min_chars,
+                "target_max": max_chars,
+                "attempts": 0,
+                "status": "too_short_unrepaired",
+            }
         after_chars = before_chars
         attempts = 0
         last_error = None
@@ -431,14 +520,6 @@ class ContentBatchExecutionService:
                 if not should_review_product_experience(item.plan_json):
                     continue
                 review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                rewrite_rounds = self._product_experience_phrase_rewrite_rounds(item)
-                while review.rewrite_required and item.run_id and rewrite_rounds < MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS:
-                    rewritten = await self._rewrite_item_for_product_experience_phrase(db, item, review)
-                    if not rewritten:
-                        break
-                    rewrite_count += 1
-                    rewrite_rounds += 1
-                    review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
                 self._mark_product_experience_phrase_review(item, review)
             if items:
                 await db.commit()
@@ -513,8 +594,8 @@ class ContentBatchExecutionService:
             kind, min_chars, max_chars = target
             if review.body_chars < min_chars:
                 length_instruction = (
-                    f"当前正文约{review.body_chars}字，偏短；补到{min_chars}-{max_chars}字，"
-                    "直接重写成4个自然短句：场景、孩子动作、妈妈观察、收住；不补购买过程和功效结论。"
+                    f"当前正文约{review.body_chars}字，偏短但不强制扩写；"
+                    "只删除或替换命中的问题表达，不为了凑字数新增生活动作、观察或收口。"
                 )
             elif review.body_chars > max_chars:
                 length_instruction = (
@@ -554,8 +635,8 @@ class ContentBatchExecutionService:
                 length_instruction or "正文长度服从业务规则，标题尽量不改；正文单段不换行。",
                 phrase_instruction,
                 ai_phrase_instruction,
-                "返回的 body 必须和原 body 不同；必要时可以整段重写，不要逐句改写原文。",
-                "如果正文已经有购买过程、价格和孩子接受度，只保留其中一个观察点，其他改成放学、饭桌、户外、杯子、剩半杯这类生活细节。",
+                "rewrite 优先删除问题内容或压缩问题句；不要为了多样化整段重写。只有删除后语义断裂时，才补极短连接。",
+                "如果正文已经有购买过程、价格和孩子接受度，只保留其中一个观察点，其他改成放学、户外、换衣服、书包、妈妈观察这类生活细节；不要新增剩奶、杯子放置或冲泡奶保存动作。",
                 "不要用“省心、踏实、固定下来、心里有数、先这样”作为统一收口。",
                 "长个、少请假、不生病、抵抗力、坐不住这类真人强表达可以保留为观察或别人问，不能写成确定因果。",
                 "标题尽量不改；正文单段不换行；不要写成导购或品牌介绍。",
@@ -745,9 +826,9 @@ class ContentBatchExecutionService:
             },
             "rewrite_round": self._similarity_rewrite_rounds(item) + 1,
             "rewrite_instructions": [
-                "避免复用相似文章的开头句式和段落顺序",
-                "更换叙事切入点，优先使用当前文章的 diversity_slot",
-                "不要复用相似文章的标题模式、段首表达和内容角度",
+                "优先删除或压缩与相似文章重复的开头、段落顺序和表达，不要为了多样化扩写新情节。",
+                "只在删除后语义断裂时补一句极短连接，优先使用当前文章已有信息和 diversity_slot。",
+                "不要复用相似文章的标题模式、段首表达和内容角度；标题能保留就保留。",
                 "保留事实、卖点和合规约束，不要扩大功效表达",
             ],
         }
@@ -823,7 +904,6 @@ def _length_rewrite_input(
     before_chars: int,
     rewrite_round: int,
 ) -> dict[str, Any]:
-    missing_chars = max(min_chars - before_chars, 0)
     if before_chars > max_chars:
         action = (
             f"当前正文约{before_chars}个中文字符，偏长；删到{min_chars}-{max_chars}个中文字符。"
@@ -831,9 +911,8 @@ def _length_rewrite_input(
         )
     elif kind == "中短文":
         action = (
-            f"当前正文只有{before_chars}个中文字符，至少还要补{missing_chars + 8}个中文字符；"
-            f"把正文补到{min_chars}-{max_chars}个中文字符，优先补具体生活动作、饭桌/出门/放学后的观察、"
-            "还在观望的语气；不要补购买过程、价格纠结、孩子愿意喝或统一收口，也不要新增功效结论。"
+            f"当前正文只有{before_chars}个中文字符，偏短但不强制扩写；"
+            "除非原文语义不完整，否则保留原文，不要为了凑字数新增生活动作、饭桌、出门、放学或观察细节。"
         )
     else:
         action = (
@@ -855,10 +934,52 @@ def _length_rewrite_input(
         },
         "rewrite_instructions": [
             action,
-            f"返回的 body 必须和原 body 不同，且正文必须落在{min_chars}-{max_chars}个中文字符。",
+            f"rewrite 优先删除问题内容，不做多样化扩写；只有正文偏长时才必须落在{min_chars}-{max_chars}个中文字符。",
             "标题尽量不改；正文单段不换行。",
             "保持小红书真实用户语气，不写品牌介绍、攻略清单、专业科普或确定功效。",
             "只输出 JSON：title, body。",
+        ],
+    }
+
+
+def _persona_style_rewrite_enabled(plan: dict[str, Any] | None) -> bool:
+    value = (plan or {}).get("persona_style_rewrite_enabled")
+    return value is not False
+
+
+def _persona_style_preset_for_item(item: ContentBatchItem) -> dict[str, str]:
+    plan = item.plan_json or {}
+    requested = str(plan.get("persona_style_rewrite_preset") or "").strip()
+    if requested:
+        for preset in PERSONA_STYLE_REWRITE_PRESETS:
+            if preset["code"] == requested:
+                return preset
+    index = max(int(item.item_no or 1) - 1, 0) % len(PERSONA_STYLE_REWRITE_PRESETS)
+    return PERSONA_STYLE_REWRITE_PRESETS[index]
+
+
+def _persona_style_rewrite_input(item: ContentBatchItem, *, preset: dict[str, str]) -> dict[str, Any]:
+    unified_generation = (item.plan_json or {}).get("unified_generation") or {}
+    return {
+        "previous_content": {"title": item.title or "", "body": item.body or ""},
+        "content_type": "article",
+        "output_fields": ["title", "body"],
+        "business_rule": dict(item.plan_json or {}),
+        "selected_keywords": unified_generation.get("selected_keywords") or [],
+        "model_config": dict((item.plan_json or {}).get("model_config") or {}),
+        "rewrite_source": "persona_style_rewrite",
+        "rewrite_style_preset": preset["code"],
+        "rewrite_round": len((item.quality_json or {}).get("persona_style_rewrites") or []) + 1,
+        "review_report": {
+            "rewrite_required": True,
+            "rewrite_reason": "生成后人设风格改写",
+            "rewrite_style_preset": preset["code"],
+        },
+        "rewrite_instructions": [
+            "人设改写风格：" + preset["prompt"],
+            "不要改变原文的发帖视角。",
+            "可以调整叙述顺序和表达逻辑，让正文更像这个风格的人顺手发出来。",
+            "这是生成后的风格改写，不要解释改写过程，只输出 JSON：title, body。",
         ],
     }
 

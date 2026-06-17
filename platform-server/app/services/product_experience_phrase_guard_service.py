@@ -81,9 +81,6 @@ AI_PHRASES = (
 )
 
 HARD_AI_CLOSURE_PHRASES = (
-    "省心",
-    "踏实",
-    "安心",
     "老母亲",
     "神药",
     "收藏起来",

@@ -219,11 +219,9 @@ class ContentBatchReportService:
     async def export_batch_report_excel(self, batch_id: int) -> tuple[str, bytes]:
         report = await self.get_batch_report(batch_id)
         workbook = Workbook()
-        overview_sheet = workbook.active
-        overview_sheet.title = "批次概览"
-        result_sheet = workbook.create_sheet("生文结果")
+        result_sheet = workbook.active
+        result_sheet.title = "生文结果"
 
-        _write_overview_sheet(overview_sheet, report)
         _write_result_sheet(result_sheet, report)
 
         output = BytesIO()
@@ -1241,10 +1239,11 @@ def _write_overview_sheet(sheet: Any, report: ContentBatchReportResponse) -> Non
 
 def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
     headers = [
-        "序号",
-        "状态",
         "标题",
         "正文",
+        "业务规则",
+        "序号",
+        "状态",
         "字数",
         "红线通过",
         "审核状态",
@@ -1257,7 +1256,6 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
         "总耗时ms",
         "Run ID",
         "Task ID",
-        "业务规则",
         "系统语料包",
         "Expert",
         "模型",
@@ -1268,10 +1266,11 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
         snapshot = item.generation_snapshot or {}
         sheet.append(
             [
-                item.item_no,
-                item.status,
                 item.title or "",
                 item.body or "",
+                _business_rule_label(snapshot.get("business_rule")),
+                item.item_no,
+                item.status,
                 item.body_chars,
                 _bool_label(item.hard_pass),
                 item.review_status or "",
@@ -1284,7 +1283,6 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
                 item.total_duration_ms if item.total_duration_ms is not None else "",
                 item.trace_run_id or item.run_id or "",
                 item.task_id or "",
-                _business_rule_label(snapshot.get("business_rule")),
                 _keyword_asset_label(snapshot.get("keyword_asset")),
                 _expert_label(snapshot.get("expert")),
                 _model_label(snapshot),
@@ -1295,23 +1293,23 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
     widths = {
-        "A": 8,
-        "B": 12,
-        "C": 24,
-        "D": 58,
-        "E": 8,
-        "F": 12,
+        "A": 24,
+        "B": 58,
+        "C": 32,
+        "D": 8,
+        "E": 12,
+        "F": 8,
         "G": 12,
-        "H": 10,
-        "I": 36,
-        "J": 18,
-        "K": 28,
-        "L": 16,
+        "H": 12,
+        "I": 10,
+        "J": 36,
+        "K": 18,
+        "L": 28,
         "M": 12,
         "N": 12,
         "O": 12,
         "P": 12,
-        "Q": 30,
+        "Q": 12,
         "R": 28,
         "S": 26,
         "T": 24,

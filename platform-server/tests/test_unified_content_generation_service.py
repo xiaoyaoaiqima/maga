@@ -135,12 +135,30 @@ def test_business_rule_text_renders_only_supplied_examples_with_usage_boundary()
         }
     )
 
-    assert "示例使用边界：只学习语气、场景颗粒和生活细节；只借一个观察点" in text
-    assert "不要沿用示例的叙述顺序或固定句式骨架" in text
+    assert "示例使用边界：只学习语气、场景颗粒和生活细节；每篇最多借一个观察点" in text
+    assert "不要照搬示例里的原句、数字、配比、问句、结构、事实主张或固定句式骨架" in text
+    assert "不要把多个示例细节拼成一篇" in text
     assert "抽中示例1" in text
     assert "抽中示例2" in text
     assert "抽中示例3" in text
     assert "example_pool_count" not in text
+
+
+def test_article_business_rule_text_renders_corpus_directly():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "容易中招，集体生活那杯奶",
+            "corpus": "写作规则：像妈妈随口记录孩子上幼儿园后的状态，不说成确定效果。",
+            "examples": ["请病假的时间会有，但真的不多。"],
+        },
+        content_type="article",
+    )
+
+    assert text.startswith("写作规则：像妈妈随口记录")
+    assert "- 业务规则：" not in text
+    assert "- 业务语料：" not in text
+    assert "请病假的时间会有，但真的不多。" in text
 
 
 @pytest.mark.asyncio
@@ -210,7 +228,11 @@ async def test_unified_generation_splits_article_and_comment_instructions(unifie
         )
         article_snapshot = await UnifiedContentGenerationService(session).build_snapshot(
             content_type="article",
-            business_rule={"rule_type": "business_rule", "business_rule": "宝宝便便不规律"},
+            business_rule={
+                "rule_type": "business_rule",
+                "business_rule": "宝宝便便不规律",
+                "corpus": "写作规则：围绕宝宝便便不规律写一段真实观察。",
+            },
             item_no=1,
             output_fields=["title", "body"],
         )
@@ -235,6 +257,13 @@ async def test_unified_generation_splits_article_and_comment_instructions(unifie
     assert "comment_speaking_style" not in article_codes
     assert "article_format_control" in article_codes
     assert "comment_format_control" not in article_codes
+    article_prompt = article_snapshot.input_snapshot["rendered_prompt"]
+    assert "多样性槽位" not in article_prompt
+    assert "格式/篇幅约束" not in article_prompt
+    assert "帖子格式控制" not in article_prompt
+    assert "- 业务规则：" not in article_prompt
+    assert "- 业务语料：" not in article_prompt
+    assert "正文按业务规则控制篇幅和表达" in article_prompt
 
 
 @pytest.mark.asyncio

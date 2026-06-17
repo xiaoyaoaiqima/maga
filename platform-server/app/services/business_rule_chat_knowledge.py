@@ -5,21 +5,21 @@ from __future__ import annotations
 from typing import Any
 
 from app.schemas.chat import ChatContext
-from app.services.business_rule_asset_types import COMMENT_BUSINESS_RULE_ASSET_TYPES
+from app.services.business_rule_asset_types import BUSINESS_RULE_ASSET_TYPES
 
 
 BUSINESS_RULE_COPILOT_PROMPT = """
 你现在是 MAGA 的业务规则 by-case 语料副驾，只服务当前选中的一条业务规则子方向。
 
 工作方式：
-- 必须基于页面传入的 asset_key、rule_id、source_row_no、business_rule、正式语料、草稿语料、examples、supplements 和测试报告摘要回答。
+- 必须基于页面传入的 asset_key、rule_id、source_row_no、business_rule、正式规则语料、草稿规则语料、示例和测试报告摘要回答。
 - 只优化当前单条子方向，不扩展新子方向，不整包编辑；同名业务规则下可能有多个子方向，优先以 rule_id/source_row_no 为准。
-- 优先改当前子方向的示例池和松规则，不把规则写成重审核清单。
+- 优先改当前子方向的规则语料和示例，不把规则写成重审核清单。
 - 草稿建议只用于前端填入文本框；保存草稿、试跑 10/50 条、发布新版本都必须让用户点击现有按钮完成。
 - 不联网检索真人素材，不补充未出现在当前上下文里的品牌、剧情、竞品、功效、检测、活动机制等业务事实。
 
 语料格式：
-子方向标题：
+业务规则名称：
 
 像……。语气……。可以……，但别……。
 
@@ -54,7 +54,7 @@ def is_business_rule_context(context: ChatContext | None) -> bool:
 
     if context is None:
         return False
-    return context.page == "business_rules" and context.asset_type in COMMENT_BUSINESS_RULE_ASSET_TYPES
+    return context.page == "business_rules" and context.asset_type in BUSINESS_RULE_ASSET_TYPES
 
 
 def should_inject_loosener(message: str) -> bool:
@@ -75,11 +75,11 @@ def build_business_rule_system_prompt(base_prompt: str, context: ChatContext | N
         parts.append(LOOSENER_PROMPT)
     parts.append(
         """
-如果你给出可直接填入草稿文本框的完整语料，请在回复最后追加一个 JSON fenced block：
+如果你给出可直接填入页面的完整规则语料或示例，请在回复最后追加一个 JSON fenced block。
+可只返回需要的动作，不要返回保存、试跑、发布等动作。
 ```json
-{"actions":[{"type":"fill_business_rule_draft","label":"填入草稿","payload":{"draft_corpus":"完整草稿语料"}}]}
+{"actions":[{"type":"fill_business_rule_draft","label":"填入规则语料","payload":{"draft_corpus":"完整规则语料"}},{"type":"fill_business_rule_examples","label":"填入示例","payload":{"examples":["示例1","示例2","示例3"]}}]}
 ```
-不要返回保存、试跑、发布等动作。
 """.strip()
     )
     return "\n\n".join(part for part in parts if part)
@@ -92,7 +92,7 @@ def build_business_rule_context_block(context: ChatContext | None) -> str:
         return ""
 
     lines = [
-        "当前页面上下文：业务规则页 / 业务规则单条草稿 Drawer",
+        "当前页面上下文：业务规则页 / 当前单条业务规则",
         f"asset_key: {_text(context.asset_key)}",
         f"asset_type: {_text(context.asset_type)}",
         f"asset_version: {_text(context.asset_version)}",
@@ -103,10 +103,8 @@ def build_business_rule_context_block(context: ChatContext | None) -> str:
         _text(context.corpus),
         "当前草稿语料:",
         _text(context.draft_corpus),
-        "examples:",
-        _list_block(context.examples),
-        "supplements:",
-        _list_block(context.supplements),
+        "示例:",
+        _list_block([*context.examples, *context.supplements]),
         "最近测试报告摘要:",
         _format_report_summary(context.test_report_summary),
     ]

@@ -83,6 +83,7 @@ CONTENT_FLOW_EXPERT_SPECS: tuple[ContentFlowExpertSpec, ...] = (
         prompt_template=(
             "你是中文内容审核后的自然改写 Expert。\n"
             "只根据审核结果改写必要位置，保留原意、语气、业务规则和已选关键词方向。\n\n"
+            "rewrite 的首要任务是删除、压缩或替换问题内容，不是扩写、润色或制造多样化；只有删除后语义断裂时，才补极短连接。\n\n"
             "如果改写来源是运营反馈，反馈意图优先于词级保守替换；可以重写被反馈影响的一整句，避免机械同义改写。\n\n"
             "【内容类型】\n{{ content_type_label }}\n\n"
             "【原内容】\n{{ previous_content }}\n\n"

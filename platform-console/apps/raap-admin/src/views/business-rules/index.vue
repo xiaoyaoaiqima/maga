@@ -482,9 +482,13 @@ function buildChatReportSummary() {
 }
 
 function buildDraftChatContext(): ChatContext | null {
-  if (!selectedAsset.value || !selectedDraftRule.value || !isSelectedCommentRuleSet.value) {
+  if (!selectedAsset.value || !selectedDraftRule.value || !isSelectedBusinessRuleSet.value) {
     return null;
   }
+  const examples = [
+    ...normalizeTextList(selectedDraftRule.value.examples),
+    ...normalizeTextList(selectedDraftRule.value.supplements),
+  ];
   return {
     page: 'business_rules',
     asset_key: selectedAsset.value.asset_key,
@@ -497,8 +501,8 @@ function buildDraftChatContext(): ChatContext | null {
     business_rule: String(selectedDraftRule.value.business_rule || ''),
     corpus: String(selectedDraftRule.value.corpus || ''),
     draft_corpus: draftCorpus.value,
-    examples: normalizeTextList(selectedDraftRule.value.examples),
-    supplements: normalizeTextList(selectedDraftRule.value.supplements),
+    examples,
+    supplements: [],
     test_report_summary: buildChatReportSummary(),
   };
 }
@@ -803,8 +807,8 @@ async function loadLatestDraft(record = selectedDraftRule.value) {
 
 async function openRuleChatCopilot(record: Record<string, any>) {
   selectRule(record);
-  if (!selectedAsset.value?.asset_key || !isSelectedCommentRuleSet.value) {
-    message.warning('请先选择评论业务规则');
+  if (!selectedAsset.value?.asset_key || !isSelectedBusinessRuleSet.value) {
+    message.warning('请先选择业务规则');
     return;
   }
   setInlineDraftRule(record);
@@ -1377,30 +1381,8 @@ watch(
   () => chatStore.draftFillPayload,
   async (payload) => {
     if (!payload) return;
-    let currentRuleId = String(selectedDraftRule.value?.rule_id || '');
-    let currentSourceRowNo =
-      Number(selectedDraftRule.value?.source_row_no || 0) || null;
-    if (!selectedDraftRule.value || draftEditorOpen.value === false) {
-      const targetRule = selectedRuleItems.value.find((item) => {
-        const ruleMatches =
-          !payload.rule_id || String(item.rule_id || '') === payload.rule_id;
-        const sourceMatches =
-          payload.source_row_no === null ||
-          Number(item.source_row_no || 0) === payload.source_row_no;
-        return ruleMatches && sourceMatches;
-      });
-      if (targetRule) {
-        selectedRuleKey.value = ruleKey(targetRule);
-        setInlineDraftRule(targetRule);
-        await loadLatestDraft(targetRule);
-        currentRuleId = String(targetRule.rule_id || '');
-        currentSourceRowNo = Number(targetRule.source_row_no || 0) || null;
-      }
-    }
-    const ruleMatches = !payload.rule_id || payload.rule_id === currentRuleId;
-    const sourceMatches =
-      payload.source_row_no === null || payload.source_row_no === currentSourceRowNo;
-    if (!selectedDraftRule.value || !ruleMatches || !sourceMatches) {
+    const matched = await ensureChatActionTargetRule(payload.rule_id, payload.source_row_no);
+    if (!matched) {
       message.warning('Chat 返回的草稿不属于当前业务规则，已忽略');
       chatStore.clearDraftFillPayload(payload.request_id);
       return;
@@ -1412,6 +1394,48 @@ watch(
     chatStore.clearDraftFillPayload(payload.request_id);
   },
 );
+
+watch(
+  () => chatStore.examplesFillPayload,
+  async (payload) => {
+    if (!payload) return;
+    const matched = await ensureChatActionTargetRule(payload.rule_id, payload.source_row_no);
+    if (!matched) {
+      message.warning('Chat 返回的示例不属于当前业务规则，已忽略');
+      chatStore.clearExamplesFillPayload(payload.request_id);
+      return;
+    }
+    examplesText.value = payload.examples.join('\n');
+    syncDraftChatContext();
+    message.success('已填入示例，请确认后再保存示例');
+    chatStore.clearExamplesFillPayload(payload.request_id);
+  },
+);
+
+async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: null | number) {
+  const targetRuleId = ruleId ? String(ruleId) : null;
+  const targetSourceRowNo = typeof sourceRowNo === 'number' ? sourceRowNo : null;
+  let currentRuleId = String(selectedDraftRule.value?.rule_id || '');
+  let currentSourceRowNo = Number(selectedDraftRule.value?.source_row_no || 0) || null;
+  if (!selectedDraftRule.value || draftEditorOpen.value === false) {
+    const targetRule = selectedRuleItems.value.find((item) => {
+      const ruleMatches = !targetRuleId || String(item.rule_id || '') === targetRuleId;
+      const sourceMatches =
+        targetSourceRowNo === null || Number(item.source_row_no || 0) === targetSourceRowNo;
+      return ruleMatches && sourceMatches;
+    });
+    if (targetRule) {
+      selectedRuleKey.value = ruleKey(targetRule);
+      setInlineDraftRule(targetRule);
+      await loadLatestDraft(targetRule);
+      currentRuleId = String(targetRule.rule_id || '');
+      currentSourceRowNo = Number(targetRule.source_row_no || 0) || null;
+    }
+  }
+  const ruleMatches = !targetRuleId || targetRuleId === currentRuleId;
+  const sourceMatches = targetSourceRowNo === null || targetSourceRowNo === currentSourceRowNo;
+  return Boolean(selectedDraftRule.value && ruleMatches && sourceMatches);
+}
 </script>
 
 <template>
@@ -1609,7 +1633,7 @@ watch(
                 <template v-else-if="column.key === 'action'">
                   <Space>
                     <Button
-                      v-if="isSelectedCommentRuleSet"
+                      v-if="isSelectedBusinessRuleSet"
                       size="small"
                       type="primary"
                       @click.stop="openRuleChatCopilot(record)"

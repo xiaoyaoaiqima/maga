@@ -29,13 +29,23 @@ const emit = defineEmits<{
   send: [message: string];
 }>();
 
-const draft = ref('');
-const businessRuleQuickPrompts = [
-  '检查当前语料，指出AI味、同质化和越界风险',
-  '基于当前规则改一版更像真人评论区的草稿',
-  '把当前草稿改得更自然，保留必要边界',
-  '结合最近测试报告，给下一版草稿修改建议',
+const businessRuleAssetTypes = [
+  'comment_business_rule_set',
+  'article_business_rule_set',
 ];
+const draft = ref('');
+const businessRuleQuickPrompts = computed(() => {
+  const contentLabel =
+    props.activeContext?.asset_type === 'article_business_rule_set'
+      ? '帖子/生文'
+      : '评论';
+  return [
+    `诊断当前${contentLabel}规则：规则语料哪里太满、太硬或容易同质化？`,
+    `改一版更适合业务填写的规则语料，并给出可填入示例。`,
+    `只优化示例：补一组更真人、更短、更分散的示例。`,
+    `结合最近测试结果，判断该改规则语料还是改示例，并给出可填入版本。`,
+  ];
+});
 
 const canSend = computed(() => {
   return draft.value.trim().length > 0 && !props.sending && !props.agentMissing;
@@ -43,9 +53,7 @@ const canSend = computed(() => {
 const isBusinessRuleCopilot = computed(() => {
   return (
     props.activeContext?.page === 'business_rules' &&
-    ['comment_business_rule_set'].includes(
-      props.activeContext?.asset_type || '',
-    )
+    businessRuleAssetTypes.includes(props.activeContext?.asset_type || '')
   );
 });
 const contextTitle = computed(() => {
@@ -68,6 +76,12 @@ function send() {
 function sendQuickPrompt(message: string) {
   if (props.sending || props.agentMissing) return;
   emit('send', message);
+}
+
+function actionLabel(action: ChatAction) {
+  if (action.label) return action.label;
+  if (action.type === 'fill_business_rule_examples') return '填入示例';
+  return '填入规则语料';
 }
 </script>
 
@@ -155,7 +169,7 @@ function sendQuickPrompt(message: string) {
                 type="primary"
                 @click="emit('chatAction', action)"
               >
-                {{ action.label || '填入草稿' }}
+                {{ actionLabel(action) }}
               </Button>
             </div>
           </template>

@@ -21,7 +21,7 @@ export interface ChatContext {
 }
 
 export interface ChatAction {
-  type: 'fill_business_rule_draft';
+  type: 'fill_business_rule_draft' | 'fill_business_rule_examples';
   label: string;
   payload: Record<string, any>;
 }

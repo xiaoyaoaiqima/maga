@@ -32,6 +32,7 @@ KEYWORD_CORPUS_RENDER_PRIORITY = {
     "persona": 20,
     "comment_writing_instruction": 30,
     "writing_instruction": 30,
+    "article_speaking_style": 35,
     "comment_speaking_style": 35,
     "writing_method": 40,
     "comment_format_control": 50,
@@ -322,8 +323,8 @@ def _template_variables(
         "content_type": content_type,
         "content_type_label": "评论" if content_type == "comment" else "文章",
         "output_fields": "、".join(output_fields),
-        "business_rule": _business_rule_text(business_rule),
-        "keyword_corpus": _keyword_corpus_text(selected_keywords),
+        "business_rule": _business_rule_text(business_rule, content_type=content_type),
+        "keyword_corpus": _keyword_corpus_text(selected_keywords, content_type=content_type),
         "selected_keywords_json": json.dumps(selected_keywords, ensure_ascii=False, indent=2),
         "generation_requirements": _generation_requirements(
             content_type,
@@ -334,35 +335,40 @@ def _template_variables(
     }
 
 
-def _business_rule_text(rule: dict[str, Any]) -> str:
+def _business_rule_text(rule: dict[str, Any], *, content_type: str | None = None) -> str:
     lines: list[str] = []
-    if rule.get("product_topic"):
-        lines.append(f"- 主题：{rule.get('product_topic')}")
-    if rule.get("target_audience"):
-        lines.append(f"- 目标人群：{rule.get('target_audience')}")
-    if rule.get("persona_target"):
-        lines.append(f"- 人设要求：{rule.get('persona_target')}")
-    if rule.get("style"):
-        lines.append(f"- 风格：{rule.get('style')}")
-    rule_name = (
-        rule.get("business_rule")
-        or rule.get("comment_" + "angle")
-        or rule.get("article_rule")
-        or rule.get("topic")
-    )
-    if rule_name:
-        lines.append(f"- 业务规则：{rule_name}")
-    if rule.get("baby_stage") or rule.get("use_duration"):
-        parts = []
-        if rule.get("baby_stage"):
-            parts.append(f"月龄={rule.get('baby_stage')}")
-        if rule.get("use_duration"):
-            parts.append(f"使用时间={rule.get('use_duration')}")
-        if rule.get("topic"):
-            parts.append(f"主题={rule.get('topic')}")
-        lines.append(f"- 体验拆解：{'，'.join(parts)}")
-    if rule.get("corpus"):
-        lines.append(f"- 业务语料：\n{rule.get('corpus')}")
+    if content_type == "article" and str(rule.get("corpus") or "").strip():
+        # 文章业务规则由运营直接写成可读的写作规则；prompt 里不再重复渲染
+        # rule name / corpus label，避免工程字段污染生成。
+        lines.append(str(rule.get("corpus") or "").strip())
+    else:
+        if rule.get("product_topic"):
+            lines.append(f"- 主题：{rule.get('product_topic')}")
+        if rule.get("target_audience"):
+            lines.append(f"- 目标人群：{rule.get('target_audience')}")
+        if rule.get("persona_target"):
+            lines.append(f"- 人设要求：{rule.get('persona_target')}")
+        if rule.get("style"):
+            lines.append(f"- 风格：{rule.get('style')}")
+        rule_name = (
+            rule.get("business_rule")
+            or rule.get("comment_" + "angle")
+            or rule.get("article_rule")
+            or rule.get("topic")
+        )
+        if rule_name:
+            lines.append(f"- 业务规则：{rule_name}")
+        if rule.get("baby_stage") or rule.get("use_duration"):
+            parts = []
+            if rule.get("baby_stage"):
+                parts.append(f"月龄={rule.get('baby_stage')}")
+            if rule.get("use_duration"):
+                parts.append(f"使用时间={rule.get('use_duration')}")
+            if rule.get("topic"):
+                parts.append(f"主题={rule.get('topic')}")
+            lines.append(f"- 体验拆解：{'，'.join(parts)}")
+        if rule.get("corpus"):
+            lines.append(f"- 业务语料：\n{rule.get('corpus')}")
     for label, key in [
         ("痛点资料", "painpoint_ref"),
         ("卖点资料", "selling_point_ref"),
@@ -387,10 +393,6 @@ def _business_rule_text(rule: dict[str, Any]) -> str:
     ]
     if compliance_rules:
         lines.append("- 合规约束：\n" + json.dumps(compliance_rules, ensure_ascii=False, indent=2))
-    if isinstance(rule.get("diversity_slot"), dict):
-        lines.append("- 多样性槽位：\n" + json.dumps(rule["diversity_slot"], ensure_ascii=False, indent=2))
-    if isinstance(rule.get("brief_constraints"), dict):
-        lines.append("- 格式/篇幅约束：\n" + json.dumps(rule["brief_constraints"], ensure_ascii=False, indent=2))
     if rule.get("render_reference_examples") is not False:
         examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
         supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
@@ -398,8 +400,9 @@ def _business_rule_text(rule: dict[str, Any]) -> str:
         if prompt_examples:
             # 重要逻辑：示例只作为表达颗粒参考，避免把真人语料当范文复刻。
             lines.append(
-                "- 示例使用边界：只学习语气、场景颗粒和生活细节；只借一个观察点，"
-                "不复刻原句、结构和事实主张，也不要沿用示例的叙述顺序或固定句式骨架。"
+                "- 示例使用边界：只学习语气、场景颗粒和生活细节；每篇最多借一个观察点，"
+                "不要照搬示例里的原句、数字、配比、问句、结构、事实主张或固定句式骨架，"
+                "也不要把多个示例细节拼成一篇。"
             )
             lines.append("- 示例：\n" + "\n".join(f"  - {item}" for item in prompt_examples))
     if not lines:
@@ -407,11 +410,16 @@ def _business_rule_text(rule: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _keyword_corpus_text(selected_keywords: list[dict[str, Any]]) -> str:
+def _keyword_corpus_text(selected_keywords: list[dict[str, Any]], *, content_type: str | None = None) -> str:
     parts = []
     for item in _ordered_keyword_corpus_items(selected_keywords):
         # 生成要求要放在 prompt 顶部独立生效，不再在系统关键词语料区重复出现。
-        if str(item.get("category_code") or "").strip() in GENERATION_REQUIREMENT_CATEGORY_CODES:
+        category_code = str(item.get("category_code") or "").strip()
+        if category_code in GENERATION_REQUIREMENT_CATEGORY_CODES:
+            continue
+        # 重要逻辑：文章业务规则已经承载篇幅和排版边界，避免再把格式控制
+        # 作为一段系统关键词塞进 prompt，造成重复约束和工程味。
+        if content_type == "article" and category_code == "article_format_control":
             continue
         corpus = item.get("corpus") or []
         corpus_text = "\n".join(f"  - {line}" for line in corpus)
@@ -451,8 +459,8 @@ def _generation_requirements(
             "只输出评论正文，不要标题、编号、解释。"
         )
     return (
-        "输出 JSON 对象，字段包含 title 和 body；正文保持小红书自然表达；"
-        "业务规则优先，系统提示词关键词语料用于表达身份、生成指令、多样性和写法控制。"
+        "输出 JSON 对象，字段包含 title 和 body；标题单独写，正文按业务规则控制篇幅和表达。"
+        "参考系统关键词调整语气，但具体内容只跟随业务规则。"
     )
 
 

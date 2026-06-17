@@ -21,6 +21,7 @@ from app.models.maga_assets import AssetRegistry
 from app.services.content_batch_execution_service import ContentBatchExecutionService
 from app.services.executor_invocation_service import InvokeResult, MockExecutorInvocationClient
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService, find_forbidden_hits
+from app.services.product_experience_phrase_guard_service import review_product_experience_phrase
 
 
 def _execution_tables():
@@ -44,6 +45,38 @@ def test_forbidden_hits_prefer_longer_overlapping_terms():
 
     assert hits.index("倒没抗拒") < hits.index("没抗拒")
     assert hits.index("能接受") < hits.index("能接")
+
+
+def test_product_experience_phrase_guard_allows_single_soft_closure_phrase():
+    review = review_product_experience_phrase(
+        title="睡前这杯还挺省心",
+        body="晚上收拾完书包，顺手给娃冲一杯旺玥。他自己捧着喝完，我也不用再追着饭桌复盘太多，今天就这样记录一下。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_article_business_rules",
+            "corpus": "篇幅类型：中短文；正文按130字左右写，可在120-150字之间。0705旺玥活动",
+        },
+    )
+
+    assert review.ai_phrase_hits == ["省心"]
+    assert review.rewrite_required is False
+    assert review.pass_ is True
+
+
+def test_product_experience_phrase_guard_still_blocks_hard_ai_closure_phrase():
+    review = review_product_experience_phrase(
+        title="旺玥记录",
+        body="老母亲做了半天功课，最后还是选旺玥，孩子喝完我就觉得这事固定下来了。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_article_business_rules",
+            "corpus": "篇幅类型：中短文；正文按130字左右写，可在120-150字之间。0705旺玥活动",
+        },
+    )
+
+    assert "hard_ai_closure_phrase" in review.reasons
+    assert review.rewrite_required is True
+    assert review.pass_ is False
 
 
 @pytest.mark.asyncio
@@ -127,6 +160,70 @@ async def test_batch_execution_generates_first_n_items_and_links_runs():
     assert items[0].diversity_json["emotion"] == "稳"
     assert items[0].diversity_json["cta_type"] == "轻建议"
     assert "content.generate" in {stage.capability for stage in stage_calls}
+
+
+@pytest.mark.asyncio
+async def test_batch_execution_applies_persona_style_rewrite_after_generation():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add(
+            ExecutorRegistry(
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
+                display_name="Hermes MAGA worker",
+                invoke_url="mock://maga-worker/invoke",
+                enabled=1,
+                config_json={},
+            )
+        )
+        job = ContentBatchJob(
+            batch_code="batch_persona_rewrite",
+            asset_key="yuanyue",
+            product_topic="宝宝便便不规律",
+            target_audience="新手妈妈",
+            style="经验老道型",
+            count=2,
+            status="planned",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(ContentBatchItem(batch_id=job.id, item_no=1, status="planned", plan_json=_plan(1)))
+        session.add(ContentBatchItem(batch_id=job.id, item_no=2, status="planned", plan_json=_plan(2)))
+        await session.commit()
+
+        service = ContentBatchExecutionService(
+            session,
+            invocation_client=PersonaStyleRewriteClient(),
+            callback_base_url="http://maga.test/api/v1/executor",
+            session_factory=session_factory,
+        )
+        result = await service.execute_batch_items(job.id, limit=2, concurrency=2, created_by="test")
+        await session.commit()
+
+    assert result.generated_count == 2
+    async with session_factory() as session:
+        items = (
+            await session.execute(select(ContentBatchItem).where(ContentBatchItem.batch_id == job.id).order_by(ContentBatchItem.item_no))
+        ).scalars().all()
+        rewrite_stages = (
+            await session.execute(select(ContentAgentStageCall).where(ContentAgentStageCall.capability == "content.rewrite"))
+        ).scalars().all()
+
+    assert items[0].body == "roommate_direct 改写后正文"
+    assert items[1].body == "mother_soft_observer 改写后正文"
+    assert items[0].quality_json["persona_style_rewrites"][0]["preset_code"] == "roommate_direct"
+    assert items[1].quality_json["persona_style_rewrites"][0]["preset_code"] == "mother_soft_observer"
+    assert len(rewrite_stages) == 2
+    instructions = "\n".join((rewrite_stages[0].input_snapshot or {}).get("rewrite_instructions") or [])
+    assert "人设改写风格：爽快、直给" in instructions
+    assert "不要改变原文的发帖视角" in instructions
 
 
 @pytest.mark.asyncio
@@ -280,7 +377,11 @@ async def test_batch_execution_rewrites_business_forbidden_terms():
     assert item.quality_json["review_report"]["hard_results"][-1]["ae_code"] == "forbidden_terms_guard"
     assert item.quality_json["review_report"]["hard_results"][-1]["pass"] is True
     assert any(stage.capability == "content.rewrite" for stage in stage_calls)
-    rewrite_stage = next(stage for stage in stage_calls if stage.capability == "content.rewrite")
+    rewrite_stage = next(
+        stage
+        for stage in stage_calls
+        if stage.capability == "content.rewrite" and (stage.input_snapshot or {}).get("rewrite_source") != "persona_style_rewrite"
+    )
     assert (rewrite_stage.input_snapshot or {})["forbidden_replacements"] == {"宝宝": "孩子"}
     assert "宝宝 -> 孩子" in "\n".join((rewrite_stage.input_snapshot or {})["rewrite_instructions"])
 
@@ -344,6 +445,40 @@ class RuntimeFastDraftReviewClient:
         return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
 
 
+class PersonaStyleRewriteClient(RuntimeFastDraftReviewClient):
+    async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
+        if envelope.get("capability") == "content.generate":
+            input_payload = envelope.get("input") or {}
+            business_rule = input_payload.get("business_rule") or {}
+            item_no = business_rule.get("item_no") or 1
+            return InvokeResult(
+                mode="sync",
+                stage_call_id=envelope["stage_call_id"],
+                output={
+                    "title": f"原始标题{item_no}",
+                    "body": f"原始正文{item_no}",
+                    "runtime_result": {"mode": "runtime_fast"},
+                },
+                stats={"fake": True},
+            )
+        if envelope.get("capability") == "content.rewrite":
+            input_payload = envelope.get("input") or {}
+            previous = input_payload.get("previous_content") or {}
+            preset = input_payload.get("rewrite_style_preset") or "unknown"
+            return InvokeResult(
+                mode="sync",
+                stage_call_id=envelope["stage_call_id"],
+                output={
+                    "title": previous.get("title") or "改写标题",
+                    "body": f"{preset} 改写后正文",
+                    "final": {"title": previous.get("title") or "改写标题", "body": f"{preset} 改写后正文"},
+                    "runtime_result": {"mode": "content_rewrite_runtime"},
+                },
+                stats={"fake": True},
+            )
+        return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
+
+
 class SlowTrackingClient(RuntimeFastDraftReviewClient):
     def __init__(self):
         self.active = 0
@@ -376,6 +511,17 @@ class SimilarDraftRewriteClient(RuntimeFastDraftReviewClient):
             return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
         if capability == "content.rewrite":
             input_payload = envelope.get("input") or {}
+            if input_payload.get("rewrite_source") == "persona_style_rewrite":
+                previous = input_payload.get("previous_content") or {}
+                return InvokeResult(
+                    mode="sync",
+                    stage_call_id=envelope["stage_call_id"],
+                    output={
+                        "title": previous.get("title") or "相似标题",
+                        "body": previous.get("body") or "第一段相同。第二段也相同。第三段继续相同。",
+                    },
+                    stats={"fake": True},
+                )
             rewrite_report = input_payload.get("review_report") or {}
             output = {
                 "title": "降重后的标题",
@@ -409,6 +555,19 @@ class ProductExperiencePhraseRewriteClient(RuntimeFastDraftReviewClient):
             }
             return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
         if capability == "content.rewrite":
+            input_payload = envelope.get("input") or {}
+            if input_payload.get("rewrite_source") == "persona_style_rewrite":
+                previous = input_payload.get("previous_content") or {}
+                return InvokeResult(
+                    mode="sync",
+                    stage_call_id=envelope["stage_call_id"],
+                    output={
+                        "title": previous.get("title") or "接娃回来先换件衣服",
+                        "body": previous.get("body") or "",
+                        "final": {"title": previous.get("title") or "接娃回来先换件衣服", "body": previous.get("body") or ""},
+                    },
+                    stats={"fake": True},
+                )
             output = {
                 "title": "接娃回来先换件衣服",
                 "body": (
@@ -596,6 +755,14 @@ async def test_batch_execution_rewrites_later_item_when_similarity_is_too_high()
     assert similarity_rewrites[0]["post_rewrite_similarity_score"] < 0.42
     assert items[1].quality_json["review_report"]["rewrite_required"] is False
     assert any(stage.capability == "content.rewrite" for stage in stage_calls)
+    rewrite_stage = next(
+        stage
+        for stage in stage_calls
+        if stage.capability == "content.rewrite" and (stage.input_snapshot or {}).get("rewrite_source") != "persona_style_rewrite"
+    )
+    instructions = "\n".join((rewrite_stage.input_snapshot or {}).get("rewrite_instructions") or [])
+    assert "优先删除或压缩" in instructions
+    assert "不要为了多样化扩写新情节" in instructions
 
 
 @pytest.mark.asyncio
@@ -735,7 +902,7 @@ async def test_batch_execution_marks_manual_review_when_similarity_rewrite_still
 
 
 @pytest.mark.asyncio
-async def test_batch_execution_rewrites_article_business_phrase_skeleton():
+async def test_batch_execution_marks_article_business_phrase_skeleton_without_rewrite():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(
@@ -789,15 +956,16 @@ async def test_batch_execution_rewrites_article_business_phrase_skeleton():
         item = (await session.execute(select(ContentBatchItem))).scalar_one()
         stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
 
-    assert "价格不算便宜" not in item.body
-    assert "固定下来" not in item.body
+    assert "价格不算便宜" in item.body
+    assert "固定下来" in item.body
     guard = item.quality_json["product_experience_phrase_guard"]
-    assert guard["pass"] is True
-    rewrites = item.quality_json["product_experience_phrase_rewrites"]
-    assert rewrites[0]["pre_review"]["rewrite_required"] is True
-    assert rewrites[0]["post_review"]["rewrite_required"] is False
-    assert item.quality_json["review_report"]["rewrite_required"] is False
+    assert guard["pass"] is False
+    assert guard["rewrite_required"] is True
+    assert "product_experience_phrase_rewrites" not in item.quality_json
+    assert item.quality_json["review_report"]["rewrite_required"] is True
     assert sum(1 for stage in stage_calls if stage.capability == "content.rewrite") == 1
+    rewrite_stage = next(stage for stage in stage_calls if stage.capability == "content.rewrite")
+    assert (rewrite_stage.input_snapshot or {}).get("rewrite_source") == "persona_style_rewrite"
 
 
 @pytest.mark.asyncio
@@ -857,7 +1025,8 @@ async def test_batch_execution_uses_unified_content_generate_runtime_output():
     assert item.quality_json["hard_pass"] is True
     assert item.quality_json["executor"] == "content_runtime"
     assert item.quality_json["soft_score_avg"] is None
-    assert {stage.capability for stage in stage_calls} == {"content.generate"}
+    assert {stage.capability for stage in stage_calls} == {"content.generate", "content.rewrite"}
+    assert item.quality_json["persona_style_rewrites"][0]["preset_code"] == "roommate_direct"
 
 
 def _plan(item_no: int) -> dict:

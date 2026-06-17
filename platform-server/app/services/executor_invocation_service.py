@@ -802,7 +802,7 @@ def _rewrite_prompt(
             if forbidden_replacements
             else "无"
         ),
-        "改写原则：只改命中词和相关句子，尽量保留原意、语气、结构和业务规则；不得新增功效承诺、医疗诊断或绝对化表达。",
+        "改写原则：优先删除、压缩或替换命中词和相关句子，尽量保留原意、语气、结构和业务规则；不要为了多样化扩写新情节；不得新增功效承诺、医疗诊断或绝对化表达。",
         output_instruction,
     ]
     instructions = input_payload.get("rewrite_instructions") or []

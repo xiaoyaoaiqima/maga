@@ -4347,15 +4347,12 @@ async def test_batch_report_can_export_generated_results_excel(content_agent_wor
     )
     assert "filename*=UTF-8''" in response.headers["content-disposition"]
     workbook = load_workbook(BytesIO(response.content))
-    assert workbook.sheetnames == ["批次概览", "生文结果"]
-    overview = workbook["批次概览"]
+    assert workbook.sheetnames == ["生文结果"]
     result = workbook["生文结果"]
-    assert overview["A1"].value == "字段"
-    assert overview["B5"].value == "美素佳儿源悦活动评论"
-    assert result["A1"].value == "序号"
-    assert result["C1"].value == "标题"
-    assert result["D1"].value == "正文"
-    assert result["D2"].value == "我家刚开始也在看源悦，想蹲蹲真实反馈"
+    assert result["A1"].value == "标题"
+    assert result["B1"].value == "正文"
+    assert result["C1"].value == "业务规则"
+    assert result["B2"].value == "我家刚开始也在看源悦，想蹲蹲真实反馈"
     assert result["R1"].value == "系统语料包"
 
 
