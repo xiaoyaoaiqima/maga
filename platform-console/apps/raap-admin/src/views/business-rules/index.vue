@@ -5,13 +5,14 @@ import type { AssetsApi } from '#/api/core/assets';
 import type { ChatContext } from '#/api/core/chat';
 import type { ContentAgentApi } from '#/api/core/content-agent';
 
-import { computed, h, onMounted, ref, watch } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { useUserStore } from '@vben/stores';
 
 import {
   CheckOutlined,
+  DownloadOutlined,
   EditOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -130,11 +131,11 @@ const compareReports = ref<ContentAgentApi.BatchReport[]>([]);
 const ruleSearchText = ref('');
 const selectedRuleKey = ref('');
 const draftMap = ref<Record<string, AssetsApi.CommentBusinessRuleDraft>>({});
-const inspectorMode = ref<'batches' | 'rule'>('rule');
 const packagePaneCollapsed = ref(false);
 const batchDetailOpen = ref(false);
 const preflightResult = ref<ContentAgentApi.PreflightResponse | null>(null);
 const preflightLoading = ref(false);
+const viewportHeight = ref(typeof window === 'undefined' ? 900 : window.innerHeight);
 const focusGenerateOpen = ref(false);
 const focusGenerateForm = ref({
   rule_key: '',
@@ -215,6 +216,9 @@ const selectedRuleOptions = computed(() => {
       value: ruleKey(item),
     }));
 });
+const ruleTableScrollY = computed(() =>
+  Math.max(420, Math.min(720, viewportHeight.value - 500)),
+);
 
 const currentOperator = computed(
   () =>
@@ -371,7 +375,7 @@ const previewColumns = computed<any[]>(() => {
       key: 'rule_summary',
       minWidth: 300,
     },
-    { fixed: 'right', title: '操作', key: 'action', width: 230 },
+    { title: '操作', key: 'action', width: 230 },
   ];
 });
 
@@ -542,6 +546,10 @@ function focusInlineDraftEditor() {
     );
     textarea?.focus();
   });
+}
+
+function updateViewportHeight() {
+  viewportHeight.value = window.innerHeight;
 }
 
 async function loadRuleAssets() {
@@ -920,7 +928,6 @@ async function openBatchDetail(batchId?: number) {
 
 async function selectRecentBatch(batchId: number) {
   await openReport(batchId);
-  inspectorMode.value = 'batches';
 }
 
 async function changeBatchScope(scope: BatchScope) {
@@ -1086,6 +1093,45 @@ function downloadSimpleRuleTemplate() {
   URL.revokeObjectURL(url);
 }
 
+function csvCell(value: unknown) {
+  return `"${String(value ?? '').replaceAll('"', '""')}"`;
+}
+
+function safeFilename(value: string) {
+  return String(value || '业务规则包')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, '_')
+    .slice(0, 80);
+}
+
+function downloadSelectedRulePackage() {
+  if (!selectedAsset.value) {
+    message.warning('请先选择一个业务规则包');
+    return;
+  }
+  const items = selectedRuleItems.value;
+  if (!items.length) {
+    message.warning('当前规则包暂无可导出的规则');
+    return;
+  }
+  const rows = [
+    ['业务规则名称', '规则语料', '示例'],
+    ...items.map((item) => [
+      item.business_rule || ruleDisplayName(item),
+      item.corpus || '',
+      [...normalizeTextList(item.examples), ...normalizeTextList(item.supplements)].join('\n'),
+    ]),
+  ];
+  const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${safeFilename(selectedPackageName.value || selectedAsset.value.asset_key)}_v${selectedAsset.value.version_no}_业务规则包.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function confirmUpload() {
   if (!pendingFile.value) {
     message.warning('请先选择文件');
@@ -1184,7 +1230,6 @@ function draftKey(record: Record<string, any>) {
 
 function selectRule(record: Record<string, any>) {
   selectedRuleKey.value = ruleKey(record);
-  inspectorMode.value = 'rule';
   if (isSelectedCommentRuleSet.value) {
     setInlineDraftRule(record);
   }
@@ -1310,6 +1355,12 @@ function inferArticleBusinessTargetFromFileName(fileName: string) {
 
 onMounted(() => {
   loadRuleAssets();
+  updateViewportHeight();
+  window.addEventListener('resize', updateViewportHeight);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateViewportHeight);
 });
 
 watch(
@@ -1458,6 +1509,10 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
         </Button>
         <Button @click="downloadSimpleRuleTemplate">
           下载规则模板
+        </Button>
+        <Button :disabled="!selectedAsset" @click="downloadSelectedRulePackage">
+          <template #icon><DownloadOutlined /></template>
+          导出规则包
         </Button>
         <Upload
           :accept="ruleUploadAccept"
@@ -1609,7 +1664,7 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
               :pagination="false"
               :row-key="ruleKey"
               :row-class-name="(record) => (isActiveRule(record) ? 'active-rule-row' : '')"
-              :scroll="{ x: isSelectedCommentRuleSet || isSelectedArticleBusinessRuleSet ? 560 : 720, y: 'calc(100vh - 330px)' }"
+              :scroll="{ x: isSelectedCommentRuleSet || isSelectedArticleBusinessRuleSet ? 560 : 720, y: ruleTableScrollY }"
               size="small"
             >
               <template #bodyCell="{ column, record, text }">
@@ -1659,25 +1714,7 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 
       <aside class="rule-inspector-pane">
         <Card class="inspector-card fill-card" :bordered="false">
-          <div class="inspector-tabs">
-            <button
-              :class="{ active: inspectorMode === 'rule' }"
-              type="button"
-              @click="inspectorMode = 'rule'"
-            >
-              当前规则
-            </button>
-            <button
-              :class="{ active: inspectorMode === 'batches' }"
-              type="button"
-              @click="inspectorMode = 'batches'"
-            >
-              最近测试
-            </button>
-          </div>
-
-          <template v-if="inspectorMode === 'rule'">
-            <template v-if="activeRule">
+          <template v-if="activeRule">
               <div class="inspector-section">
                 <div class="inspector-title">
                   <strong>{{ ruleDisplayName(activeRule) }}</strong>
@@ -1776,13 +1813,16 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
                   {{ activeRule.corpus || '-' }}
                 </div>
               </div>
-            </template>
-            <Empty v-else description="请选择一条业务规则" />
           </template>
+          <Empty v-else description="请选择一条业务规则" />
+        </Card>
+      </aside>
 
-          <template v-else>
-            <Spin :spinning="batchLoading || reportLoading">
-              <div class="inspector-section">
+      <Card class="recent-batches-card" :bordered="false">
+        <Spin :spinning="batchLoading || reportLoading">
+          <div class="recent-batches-layout">
+            <div class="recent-batches-head">
+              <div class="recent-batches-title-row">
                 <div class="inspector-title">
                   <strong>{{ batchScopeTitle }}</strong>
                   <Tag>最近 {{ selectedAssetBatchTotal }} 个</Tag>
@@ -1804,87 +1844,87 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
                     当前规则
                   </Button>
                 </div>
-                <template v-if="inspectorReport">
-                  <div class="current-batch-title">
-                    <span>当前批次</span>
-                    <strong>{{ inspectorReportTitle }}</strong>
-                    <Tag :color="statusColor(inspectorReport.status)">
-                      {{ statusLabel(inspectorReport.status) }}
-                    </Tag>
-                  </div>
-                  <div class="mini-metrics">
-                    <div>
-                      <span>总数</span>
-                      <strong>{{ inspectorReportSummary?.total_count ?? '-' }}</strong>
-                    </div>
-                    <div>
-                      <span>生成</span>
-                      <strong>{{ inspectorReportSummary?.generated_count ?? '-' }}</strong>
-                    </div>
-                    <div>
-                      <span>失败</span>
-                      <strong>{{ failedCountOf(inspectorReportSummary) }}</strong>
-                    </div>
-                    <div>
-                      <span>风险</span>
-                      <strong>{{ batchRiskCount(inspectorReportSummary) }}</strong>
-                    </div>
-                  </div>
-                </template>
               </div>
-
-              <div v-if="selectedAssetBatches.length" class="batch-list compact-list">
-                <button
-                  v-for="batch in selectedAssetBatches.slice(0, 6)"
-                  :key="batch.batch_id"
-                  class="batch-list-item compact"
-                  :class="{ active: inspectorReport?.batch_id === batch.batch_id }"
-                  type="button"
-                  @click="selectRecentBatch(batch.batch_id)"
-                >
-                  <Checkbox
-                    :checked="isBatchSelectedForCompare(batch.batch_id)"
-                    @change="toggleCompareBatch(batch.batch_id)"
-                    @click.stop
-                  />
-                  <span class="batch-title">
-                    <span>#{{ batch.batch_id }}</span>
-                    <Tag :color="statusColor(batch.status)">
-                      {{ statusLabel(batch.status) }}
-                    </Tag>
-                  </span>
-                  <span class="batch-meta">
-                    {{ batch.summary.generated_count }}/{{ batch.summary.total_count }}
-                    条 · 失败 {{ failedCountOf(batch.summary) }} · 风险
-                    {{ batchRiskCount(batch.summary) }}
-                  </span>
-                  <span class="batch-time">
-                    {{ formatBatchTime(batch.create_time) }}
-                  </span>
-                </button>
-              </div>
-              <Empty v-else :description="batchScopeEmptyText" />
-
-              <Space class="batch-footer-actions" direction="vertical">
+              <Space class="batch-footer-actions">
                 <Button
-                  block
                   :disabled="compareBatchIds.length !== 2"
                   @click="openBatchCompare"
                 >
                   对比批次
                 </Button>
                 <Button
-                  block
                   :disabled="!selectedAssetBatches.length"
                   @click="openBatchDetail()"
                 >
                   查看完整明细
                 </Button>
               </Space>
-            </Spin>
-          </template>
-        </Card>
-      </aside>
+            </div>
+
+            <template v-if="inspectorReport">
+              <div class="recent-batch-summary">
+                <div class="current-batch-title">
+                  <span>当前批次</span>
+                  <strong>{{ inspectorReportTitle }}</strong>
+                  <Tag :color="statusColor(inspectorReport.status)">
+                    {{ statusLabel(inspectorReport.status) }}
+                  </Tag>
+                </div>
+                <div class="mini-metrics">
+                  <div>
+                    <span>总数</span>
+                    <strong>{{ inspectorReportSummary?.total_count ?? '-' }}</strong>
+                  </div>
+                  <div>
+                    <span>生成</span>
+                    <strong>{{ inspectorReportSummary?.generated_count ?? '-' }}</strong>
+                  </div>
+                  <div>
+                    <span>失败</span>
+                    <strong>{{ failedCountOf(inspectorReportSummary) }}</strong>
+                  </div>
+                  <div>
+                    <span>风险</span>
+                    <strong>{{ batchRiskCount(inspectorReportSummary) }}</strong>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <div v-if="selectedAssetBatches.length" class="batch-list compact-list">
+              <button
+                v-for="batch in selectedAssetBatches.slice(0, 6)"
+                :key="batch.batch_id"
+                class="batch-list-item compact"
+                :class="{ active: inspectorReport?.batch_id === batch.batch_id }"
+                type="button"
+                @click="selectRecentBatch(batch.batch_id)"
+              >
+                <Checkbox
+                  :checked="isBatchSelectedForCompare(batch.batch_id)"
+                  @change="toggleCompareBatch(batch.batch_id)"
+                  @click.stop
+                />
+                <span class="batch-title">
+                  <span>#{{ batch.batch_id }}</span>
+                  <Tag :color="statusColor(batch.status)">
+                    {{ statusLabel(batch.status) }}
+                  </Tag>
+                </span>
+                <span class="batch-meta">
+                  {{ batch.summary.generated_count }}/{{ batch.summary.total_count }}
+                  条 · 失败 {{ failedCountOf(batch.summary) }} · 风险
+                  {{ batchRiskCount(batch.summary) }}
+                </span>
+                <span class="batch-time">
+                  {{ formatBatchTime(batch.create_time) }}
+                </span>
+              </button>
+            </div>
+            <Empty v-else :description="batchScopeEmptyText" />
+          </div>
+        </Spin>
+      </Card>
     </div>
 
     <Modal
@@ -2285,8 +2325,10 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   display: grid;
   gap: 12px;
   grid-template-columns: 300px minmax(520px, 1fr) 360px;
+  grid-template-rows: minmax(0, 1fr) auto;
   height: calc(100vh - 154px);
-  min-height: 640px;
+  min-height: 760px;
+  overflow: hidden;
 }
 
 .rule-workbench-shell.package-pane-collapsed {
@@ -2295,9 +2337,18 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 
 .rule-package-pane,
 .rule-list-pane,
-.rule-inspector-pane {
+.rule-inspector-pane,
+.recent-batches-card {
   min-height: 0;
   min-width: 0;
+}
+
+.recent-batches-card {
+  grid-column: 1 / -1;
+}
+
+.recent-batches-card :deep(.ant-card-body) {
+  padding: 12px 14px;
 }
 
 .rule-package-pane.collapsed {
@@ -2338,6 +2389,14 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.rule-inspector-pane {
+  position: relative;
+  z-index: 2;
 }
 
 .fill-card {
@@ -2492,6 +2551,7 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 .rule-list-card {
   flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
 }
 
 .rule-search {
@@ -2596,33 +2656,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   color: var(--maga-text-muted);
   line-height: 1.5;
   margin: 0;
-}
-
-.inspector-tabs {
-  background: var(--maga-surface-soft);
-  border: 1px solid var(--maga-border);
-  border-radius: 8px;
-  display: grid;
-  gap: 4px;
-  grid-template-columns: 1fr 1fr;
-  margin-bottom: 12px;
-  padding: 4px;
-}
-
-.inspector-tabs button {
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  color: var(--maga-text-muted);
-  cursor: pointer;
-  font-weight: 600;
-  height: 32px;
-}
-
-.inspector-tabs button.active {
-  background: var(--maga-surface);
-  color: var(--maga-text);
-  box-shadow: 0 1px 2px rgb(16 24 40 / 8%);
 }
 
 .inspector-section {
@@ -2829,6 +2862,69 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 .batch-list-item.compact .batch-meta,
 .batch-list-item.compact .batch-time {
   min-width: 0;
+}
+
+.recent-batches-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.recent-batches-head {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.recent-batches-title-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
+}
+
+.recent-batch-summary {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(260px, 1.2fr) minmax(420px, 2fr);
+}
+
+.recent-batches-card .compact-list {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
+  margin-top: 0;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+}
+
+.recent-batches-card .batch-footer-actions {
+  margin-top: 0;
+  width: auto;
+}
+
+.recent-batches-card .batch-footer-actions :deep(.ant-space-item) {
+  width: auto;
+}
+
+.recent-batches-card .batch-scope-switch {
+  display: flex;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.recent-batches-card .current-batch-title,
+.recent-batches-card .mini-metrics {
+  margin-top: 0;
+}
+
+.recent-batches-card .batch-list-item.compact {
+  min-height: 64px;
+  padding: 8px 10px;
 }
 
 .batch-time {
@@ -3044,6 +3140,8 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 @media (max-width: 1180px) {
   .rule-workbench-shell {
     grid-template-columns: 280px minmax(480px, 1fr);
+    height: auto;
+    min-height: 0;
   }
 
   .rule-workbench-shell.package-pane-collapsed {
@@ -3053,6 +3151,14 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   .rule-inspector-pane {
     grid-column: 1 / -1;
     min-height: 420px;
+  }
+
+  .recent-batch-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .recent-batches-card .compact-list {
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
   }
 }
 
@@ -3084,6 +3190,7 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   .rule-package-pane,
   .rule-list-pane,
   .rule-inspector-pane,
+  .recent-batches-card,
   .fill-card {
     height: auto;
   }
@@ -3104,6 +3211,15 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 
   .config-strip {
     display: flex;
+  }
+
+  .recent-batches-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .recent-batches-card .compact-list {
+    grid-template-columns: 1fr;
   }
 
   .batch-detail-summary,
