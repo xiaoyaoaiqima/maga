@@ -221,6 +221,11 @@ ADULT_SELF_DRINKING_PHRASES = (
     "自己也能当早餐奶",
     "我自己喝着觉得挺香",
     "自己先喝了一口",
+    "偷喝她剩的一口底",
+    "偷喝他剩的一口底",
+    "偷喝剩的一口底",
+    "我偷喝过半杯",
+    "偷喝过半杯",
 )
 
 CHILD_SELF_BREWING_PHRASES = (
@@ -274,6 +279,9 @@ CHILD_SELF_BREWING_PHRASES = (
     "每天早上主动去冲",
     "每天早上自己跑去冲一杯",
     "自己抱着杯子要冲",
+    "孩子拿着自己冲",
+    "娃拿着自己冲",
+    "自己抱着罐子看",
     "自己抱着罐子让冲",
     "他泡好端着",
     "拿勺子舀粉",
@@ -605,6 +613,9 @@ def sanitize_baby_milk_action_phrases(value: str | None) -> str:
     text = text.replace("自己会去冲", "会过来等我冲")
     text = text.replace("自己去冲", "过来等我冲")
     text = text.replace("自己抱着杯子要冲", "抱着杯子等我冲")
+    text = text.replace("孩子拿着自己冲", "孩子拿着杯子等我冲")
+    text = text.replace("娃拿着自己冲", "娃拿着杯子等我冲")
+    text = text.replace("自己抱着罐子看", "抱着杯子等我冲")
     text = text.replace("自己拿勺子挖了两勺", "在旁边看着我冲")
     text = text.replace("自己抱着罐子让冲", "抱着杯子等我冲")
     text = text.replace("他泡好端着", "我冲好递给他")
@@ -650,6 +661,11 @@ def sanitize_adult_self_drinking_phrases(value: str | None) -> str:
     text = text.replace("妈妈自己喝旺玥", "孩子喝旺玥")
     text = text.replace("我自己喝着觉得挺香", "孩子喝着觉得挺香")
     text = text.replace("自己先喝了一口", "先递给孩子喝")
+    text = text.replace("偷喝她剩的一口底", "看她喝完杯底")
+    text = text.replace("偷喝他剩的一口底", "看他喝完杯底")
+    text = text.replace("偷喝剩的一口底", "看孩子喝完杯底")
+    text = text.replace("我偷喝过半杯", "我闻过奶香味")
+    text = text.replace("偷喝过半杯", "闻过奶香味")
     text = text.replace("先试一罐吧，先试一罐", "先试一罐吧")
     text = text.replace("先试一罐吧，反正先试一罐", "先试一罐吧")
     text = text.replace("，。", "。")

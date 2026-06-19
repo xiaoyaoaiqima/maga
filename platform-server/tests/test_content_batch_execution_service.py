@@ -169,6 +169,22 @@ def test_product_experience_phrase_guard_blocks_adult_tasting_child_formula():
     assert "我自己喝着" not in sanitize_adult_self_drinking_phrases("反正我自己喝着觉得挺香。")
 
 
+def test_product_experience_phrase_guard_blocks_adult_leftover_tasting_child_formula():
+    review = review_product_experience_phrase(
+        title="旺玥喝到第三罐了，每次冲奶都偷喝她剩的一口底",
+        body="也不是多好喝，就是看那阵奶沫消掉后留下的挂壁，觉得像把今天漏掉的钙和铁给她续上了。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_article_business_rules",
+            "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
+        },
+    )
+
+    assert "偷喝她剩的一口底" in review.adult_self_drinking_hits
+    assert "adult_self_drinking_child_formula" in review.reasons
+    assert "偷喝" not in sanitize_adult_self_drinking_phrases("每次冲奶都偷喝她剩的一口底。")
+
+
 def test_product_experience_phrase_guard_blocks_child_self_brewing_formula():
     review = review_product_experience_phrase(
         title="今天继续记录旺玥",
@@ -299,6 +315,7 @@ def test_product_experience_baby_milk_action_cleanup_is_narrow_and_varied():
     model_rotation_text = "今天娃突然自己跑去柜子前，踮脚够奶粉罐，还抱着空罐子在地上滚。"
     model_rotation_text_2 = "每天早上自己搬凳子去够柜子上的罐子，娃自己会去冲。"
     model_rotation_text_3 = "每天早上自己跑去冲一杯，后来又主动去冲，最后自己抱着杯子要冲。"
+    model_rotation_text_4 = "孩子拿着自己冲，我一回头还看到他自己抱着罐子看。"
     adult_text = "今晚陪娃写作业，给自己冲一杯热水。"
     cup_text = "冲好后娃自己抱着杯子咕嘟咕嘟喝，我偷偷乐了一下。"
 
@@ -338,6 +355,9 @@ def test_product_experience_baby_milk_action_cleanup_is_narrow_and_varied():
     assert "自己跑去冲一杯" not in cleaned_model_rotation_3
     assert "主动去冲" not in cleaned_model_rotation_3
     assert "自己抱着杯子要冲" not in cleaned_model_rotation_3
+    cleaned_model_rotation_4 = sanitize_baby_milk_action_phrases(model_rotation_text_4)
+    assert "孩子拿着自己冲" not in cleaned_model_rotation_4
+    assert "自己抱着罐子看" not in cleaned_model_rotation_4
     assert sanitize_baby_milk_action_phrases(adult_text) == adult_text.strip("。")
     assert sanitize_baby_milk_action_phrases(cup_text) == cup_text.strip("。")
 
