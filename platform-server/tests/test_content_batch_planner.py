@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.models.base import Base
 from app.models.maga_assets import AssetRegistry
 from app.models.content_agent import ContentBatchJob, ContentBatchItem
-from app.services.content_batch_planner import ContentBatchPlanner
+from app.services.content_batch_planner import ContentBatchPlanner, _rotated_model_config
 
 
 def test_article_business_generation_limit_prefers_requested_count():
@@ -102,6 +102,30 @@ def test_article_business_rule_plan_uses_asset_model_config_with_request_overrid
     assert default_plan["model_config"]["max_tokens"] == 2048
     assert override_plan["model_config"]["temperature"] == 0.7
     assert override_plan["model_config"]["max_tokens"] == 2048
+
+
+def test_model_config_rotation_merges_base_by_item_no():
+    base = {"provider_code": "aihubmix", "temperature": 0.9}
+    rotation = [
+        {"model_code": "deepseek-v4-flash", "ge_model": "deepseek-v4-flash", "ae_model": "deepseek-v4-flash"},
+        {"model_code": "glm-5.2", "ge_model": "glm-5.2", "ae_model": "glm-5.2"},
+    ]
+
+    first = _rotated_model_config(1, base, rotation)
+    second = _rotated_model_config(2, base, rotation)
+    third = _rotated_model_config(3, base, rotation)
+
+    assert first == {
+        "provider_code": "aihubmix",
+        "temperature": 0.9,
+        "model_code": "deepseek-v4-flash",
+        "ge_model": "deepseek-v4-flash",
+        "ae_model": "deepseek-v4-flash",
+    }
+    assert second["model_code"] == "glm-5.2"
+    assert second["provider_code"] == "aihubmix"
+    assert second["temperature"] == 0.9
+    assert third["model_code"] == "deepseek-v4-flash"
 
 
 @pytest.mark.asyncio

@@ -151,6 +151,16 @@ class ContentBatchModelConfig(BaseSchema):
     system_prompt: str | None = None
 
 
+class ContentBatchModelConfigRotationItem(BaseSchema):
+    provider_code: str | None = Field(default=None, max_length=64)
+    model_code: str | None = Field(default=None, max_length=128)
+    ge_model: str | None = Field(default=None, max_length=128)
+    ae_model: str | None = Field(default=None, max_length=128)
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    max_tokens: int | None = Field(default=None, ge=1, le=100000)
+    system_prompt: str | None = None
+
+
 class ContentBatchStartRequest(BaseSchema):
     asset_key: str = Field(default=DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY, max_length=128)
     keyword_asset_key: str | None = Field(default=None, max_length=128)
@@ -166,6 +176,7 @@ class ContentBatchStartRequest(BaseSchema):
         default_factory=ContentBatchModelConfig,
         alias="model_config",
     )
+    model_config_rotation: list[ContentBatchModelConfigRotationItem] = Field(default_factory=list, max_length=20)
     created_by: str | None = Field(default=None, max_length=100)
 
 

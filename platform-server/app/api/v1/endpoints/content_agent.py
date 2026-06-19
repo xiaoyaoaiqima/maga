@@ -94,6 +94,24 @@ async def _model_config_with_maga_defaults(
     return config
 
 
+async def _model_config_rotation_with_maga_defaults(
+    db: AsyncSession,
+    *,
+    base_model_config: dict[str, Any],
+    rotation: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    configs: list[dict[str, Any]] = []
+    for raw_item in rotation:
+        item = {key: value for key, value in raw_item.items() if value is not None and value != ""}
+        merged = {**base_model_config, **item}
+        model_code = str(item.get("model_code") or "").strip()
+        if model_code:
+            merged["ge_model"] = item.get("ge_model") or model_code
+            merged["ae_model"] = item.get("ae_model") or model_code
+        configs.append(await _model_config_with_maga_defaults(db, merged))
+    return configs
+
+
 async def _default_llm_provider_config(
     db: AsyncSession,
     *,
@@ -133,6 +151,10 @@ async def start_batch_generation(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="executor not found")
     invocation_client = _invocation_client_for_invoke_url(executor.invoke_url)
     try:
+        model_config = await _model_config_with_maga_defaults(
+            db,
+            request.generation_model_config.model_dump(exclude_none=True),
+        )
         job = await ContentBatchPlanner(db).create_batch_plan(
             asset_key=request.asset_key,
             rule_id=request.rule_id,
@@ -143,9 +165,11 @@ async def start_batch_generation(
             style=request.style,
             count=request.count,
             keyword_asset_key=request.keyword_asset_key,
-            model_config=await _model_config_with_maga_defaults(
+            model_config=model_config,
+            model_config_rotation=await _model_config_rotation_with_maga_defaults(
                 db,
-                request.generation_model_config.model_dump(exclude_none=True),
+                base_model_config=model_config,
+                rotation=[item.model_dump(exclude_none=True) for item in request.model_config_rotation],
             ),
             created_by=request.created_by,
         )

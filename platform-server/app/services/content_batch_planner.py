@@ -39,6 +39,7 @@ class ContentBatchPlanner:
         count: int,
         keyword_asset_key: str | None = None,
         model_config: dict[str, Any] | None = None,
+        model_config_rotation: list[dict[str, Any]] | None = None,
         created_by: str | None = None,
     ) -> ContentBatchJob:
         if count <= 0:
@@ -53,6 +54,7 @@ class ContentBatchPlanner:
                 source_row_no=source_row_no,
                 keyword_asset_key=keyword_asset_key,
                 model_config=model_config,
+                model_config_rotation=model_config_rotation,
                 created_by=created_by,
             )
         if not product_topic:
@@ -112,7 +114,7 @@ class ContentBatchPlanner:
                 examples=examples,
                 writing_patterns=writing_patterns,
                 compliance_rules=compliance_rules,
-                model_config=model_config,
+                model_config=_rotated_model_config(index + 1, model_config, model_config_rotation),
                 used_asset_combo_keys=used_asset_combo_keys,
             )
             used_asset_combo_keys.add(plan["asset_combo_key"])
@@ -143,6 +145,7 @@ class ContentBatchPlanner:
         source_row_no: int | None,
         keyword_asset_key: str | None,
         model_config: dict[str, Any] | None,
+        model_config_rotation: list[dict[str, Any]] | None,
         created_by: str | None,
     ) -> ContentBatchJob:
         rules = self._article_business_rule_items(asset)
@@ -204,7 +207,7 @@ class ContentBatchPlanner:
                         item_no=index + 1,
                         keyword_asset_key=resolved_keyword_asset_key,
                         quality_guard_profile_key=quality_guard_profile_key,
-                        model_config=model_config,
+                        model_config=_rotated_model_config(index + 1, model_config, model_config_rotation),
                     ),
                 )
             )
@@ -554,6 +557,17 @@ def _sample_indices(pool_size: int, sample_count: int) -> list[int]:
     if pool_size <= sample_count:
         return list(range(pool_size))
     return sorted(SystemRandom().sample(range(pool_size), sample_count))
+
+
+def _rotated_model_config(
+    item_no: int,
+    base_model_config: dict[str, Any] | None,
+    model_config_rotation: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    if not model_config_rotation:
+        return base_model_config
+    rotation_item = model_config_rotation[(item_no - 1) % len(model_config_rotation)]
+    return {**(base_model_config or {}), **rotation_item}
 
 
 def _pattern_match_score(

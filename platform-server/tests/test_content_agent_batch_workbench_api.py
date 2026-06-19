@@ -4701,6 +4701,66 @@ async def test_batch_workbench_uses_maga_default_provider_model(content_agent_wo
 
 
 @pytest.mark.asyncio
+async def test_batch_workbench_rotates_models_under_same_provider(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    async with session_factory() as session:
+        session.add(
+            LLMProviderConfig(
+                id=1,
+                provider_code="aihubmix",
+                provider_name="AIHubMix",
+                provider_type="openai_compatible",
+                base_url="https://api.example.test/v1",
+                api_key="test-key",
+                default_model="deepseek-v4-flash",
+                priority=100,
+                enabled=1,
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "count": 4,
+            "model_config": {"provider_code": "aihubmix", "temperature": 0.9},
+            "model_config_rotation": [
+                {"model_code": "deepseek-v4-flash"},
+                {"model_code": "glm-5.2"},
+                {"model_code": "qwen3.7-plus"},
+                {"model_code": "doubao-seed-2-0-pro"},
+            ],
+            "created_by": "ops",
+        },
+    )
+
+    assert response.status_code == 200
+    async with session_factory() as session:
+        items = (
+            await session.execute(select(ContentBatchItem).order_by(ContentBatchItem.item_no))
+        ).scalars().all()
+
+    assert [item.plan_json["model_config"]["provider_code"] for item in items] == ["aihubmix"] * 4
+    assert [item.plan_json["model_config"]["model_code"] for item in items] == [
+        "deepseek-v4-flash",
+        "glm-5.2",
+        "qwen3.7-plus",
+        "doubao-seed-2-0-pro",
+    ]
+    assert [item.plan_json["model_config"]["ge_model"] for item in items] == [
+        "deepseek-v4-flash",
+        "glm-5.2",
+        "qwen3.7-plus",
+        "doubao-seed-2-0-pro",
+    ]
+    assert all(item.plan_json["model_config"]["temperature"] == 0.9 for item in items)
+
+
+@pytest.mark.asyncio
 async def test_batch_workbench_can_record_operator_feedback_and_manual_edit(content_agent_workbench_client):
     client, _session_factory = content_agent_workbench_client
     start_response = await client.post(
