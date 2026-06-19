@@ -236,6 +236,7 @@ async def import_product_experience_rule_set_endpoint(
     asset_key: str = Form(default=DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY),
     display_name: str | None = Form(default=None),
     keyword_asset_key: str | None = Form(default=None),
+    keyword_selection: str | None = Form(default=None),
     created_by: str = Form(default="maga-operator"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -252,6 +253,7 @@ async def import_product_experience_rule_set_endpoint(
             asset_key=asset_key,
             display_name=display_name,
             keyword_asset_key=keyword_asset_key,
+            keyword_selection=keyword_selection,
             created_by=created_by,
         )
         await db.commit()

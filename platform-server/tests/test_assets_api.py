@@ -1071,6 +1071,7 @@ async def test_upload_article_business_rule_set_imports_rule_asset(asset_client)
             "created_by": "ops",
             "display_name": "源悦生文业务规则",
             "keyword_asset_key": "yuanyue_article_business_keywords",
+            "keyword_selection": '{"article_speaking_style":["routine_log","kid_reaction_record"]}',
         },
         files={"file": ("业务规则_子关键词导出.csv", csv_content.encode("utf-8-sig"), "text/csv")},
     )
@@ -1084,6 +1085,9 @@ async def test_upload_article_business_rule_set_imports_rule_asset(asset_client)
     assert data["summary_json"]["rule_count"] == 2
     assert data["summary_json"]["example_count"] == 5
     assert data["summary_json"]["keyword_asset_key"] == "yuanyue_article_business_keywords"
+    assert data["summary_json"]["keyword_selection"] == {
+        "article_speaking_style": ["routine_log", "kid_reaction_record"]
+    }
 
     detail_response = await asset_client.get(
         "/api/v1/assets/article_business_rule_set/yuanyue_product_experience"
@@ -1093,7 +1097,13 @@ async def test_upload_article_business_rule_set_imports_rule_asset(asset_client)
     assert asset["asset_type"] == "article_business_rule_set"
     assert asset["display_name"] == "源悦生文业务规则"
     assert asset["content_json"]["keyword_asset_key"] == "yuanyue_article_business_keywords"
+    assert asset["content_json"]["keyword_selection"] == {
+        "article_speaking_style": ["routine_log", "kid_reaction_record"]
+    }
     assert asset["metadata_json"]["keyword_asset_key"] == "yuanyue_article_business_keywords"
+    assert asset["metadata_json"]["keyword_selection"] == {
+        "article_speaking_style": ["routine_log", "kid_reaction_record"]
+    }
     assert asset["content_json"]["rule_type"] == "business_rule"
     assert asset["content_json"]["items"][0]["business_rule"] == "奶量补充"
     assert "product_experience" not in asset["content_json"]["items"][0]

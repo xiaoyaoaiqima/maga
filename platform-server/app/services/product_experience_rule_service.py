@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -30,6 +31,7 @@ class ProductExperienceRuleSetImportResult:
     asset_id: int
     asset_key: str
     keyword_asset_key: str | None
+    keyword_selection: dict[str, Any] | None
     source_hash: str
     rule_count: int
     example_count: int
@@ -44,6 +46,7 @@ async def import_product_experience_rule_set(
     asset_key: str = DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY,
     display_name: str | None = None,
     keyword_asset_key: str | None = None,
+    keyword_selection: dict[str, Any] | str | None = None,
     created_by: str = "maga-operator",
 ) -> ProductExperienceRuleSetImportResult:
     """Persist article business-rule CSV/XLSX as a versioned asset."""
@@ -79,6 +82,9 @@ async def import_product_experience_rule_set(
     normalized_keyword_asset_key = _normalize_keyword_asset_key(keyword_asset_key)
     if normalized_keyword_asset_key:
         content_json["keyword_asset_key"] = normalized_keyword_asset_key
+    normalized_keyword_selection = _normalize_keyword_selection(keyword_selection)
+    if normalized_keyword_selection:
+        content_json["keyword_selection"] = normalized_keyword_selection
 
     await db.execute(
         update(AssetRegistry)
@@ -107,6 +113,7 @@ async def import_product_experience_rule_set(
             "rule_count": len(items),
             "example_count": example_count,
             "keyword_asset_key": normalized_keyword_asset_key,
+            "keyword_selection": normalized_keyword_selection,
             "activity_name": activity_name,
             "word_count": word_count,
             "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
@@ -129,6 +136,7 @@ async def import_product_experience_rule_set(
             "rule_count": len(items),
             "example_count": example_count,
             "keyword_asset_key": normalized_keyword_asset_key,
+            "keyword_selection": normalized_keyword_selection,
             "activity_name": activity_name,
             "word_count": word_count,
             "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
@@ -143,6 +151,7 @@ async def import_product_experience_rule_set(
         asset_id=asset.id,
         asset_key=normalized_asset_key,
         keyword_asset_key=normalized_keyword_asset_key,
+        keyword_selection=normalized_keyword_selection,
         source_hash=source_hash,
         rule_count=len(items),
         example_count=example_count,
@@ -155,6 +164,7 @@ def product_experience_import_summary(result: ProductExperienceRuleSetImportResu
         "asset_type": PRODUCT_EXPERIENCE_RULE_ASSET_TYPE,
         "asset_key": result.asset_key,
         "keyword_asset_key": result.keyword_asset_key,
+        "keyword_selection": result.keyword_selection,
         "rule_count": result.rule_count,
         "example_count": result.example_count,
         "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
@@ -164,6 +174,36 @@ def product_experience_import_summary(result: ProductExperienceRuleSetImportResu
 
 def _normalize_keyword_asset_key(value: str | None) -> str | None:
     normalized = str(value or "").strip()
+    return normalized or None
+
+
+def _normalize_keyword_selection(value: dict[str, Any] | str | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("keyword_selection must be valid JSON") from exc
+    if not isinstance(value, dict):
+        raise ValueError("keyword_selection must be a JSON object")
+    normalized: dict[str, list[str]] = {}
+    for category_code, codes in value.items():
+        key = str(category_code or "").strip()
+        if not key:
+            continue
+        if isinstance(codes, dict):
+            codes = codes.get("include") or codes.get("codes") or codes.get("keyword_codes")
+        if isinstance(codes, str):
+            codes = re.split(r"[,，\s]+", codes)
+        if not isinstance(codes, list):
+            raise ValueError("keyword_selection values must be arrays or comma-separated strings")
+        normalized_codes = [str(code).strip() for code in codes if str(code).strip()]
+        if normalized_codes:
+            normalized[key] = normalized_codes
     return normalized or None
 
 

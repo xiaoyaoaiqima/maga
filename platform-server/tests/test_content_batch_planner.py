@@ -62,6 +62,48 @@ def test_article_business_rule_plan_samples_three_examples_from_pool():
     assert len(plan["selected_example_indices"]) == 3
 
 
+def test_article_business_rule_plan_uses_asset_model_config_with_request_override():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_001",
+        "business_rule": "奶量补充",
+        "corpus": "围绕奶量补充写真实使用体验。",
+        "examples": ["参考示例1", "参考示例2", "参考示例3"],
+        "source_row_no": 1,
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_article_business_rules",
+        content_json={
+            "rule_type": "business_rule",
+            "model_config": {"temperature": 0.9, "max_tokens": 2048},
+        },
+        metadata_json={},
+    )
+
+    default_plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+    override_plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config={"temperature": 0.7},
+    )
+
+    assert default_plan["model_config"]["temperature"] == 0.9
+    assert default_plan["model_config"]["max_tokens"] == 2048
+    assert override_plan["model_config"]["temperature"] == 0.7
+    assert override_plan["model_config"]["max_tokens"] == 2048
+
+
 @pytest.mark.asyncio
 async def test_content_batch_planner_creates_100_diverse_yuanyue_plans():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -187,35 +229,20 @@ async def test_content_batch_planner_creates_100_diverse_yuanyue_plans():
     assert all(item.plan_json["compliance_rule_refs"] for item in items)
     assert all(item.plan_json["brief_constraints"]["word_count"] == "150-250" for item in items)
     assert all(item.plan_json["brief_constraints"]["emoji"] == "少量" for item in items)
+    assert job.diversity_plan_json == {}
+    assert all("diversity_slot" not in item.plan_json for item in items)
 
-    opening_types = {item.plan_json["diversity_slot"]["opening_type"] for item in items}
-    structure_types = {item.plan_json["diversity_slot"]["structure_type"] for item in items}
-    narrative_focuses = {item.plan_json["diversity_slot"]["narrative_focus"] for item in items}
-    cta_types = {item.plan_json["diversity_slot"]["cta_type"] for item in items}
-    content_angles = {item.plan_json["diversity_slot"]["content_angle"] for item in items}
-    scene_types = {item.plan_json["diversity_slot"]["scene_type"] for item in items}
-    evidence_types = {item.plan_json["diversity_slot"]["evidence_type"] for item in items}
     asset_combo_keys = [item.plan_json["asset_combo_key"] for item in items]
     plan_signatures = {
         (
             item.plan_json["painpoint_ref"]["item_index"],
             item.plan_json["selling_point_ref"]["item_index"],
             item.plan_json["reference_example_refs"][0]["item_index"],
-            item.plan_json["diversity_slot"]["opening_type"],
-            item.plan_json["diversity_slot"]["structure_type"],
-            item.plan_json["diversity_slot"]["narrative_focus"],
         )
         for item in items
     }
 
-    assert len(opening_types) >= 6
-    assert len(structure_types) >= 5
-    assert len(narrative_focuses) >= 6
-    assert len(cta_types) >= 4
-    assert len(content_angles) >= 6
-    assert len(scene_types) >= 4
-    assert len(evidence_types) >= 4
-    assert len(plan_signatures) >= 90
+    assert len(plan_signatures) == 27
     assert len(set(asset_combo_keys[:27])) == 27
     assert items[27].plan_json["asset_reuse_reason"] == "素材组合池已用完，按轮换策略复用"
     assert items[0].plan_json["writing_pattern_ref"]["item_id"] == "wp1"
@@ -374,17 +401,5 @@ async def test_content_batch_planner_accepts_article_business_rule_set_focus_rul
     assert {item.plan_json["rule_id"] for item in items} == {"post_rule_002"}
     assert all(item.plan_json["output_fields"] == ["title", "body"] for item in items)
     assert all(item.plan_json["quality_guard_profile_key"] == "a2_sentiment_post_202606" for item in items)
-    sixth_slot = items[5].plan_json["diversity_slot"]
-    assert sixth_slot["opening_type"] != "反焦虑安抚"
-    assert sixth_slot["persona_lens"] != "容易焦虑的妈妈"
-    assert sixth_slot["evidence_type"] != "清单建议"
-    assert sixth_slot["cta_type"] != "轻建议"
-    slots = [item.plan_json["diversity_slot"] for item in items]
-    business_terms = ("报告", "罐底", "蜡样", "批次", "看不懂", "不太懂", "不会看")
-    assert all("report_reaction" not in slot for slot in slots)
-    assert not any(
-        term in str(slot_value)
-        for slot in slots
-        for slot_value in slot.values()
-        for term in business_terms
-    )
+    assert job.diversity_plan_json == {}
+    assert all("diversity_slot" not in item.plan_json for item in items)

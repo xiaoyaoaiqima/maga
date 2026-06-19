@@ -29,6 +29,7 @@ from app.services.business_forbidden_term_service import (
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.content_batch_report_service import ContentBatchReportService
 from app.services.content_generation_expert_service import ContentGenerationExpertService
+from app.services.content_rewrite_context import rewrite_business_rule_context
 from app.services.executor_invocation_service import ExecutorInvocationClient, MockExecutorInvocationClient
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService
 
@@ -393,7 +394,11 @@ class ContentBatchReviewService:
             "previous_content": previous_content,
             "content_type": content_type,
             "output_fields": output_fields,
-            "business_rule": dict(item.plan_json or {}),
+            "business_rule": (
+                rewrite_business_rule_context(item.plan_json)
+                if content_type == "article"
+                else dict(item.plan_json or {})
+            ),
             "selected_keywords": _selected_keywords_from_item(item),
             "forbidden_hits": [],
             "operator_feedback": request.feedback_text,

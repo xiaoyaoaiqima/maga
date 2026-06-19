@@ -20,128 +20,6 @@ DEFAULT_CONTENT_EMOJI = "少量"
 ARTICLE_RULE_EXAMPLE_SAMPLE_COUNT = 3
 
 
-OPENING_TYPES = [
-    "过来人提醒",
-    "真实经历",
-    "误区澄清",
-    "场景共鸣",
-    "清单式建议",
-    "反焦虑安抚",
-    "对比选择",
-    "观察记录",
-]
-
-STRUCTURE_TYPES = [
-    "痛点-观察-建议",
-    "经历-转折-选择",
-    "误区-解释-推荐",
-    "清单-理由-收束",
-    "问题-判断-行动",
-    "场景-感受-种草",
-]
-
-EMOTIONS = ["稳", "懂行", "不焦虑", "温和", "真实", "细致"]
-CTA_TYPES = ["轻建议", "经验提醒", "收藏提示", "评论互动", "选择建议"]
-NARRATIVE_FOCUSES = [
-    "先共情",
-    "先避坑",
-    "先清单",
-    "先经验记录",
-    "先反焦虑",
-    "先对比选择",
-    "先观察判断",
-    "先误区澄清",
-]
-
-CONTENT_ANGLES = [
-    "误区澄清",
-    "真实使用场景",
-    "便便观察清单",
-    "反焦虑安抚",
-    "产品选择对比",
-    "换奶适应记录",
-    "喂养节奏建议",
-    "边界提醒",
-]
-
-PERSONA_LENSES = ["新手妈妈", "谨慎型妈妈", "二胎妈妈", "过来人妈妈", "细节控妈妈", "容易焦虑的妈妈"]
-SCENE_TYPES = ["日常喂养", "便便观察", "夜间照护", "换季适应", "转奶过渡", "外出照护"]
-EVIDENCE_TYPES = ["经验记录", "清单建议", "对比判断", "边界提醒", "观察指标", "场景复盘"]
-
-A2_SENTIMENT_POST_PROFILE_KEY = "a2_sentiment_post_202606"
-A2_POST_OPENING_TYPES = ["刚看到", "顺手记一下", "别人提醒", "更新一下", "求帮忙看", "补个记录"]
-A2_POST_STRUCTURE_TYPES = ["进展-动作-感受", "提醒-确认-记录", "等到-松口气-补充", "碎碎念-求确认"]
-A2_POST_EMOTIONS = ["松口气", "顺手记录", "踏实一点", "真实", "想核对"]
-A2_POST_CTA_TYPES = ["求帮忙看", "同款交流", "记录一下", "无明显CTA"]
-A2_POST_NARRATIVE_FOCUSES = ["先说进展", "先说动作", "先说入口", "先说提醒", "先说终于等到"]
-A2_POST_CONTENT_ANGLES = ["动作记录", "到货记录", "求确认", "续上记录", "现场记录"]
-A2_POST_PERSONA_LENSES = ["碎碎念妈妈", "细节观察型妈妈", "老用户妈妈", "谨慎但不科普妈妈"]
-A2_POST_SCENE_TYPES = ["到手后", "门店里", "线上看到", "家里续上", "评论求确认"]
-A2_POST_EVIDENCE_TYPES = ["个人动作", "他人转述", "页面入口", "自己核对", "能对应到手里"]
-
-WANGYUE_POST_OPENING_TYPES = ["随手记录", "当天小记", "家里日常", "评论区聊到", "补个观察", "问问同款"]
-WANGYUE_POST_STRUCTURE_TYPES = ["以前担心-现在安排-轻收口", "场景-一杯奶-还在观察", "评论讨论-自己做法-不说满"]
-WANGYUE_POST_EMOTIONS = ["真实", "碎碎念", "有点纠结", "松一点", "克制", "观察中"]
-WANGYUE_POST_NARRATIVE_FOCUSES = ["先说场景", "先说孩子动作", "先说妈妈担心", "先说评论区讨论", "先说喝奶习惯"]
-WANGYUE_POST_CONTENT_ANGLES = ["日常喝奶动作", "痛点轻提", "强表达收回来", "评论区讨论", "孩子愿意喝"]
-WANGYUE_POST_SCENE_TYPES = ["早上出门", "接娃回家", "户外回来", "晚饭前后", "睡前", "评论区"]
-WANGYUE_POST_EVIDENCE_TYPES = ["个人观察", "当天记录", "家里动作", "评论转述", "不说满"]
-
-def _article_business_diversity_slot(
-    zero: int,
-    *,
-    quality_guard_profile_key: str | None,
-    asset_key: str | None = None,
-) -> dict[str, str]:
-    """Keep A2短帖 away from generic advice-slot labels that leak into AI-like titles."""
-    if quality_guard_profile_key == A2_SENTIMENT_POST_PROFILE_KEY:
-        return {
-            "opening_type": A2_POST_OPENING_TYPES[zero % len(A2_POST_OPENING_TYPES)],
-            "structure_type": A2_POST_STRUCTURE_TYPES[(zero // len(A2_POST_OPENING_TYPES) + zero) % len(A2_POST_STRUCTURE_TYPES)],
-            "emotion": A2_POST_EMOTIONS[(zero * 2 + zero // 11) % len(A2_POST_EMOTIONS)],
-            "cta_type": A2_POST_CTA_TYPES[(zero * 3 + zero // 13) % len(A2_POST_CTA_TYPES)],
-            "narrative_focus": A2_POST_NARRATIVE_FOCUSES[(zero + zero // len(A2_POST_OPENING_TYPES)) % len(A2_POST_NARRATIVE_FOCUSES)],
-            "content_angle": A2_POST_CONTENT_ANGLES[(zero * 3 + zero // len(A2_POST_OPENING_TYPES)) % len(A2_POST_CONTENT_ANGLES)],
-            "persona_lens": A2_POST_PERSONA_LENSES[(zero + zero // len(A2_POST_PERSONA_LENSES)) % len(A2_POST_PERSONA_LENSES)],
-            "scene_type": A2_POST_SCENE_TYPES[(zero * 2 + zero // len(A2_POST_SCENE_TYPES)) % len(A2_POST_SCENE_TYPES)],
-            "evidence_type": A2_POST_EVIDENCE_TYPES[(zero * 5 + zero // len(A2_POST_EVIDENCE_TYPES)) % len(A2_POST_EVIDENCE_TYPES)],
-            "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
-        }
-    if str(asset_key or "").startswith("wangyue_"):
-        # 旺玥UGC更像短小生活记录，避免通用槽位里的“收藏提示/细节控/二胎妈”
-        # 泄漏成标题或正文口癖。
-        return {
-            "opening_type": WANGYUE_POST_OPENING_TYPES[zero % len(WANGYUE_POST_OPENING_TYPES)],
-            "structure_type": WANGYUE_POST_STRUCTURE_TYPES[
-                (zero // len(WANGYUE_POST_OPENING_TYPES) + zero) % len(WANGYUE_POST_STRUCTURE_TYPES)
-            ],
-            "emotion": WANGYUE_POST_EMOTIONS[(zero * 2 + zero // 11) % len(WANGYUE_POST_EMOTIONS)],
-            "narrative_focus": WANGYUE_POST_NARRATIVE_FOCUSES[
-                (zero + zero // len(WANGYUE_POST_OPENING_TYPES)) % len(WANGYUE_POST_NARRATIVE_FOCUSES)
-            ],
-            "content_angle": WANGYUE_POST_CONTENT_ANGLES[
-                (zero * 3 + zero // len(WANGYUE_POST_OPENING_TYPES)) % len(WANGYUE_POST_CONTENT_ANGLES)
-            ],
-            "scene_type": WANGYUE_POST_SCENE_TYPES[(zero * 2 + zero // len(WANGYUE_POST_SCENE_TYPES)) % len(WANGYUE_POST_SCENE_TYPES)],
-            "evidence_type": WANGYUE_POST_EVIDENCE_TYPES[
-                (zero * 5 + zero // len(WANGYUE_POST_EVIDENCE_TYPES)) % len(WANGYUE_POST_EVIDENCE_TYPES)
-            ],
-            "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
-        }
-    return {
-        "opening_type": OPENING_TYPES[zero % len(OPENING_TYPES)],
-        "structure_type": STRUCTURE_TYPES[(zero // len(OPENING_TYPES) + zero) % len(STRUCTURE_TYPES)],
-        "emotion": EMOTIONS[(zero * 2 + zero // 11) % len(EMOTIONS)],
-        "cta_type": CTA_TYPES[(zero * 3 + zero // 13) % len(CTA_TYPES)],
-        "narrative_focus": NARRATIVE_FOCUSES[(zero + zero // len(OPENING_TYPES)) % len(NARRATIVE_FOCUSES)],
-        "content_angle": CONTENT_ANGLES[(zero * 3 + zero // len(OPENING_TYPES)) % len(CONTENT_ANGLES)],
-        "persona_lens": PERSONA_LENSES[(zero + zero // len(PERSONA_LENSES)) % len(PERSONA_LENSES)],
-        "scene_type": SCENE_TYPES[(zero * 2 + zero // len(SCENE_TYPES)) % len(SCENE_TYPES)],
-        "evidence_type": EVIDENCE_TYPES[(zero * 5 + zero // len(EVIDENCE_TYPES)) % len(EVIDENCE_TYPES)],
-        "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
-    }
-
-
 class ContentBatchPlanner:
     """Create item-level generation plans from MAGA asset snapshots."""
 
@@ -213,13 +91,7 @@ class ContentBatchPlanner:
                 "executor": DEFAULT_EXECUTOR_CODE,
                 "persona_target": persona_target,
             },
-            diversity_plan_json={
-                "opening_types": OPENING_TYPES,
-                "structure_types": STRUCTURE_TYPES,
-                "emotion_pool": EMOTIONS,
-                "cta_types": CTA_TYPES,
-                "narrative_focuses": NARRATIVE_FOCUSES,
-            },
+            diversity_plan_json={},
             created_by=created_by,
         )
         self.db.add(job)
@@ -313,13 +185,7 @@ class ContentBatchPlanner:
                 "rule_id_filter": rule_id,
                 "source_row_no_filter": source_row_no,
             },
-            diversity_plan_json={
-                "opening_types": OPENING_TYPES,
-                "structure_types": STRUCTURE_TYPES,
-                "emotion_pool": EMOTIONS,
-                "cta_types": CTA_TYPES,
-                "narrative_focuses": NARRATIVE_FOCUSES,
-            },
+            diversity_plan_json={},
             created_by=created_by,
         )
         self.db.add(job)
@@ -387,16 +253,6 @@ class ContentBatchPlanner:
             used_asset_combo_keys=used_asset_combo_keys or set(),
         )
         compliance_idx = zero % max(len(compliance_rules), 1)
-        opening = OPENING_TYPES[zero % len(OPENING_TYPES)]
-        structure = STRUCTURE_TYPES[(zero // len(OPENING_TYPES) + zero) % len(STRUCTURE_TYPES)]
-        emotion = EMOTIONS[(zero * 2 + zero // 11) % len(EMOTIONS)]
-        cta = CTA_TYPES[(zero * 3 + zero // 13) % len(CTA_TYPES)]
-        # Stagger with the opening cycle so adjacent items do not share the same narrative angle.
-        narrative_focus = NARRATIVE_FOCUSES[(zero + zero // len(OPENING_TYPES)) % len(NARRATIVE_FOCUSES)]
-        content_angle = CONTENT_ANGLES[(zero * 3 + zero // len(OPENING_TYPES)) % len(CONTENT_ANGLES)]
-        persona_lens = PERSONA_LENSES[(zero + zero // len(PERSONA_LENSES)) % len(PERSONA_LENSES)]
-        scene_type = SCENE_TYPES[(zero * 2 + zero // len(SCENE_TYPES)) % len(SCENE_TYPES)]
-        evidence_type = EVIDENCE_TYPES[(zero * 5 + zero // len(EVIDENCE_TYPES)) % len(EVIDENCE_TYPES)]
         asset_combo_key = self._asset_combo_key(pain_idx, selling_idx, example_idx)
         writing_pattern_idx = self._writing_pattern_index(
             zero,
@@ -432,18 +288,6 @@ class ContentBatchPlanner:
             ]
             if compliance_rules
             else [],
-            "diversity_slot": {
-                "opening_type": opening,
-                "structure_type": structure,
-                "emotion": emotion,
-                "cta_type": cta,
-                "narrative_focus": narrative_focus,
-                "content_angle": content_angle,
-                "persona_lens": persona_lens,
-                "scene_type": scene_type,
-                "evidence_type": evidence_type,
-                "forbidden_overlap_group": f"G{(zero % 20) + 1:02d}",
-            },
             "brief_constraints": {
                 "word_count": DEFAULT_CONTENT_WORD_COUNT,
                 "emoji": DEFAULT_CONTENT_EMOJI,
@@ -501,7 +345,6 @@ class ContentBatchPlanner:
         quality_guard_profile_key: str | None,
         model_config: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        zero = item_no - 1
         asset_content = asset.content_json or {}
         asset_metadata = asset.metadata_json or {}
         rule_type = (
@@ -509,17 +352,13 @@ class ContentBatchPlanner:
             or asset_content.get("rule_type")
             or "business_rule"
         )
-        diversity_slot = _article_business_diversity_slot(
-            zero,
-            quality_guard_profile_key=quality_guard_profile_key,
-            asset_key=asset.asset_key,
-        )
         selected_examples, example_meta = self._selected_rule_examples(rule)
         business_rule = (
             rule.get("business_rule")
             or rule.get("article_rule")
             or rule.get("topic")
         )
+        resolved_model_config = self._article_business_model_config(asset, model_config)
         return {
             "rule_type": rule_type,
             "item_no": item_no,
@@ -540,7 +379,6 @@ class ContentBatchPlanner:
             **example_meta,
             "source_row_no": rule.get("source_row_no"),
             "output_fields": ["title", "body"],
-            "diversity_slot": diversity_slot,
             "brief_constraints": {
                 "word_count": asset_content.get("word_count")
                 or asset_metadata.get("word_count")
@@ -548,7 +386,24 @@ class ContentBatchPlanner:
                 "emoji": DEFAULT_CONTENT_EMOJI,
                 "output_fields": ["title", "body"],
             },
-            "model_config": model_config or {},
+            "model_config": resolved_model_config,
+        }
+
+    def _article_business_model_config(
+        self,
+        asset: AssetRegistry,
+        request_model_config: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        asset_content = asset.content_json or {}
+        asset_metadata = asset.metadata_json or {}
+        asset_model_config = {}
+        for source in (asset_content, asset_metadata):
+            value = source.get("model_config")
+            if isinstance(value, dict):
+                asset_model_config.update(value)
+        return {
+            **asset_model_config,
+            **(request_model_config or {}),
         }
 
     def _selected_rule_examples(self, rule: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:

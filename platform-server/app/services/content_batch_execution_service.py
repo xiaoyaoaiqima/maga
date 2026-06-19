@@ -13,12 +13,19 @@ from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
 from app.models.content_agent import ContentBatchItem, ContentBatchJob
 from app.schemas.content_agent import ContentAgentTaskCreate
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
+from app.services.content_rewrite_context import rewrite_business_rule_context
 from app.services.executor_invocation_service import ExecutorInvocationClient
 from app.services.activity_quality_guard_service import ActivityQualityGuardService
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService
 from app.services.product_experience_phrase_guard_service import (
     ProductExperiencePhraseReview,
     review_product_experience_phrase,
+    sanitize_adult_self_drinking_phrases,
+    sanitize_baby_milk_action_phrases,
+    sanitize_common_ai_closure,
+    sanitize_odd_product_experience_phrases,
+    sanitize_temporal_context,
+    sanitize_wangyue_context_phrases,
     should_review_product_experience,
 )
 from app.services.unified_content_generation_service import (
@@ -32,6 +39,7 @@ MAX_SIMILARITY_REWRITE_ROUNDS = 2
 MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS = 1
 HISTORY_SIMILARITY_LOOKBACK_LIMIT = 50
 TITLE_GUARD_FORBIDDEN_SUBSTRINGS = (
+    "【标题】",
     "这杯",
     "安排上",
     "留着",
@@ -61,6 +69,26 @@ TITLE_GUARD_FORBIDDEN_SUBSTRINGS = (
     "长高",
     "窜个",
     "旺玥4段",
+    "4段",
+    "没选错",
+    "全靠",
+    "防风",
+    "身体也稳",
+    "体质真靠",
+    "体质稳",
+    "小秘密",
+    "秘密",
+    "小卫士",
+    "小守护",
+    "守护",
+    "撑住",
+    "靠这招",
+    "换到旺玥",
+    "给娃选奶",
+    "怎么选",
+    "原来那罐",
+    "选奶记录",
+    "开始看旺玥",
 )
 TITLE_GUARD_BAD_PATTERNS = (
     re.compile(r"(?:我家|孩子|娃).{0,6}(?:快|刚)?[0-9一二三四五六七八九十]+个?月了"),
@@ -273,18 +301,7 @@ class ContentBatchExecutionService:
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                     "expert_config_code": (unified.input_snapshot.get("expert") or {}).get("expert_config_code"),
                 }
-                diversity_slot = item.plan_json.get("diversity_slot") or {}
                 item.diversity_json = {
-                    "opening_type": diversity_slot.get("opening_type"),
-                    "structure_type": diversity_slot.get("structure_type"),
-                    "narrative_focus": diversity_slot.get("narrative_focus"),
-                    "emotion": diversity_slot.get("emotion"),
-                    "cta_type": diversity_slot.get("cta_type"),
-                    "content_angle": diversity_slot.get("content_angle"),
-                    "persona_lens": diversity_slot.get("persona_lens"),
-                    "scene_type": diversity_slot.get("scene_type"),
-                    "evidence_type": diversity_slot.get("evidence_type"),
-                    "forbidden_overlap_group": diversity_slot.get("forbidden_overlap_group"),
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                 }
                 await self._rewrite_item_for_persona_style(
@@ -502,6 +519,9 @@ class ContentBatchExecutionService:
                 quality["title_guard_repairs"] = repairs
                 quality["title_guard"] = {"pass": True, "repair_count": len(repairs)}
                 item.quality_json = quality
+                if should_review_product_experience(item.plan_json):
+                    review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                    self._mark_product_experience_phrase_review(item, review)
                 repair_count += 1
             if repair_count:
                 await db.commit()
@@ -520,6 +540,130 @@ class ContentBatchExecutionService:
                 if not should_review_product_experience(item.plan_json):
                     continue
                 review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                if review.temporal_context_hits:
+                    before = {"title": item.title or "", "body": item.body or ""}
+                    item.title = sanitize_temporal_context(item.title)
+                    item.body = sanitize_temporal_context(item.body)
+                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                    quality = dict(item.quality_json or {})
+                    cleanups = list(quality.get("product_experience_temporal_context_cleanups") or [])
+                    cleanups.append(
+                        {
+                            "before": before,
+                            "after": {"title": item.title or "", "body": item.body or ""},
+                            "pre_review": review.model_dump(),
+                            "post_review": post_review.model_dump(),
+                        }
+                    )
+                    quality["product_experience_temporal_context_cleanups"] = cleanups
+                    item.quality_json = quality
+                    review = post_review
+                    rewrite_count += 1
+                if "common_ai_closure_phrase" in review.reasons:
+                    before = {"title": item.title or "", "body": item.body or ""}
+                    item.title = sanitize_common_ai_closure(item.title)
+                    item.body = sanitize_common_ai_closure(item.body)
+                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                    quality = dict(item.quality_json or {})
+                    cleanups = list(quality.get("product_experience_common_ai_closure_cleanups") or [])
+                    cleanups.append(
+                        {
+                            "before": before,
+                            "after": {"title": item.title or "", "body": item.body or ""},
+                            "pre_review": review.model_dump(),
+                            "post_review": post_review.model_dump(),
+                        }
+                    )
+                    quality["product_experience_common_ai_closure_cleanups"] = cleanups
+                    item.quality_json = quality
+                    review = post_review
+                    rewrite_count += 1
+                if "odd_product_experience_phrase" in review.reasons:
+                    before = {"title": item.title or "", "body": item.body or ""}
+                    item.title = sanitize_odd_product_experience_phrases(item.title)
+                    item.body = sanitize_odd_product_experience_phrases(item.body)
+                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                    quality = dict(item.quality_json or {})
+                    cleanups = list(quality.get("product_experience_odd_phrase_cleanups") or [])
+                    cleanups.append(
+                        {
+                            "before": before,
+                            "after": {"title": item.title or "", "body": item.body or ""},
+                            "pre_review": review.model_dump(),
+                            "post_review": post_review.model_dump(),
+                        }
+                    )
+                    quality["product_experience_odd_phrase_cleanups"] = cleanups
+                    item.quality_json = quality
+                    review = post_review
+                    rewrite_count += 1
+                if "adult_self_drinking_child_formula" in review.reasons:
+                    before = {"title": item.title or "", "body": item.body or ""}
+                    item.title = sanitize_adult_self_drinking_phrases(item.title)
+                    item.body = sanitize_adult_self_drinking_phrases(item.body)
+                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                    quality = dict(item.quality_json or {})
+                    cleanups = list(quality.get("product_experience_adult_self_drinking_cleanups") or [])
+                    cleanups.append(
+                        {
+                            "before": before,
+                            "after": {"title": item.title or "", "body": item.body or ""},
+                            "pre_review": review.model_dump(),
+                            "post_review": post_review.model_dump(),
+                        }
+                    )
+                    quality["product_experience_adult_self_drinking_cleanups"] = cleanups
+                    item.quality_json = quality
+                    review = post_review
+                    rewrite_count += 1
+                if "child_self_brewing_formula" in review.reasons:
+                    rewritten = await self._rewrite_item_for_product_experience_phrase(db, item, review)
+                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                    review = post_review
+                    if rewritten:
+                        rewrite_count += 1
+                if "child_formula_bottle_context" in review.reasons:
+                    before = {"title": item.title or "", "body": item.body or ""}
+                    item.title = sanitize_baby_milk_action_phrases(item.title)
+                    item.body = sanitize_baby_milk_action_phrases(item.body)
+                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                    quality = dict(item.quality_json or {})
+                    cleanups = list(quality.get("product_experience_baby_milk_action_cleanups") or [])
+                    cleanups.append(
+                        {
+                            "before": before,
+                            "after": {"title": item.title or "", "body": item.body or ""},
+                            "pre_review": review.model_dump(),
+                            "post_review": post_review.model_dump(),
+                        }
+                    )
+                    quality["product_experience_baby_milk_action_cleanups"] = cleanups
+                    item.quality_json = quality
+                    review = post_review
+                    rewrite_count += 1
+                if (
+                    "wangyue_wrong_brand" in review.reasons
+                    or "wangyue_explicit_age_context" in review.reasons
+                    or "wangyue_portable_form_context" in review.reasons
+                ):
+                    before = {"title": item.title or "", "body": item.body or ""}
+                    item.title = sanitize_wangyue_context_phrases(item.title)
+                    item.body = sanitize_wangyue_context_phrases(item.body)
+                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                    quality = dict(item.quality_json or {})
+                    cleanups = list(quality.get("product_experience_wangyue_context_cleanups") or [])
+                    cleanups.append(
+                        {
+                            "before": before,
+                            "after": {"title": item.title or "", "body": item.body or ""},
+                            "pre_review": review.model_dump(),
+                            "post_review": post_review.model_dump(),
+                        }
+                    )
+                    quality["product_experience_wangyue_context_cleanups"] = cleanups
+                    item.quality_json = quality
+                    review = post_review
+                    rewrite_count += 1
                 self._mark_product_experience_phrase_review(item, review)
             if items:
                 await db.commit()
@@ -617,11 +761,24 @@ class ContentBatchExecutionService:
             if review.ai_phrase_hits
             else "不要新增省心、踏实、心里有数、先这样、固定下来这类统一收口词。"
         )
+        adult_self_drinking_instruction = (
+            f"本轮出现成人自己喝儿童奶粉的错误场景：{'/'.join(review.adult_self_drinking_hits)}；直接删除或改成给孩子冲/孩子喝，不要扩写成新情节。"
+            if review.adult_self_drinking_hits
+            else "不要写妈妈自己喝、给自己冲或成人试喝旺玥；旺玥只作为给孩子喝的儿童奶粉出现。"
+        )
+        child_self_brewing_instruction = (
+            "本轮出现孩子自己冲/泡/舀奶粉的不合理动作："
+            f"{'/'.join(review.child_self_brewing_hits)}。"
+            "请用模型改顺这句话的上下文：可以改成妈妈冲好递给孩子、孩子等着喝、孩子喝奶配合、喝完后放杯子等合理动作。"
+            "不要硬塞固定替换短语，不要保留“自己冲/自己泡/自己舀/自己挖/自己催我泡奶粉”等动作，也不要新增奶粉盒、书包、随身带奶粉或成人试喝情节。"
+            if review.child_self_brewing_hits
+            else "不要写孩子自己冲奶粉、泡奶粉、舀粉、挖粉或自己操作奶粉罐；冲泡动作由妈妈完成，孩子只负责等、接、喝或喝完后的自然动作。"
+        )
         return {
             "previous_content": {"title": item.title or "", "body": item.body or ""},
             "content_type": "article",
             "output_fields": ["title", "body"],
-            "business_rule": dict(item.plan_json or {}),
+            "business_rule": rewrite_business_rule_context(item.plan_json),
             "selected_keywords": unified_generation.get("selected_keywords") or [],
             "model_config": dict((item.plan_json or {}).get("model_config") or {}),
             "rewrite_source": "product_experience_phrase_guard",
@@ -635,10 +792,12 @@ class ContentBatchExecutionService:
                 length_instruction or "正文长度服从业务规则，标题尽量不改；正文单段不换行。",
                 phrase_instruction,
                 ai_phrase_instruction,
+                adult_self_drinking_instruction,
+                child_self_brewing_instruction,
                 "rewrite 优先删除问题内容或压缩问题句；不要为了多样化整段重写。只有删除后语义断裂时，才补极短连接。",
                 "如果正文已经有购买过程、价格和孩子接受度，只保留其中一个观察点，其他改成放学、户外、换衣服、书包、妈妈观察这类生活细节；不要新增剩奶、杯子放置或冲泡奶保存动作。",
                 "不要用“省心、踏实、固定下来、心里有数、先这样”作为统一收口。",
-                "长个、少请假、不生病、抵抗力、坐不住这类真人强表达可以保留为观察或别人问，不能写成确定因果。",
+                "长个、少请假、不生病、保护力、坐不住这类真人强表达可以保留为观察或别人问，不能写成确定因果。",
                 "标题尽量不改；正文单段不换行；不要写成导购或品牌介绍。",
                 "只输出 JSON：title, body。",
             ],
@@ -802,7 +961,7 @@ class ContentBatchExecutionService:
             "previous_content": {"title": item.title, "body": item.body},
             "content_type": "article",
             "output_fields": ["title", "body"],
-            "business_rule": dict(item.plan_json or {}),
+            "business_rule": rewrite_business_rule_context(item.plan_json),
             "selected_keywords": unified_generation.get("selected_keywords") or [],
             "forbidden_hits": [],
             "review_report": {
@@ -827,7 +986,7 @@ class ContentBatchExecutionService:
             "rewrite_round": self._similarity_rewrite_rounds(item) + 1,
             "rewrite_instructions": [
                 "优先删除或压缩与相似文章重复的开头、段落顺序和表达，不要为了多样化扩写新情节。",
-                "只在删除后语义断裂时补一句极短连接，优先使用当前文章已有信息和 diversity_slot。",
+                "只在删除后语义断裂时补一句极短连接，优先使用当前文章已有信息。",
                 "不要复用相似文章的标题模式、段首表达和内容角度；标题能保留就保留。",
                 "保留事实、卖点和合规约束，不要扩大功效表达",
             ],
@@ -923,7 +1082,7 @@ def _length_rewrite_input(
         "previous_content": {"title": item.title or "", "body": item.body or ""},
         "content_type": "article",
         "output_fields": ["title", "body"],
-        "business_rule": dict(item.plan_json or {}),
+        "business_rule": rewrite_business_rule_context(item.plan_json),
         "selected_keywords": ((item.plan_json or {}).get("unified_generation") or {}).get("selected_keywords") or [],
         "model_config": dict((item.plan_json or {}).get("model_config") or {}),
         "rewrite_source": "article_length_guard",
@@ -943,6 +1102,8 @@ def _length_rewrite_input(
 
 
 def _persona_style_rewrite_enabled(plan: dict[str, Any] | None) -> bool:
+    if should_review_product_experience(plan):
+        return False
     value = (plan or {}).get("persona_style_rewrite_enabled")
     return value is not False
 
@@ -964,7 +1125,7 @@ def _persona_style_rewrite_input(item: ContentBatchItem, *, preset: dict[str, st
         "previous_content": {"title": item.title or "", "body": item.body or ""},
         "content_type": "article",
         "output_fields": ["title", "body"],
-        "business_rule": dict(item.plan_json or {}),
+        "business_rule": rewrite_business_rule_context(item.plan_json),
         "selected_keywords": unified_generation.get("selected_keywords") or [],
         "model_config": dict((item.plan_json or {}).get("model_config") or {}),
         "rewrite_source": "persona_style_rewrite",
@@ -1028,24 +1189,23 @@ def _fallback_title_for_item(item: ContentBatchItem, used_titles: set[str]) -> s
 def _title_candidates(*, scene: str, topic: str, duration_label: str) -> list[str]:
     candidates = [
         f"旺玥喝了{duration_label}记录",
-        "给娃选奶纠结了一阵",
-        "儿童奶粉换到旺玥",
         "又开一听旺玥奶粉",
-        "喝了一阵旺玥来聊聊",
+        "旺玥喝了一阵",
         "皇家美素佳儿旺玥",
-        "三岁后奶粉怎么选",
-        "旺玥和原来那罐怎么选",
+        "最近还在喝旺玥",
+        "今天继续记录旺玥",
+        "家里那罐旺玥",
     ]
     if "幼儿园" in scene or "集体" in scene:
-        candidates.extend(["上幼儿园后开始看旺玥", "幼儿园后的选奶记录"])
+        candidates.extend(["上幼儿园后继续喝旺玥", "幼儿园回来照常喝奶"])
     if "户外" in scene:
-        candidates.extend(["户外玩得多后的选奶记录", "出去玩多了开始看旺玥"])
+        candidates.extend(["出去玩回来照样喝奶", "户外回来那杯奶"])
     if "挑食" in scene or "饭" in scene or "营养不足" in topic:
-        candidates.extend(["挑食那阵子开始看旺玥", "挑食娃的旺玥记录"])
+        candidates.extend(["挑食那阵子还在喝旺玥", "挑食娃的旺玥记录"])
     if "选奶" in scene or "纠结" in topic:
-        candidates.extend(["选儿童奶粉纠结了一圈", "旺玥喝了一阵的反馈"])
+        candidates.extend(["旺玥喝了一阵的反馈", "家里继续喝旺玥"])
     if "注意" in topic or "眼脑" in topic:
-        candidates.extend(["上学后看儿童奶粉", "写写画画多了以后看奶粉"])
+        candidates.extend(["上学后继续喝旺玥", "写写画画多了以后的记录"])
     return candidates
 
 

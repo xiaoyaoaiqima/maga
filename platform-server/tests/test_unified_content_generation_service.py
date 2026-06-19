@@ -162,6 +162,62 @@ def test_article_business_rule_text_renders_corpus_directly():
 
 
 @pytest.mark.asyncio
+async def test_unified_article_generation_renders_article_requirement_before_business_rule(unified_session_factory):
+    requirement = "生成前先在心里把业务规则拆成核心痛点/卖点、不能碰的边界、可自由变化的生活入口。"
+    async with unified_session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type=SYSTEM_KEYWORD_ASSET_TYPE,
+                asset_key=DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+                display_name="旺玥帖子关键词",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "categories": [
+                        {
+                            "category_code": "article_generation_requirement",
+                            "category_name": "帖子生成要求",
+                            "applicable_content_types": ["article"],
+                            "sub_keywords": [
+                                {
+                                    "keyword_code": "business_core_path_expansion",
+                                    "keyword_name": "业务内核发散",
+                                    "corpus": [requirement],
+                                }
+                            ],
+                        },
+                        _category("perturbation_rule", "扰动规则", ["随机发散"]),
+                    ]
+                },
+            )
+        )
+        await session.commit()
+
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="article",
+            business_rule={
+                "rule_type": "business_rule",
+                "business_rule": "营养不足/成长发育需求",
+                "corpus": "写作规则：围绕旺玥日常营养补充来写。",
+                "examples": ["对比了很多家奶粉，最终选了旺玥。"],
+            },
+            item_no=1,
+            output_fields=["title", "body"],
+        )
+
+    prompt = snapshot.input_snapshot["rendered_prompt"]
+    selected = snapshot.input_snapshot["selected_keywords"]
+    assert selected[0]["category_code"] == "article_generation_requirement"
+    assert selected[0]["keyword_name"] == "业务内核发散"
+    assert prompt.startswith("你是小红书母婴内容生成 expert。\n请根据业务规则和系统内置关键词语料，生成一篇自然种草内容。\n\n【生成要求】")
+    assert prompt.index(requirement) < prompt.index("【业务规则】")
+    assert prompt.index("【业务规则】") < prompt.index("【系统关键词语料】")
+    assert "业务内核发散" not in prompt[prompt.index("【系统关键词语料】") :]
+    assert "示例使用边界：只学习语气、场景颗粒和生活细节" in prompt
+
+
+@pytest.mark.asyncio
 async def test_unified_comment_generation_keeps_yuanyue_brand_guard_asset_scoped(unified_session_factory):
     generation_requirements = (
         "源悦评论只写源悦、这款或它家，禁止出现星飞帆、a2、A2、爱他美等任何其他奶粉品牌名。"

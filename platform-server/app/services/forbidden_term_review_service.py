@@ -10,6 +10,7 @@ from app.models.content_agent import ContentBatchItem
 from app.services.business_forbidden_term_service import BusinessForbiddenTermService
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.content_generation_expert_service import ContentGenerationExpertService
+from app.services.content_rewrite_context import rewrite_business_rule_context
 
 STATIC_FORBIDDEN_REPLACEMENTS = {"肠胃": "肚肚"}
 STATIC_FORBIDDEN_TERMS = [
@@ -276,7 +277,11 @@ def _rewrite_input_payload(
         "previous_content": previous_content,
         "content_type": content_type,
         "output_fields": ["comment"] if content_type == "comment" else ["title", "body"],
-        "business_rule": dict(item.plan_json or {}),
+        "business_rule": (
+            rewrite_business_rule_context(item.plan_json)
+            if content_type == "article"
+            else dict(item.plan_json or {})
+        ),
         "selected_keywords": _selected_keywords_from_item(item),
         "forbidden_hits": hits,
         "forbidden_replacements": replacements,

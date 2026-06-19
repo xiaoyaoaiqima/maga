@@ -520,9 +520,9 @@ def _fallback_prompt_template(content_type: str) -> str:
     return (
         "你是小红书母婴内容生成 expert。\n"
         "请根据业务规则和系统内置关键词语料，生成一篇自然种草内容。\n\n"
+        "【生成要求】\n{{ generation_requirements }}\n\n"
         "【业务规则】\n{{ business_rule }}\n\n"
-        "【系统关键词语料】\n{{ keyword_corpus }}\n\n"
-        "【生成要求】\n{{ generation_requirements }}"
+        "【系统关键词语料】\n{{ keyword_corpus }}"
     )
 
 

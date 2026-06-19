@@ -45,6 +45,100 @@ from app.services.activity_quality_guard_service import build_article_pool_conte
 from app.services.comment_delivery_ledger_service import CommentDeliveryLedgerService
 
 SIMILARITY_WARNING_THRESHOLD = 0.42
+CLOSURE_CLUSTER_WINDOW_CHARS = 30
+CLOSURE_CLUSTER_WARNING_RATIO = 0.2
+CLOSURE_CLUSTER_WARNING_MIN_COUNT = 5
+CLOSURE_CLUSTER_DEFINITIONS = [
+    {
+        "code": "peace_of_mind",
+        "name": "安心簇",
+        "phrases": ["省心", "踏实", "放心", "安心", "心里有底", "心里有数"],
+    },
+    {
+        "code": "worth_it",
+        "name": "值了簇",
+        "phrases": ["这钱花得值", "花得值", "贵也认了", "肉疼但值", "没白花", "钱包肉疼但值"],
+    },
+    {
+        "code": "right_choice",
+        "name": "选对簇",
+        "phrases": ["没选错", "选对了", "还好选了它", "感觉选对了"],
+    },
+    {
+        "code": "keep_drinking",
+        "name": "继续喝簇",
+        "phrases": ["继续喝", "先喝着", "还会回购", "准备续上", "续上"],
+    },
+    {
+        "code": "mom_satisfied",
+        "name": "妈妈满足簇",
+        "phrases": ["当妈的就图这个", "我也就满足了", "我也认了", "也就认了"],
+    },
+]
+CONTENT_PATH_SKELETON_WARNING_RATIO = 0.25
+CONTENT_PATH_SKELETON_WARNING_MIN_COUNT = 5
+CONTENT_PATH_SKELETON_PARTS: dict[str, tuple[str, ...]] = {
+    "selection": (
+        "选奶",
+        "挑奶",
+        "换奶",
+        "对比",
+        "成分",
+        "配方",
+        "做功课",
+        "攻略",
+        "看了好几款",
+        "看中",
+        "最后选",
+        "定了",
+        "入手",
+    ),
+    "drinking_acceptance": (
+        "喝得",
+        "喝完",
+        "爱喝",
+        "愿意喝",
+        "主动",
+        "抱着杯子",
+        "咕咚",
+        "顺口",
+        "不挑",
+        "不抗拒",
+        "不排斥",
+        "喝光",
+    ),
+    "state_observation": (
+        "状态",
+        "精神",
+        "身形",
+        "结实",
+        "小脸",
+        "圆润",
+        "长肉",
+        "背上有肉",
+        "小腿",
+        "有劲",
+        "个子",
+        "身高",
+        "裤子",
+        "抱起来",
+    ),
+    "mom_closure": (
+        "省心",
+        "踏实",
+        "放心",
+        "安心",
+        "心里有底",
+        "心里有数",
+        "值",
+        "没选错",
+        "选对",
+        "继续喝",
+        "回购",
+        "续",
+        "囤",
+    ),
+}
 
 _FEEDBACK_CATEGORY_LABELS = {
     "unnatural": "不自然/生硬",
@@ -1050,10 +1144,116 @@ class ContentBatchReportService:
             avg_body_chars=round(sum(body_lengths) / len(body_lengths), 2) if body_lengths else None,
             max_pairwise_jaccard_2gram=self._max_pairwise_jaccard([item.body or "" for item in generated]),
             similarity_warning_count=sum(1 for item in items if item.similarity_warnings),
+            closure_cluster_stats=self._closure_cluster_stats(generated),
+            content_path_skeleton_stats=self._content_path_skeleton_stats(generated),
         )
 
     def _forbidden_hits(self, text: str, business_terms: list[str] | None = None) -> list[str]:
         return find_forbidden_hits(text, business_terms)
+
+    def _closure_cluster_stats(self, items: list[ContentBatchReportItem]) -> dict[str, Any]:
+        checked_items = [item for item in items if str(item.body or "").strip()]
+        clusters: list[dict[str, Any]] = []
+        item_nos_with_hits: set[int] = set()
+        for definition in CLOSURE_CLUSTER_DEFINITIONS:
+            hits: list[dict[str, Any]] = []
+            for item in checked_items:
+                closing = self._closing_window(item.body or "")
+                matched_phrases = self._matched_closure_phrases(closing, definition["phrases"])
+                if not matched_phrases:
+                    continue
+                item_nos_with_hits.add(item.item_no)
+                hits.append(
+                    {
+                        "item_no": item.item_no,
+                        "phrases": matched_phrases,
+                        "closing_text": closing,
+                    }
+                )
+            count = len(hits)
+            ratio = round(count / len(checked_items), 4) if checked_items else 0.0
+            warning = count >= CLOSURE_CLUSTER_WARNING_MIN_COUNT or (
+                len(checked_items) >= 5 and count >= 2 and ratio > CLOSURE_CLUSTER_WARNING_RATIO
+            )
+            clusters.append(
+                {
+                    "cluster_code": definition["code"],
+                    "cluster_name": definition["name"],
+                    "count": count,
+                    "ratio": ratio,
+                    "warning": bool(count and warning),
+                    "phrases": definition["phrases"],
+                    "hits": hits,
+                }
+            )
+        clusters.sort(key=lambda cluster: (-cluster["count"], cluster["cluster_code"]))
+        return {
+            "window_chars": CLOSURE_CLUSTER_WINDOW_CHARS,
+            "total_checked": len(checked_items),
+            "closing_hit_count": len(item_nos_with_hits),
+            "warning_threshold": {
+                "min_count": CLOSURE_CLUSTER_WARNING_MIN_COUNT,
+                "ratio": CLOSURE_CLUSTER_WARNING_RATIO,
+            },
+            "clusters": clusters,
+        }
+
+    def _closing_window(self, text: str) -> str:
+        clean = re.sub(r"\s+", "", text or "")
+        return clean[-CLOSURE_CLUSTER_WINDOW_CHARS:]
+
+    def _matched_closure_phrases(self, closing: str, phrases: list[str]) -> list[str]:
+        normalized_closing = re.sub(r"\s+", "", closing or "")
+        matched: list[str] = []
+        for phrase in phrases:
+            normalized_phrase = re.sub(r"\s+", "", phrase)
+            if normalized_phrase and normalized_phrase in normalized_closing:
+                matched.append(phrase)
+        return matched
+
+    def _content_path_skeleton_stats(self, items: list[ContentBatchReportItem]) -> dict[str, Any]:
+        checked_items = [item for item in items if str(item.body or "").strip()]
+        hits: list[dict[str, Any]] = []
+        part_counts: Counter[str] = Counter()
+        for item in checked_items:
+            part_hits = self._content_path_part_hits(item.body or "")
+            for part in part_hits:
+                part_counts[part] += 1
+            if set(CONTENT_PATH_SKELETON_PARTS).issubset(part_hits):
+                hits.append(
+                    {
+                        "item_no": item.item_no,
+                        "part_hits": part_hits,
+                        "body_preview": (item.body or "")[:120],
+                    }
+                )
+        count = len(hits)
+        ratio = round(count / len(checked_items), 4) if checked_items else 0.0
+        warning = count >= CONTENT_PATH_SKELETON_WARNING_MIN_COUNT or (
+            len(checked_items) >= 5 and count >= 2 and ratio > CONTENT_PATH_SKELETON_WARNING_RATIO
+        )
+        return {
+            "skeleton_name": "选奶/喝奶接受/状态观察/妈妈收口",
+            "total_checked": len(checked_items),
+            "complete_skeleton_count": count,
+            "complete_skeleton_ratio": ratio,
+            "warning": bool(count and warning),
+            "warning_threshold": {
+                "min_count": CONTENT_PATH_SKELETON_WARNING_MIN_COUNT,
+                "ratio": CONTENT_PATH_SKELETON_WARNING_RATIO,
+            },
+            "part_counts": dict(part_counts),
+            "part_phrases": {part: list(phrases) for part, phrases in CONTENT_PATH_SKELETON_PARTS.items()},
+            "hits": hits,
+        }
+
+    def _content_path_part_hits(self, body: str) -> dict[str, list[str]]:
+        text = re.sub(r"\s+", "", body or "")
+        return {
+            part: self._matched_closure_phrases(text, list(phrases))
+            for part, phrases in CONTENT_PATH_SKELETON_PARTS.items()
+            if self._matched_closure_phrases(text, list(phrases))
+        }
 
     def _max_pairwise_jaccard(self, bodies: list[str]) -> float:
         max_score = 0.0

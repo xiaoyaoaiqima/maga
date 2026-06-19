@@ -16,6 +16,97 @@ from app.models.content_agent import (
 )
 from app.models.maga_assets import AssetRegistry
 from app.services.content_batch_report_service import ContentBatchReportService
+from app.schemas.content_batch_report import ContentBatchReportItem
+
+
+def test_summary_reports_repeated_closure_clusters_only_near_body_end():
+    service = ContentBatchReportService(db=None)
+    items = [
+        ContentBatchReportItem(
+            item_id=1,
+            item_no=1,
+            status="generated",
+            body="开头说省心，后面都是普通观察，继续写饭点、接娃、作业和出门安排，最后只落在普通记录。",
+            body_chars=42,
+        ),
+        ContentBatchReportItem(
+            item_id=2,
+            item_no=2,
+            status="generated",
+            body="这段主要写孩子日常状态，最后妈妈心里有底。",
+            body_chars=22,
+        ),
+        ContentBatchReportItem(
+            item_id=3,
+            item_no=3,
+            status="generated",
+            body="没有写成什么神奇变化，就是这杯奶放在家里确实省心。",
+            body_chars=26,
+        ),
+        ContentBatchReportItem(
+            item_id=4,
+            item_no=4,
+            status="generated",
+            body="孩子愿意喝，家里也能坚持，贵也认了。",
+            body_chars=18,
+        ),
+        ContentBatchReportItem(
+            item_id=5,
+            item_no=5,
+            status="generated",
+            body="先这么观察着，后面应该还会继续喝。",
+            body_chars=18,
+        ),
+    ]
+
+    stats = service._summary(items).closure_cluster_stats
+    clusters = {cluster["cluster_code"]: cluster for cluster in stats["clusters"]}
+
+    assert stats["total_checked"] == 5
+    assert stats["closing_hit_count"] == 4
+    assert clusters["peace_of_mind"]["count"] == 2
+    assert clusters["peace_of_mind"]["warning"] is True
+    assert [hit["item_no"] for hit in clusters["peace_of_mind"]["hits"]] == [2, 3]
+    assert clusters["worth_it"]["count"] == 1
+    assert clusters["keep_drinking"]["count"] == 1
+
+
+def test_summary_reports_complete_content_path_skeleton():
+    service = ContentBatchReportService(db=None)
+    items = [
+        ContentBatchReportItem(
+            item_id=1,
+            item_no=1,
+            status="generated",
+            body="选奶粉时对比了几款，最后看中旺玥。孩子每天喝完一杯，最近小脸圆润了点，我也放心些。",
+            body_chars=45,
+        ),
+        ContentBatchReportItem(
+            item_id=2,
+            item_no=2,
+            status="generated",
+            body="给娃挑奶时看了成分，旺玥这罐他喝得挺顺，小腿摸着结实，准备继续喝。",
+            body_chars=38,
+        ),
+        ContentBatchReportItem(
+            item_id=3,
+            item_no=3,
+            status="generated",
+            body="今天只是记录一下账单，旺玥不便宜，娃喝得还行。",
+            body_chars=24,
+        ),
+    ]
+
+    stats = service._summary(items).content_path_skeleton_stats
+
+    assert stats["total_checked"] == 3
+    assert stats["complete_skeleton_count"] == 2
+    assert stats["complete_skeleton_ratio"] == 0.6667
+    assert [hit["item_no"] for hit in stats["hits"]] == [1, 2]
+    assert stats["part_counts"]["selection"] == 2
+    assert stats["part_counts"]["drinking_acceptance"] == 3
+    assert stats["part_counts"]["state_observation"] == 2
+    assert stats["part_counts"]["mom_closure"] == 2
 
 
 @pytest.mark.asyncio

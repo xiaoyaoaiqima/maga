@@ -78,6 +78,8 @@ class ContentBatchReportSummary(BaseSchema):
     avg_body_chars: float | None = None
     max_pairwise_jaccard_2gram: float = 0.0
     similarity_warning_count: int = 0
+    closure_cluster_stats: dict[str, Any] = Field(default_factory=dict)
+    content_path_skeleton_stats: dict[str, Any] = Field(default_factory=dict)
 
 
 class ContentBatchReportItem(BaseSchema):
