@@ -296,6 +296,9 @@ def test_product_experience_baby_milk_action_cleanup_is_narrow_and_varied():
     indirect_brew_text = "现在每天早晚自己搬小凳子冲奶，晚上他自己洗完澡就去厨房泡旺玥。"
     can_brew_text = "早起穿校服，自己搬奶粉罐去了。他泡好端着，后来还自己抱着罐子让冲。"
     extra_scoop_text = "她拧开盖子说那好吧，又自己偷偷多舀了一勺。"
+    model_rotation_text = "今天娃突然自己跑去柜子前，踮脚够奶粉罐，还抱着空罐子在地上滚。"
+    model_rotation_text_2 = "每天早上自己搬凳子去够柜子上的罐子，娃自己会去冲。"
+    model_rotation_text_3 = "每天早上自己跑去冲一杯，后来又主动去冲，最后自己抱着杯子要冲。"
     adult_text = "今晚陪娃写作业，给自己冲一杯热水。"
     cup_text = "冲好后娃自己抱着杯子咕嘟咕嘟喝，我偷偷乐了一下。"
 
@@ -325,6 +328,16 @@ def test_product_experience_baby_milk_action_cleanup_is_narrow_and_varied():
     cleaned_extra_scoop = sanitize_baby_milk_action_phrases(extra_scoop_text)
     assert "自己偷偷多舀了一勺" not in cleaned_extra_scoop
     assert "主动要喝" not in cleaned_extra_scoop
+    cleaned_model_rotation = sanitize_baby_milk_action_phrases(model_rotation_text)
+    assert "够奶粉罐" not in cleaned_model_rotation
+    assert "空罐子" not in cleaned_model_rotation
+    cleaned_model_rotation_2 = sanitize_baby_milk_action_phrases(model_rotation_text_2)
+    assert "够柜子上的罐子" not in cleaned_model_rotation_2
+    assert "自己会去冲" not in cleaned_model_rotation_2
+    cleaned_model_rotation_3 = sanitize_baby_milk_action_phrases(model_rotation_text_3)
+    assert "自己跑去冲一杯" not in cleaned_model_rotation_3
+    assert "主动去冲" not in cleaned_model_rotation_3
+    assert "自己抱着杯子要冲" not in cleaned_model_rotation_3
     assert sanitize_baby_milk_action_phrases(adult_text) == adult_text.strip("。")
     assert sanitize_baby_milk_action_phrases(cup_text) == cup_text.strip("。")
 
@@ -364,6 +377,39 @@ def test_product_experience_phrase_guard_blocks_wangyue_portable_stick_pack():
     assert "wangyue_portable_form_context" in review.reasons
 
 
+def test_product_experience_phrase_guard_blocks_wangyue_portable_pack():
+    review = review_product_experience_phrase(
+        title="娃爱喝的儿童奶粉真的不用瞎找",
+        body="平时出门揣两袋便携装也特方便，旺玥喝着还挺顺。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_article_business_rules",
+            "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
+        },
+    )
+
+    assert "便携装" in review.wangyue_portable_form_hits
+    assert "wangyue_portable_form_context" in review.reasons
+
+
+def test_product_experience_phrase_guard_blocks_wangyue_portable_powder_pack_scene():
+    review = review_product_experience_phrase(
+        title="带娃出门的随身口粮我锁死了",
+        body="收拾他外出随身包，总习惯塞两条旺玥儿童奶粉条分装，跑跳疯玩大半天掏出来兑温水就能喝。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_article_business_rules",
+            "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
+        },
+    )
+
+    assert "分装" in review.wangyue_portable_form_hits
+    assert "外出随身包" in review.wangyue_portable_form_hits
+    assert "奶粉条" in review.wangyue_portable_form_hits
+    assert "兑温水" in review.wangyue_portable_form_hits
+    assert "wangyue_portable_form_context" in review.reasons
+
+
 def test_product_experience_wangyue_context_cleanup_is_narrow():
     title = "源悦真实体验分享"
     body = "宝宝一岁多后出门多，我就在书包侧袋塞一盒旺玥，临时兑点温水摇匀。"
@@ -379,6 +425,15 @@ def test_product_experience_wangyue_context_cleanup_is_narrow():
     portable_cleaned = sanitize_wangyue_context_phrases("清早往书包侧兜塞旺玥小条装，放学回来干掉了三根。")
     assert "小条装" not in portable_cleaned
     assert "三根" not in portable_cleaned
+    assert "便携装" not in sanitize_wangyue_context_phrases("出门带便携装。")
+    portable_pack_cleaned = sanitize_wangyue_context_phrases("收拾他出门背的小双肩包总习惯塞两条旺玥儿童奶粉分装，掏出来兑温水就能喝。")
+    assert "小双肩包" not in portable_pack_cleaned
+    assert "两条" not in portable_pack_cleaned
+    assert "分装" not in portable_pack_cleaned
+    assert "兑温水" not in portable_pack_cleaned
+    portable_pack_cleaned_2 = sanitize_wangyue_context_phrases("收拾外出随身包，塞一杯旺玥的奶粉条。")
+    assert "随身包" not in portable_pack_cleaned_2
+    assert "奶粉条" not in portable_pack_cleaned_2
 
 
 def test_product_experience_phrase_guard_blocks_temporary_remedy_or_overclaim():
@@ -734,6 +789,94 @@ async def test_wangyue_batch_execution_repairs_duplicate_titles():
     assert all(title != "旺玥和4段怎么选" for title in titles)
     assert any("forbidden_title_phrase:4段" in repair["reasons"] for item in items for repair in item.quality_json["title_guard_repairs"])
     assert items[2].quality_json["title_guard"]["pass"] is True
+
+
+@pytest.mark.asyncio
+async def test_wangyue_batch_execution_cleans_model_title_format_without_fallback():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    class MarkdownTitleClient:
+        def __init__(self):
+            self.item_no = 0
+
+        async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
+            self.item_no += 1
+            item_no = self.item_no
+            title = {
+                1: "*标题：搁家里奶罐换得比酱油还勤**",
+                2: "### 标题：遛弯被问了八百遍的娃口粮分享",
+                3: "去年的裤子怎么都短了🤔",
+            }[item_no]
+            return InvokeResult(
+                mode="sync",
+                stage_call_id=envelope["stage_call_id"],
+                output={
+                    "title": title,
+                    "body": f"旺玥喝了一阵，孩子口味能接受，日常补充先记一下。第{item_no}次记录。",
+                    "runtime_result": {"mode": "content_fake"},
+                },
+                stats={"fake": True},
+            )
+
+    async with session_factory() as session:
+        session.add(
+            ExecutorRegistry(
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
+                display_name="Hermes MAGA worker",
+                invoke_url="mock://maga-worker/invoke",
+                enabled=1,
+                config_json={},
+            )
+        )
+        job = ContentBatchJob(
+            batch_code="batch_wangyue_title_format_guard",
+            asset_key="wangyue_article_business_rules",
+            product_topic="0705旺玥活动",
+            count=3,
+            status="planned",
+        )
+        session.add(job)
+        await session.flush()
+        for item_no in range(1, 4):
+            plan = {
+                **_plan(item_no),
+                "rule_type": "business_rule",
+                "asset_key": "wangyue_article_business_rules",
+                "business_rule": "营养不足/成长发育需求，日常补充观察",
+                "topic": "营养不足/成长发育需求，日常补充观察",
+                "corpus": "活动：0705旺玥活动。\n写作规则：围绕孩子日常营养补充来写。",
+            }
+            session.add(ContentBatchItem(batch_id=job.id, item_no=item_no, status="planned", plan_json=plan))
+        await session.commit()
+
+        service = ContentBatchExecutionService(
+            session,
+            invocation_client=MarkdownTitleClient(),
+            callback_base_url="http://maga.test/api/v1/executor",
+        )
+        result = await service.execute_batch_items(job.id, limit=3, concurrency=1, created_by="test")
+        await session.commit()
+
+    assert result.generated_count == 3
+    async with session_factory() as session:
+        items = (
+            await session.execute(select(ContentBatchItem).where(ContentBatchItem.batch_id == job.id).order_by(ContentBatchItem.item_no))
+        ).scalars().all()
+
+    assert [item.title for item in items] == [
+        "搁家里奶罐换得比酱油还勤",
+        "遛弯被问了八百遍的娃口粮分享",
+        "去年的裤子怎么都短了",
+    ]
+    assert all("title_format_cleanups" in item.quality_json for item in items)
+    assert all("title_guard_repairs" not in item.quality_json for item in items)
 
 
 @pytest.mark.asyncio

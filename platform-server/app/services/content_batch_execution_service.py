@@ -95,6 +95,25 @@ TITLE_GUARD_BAD_PATTERNS = (
     re.compile(r"[0-9一二三四五六七八九十]+个月宝宝"),
     re.compile(r"[0-9一二三四五六七八九十]+个月\+?旺玥"),
 )
+TITLE_FORMAT_PATTERNS = (
+    re.compile(r"^\s*#{1,6}\s*(?:标题[:：]\s*)?"),
+    re.compile(r"^\s*[*_`~\s]*(?:标题|title)[:：]\s*", re.IGNORECASE),
+    re.compile(r"[*_`~\s]+$"),
+)
+EMOJI_PATTERN = re.compile(
+    "["
+    "\U0001F1E6-\U0001F1FF"
+    "\U0001F300-\U0001F5FF"
+    "\U0001F600-\U0001F64F"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F700-\U0001F77F"
+    "\U0001F780-\U0001F7FF"
+    "\U0001F800-\U0001F8FF"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FAFF"
+    "\u2600-\u27BF"
+    "]+"
+)
 PERSONA_STYLE_REWRITE_PRESETS = (
     {
         "code": "roommate_direct",
@@ -505,6 +524,17 @@ class ContentBatchExecutionService:
             used_titles: set[str] = set()
             repair_count = 0
             for item in items:
+                format_cleaned_title = _sanitize_generated_title_format(item.title or "")
+                if format_cleaned_title and format_cleaned_title != (item.title or ""):
+                    before = item.title or ""
+                    item.title = format_cleaned_title
+                    quality = dict(item.quality_json or {})
+                    cleanups = list(quality.get("title_format_cleanups") or [])
+                    cleanups.append({"before": before, "after": item.title})
+                    quality["title_format_cleanups"] = cleanups
+                    item.quality_json = quality
+                    repair_count += 1
+
                 reasons = _title_guard_reasons(item.title or "", used_titles)
                 if not reasons:
                     used_titles.add(_normalize_title(item.title or ""))
@@ -1160,6 +1190,8 @@ def _title_guard_reasons(title: str, used_titles: set[str]) -> list[str]:
     normalized = _normalize_title(title)
     if normalized and normalized in used_titles:
         reasons.append("duplicate_title")
+    if _sanitize_generated_title_format(title) != title:
+        reasons.append("generated_title_format")
     for phrase in TITLE_GUARD_FORBIDDEN_SUBSTRINGS:
         if phrase in title:
             reasons.append(f"forbidden_title_phrase:{phrase}")
@@ -1168,6 +1200,19 @@ def _title_guard_reasons(title: str, used_titles: set[str]) -> list[str]:
             reasons.append("ambiguous_age_or_duration")
             break
     return reasons
+
+
+def _sanitize_generated_title_format(title: str | None) -> str:
+    text = str(title or "").strip()
+    if not text:
+        return text
+    for pattern in TITLE_FORMAT_PATTERNS:
+        text = pattern.sub("", text).strip()
+    text = EMOJI_PATTERN.sub("", text).strip()
+    text = re.sub(r"^\s*(?:标题|title)[:：]\s*", "", text, flags=re.IGNORECASE).strip()
+    text = text.strip(" *_`~#")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 def _fallback_title_for_item(item: ContentBatchItem, used_titles: set[str]) -> str:

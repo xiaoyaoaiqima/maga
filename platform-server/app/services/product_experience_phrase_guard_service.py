@@ -247,8 +247,33 @@ CHILD_SELF_BREWING_PHRASES = (
     "自己偷偷多舀了一勺",
     "自己搬奶粉罐去了",
     "自己搬奶粉罐",
+    "自己开柜门拿奶粉罐",
+    "开柜门拿奶粉罐",
+    "踮脚够奶粉罐",
+    "蹬着小凳子去够奶粉罐",
+    "自己搬凳子去够柜子上的罐子",
+    "搬凳子去够柜子上的罐子",
+    "自己搬凳子去够罐子",
+    "搬凳子去够罐子",
+    "去够奶粉罐",
+    "够奶粉罐",
+    "去够柜子上的罐子",
+    "够柜子上的罐子",
+    "抱着空罐子在地上滚",
+    "抱着空罐子",
+    "扛奶粉",
     "自己主动去冲",
     "主动去倒奶喝",
+    "自己到点就去泡一杯",
+    "娃自己会去冲",
+    "孩子自己会去冲",
+    "自己会去冲",
+    "自己跑去冲一杯",
+    "自己去冲",
+    "主动去冲",
+    "每天早上主动去冲",
+    "每天早上自己跑去冲一杯",
+    "自己抱着杯子要冲",
     "自己抱着罐子让冲",
     "他泡好端着",
     "拿勺子舀粉",
@@ -293,18 +318,28 @@ WANGYUE_PORTABLE_FORM_PHRASES = (
     "书包里放一盒旺玥",
     "一盒旺玥",
     "旺玥小条装",
+    "便携装",
+    "分装",
+    "两条旺玥",
+    "两条",
+    "小双肩包",
+    "出门背的小双肩包",
+    "随身包",
+    "外出随身包",
+    "奶粉条",
     "小条装",
     "几袋",
     "三根",
     "奶粉盒",
     "兑点温水摇匀",
+    "兑温水",
 )
 
 CHILD_SELF_BREWING_REPLACEMENT_VARIANTS = (
     "冲好后喝得挺顺",
     "那杯奶喝得还算顺",
     "到喝奶时间还挺积极",
-    "这款他不怎么抗拒",
+    "递过去能慢慢喝完",
     "奶香味他还挺接受",
     "一杯递过去能慢慢喝完",
 )
@@ -547,6 +582,29 @@ def sanitize_baby_milk_action_phrases(value: str | None) -> str:
 
     text = text.replace("自己搬奶粉罐去了", "我把奶粉罐拿到桌上")
     text = text.replace("自己搬奶粉罐", "我把奶粉罐拿到桌上")
+    text = text.replace("自己开柜门拿奶粉罐", "在旁边等我冲奶")
+    text = text.replace("开柜门拿奶粉罐", "等我冲奶")
+    text = text.replace("蹬着小凳子去够奶粉罐", "搬着小凳子坐过来等")
+    text = text.replace("自己搬凳子去够柜子上的罐子", "自己搬凳子坐过来等")
+    text = text.replace("搬凳子去够柜子上的罐子", "搬凳子坐过来等")
+    text = text.replace("自己搬凳子去够罐子", "自己搬凳子坐过来等")
+    text = text.replace("搬凳子去够罐子", "搬凳子坐过来等")
+    text = text.replace("踮脚够奶粉罐", "踮脚等着喝奶")
+    text = text.replace("去够奶粉罐", "等着喝奶")
+    text = text.replace("够奶粉罐", "等着喝奶")
+    text = text.replace("去够柜子上的罐子", "坐过来等")
+    text = text.replace("够柜子上的罐子", "坐过来等")
+    text = text.replace("抱着空罐子在地上滚", "抱着玩具在地上滚")
+    text = text.replace("抱着空罐子", "抱着玩具")
+    text = text.replace("扛奶粉", "拎奶粉")
+    text = text.replace("自己到点就去泡一杯", "到点会过来等我冲")
+    text = text.replace("每天早上自己跑去冲一杯", "每天早上会过来等我冲")
+    text = text.replace("每天早上主动去冲", "每天早上会过来等我冲")
+    text = text.replace("自己跑去冲一杯", "会过来等我冲")
+    text = text.replace("主动去冲", "过来等我冲")
+    text = text.replace("自己会去冲", "会过来等我冲")
+    text = text.replace("自己去冲", "过来等我冲")
+    text = text.replace("自己抱着杯子要冲", "抱着杯子等我冲")
     text = text.replace("自己拿勺子挖了两勺", "在旁边看着我冲")
     text = text.replace("自己抱着罐子让冲", "抱着杯子等我冲")
     text = text.replace("他泡好端着", "我冲好递给他")
@@ -619,11 +677,21 @@ def sanitize_wangyue_context_phrases(value: str | None) -> str:
         text,
     )
     text = text.replace("旺玥小条装", "旺玥奶粉")
+    text = text.replace("便携装", "这罐奶粉")
+    text = text.replace("分装", "奶粉")
+    text = text.replace("两条旺玥", "一杯旺玥")
+    text = text.replace("两条", "一杯")
+    text = text.replace("出门背的小双肩包", "家里的餐边柜")
+    text = text.replace("小双肩包", "餐边柜")
+    text = text.replace("外出随身包", "餐边柜")
+    text = text.replace("随身包", "餐边柜")
+    text = text.replace("奶粉条", "奶粉")
     text = text.replace("小条装", "奶粉")
     text = re.sub(r"干掉了[一二两三0-9]+根", "喝完一杯", text)
     text = text.replace("几袋", "一些")
     text = text.replace("塞奶粉盒兑点温水摇匀", "家里那罐旺玥照常冲好")
     text = text.replace("兑点温水摇匀", "照常冲好")
+    text = text.replace("兑温水", "照常冲好")
     text = text.replace("一盒旺玥", "一罐旺玥")
     text = text.replace("奶粉盒", "奶粉罐")
 
