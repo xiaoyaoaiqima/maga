@@ -80,6 +80,8 @@ class ContentBatchReportSummary(BaseSchema):
     similarity_warning_count: int = 0
     closure_cluster_stats: dict[str, Any] = Field(default_factory=dict)
     content_path_skeleton_stats: dict[str, Any] = Field(default_factory=dict)
+    real_user_pool_stats: dict[str, Any] = Field(default_factory=dict)
+    mouth_phrase_budget_stats: dict[str, Any] = Field(default_factory=dict)
 
 
 class ContentBatchReportItem(BaseSchema):

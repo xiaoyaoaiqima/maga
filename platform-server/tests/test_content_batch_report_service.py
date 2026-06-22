@@ -109,6 +109,148 @@ def test_summary_reports_complete_content_path_skeleton():
     assert stats["part_counts"]["mom_closure"] == 2
 
 
+def test_summary_reports_real_user_pool_stats():
+    service = ContentBatchReportService(db=None)
+    items = [
+        ContentBatchReportItem(
+            item_id=1,
+            item_no=1,
+            status="generated",
+            body="正文1",
+            body_chars=3,
+            generation_snapshot={
+                "business_rule": {
+                    "real_user_pool": {
+                        "asset_key": "maternal_infant_xhs_real_user_pool",
+                        "source_type_counts": {"note": 5, "comment": 2},
+                        "layer_counts": {"route": 1, "texture": 3},
+                        "route_family_counts": {"school_collective": 1},
+                        "tag_counts": {"营养": 3, "价格": 1},
+                        "risk_tag_counts": {"评论口吻": 2},
+                        "dedupe_hashes": ["a", "b", "c"],
+                        "title_reference": {"selected_titles": ["当妈后才懂"]},
+                        "prompt_text_by_layer": {
+                            "title_shape": ["选奶看花眼"],
+                            "route": ["上幼儿园后接触人多"],
+                            "texture": ["除了贵点没毛病"],
+                            "opening_texture": ["说实话，选奶这事会纠结"],
+                        },
+                    }
+                }
+            },
+        ),
+        ContentBatchReportItem(
+            item_id=2,
+            item_no=2,
+            status="generated",
+            body="正文2",
+            body_chars=3,
+            generation_snapshot={
+                "business_rule": {
+                    "real_user_pool": {
+                        "asset_key": "maternal_infant_xhs_real_user_pool",
+                        "source_type_counts": {"note": 5, "comment": 2},
+                        "layer_counts": {"route": 1, "texture": 3},
+                        "route_family_counts": {"outdoor_activity": 1},
+                        "tag_counts": {"营养": 2},
+                        "risk_tag_counts": {"强功效": 1},
+                        "dedupe_hashes": ["a", "d"],
+                        "title_reference": {"selected_titles": ["当妈后才懂"]},
+                        "prompt_text_by_layer": {
+                            "title_shape": ["选奶看花眼"],
+                            "route": ["户外活动多以后"],
+                            "texture": ["除了贵点没毛病"],
+                            "ending": ["先喝着记录一下"],
+                        },
+                    }
+                }
+            },
+        ),
+    ]
+
+    stats = service._summary(items).real_user_pool_stats
+
+    assert stats["enabled_item_count"] == 2
+    assert stats["pool_assets"] == {"maternal_infant_xhs_real_user_pool": 2}
+    assert stats["source_type_counts"] == {"note": 10, "comment": 4}
+    assert stats["layer_counts"] == {"route": 2, "texture": 6}
+    assert stats["route_family_counts"] == {"school_collective": 1, "outdoor_activity": 1}
+    assert stats["tag_counts"]["营养"] == 5
+    assert stats["risk_tag_counts"] == {"评论口吻": 2, "强功效": 1}
+    assert stats["repeated_dedupe_hashes"] == [{"dedupe_hash": "a", "count": 2}]
+    assert stats["title_reference_repeat_top"] == [
+        {"text": "当妈后才懂", "count": 2},
+        {"text": "选奶看花眼", "count": 2},
+    ]
+    assert stats["texture_repeat_top"] == [{"text": "除了贵点没毛病", "count": 2}]
+    assert stats["route_repeat_top"] == []
+    assert stats["opening_phrase_repeat_top"] == []
+
+
+def test_summary_reports_mouth_phrase_budget_stats():
+    service = ContentBatchReportService(db=None)
+    budget = {
+        "enabled": True,
+        "allowed_terms": ["最近"],
+        "avoid_terms": ["省心", "踏实"],
+        "groups": [
+            {
+                "code": "time_recent",
+                "name": "万能时间词",
+                "terms": ["最近"],
+                "max_count": 1,
+            },
+            {
+                "code": "peace_closure",
+                "name": "安心收口",
+                "terms": ["省心", "踏实"],
+                "max_count": 1,
+            },
+        ],
+        "batch_item_count": 3,
+    }
+    items = [
+        ContentBatchReportItem(
+            item_id=1,
+            item_no=1,
+            status="generated",
+            title="最近选奶记录",
+            body="这段没有口癖。",
+            body_chars=7,
+            generation_snapshot={"business_rule": {"mouth_phrase_budget": budget}},
+        ),
+        ContentBatchReportItem(
+            item_id=2,
+            item_no=2,
+            status="generated",
+            title="普通标题",
+            body="孩子愿意喝，当妈的省心一点。",
+            body_chars=15,
+            generation_snapshot={"business_rule": {"mouth_phrase_budget": {**budget, "allowed_terms": []}}},
+        ),
+        ContentBatchReportItem(
+            item_id=3,
+            item_no=3,
+            status="generated",
+            title="普通标题",
+            body="这杯奶固定下来确实省心，晚上看着也踏实。",
+            body_chars=22,
+            generation_snapshot={"business_rule": {"mouth_phrase_budget": {**budget, "allowed_terms": []}}},
+        ),
+    ]
+
+    stats = service._summary(items).mouth_phrase_budget_stats
+
+    assert stats["enabled_item_count"] == 3
+    term_stats = {item["term"]: item for item in stats["term_stats"]}
+    assert term_stats["最近"]["count"] == 1
+    assert term_stats["最近"]["hits"][0]["title_count"] == 1
+    assert term_stats["省心"]["count"] == 2
+    over_budget = {item["group_code"]: item for item in stats["over_budget_groups"]}
+    assert "time_recent" not in over_budget
+    assert over_budget["peace_closure"]["count"] == 3
+
+
 @pytest.mark.asyncio
 async def test_list_batch_reports_filters_by_asset_and_rule():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -197,6 +339,63 @@ async def test_list_batch_reports_filters_by_asset_and_rule():
     }
     assert rule_result.total == 1
     assert rule_result.items[0].batch_code == "comment_a_rule_2"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_report_marks_rewrite_required_item_as_not_hard_pass():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[
+                ContentBatchJob.__table__,
+                ContentBatchItem.__table__,
+                ContentBatchItemVersion.__table__,
+                ContentFeedback.__table__,
+                ContentAgentStageCall.__table__,
+                ContentAgentRun.__table__,
+            ],
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="batch_rewrite_required_hard_pass",
+            asset_key="wangyue_article_business_rules",
+            product_topic="0705旺玥活动",
+            count=1,
+            status="generated",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(
+            ContentBatchItem(
+                batch_id=job.id,
+                item_no=1,
+                status="generated",
+                plan_json={},
+                title="短了",
+                body="给娃开始喝旺玥，心里顺了",
+                quality_json={
+                    "hard_pass": True,
+                    "review_report": {
+                        "rewrite_required": True,
+                        "rewrite_reason": "业务规则口癖骨架或长度仍需人工处理",
+                    },
+                },
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        report = await ContentBatchReportService(session).get_batch_report(job.id)
+
+    assert report.items[0].hard_pass is False
+    assert report.items[0].rewrite_required is True
+    assert report.summary.hard_pass_count == 0
+    assert report.summary.remaining_rewrite_required_count == 1
 
     await engine.dispose()
 

@@ -2,6 +2,7 @@ SHELL := /usr/bin/env bash
 
 BACKEND_PORT ?= 5100
 FRONTEND_PORT ?= 3102
+BACKEND_LOCAL_LOG := .local/logs/backend-local.log
 FRONTEND_LOG := .local/logs/frontend.log
 FRONTEND_PID := .local/pids/frontend.pid
 WORKER_PORT ?= 8765
@@ -18,7 +19,7 @@ MAGA_WORKER_EXECUTION_MODE ?= runtime_fast
 MAGA_WORKER_RUNTIME_FAST_FAKE ?= 0
 MAGA_START_WORKER ?= 0
 
-.PHONY: up init-clean-schema seed-dev-executors down build logs ps dev dev-restart dev-stop dev-status dev-logs frontend-start frontend-stop frontend-status frontend-logs worker-start worker-stop worker-status worker-logs local-dev local-dev-stop local-dev-status local-dev-logs
+.PHONY: up init-clean-schema seed-dev-executors down build logs ps backend-local-start backend-local-restart backend-local-stop backend-local-status backend-local-logs dev dev-restart dev-stop dev-status dev-logs frontend-start frontend-stop frontend-status frontend-logs worker-start worker-stop worker-status worker-logs local-dev local-dev-stop local-dev-status local-dev-logs
 
 up:
 	docker compose up --build -d mysql redis backend
@@ -55,6 +56,21 @@ logs:
 
 ps:
 	docker compose ps
+
+backend-local-start:
+	@BACKEND_PORT="$(BACKEND_PORT)" BACKEND_LOG="$(abspath $(BACKEND_LOCAL_LOG))" ./scripts/maga_backend_local.sh start
+
+backend-local-restart:
+	@BACKEND_PORT="$(BACKEND_PORT)" BACKEND_LOG="$(abspath $(BACKEND_LOCAL_LOG))" ./scripts/maga_backend_local.sh restart
+
+backend-local-stop:
+	@BACKEND_PORT="$(BACKEND_PORT)" BACKEND_LOG="$(abspath $(BACKEND_LOCAL_LOG))" ./scripts/maga_backend_local.sh stop
+
+backend-local-status:
+	@BACKEND_PORT="$(BACKEND_PORT)" BACKEND_LOG="$(abspath $(BACKEND_LOCAL_LOG))" ./scripts/maga_backend_local.sh status
+
+backend-local-logs:
+	@BACKEND_PORT="$(BACKEND_PORT)" BACKEND_LOG="$(abspath $(BACKEND_LOCAL_LOG))" ./scripts/maga_backend_local.sh logs
 
 dev:
 	@WORKER_PORT="$(WORKER_PORT)" \

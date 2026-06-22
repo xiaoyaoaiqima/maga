@@ -97,6 +97,7 @@ async def test_unified_generation_selects_one_sub_keyword_per_category(unified_s
     assert "经验妈妈" in snapshot.input_snapshot["rendered_prompt"]
     assert "生成一条小红书母婴社区真实用户评论" in snapshot.input_snapshot["rendered_prompt"]
     assert "只输出评论正文，不要标题、编号、解释" in snapshot.input_snapshot["rendered_prompt"]
+    assert "标题要像真人随手起的小红书标题" not in snapshot.input_snapshot["rendered_prompt"]
     assert "先看业务规则里的参考示例，再换一种自然说法输出" in snapshot.input_snapshot["rendered_prompt"]
     assert "小红书母婴评论生成要求：" not in snapshot.input_snapshot["rendered_prompt"]
     assert "字数按业务规则或系统关键词要求控制" not in snapshot.input_snapshot["rendered_prompt"]
@@ -135,9 +136,13 @@ def test_business_rule_text_renders_only_supplied_examples_with_usage_boundary()
         }
     )
 
-    assert "示例使用边界：只学习语气、场景颗粒和生活细节；每篇最多借一个观察点" in text
+    assert "规则内示例使用边界：以下示例是弱参考，只借短句质感和真人毛边，可以完全不用" in text
+    assert "不能决定正文路线" in text
+    assert "以写作规则为准" in text
     assert "不要照搬示例里的原句、数字、配比、问句、结构、事实主张或固定句式骨架" in text
     assert "不要把多个示例细节拼成一篇" in text
+    assert "如果示例让内容变窄或重复，就忽略示例" in text
+    assert "规则内短句纹理（弱参考，可不用）" in text
     assert "抽中示例1" in text
     assert "抽中示例2" in text
     assert "抽中示例3" in text
@@ -159,6 +164,252 @@ def test_article_business_rule_text_renders_corpus_directly():
     assert "- 业务规则：" not in text
     assert "- 业务语料：" not in text
     assert "请病假的时间会有，但真的不多。" in text
+
+
+def test_article_business_rule_text_renders_real_user_pool_separately():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "营养不足/成长发育需求",
+            "corpus": "写作规则：围绕孩子成长阶段营养补充来写。",
+            "examples": ["规则内示例"],
+            "real_user_examples": [
+                {
+                    "source_type": "note",
+                    "title": "挑奶粉挑到头大",
+                    "text": "对比几款奶粉后还是看营养和孩子愿不愿意喝。",
+                    "tags": ["选奶", "营养"],
+                    "risk_tags": [],
+                },
+                {
+                    "source_type": "comment",
+                    "title": "挑奶粉挑到头大",
+                    "text": "不是有点贵，是太贵了。",
+                    "tags": ["价格"],
+                    "risk_tags": ["评论口吻"],
+                },
+            ],
+        },
+        content_type="article",
+    )
+
+    assert "全量真人原句池使用边界" in text
+    assert "本次抽到的帖子原句纹理" in text
+    assert "本次抽到的评论短句纹理" in text
+    assert "评论原句只能提供口气和真实短句感，不能写成评论区回复" in text
+    assert "规则内示例" in text
+    assert "对比几款奶粉后还是看营养" in text
+    assert "不是有点贵，是太贵了" in text
+
+
+def test_article_business_rule_text_renders_layered_real_user_pool_sections():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "容易中招，日常保护力观察",
+            "corpus": "写作规则：围绕孩子接触人多后妈妈关注保护力来写。",
+            "real_user_examples": [
+                {
+                    "source_type": "note",
+                    "example_layer": "route",
+                    "prompt_text": "上幼儿园后接触人多，选旺玥就是看中日常保护力。",
+                    "text": "上幼儿园后接触人多，选旺玥就是看中日常保护力。",
+                    "tags": ["幼儿园", "保护力"],
+                    "risk_tags": [],
+                },
+                {
+                    "source_type": "note",
+                    "example_layer": "texture",
+                    "prompt_text": "除了贵点没毛病。",
+                    "text": "除了贵点没毛病。",
+                    "tags": ["价格"],
+                    "risk_tags": [],
+                },
+                {
+                    "source_type": "note",
+                    "example_layer": "detail",
+                    "prompt_text": "放学回来先看餐盘，饭量和以前比能看出点变化。",
+                    "text": "放学回来先看餐盘，饭量和以前比能看出点变化。",
+                    "tags": ["幼儿园", "挑食"],
+                    "risk_tags": [],
+                },
+                {
+                    "source_type": "note",
+                    "example_layer": "ending",
+                    "prompt_text": "不吹不黑，先喝着记录一下。",
+                    "text": "不吹不黑，先喝着记录一下。",
+                    "tags": ["喝奶接受度"],
+                    "risk_tags": [],
+                },
+            ],
+        },
+        content_type="article",
+    )
+
+    assert "真人素材使用边界" in text
+    assert "业务规则优先" in text
+    assert "低权重参考，可以完全不用" in text
+    assert "内容入口只借切入启发" in text
+    assert "低权重内容入口（可不用，只借切入方式）" in text
+    assert "可借生活细节颗粒" in text
+    assert "可借说话口气" in text
+    assert "可借开头/收尾" in text
+    assert "不要照搬事实、顺序、因果链" in text
+    assert "上幼儿园后接触人多" in text
+    assert "放学回来先看餐盘" in text
+    assert "除了贵点没毛病" in text
+    assert "不吹不黑，先喝着记录一下" in text
+    assert "本次抽到的帖子原句纹理" not in text
+
+
+def test_article_business_rule_text_filters_examples_by_content_path_control_terms():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "精力不足，日常状态观察",
+            "corpus": "写作规则：像普通妈妈随手记录孩子状态。",
+            "content_path_control": {
+                "enabled": True,
+                "exclude_example_terms": ["喝", "冲", "杯子"],
+            },
+            "real_user_examples": [
+                {
+                    "source_type": "note",
+                    "example_layer": "route",
+                    "prompt_text": "放学回来还闲不住，旺玥就是家里日常喝的那罐。",
+                    "text": "放学回来还闲不住，旺玥就是家里日常喝的那罐。",
+                    "tags": ["营养"],
+                    "risk_tags": [],
+                },
+                {
+                    "source_type": "note",
+                    "example_layer": "route",
+                    "prompt_text": "接娃路上聊到孩子状态，我顺手记一下旺玥。",
+                    "text": "接娃路上聊到孩子状态，我顺手记一下旺玥。",
+                    "tags": ["幼儿园"],
+                    "risk_tags": [],
+                },
+            ],
+            "examples": ["他喝得挺顺。", "接娃路上聊了两句。"],
+        },
+        content_type="article",
+    )
+
+    assert "接娃路上聊到孩子状态" in text
+    assert "接娃路上聊了两句" in text
+    assert "日常喝的那罐" not in text
+    assert "他喝得挺顺" not in text
+
+
+def test_article_business_rule_text_renders_title_shape_and_opening_sections():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "容易中招，日常保护力观察",
+            "corpus": "写作规则：围绕孩子接触人多后妈妈关注保护力来写。",
+            "real_user_examples": [
+                {
+                    "source_type": "note",
+                    "example_layer": "title_shape",
+                    "prompt_text": "当妈后才懂",
+                    "text": "当妈后才懂",
+                    "tags": ["选奶"],
+                    "risk_tags": [],
+                },
+                {
+                    "source_type": "note",
+                    "example_layer": "opening_texture",
+                    "prompt_text": "说实话，选奶这件事真的会越看越纠结。",
+                    "text": "说实话，选奶这件事真的会越看越纠结。",
+                    "tags": ["选奶"],
+                    "risk_tags": [],
+                },
+            ],
+        },
+        content_type="article",
+    )
+
+    assert "可借标题形态" in text
+    assert "可借开头/收尾" in text
+    assert "不借产品词、年龄、功效承诺或测评栏目感" in text
+    assert "当妈后才懂" in text
+    assert "说实话，选奶这件事真的会越看越纠结" in text
+
+
+def test_article_business_rule_text_renders_real_title_references():
+    text = _business_rule_text(
+        {
+            "corpus": "写作规则：围绕孩子日常喝旺玥来写。",
+            "title_reference_examples": [
+                "皇家美素佳儿旺玥",
+                "儿童奶粉＋皇家旺玥，两罐喝1年的真实反馈",
+                "马上3周岁，纠结喝什么奶粉",
+            ],
+        },
+        content_type="article",
+    )
+
+    assert "真人标题参考" in text
+    assert "真实标题样本" in text
+    assert "皇家美素佳儿旺玥" in text
+    assert "儿童奶粉＋皇家旺玥，两罐喝1年的真实反馈" in text
+    assert "只借标题形式" in text
+    assert "不得与任一真实标题样本完全一致" in text
+    assert "旺玥真实体验分享" in text
+
+
+def test_generation_requirements_render_mouth_phrase_budget_as_light_control():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "mouth_phrase_budget": {
+                "enabled": True,
+                "allowed_terms": ["最近"],
+                "avoid_terms": ["省心", "踏实", "不知道是不是心理作用"],
+            }
+        },
+        [],
+    )
+
+    assert "批量口癖控制" in text
+    assert "真人表达，不是禁词" in text
+    assert "本篇口癖预算优先级高于示例和说话方式" in text
+    assert "最近" in text
+    assert "除上面列出的可用口癖外，本篇不要使用其他批量高频口头禅" in text
+    assert "省心" not in text
+    assert "踏实" not in text
+    assert "不知道是不是心理作用" not in text
+    assert "输出 JSON 对象" not in text
+
+
+def test_generation_requirements_render_content_path_control_before_title_rule():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "content_path_control": {
+                "enabled": True,
+                "instruction": "先确定生活入口，再决定产品只作为背景还是轻带一句。",
+                "avoid_path": "不要把正文写成选奶、喝奶接受、状态证明、妈妈收口四段。",
+                "prefer_path": "优先写接娃、收拾书包、饭桌旁聊天这类生活片段。",
+                "avoid_components": ["喝奶接受度", "导购选择过程"],
+                "max_product_components": 1,
+            }
+        },
+        [],
+    )
+
+    assert "内容路径控制" in text
+    assert "先确定生活入口" in text
+    assert "选奶、喝奶接受、状态证明、妈妈收口四段" in text
+    assert "喝奶接受度、导购选择过程" in text
+    assert "最多展开 1 个产品相关环节" in text
+    assert text.index("内容路径控制") < text.index("标题要像真人随手起的小红书标题")
 
 
 @pytest.mark.asyncio
@@ -211,10 +462,65 @@ async def test_unified_article_generation_renders_article_requirement_before_bus
     assert selected[0]["category_code"] == "article_generation_requirement"
     assert selected[0]["keyword_name"] == "业务内核发散"
     assert prompt.startswith("你是小红书母婴内容生成 expert。\n请根据业务规则和系统内置关键词语料，生成一篇自然种草内容。\n\n【生成要求】")
+    assert "标题要像真人随手起的小红书标题" in prompt
+    assert "不要总结正文卖点" in prompt
+    assert prompt.index("标题要像真人随手起的小红书标题") < prompt.index(requirement)
     assert prompt.index(requirement) < prompt.index("【业务规则】")
     assert prompt.index("【业务规则】") < prompt.index("【系统关键词语料】")
     assert "业务内核发散" not in prompt[prompt.index("【系统关键词语料】") :]
-    assert "示例使用边界：只学习语气、场景颗粒和生活细节" in prompt
+    assert "规则内示例边界：以下示例是低权重短句纹理，可以完全不用" in prompt
+
+
+@pytest.mark.asyncio
+async def test_unified_article_generation_renders_mouth_phrase_budget_before_keyword_requirements(unified_session_factory):
+    requirement = "生成前先在心里把业务规则拆成核心痛点/卖点、不能碰的边界、可自由变化的生活入口。"
+    async with unified_session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type=SYSTEM_KEYWORD_ASSET_TYPE,
+                asset_key=DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+                display_name="旺玥帖子关键词",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "categories": [
+                        {
+                            "category_code": "article_generation_requirement",
+                            "category_name": "帖子生成要求",
+                            "applicable_content_types": ["article"],
+                            "sub_keywords": [
+                                {
+                                    "keyword_code": "business_core_path_expansion",
+                                    "keyword_name": "业务内核发散",
+                                    "corpus": [requirement],
+                                }
+                            ],
+                        },
+                    ]
+                },
+            )
+        )
+        await session.commit()
+
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="article",
+            business_rule={
+                "rule_type": "business_rule",
+                "business_rule": "营养不足/成长发育需求",
+                "corpus": "写作规则：围绕旺玥日常营养补充来写。",
+                "mouth_phrase_budget": {
+                    "enabled": True,
+                    "allowed_terms": ["最近"],
+                    "avoid_terms": ["省心"],
+                },
+            },
+            item_no=1,
+            output_fields=["title", "body"],
+        )
+
+    prompt = snapshot.input_snapshot["rendered_prompt"]
+    assert prompt.index("批量口癖控制") < prompt.index(requirement)
 
 
 @pytest.mark.asyncio

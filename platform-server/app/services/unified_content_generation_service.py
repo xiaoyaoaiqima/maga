@@ -393,21 +393,133 @@ def _business_rule_text(rule: dict[str, Any], *, content_type: str | None = None
     ]
     if compliance_rules:
         lines.append("- 合规约束：\n" + json.dumps(compliance_rules, ensure_ascii=False, indent=2))
+    title_reference_examples = [
+        str(item).strip()
+        for item in rule.get("title_reference_examples") or []
+        if str(item).strip()
+    ]
+    if content_type == "article" and title_reference_examples:
+        lines.append(
+            "- 真人标题参考：以下标题来自真实小红书帖子，只借标题形式，不照搬标题、品牌事实、年龄、时长或具体结论；"
+            "生成标题不得与任一真实标题样本完全一致；"
+            "标题可以是产品名短标题、选奶问题、真实反馈、纠结记录、开罐记录，也可以很短。"
+            "不要写空泛模板标题，例如“旺玥真实体验分享”“旺玥喝了一阵”“喝旺玥的日常”；"
+            "不要写作文观点句或广告 slogan。"
+        )
+        lines.append("- 真实标题样本：\n" + "\n".join(f"  - {item}" for item in title_reference_examples))
+    exclude_example_terms = _content_path_exclude_example_terms(rule)
+    real_user_examples = [
+        item
+        for item in rule.get("real_user_examples") or []
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
+        and not _example_matches_excluded_terms(item, exclude_example_terms)
+    ]
+    if real_user_examples:
+        route_examples = [item for item in real_user_examples if item.get("example_layer") == "route"]
+        detail_examples = [item for item in real_user_examples if item.get("example_layer") == "detail"]
+        title_shape_examples = [item for item in real_user_examples if item.get("example_layer") == "title_shape"]
+        opening_examples = [item for item in real_user_examples if item.get("example_layer") == "opening_texture"]
+        texture_examples = [item for item in real_user_examples if item.get("example_layer") == "texture"]
+        ending_examples = [item for item in real_user_examples if item.get("example_layer") == "ending"]
+        note_examples = [
+            item
+            for item in real_user_examples
+            if item.get("source_type") == "note"
+            and item.get("example_layer") not in {"route", "detail", "title_shape", "opening_texture", "texture", "ending"}
+        ]
+        comment_examples = [item for item in real_user_examples if item.get("source_type") == "comment"]
+        opening_ending_examples = [*opening_examples, *ending_examples]
+        if route_examples or detail_examples or title_shape_examples or opening_examples or texture_examples or ending_examples:
+            lines.append(
+                "- 真人素材使用边界：业务规则优先。以下素材都是低权重参考，可以完全不用；"
+                "内容入口只借切入启发，标题只借形态，不借产品词、年龄、功效承诺或测评栏目感，口气只借毛边；"
+                "不要照搬事实、顺序、因果链，也不要把多个素材拼成一篇。"
+            )
+        else:
+            lines.append(
+                "- 全量真人原句池使用边界：以下内容是本次检索抽到的真人原句纹理，只借生活入口、语气和句子毛边；"
+                "不要照抄原句、标题、品牌事实、数字、功效结论或评论问法。帖子正文优先参考帖子原句，"
+                "评论原句只能提供口气和真实短句感，不能写成评论区回复。"
+            )
+        if route_examples:
+            lines.append(
+                "- 低权重内容入口（可不用，只借切入方式）：\n"
+                + "\n".join(f"  - {_real_user_example_text(item)}" for item in route_examples)
+            )
+        if title_shape_examples:
+            lines.append("- 可借标题形态：\n" + "\n".join(f"  - {_real_user_example_text(item)}" for item in title_shape_examples))
+        if detail_examples:
+            lines.append("- 可借生活细节颗粒：\n" + "\n".join(f"  - {_real_user_example_text(item)}" for item in detail_examples))
+        if opening_ending_examples:
+            lines.append("- 可借开头/收尾：\n" + "\n".join(f"  - {_real_user_example_text(item)}" for item in opening_ending_examples))
+        if texture_examples:
+            lines.append("- 可借说话口气：\n" + "\n".join(f"  - {_real_user_example_text(item)}" for item in texture_examples))
+        if note_examples:
+            lines.append("- 本次抽到的帖子原句纹理：\n" + "\n".join(f"  - {_real_user_example_text(item)}" for item in note_examples))
+        if comment_examples:
+            lines.append("- 本次抽到的评论短句纹理：\n" + "\n".join(f"  - {_real_user_example_text(item)}" for item in comment_examples))
     if rule.get("render_reference_examples") is not False:
-        examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
-        supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
+        examples = [
+            str(item).strip()
+            for item in rule.get("examples") or []
+            if str(item).strip() and not _text_matches_excluded_terms(str(item), exclude_example_terms)
+        ]
+        supplements = [
+            str(item).strip()
+            for item in rule.get("supplements") or []
+            if str(item).strip() and not _text_matches_excluded_terms(str(item), exclude_example_terms)
+        ]
         prompt_examples = examples + supplements
         if prompt_examples:
-            # 重要逻辑：示例只作为表达颗粒参考，避免把真人语料当范文复刻。
+            # 重要逻辑：规则内示例只给短句毛边，不再决定正文路线。
             lines.append(
-                "- 示例使用边界：只学习语气、场景颗粒和生活细节；每篇最多借一个观察点，"
-                "不要照搬示例里的原句、数字、配比、问句、结构、事实主张或固定句式骨架，"
-                "也不要把多个示例细节拼成一篇。"
+                "- 规则内示例边界：以下示例是低权重短句纹理，可以完全不用；"
+                "只借语气毛边，不借事实、顺序、因果链或固定句式骨架。"
             )
-            lines.append("- 示例：\n" + "\n".join(f"  - {item}" for item in prompt_examples))
+            lines.append("- 规则内短句纹理（弱参考，可不用）：\n" + "\n".join(f"  - {item}" for item in prompt_examples))
     if not lines:
         lines.append(json.dumps(rule, ensure_ascii=False, indent=2))
     return "\n".join(lines)
+
+
+def _real_user_example_text(item: dict[str, Any]) -> str:
+    text = str(item.get("prompt_text") or item.get("text") or "").strip()
+    title = str(item.get("title") or "").strip()
+    tags = item.get("tags") if isinstance(item.get("tags"), list) else []
+    risk_tags = item.get("risk_tags") if isinstance(item.get("risk_tags"), list) else []
+    prefix = f"{title}：{text}" if title and title not in text else text
+    meta_parts = []
+    if tags:
+        meta_parts.append("标签=" + "、".join(str(tag) for tag in tags[:4]))
+    if risk_tags:
+        meta_parts.append("风险提示=" + "、".join(str(tag) for tag in risk_tags[:3]))
+    return prefix + (f"（{'；'.join(meta_parts)}）" if meta_parts else "")
+
+
+def _content_path_exclude_example_terms(rule: dict[str, Any]) -> list[str]:
+    control = rule.get("content_path_control") if isinstance(rule, dict) else None
+    if not isinstance(control, dict):
+        return []
+    return _string_list(control.get("exclude_example_terms"))
+
+
+def _example_matches_excluded_terms(item: dict[str, Any], terms: list[str]) -> bool:
+    text = " ".join(
+        str(value or "")
+        for value in (
+            item.get("prompt_text"),
+            item.get("text"),
+            item.get("title"),
+        )
+    )
+    return _text_matches_excluded_terms(text, terms)
+
+
+def _text_matches_excluded_terms(text: str, terms: list[str]) -> bool:
+    if not terms:
+        return False
+    normalized = str(text or "").lower()
+    return any(term.lower() in normalized for term in terms if term)
 
 
 def _keyword_corpus_text(selected_keywords: list[dict[str, Any]], *, content_type: str | None = None) -> str:
@@ -447,7 +559,17 @@ def _generation_requirements(
     business_rule: dict[str, Any],
     selected_keywords: list[dict[str, Any]],
 ) -> str:
-    parts = _selected_generation_requirements(selected_keywords)
+    parts = []
+    mouth_phrase_requirement = _mouth_phrase_budget_requirement(business_rule)
+    if mouth_phrase_requirement:
+        parts.append(mouth_phrase_requirement)
+    content_path_requirement = _content_path_control_requirement(content_type, business_rule)
+    if content_path_requirement:
+        parts.append(content_path_requirement)
+    article_title_requirement = _article_title_generation_requirement(content_type, output_fields)
+    if article_title_requirement:
+        parts.append(article_title_requirement)
+    parts.extend(_selected_generation_requirements(selected_keywords))
     configured = str(business_rule.get("generation_requirements") or "").strip()
     if configured:
         parts.append(configured)
@@ -464,6 +586,17 @@ def _generation_requirements(
     )
 
 
+def _article_title_generation_requirement(content_type: str, output_fields: list[str]) -> str | None:
+    if content_type != "article" and output_fields != ["title", "body"]:
+        return None
+    return (
+        "标题要像真人随手起的小红书标题，不要总结正文卖点，不要写成栏目名、攻略名、导购标题或品牌 slogan；"
+        "标题里不要堆专业成分词、数字配方、功效判断或“第几个原因/实录/观察/好在哪”这类总结话术；"
+        "可以从正文里挑一个自然短句、生活细节、真实疑问或轻微吐槽来做标题，短一点也可以。"
+        "正文按业务规则控制篇幅和表达。"
+    )
+
+
 def _selected_generation_requirements(selected_keywords: list[dict[str, Any]]) -> list[str]:
     requirements: list[str] = []
     for item in selected_keywords:
@@ -474,6 +607,66 @@ def _selected_generation_requirements(selected_keywords: list[dict[str, Any]]) -
             if text:
                 requirements.append(text)
     return requirements
+
+
+def _mouth_phrase_budget_requirement(business_rule: dict[str, Any]) -> str | None:
+    budget = business_rule.get("mouth_phrase_budget") if isinstance(business_rule, dict) else None
+    if not isinstance(budget, dict) or budget.get("enabled") is not True:
+        return None
+    allowed_terms = _string_list(budget.get("allowed_terms"))
+    avoid_terms = _string_list(budget.get("avoid_terms"))
+    if not allowed_terms and not avoid_terms:
+        return None
+    parts = [
+        "批量口癖控制：这些词是真人表达，不是禁词，但本篇口癖预算优先级高于示例和说话方式，"
+        "不要让它们在同一批里变成模板。"
+    ]
+    if allowed_terms:
+        parts.append("本篇如果自然顺口，可以偶尔使用：" + "、".join(allowed_terms) + "；不用为了使用而使用。")
+    if avoid_terms:
+        parts.append(
+            "除上面列出的可用口癖外，本篇不要使用其他批量高频口头禅；"
+            "可换成具体动作、具体观察，或直接不写总结口头禅。"
+        )
+    return "".join(parts)
+
+
+def _content_path_control_requirement(content_type: str, business_rule: dict[str, Any]) -> str | None:
+    if content_type != "article":
+        return None
+    control = business_rule.get("content_path_control") if isinstance(business_rule, dict) else None
+    if isinstance(control, str):
+        text = control.strip()
+        return text or None
+    if not isinstance(control, dict) or control.get("enabled") is not True:
+        return None
+    lines = [
+        str(control.get("instruction") or "").strip(),
+        str(control.get("avoid_path") or "").strip(),
+        str(control.get("prefer_path") or "").strip(),
+    ]
+    avoid_components = _string_list(control.get("avoid_components"))
+    if avoid_components:
+        lines.append("本篇降低这些内容组件的权重：" + "、".join(avoid_components) + "；不要把它们连成固定骨架。")
+    max_components = control.get("max_product_components")
+    try:
+        max_components_int = int(max_components)
+    except (TypeError, ValueError):
+        max_components_int = 0
+    if max_components_int > 0:
+        lines.append(f"同一篇里最多展开 {max_components_int} 个产品相关环节，其余篇幅回到生活入口和妈妈观察。")
+    text = "\n".join(line for line in lines if line)
+    if not text:
+        return None
+    return "内容路径控制：" + text
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
 
 
 _TEMPLATE_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")

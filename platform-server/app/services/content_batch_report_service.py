@@ -698,6 +698,10 @@ class ContentBatchReportService:
         generation_stage = self._generation_stage(stage_calls)
         text = f"{item.title or ''}\n{item.body or ''}"
         forbidden_hits = self._forbidden_hits(text, forbidden_terms)
+        rewrite_required = review.get("rewrite_required")
+        hard_pass = quality.get("hard_pass")
+        if rewrite_required is True and hard_pass is True:
+            hard_pass = False
         return ContentBatchReportItem(
             item_id=item.id,
             item_no=item.item_no,
@@ -708,8 +712,8 @@ class ContentBatchReportService:
             body=item.body,
             body_preview=(item.body or "")[:160] if item.body else None,
             body_chars=len(item.body or ""),
-            hard_pass=quality.get("hard_pass"),
-            rewrite_required=review.get("rewrite_required"),
+            hard_pass=hard_pass,
+            rewrite_required=rewrite_required,
             rewrite_reason=review.get("rewrite_reason"),
             rewrite_rounds=review.get("rewrite_rounds"),
             suggestion_count=len(review.get("suggestions") or []),
@@ -1146,6 +1150,8 @@ class ContentBatchReportService:
             similarity_warning_count=sum(1 for item in items if item.similarity_warnings),
             closure_cluster_stats=self._closure_cluster_stats(generated),
             content_path_skeleton_stats=self._content_path_skeleton_stats(generated),
+            real_user_pool_stats=self._real_user_pool_stats(items),
+            mouth_phrase_budget_stats=self._mouth_phrase_budget_stats(generated),
         )
 
     def _forbidden_hits(self, text: str, business_terms: list[str] | None = None) -> list[str]:
@@ -1254,6 +1260,183 @@ class ContentBatchReportService:
             for part, phrases in CONTENT_PATH_SKELETON_PARTS.items()
             if self._matched_closure_phrases(text, list(phrases))
         }
+
+    def _real_user_pool_stats(self, items: list[ContentBatchReportItem]) -> dict[str, Any]:
+        used_items = [item for item in items if self._real_user_pool_snapshot(item)]
+        source_type_counts: Counter[str] = Counter()
+        tag_counts: Counter[str] = Counter()
+        risk_tag_counts: Counter[str] = Counter()
+        layer_counts: Counter[str] = Counter()
+        route_family_counts: Counter[str] = Counter()
+        detail_family_counts: Counter[str] = Counter()
+        hash_counts: Counter[str] = Counter()
+        pool_assets: Counter[str] = Counter()
+        title_reference_counts: Counter[str] = Counter()
+        route_text_counts: Counter[str] = Counter()
+        texture_text_counts: Counter[str] = Counter()
+        opening_text_counts: Counter[str] = Counter()
+        for item in used_items:
+            pool = self._real_user_pool_snapshot(item)
+            if pool.get("asset_key"):
+                pool_assets[str(pool.get("asset_key"))] += 1
+            for source_type, count in (pool.get("source_type_counts") or {}).items():
+                source_type_counts[str(source_type)] += int(count or 0)
+            for tag, count in (pool.get("tag_counts") or {}).items():
+                tag_counts[str(tag)] += int(count or 0)
+            for tag, count in (pool.get("risk_tag_counts") or {}).items():
+                risk_tag_counts[str(tag)] += int(count or 0)
+            for layer, count in (pool.get("layer_counts") or {}).items():
+                layer_counts[str(layer)] += int(count or 0)
+            for family, count in (pool.get("route_family_counts") or {}).items():
+                route_family_counts[str(family)] += int(count or 0)
+            for family, count in (pool.get("detail_family_counts") or {}).items():
+                detail_family_counts[str(family)] += int(count or 0)
+            for dedupe_hash in pool.get("dedupe_hashes") or []:
+                if dedupe_hash:
+                    hash_counts[str(dedupe_hash)] += 1
+            title_reference = pool.get("title_reference") if isinstance(pool.get("title_reference"), dict) else {}
+            for title in title_reference.get("selected_titles") or []:
+                if title:
+                    title_reference_counts[str(title)] += 1
+            prompt_text_by_layer = pool.get("prompt_text_by_layer") if isinstance(pool.get("prompt_text_by_layer"), dict) else {}
+            for text in prompt_text_by_layer.get("title_shape") or []:
+                if text:
+                    title_reference_counts[str(text)] += 1
+            for text in prompt_text_by_layer.get("route") or []:
+                if text:
+                    route_text_counts[str(text)] += 1
+            for text in prompt_text_by_layer.get("texture") or []:
+                if text:
+                    texture_text_counts[str(text)] += 1
+            for layer in ("opening_texture", "ending"):
+                for text in prompt_text_by_layer.get(layer) or []:
+                    if text:
+                        opening_text_counts[str(text)] += 1
+        repeated = [
+            {"dedupe_hash": dedupe_hash, "count": count}
+            for dedupe_hash, count in hash_counts.most_common()
+            if count > 1
+        ]
+        return {
+            "enabled_item_count": len(used_items),
+            "pool_assets": dict(pool_assets),
+            "source_type_counts": dict(source_type_counts),
+            "layer_counts": dict(layer_counts),
+            "route_family_counts": dict(route_family_counts),
+            "detail_family_counts": dict(detail_family_counts),
+            "tag_counts": dict(tag_counts),
+            "risk_tag_counts": dict(risk_tag_counts),
+            "repeated_dedupe_hashes": repeated,
+            "title_reference_repeat_top": _repeat_top(title_reference_counts),
+            "route_repeat_top": _repeat_top(route_text_counts),
+            "texture_repeat_top": _repeat_top(texture_text_counts),
+            "opening_phrase_repeat_top": _repeat_top(opening_text_counts),
+        }
+
+    def _mouth_phrase_budget_stats(self, items: list[ContentBatchReportItem]) -> dict[str, Any]:
+        budget_items = [item for item in items if self._mouth_phrase_budget_snapshot(item)]
+        if not budget_items:
+            return {}
+        term_to_groups: dict[str, set[str]] = {}
+        group_limits: dict[str, dict[str, Any]] = {}
+        allowed_terms_by_item: dict[int, list[str]] = {}
+        for item in budget_items:
+            budget = self._mouth_phrase_budget_snapshot(item)
+            allowed_terms_by_item[item.item_no] = self._list_of_strings(budget.get("allowed_terms"))
+            for group in budget.get("groups") or []:
+                if not isinstance(group, dict):
+                    continue
+                group_code = str(group.get("code") or "").strip()
+                if not group_code:
+                    continue
+                group_limits.setdefault(
+                    group_code,
+                    {
+                        "group_code": group_code,
+                        "group_name": str(group.get("name") or "").strip(),
+                        "terms": self._list_of_strings(group.get("terms")),
+                        "max_count": group.get("max_count"),
+                        "term_limits": group.get("term_limits") if isinstance(group.get("term_limits"), dict) else {},
+                    },
+                )
+                for term in self._list_of_strings(group.get("terms")):
+                    term_to_groups.setdefault(term, set()).add(group_code)
+        term_hits: dict[str, list[dict[str, Any]]] = {term: [] for term in term_to_groups}
+        for item in budget_items:
+            title = item.title or ""
+            body = item.body or ""
+            for term in term_to_groups:
+                title_count = title.count(term)
+                body_count = body.count(term)
+                if title_count or body_count:
+                    term_hits[term].append(
+                        {
+                            "item_no": item.item_no,
+                            "title_count": title_count,
+                            "body_count": body_count,
+                            "total_count": title_count + body_count,
+                            "allowed": term in set(allowed_terms_by_item.get(item.item_no) or []),
+                            "body_preview": body[:120],
+                        }
+                    )
+        term_stats = []
+        for term, hits in term_hits.items():
+            count = sum(hit["total_count"] for hit in hits)
+            item_nos = [hit["item_no"] for hit in hits]
+            term_stats.append(
+                {
+                    "term": term,
+                    "count": count,
+                    "item_count": len(set(item_nos)),
+                    "item_nos": item_nos,
+                    "hits": hits,
+                }
+            )
+        term_stats.sort(key=lambda item: (-item["count"], item["term"]))
+
+        group_stats = []
+        for group_code, group in group_limits.items():
+            terms = group.get("terms") or []
+            group_count = sum(sum(hit["total_count"] for hit in term_hits.get(term, [])) for term in terms)
+            term_limits = group.get("term_limits") if isinstance(group.get("term_limits"), dict) else {}
+            over_terms = [
+                {
+                    "term": term,
+                    "count": sum(hit["total_count"] for hit in term_hits.get(term, [])),
+                    "max_count": int(limit or 0),
+                }
+                for term, limit in term_limits.items()
+                if sum(hit["total_count"] for hit in term_hits.get(term, [])) > int(limit or 0)
+            ]
+            max_count = group.get("max_count")
+            over_group = max_count is not None and group_count > int(max_count or 0)
+            group_stats.append(
+                {
+                    **group,
+                    "count": group_count,
+                    "over_budget": bool(over_group or over_terms),
+                    "over_terms": over_terms,
+                }
+            )
+        group_stats.sort(key=lambda item: (-item["count"], item["group_code"]))
+        return {
+            "enabled_item_count": len(budget_items),
+            "term_stats": term_stats,
+            "group_stats": group_stats,
+            "over_budget_groups": [item for item in group_stats if item["over_budget"]],
+        }
+
+    def _real_user_pool_snapshot(self, item: ContentBatchReportItem) -> dict[str, Any]:
+        snapshot = item.generation_snapshot or {}
+        business_rule = snapshot.get("business_rule") if isinstance(snapshot.get("business_rule"), dict) else {}
+        pool = business_rule.get("real_user_pool") if isinstance(business_rule.get("real_user_pool"), dict) else {}
+        return pool
+
+    def _mouth_phrase_budget_snapshot(self, item: ContentBatchReportItem) -> dict[str, Any]:
+        snapshot = item.generation_snapshot or {}
+        business_rule = snapshot.get("business_rule") if isinstance(snapshot.get("business_rule"), dict) else {}
+        budget = business_rule.get("mouth_phrase_budget") if isinstance(business_rule.get("mouth_phrase_budget"), dict) else {}
+        return budget if budget.get("enabled") is True else {}
 
     def _max_pairwise_jaccard(self, bodies: list[str]) -> float:
         max_score = 0.0
@@ -1637,6 +1820,14 @@ def _int_or_none(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _repeat_top(counter: Counter[str], *, limit: int = 10) -> list[dict[str, Any]]:
+    return [
+        {"text": text, "count": count}
+        for text, count in counter.most_common(limit)
+        if text and count > 1
+    ]
 
 
 def _keyword_asset_label(value: Any) -> str:

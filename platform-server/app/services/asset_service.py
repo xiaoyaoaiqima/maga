@@ -100,25 +100,26 @@ class AssetService:
             if compatible_asset is not None:
                 return compatible_asset
         stmt = (
-            select(AssetRegistry)
+            select(AssetRegistry.id)
             .where(
                 AssetRegistry.asset_type == asset_type,
                 AssetRegistry.asset_key == asset_key,
                 AssetRegistry.status == "active",
             )
-            .order_by(AssetRegistry.version_no.desc())
+            .order_by(AssetRegistry.version_no.desc(), AssetRegistry.id.desc())
             .limit(1)
         )
         if asset_stage:
             stmt = stmt.where(AssetRegistry.asset_stage == asset_stage)
-        result = await self.db.execute(
-            stmt
-        )
-        return result.scalar_one_or_none()
+        result = await self.db.execute(stmt)
+        asset_id = result.scalar_one_or_none()
+        if asset_id is None:
+            return None
+        return await self.db.get(AssetRegistry, asset_id)
 
     async def _get_latest_comment_business_rule_asset(self, asset_key: str) -> AssetRegistry | None:
         result = await self.db.execute(
-            select(AssetRegistry)
+            select(AssetRegistry.id)
             .where(
                 AssetRegistry.asset_type.in_(COMMENT_BUSINESS_RULE_ASSET_TYPES),
                 AssetRegistry.asset_key == asset_key,
@@ -128,11 +129,14 @@ class AssetService:
             .order_by(AssetRegistry.version_no.desc(), AssetRegistry.id.desc())
             .limit(1)
         )
-        return result.scalar_one_or_none()
+        asset_id = result.scalar_one_or_none()
+        if asset_id is None:
+            return None
+        return await self.db.get(AssetRegistry, asset_id)
 
     async def _get_latest_article_business_rule_asset(self, asset_key: str) -> AssetRegistry | None:
         result = await self.db.execute(
-            select(AssetRegistry)
+            select(AssetRegistry.id)
             .where(
                 AssetRegistry.asset_type.in_(ARTICLE_BUSINESS_RULE_ASSET_TYPES),
                 AssetRegistry.asset_key == asset_key,
@@ -142,7 +146,10 @@ class AssetService:
             .order_by(AssetRegistry.version_no.desc(), AssetRegistry.id.desc())
             .limit(1)
         )
-        return result.scalar_one_or_none()
+        asset_id = result.scalar_one_or_none()
+        if asset_id is None:
+            return None
+        return await self.db.get(AssetRegistry, asset_id)
 
     async def update_asset_visibility(
         self,
