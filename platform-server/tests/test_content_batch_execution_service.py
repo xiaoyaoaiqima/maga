@@ -1080,6 +1080,17 @@ def test_product_experience_wangyue_context_cleanup_is_narrow():
     tongue_cleaned = sanitize_wangyue_context_phrases("试过几款不是太甜就是舌苔白。")
     assert "舌苔白" not in tongue_cleaned
     assert "不太适应" in tongue_cleaned
+    cough_cleaned = sanitize_wangyue_context_phrases("孩子爸说她好像没怎么咳嗽了，我也没特别做什么，就是换成了皇家美素佳儿旺玥。")
+    assert "咳嗽" not in cough_cleaned
+    assert "换成了" not in cough_cleaned
+    assert "皇家美素佳儿旺玥" not in cough_cleaned
+    choice_cleaned = sanitize_wangyue_context_phrases("所以给孩子选了皇家美素佳儿旺玥，日常营养补充上能跟上就好。")
+    assert "给孩子选了" not in choice_cleaned
+    assert "后来留意到皇家美素佳儿旺玥" in choice_cleaned
+    brain_cleaned = sanitize_wangyue_context_phrases("她小脑瓜转得快，也不知道是不是用脑太多。")
+    assert "小脑瓜" not in brain_cleaned
+    assert "用脑太多" not in brain_cleaned
+    assert "信息量太多" in brain_cleaned
     self_open_cleaned = sanitize_baby_milk_action_phrases("没想到她自己打开罐子凑近闻了闻。")
     assert "自己打开罐子" not in self_open_cleaned
     assert "等我打开罐子" in self_open_cleaned
