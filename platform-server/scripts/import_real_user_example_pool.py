@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 from app.core.database import async_session_factory  # noqa: E402
 from app.services.real_user_example_pool_service import (  # noqa: E402
     DEFAULT_REAL_USER_EXAMPLE_POOL_ASSET_KEY,
+    append_real_user_example_pool_from_export_dir,
     dump_import_result,
     import_real_user_example_pool_from_export_dir,
 )
@@ -24,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--asset-key", default=DEFAULT_REAL_USER_EXAMPLE_POOL_ASSET_KEY)
     parser.add_argument("--display-name", default="母婴小红书真人原句池")
     parser.add_argument("--created-by", default="real-user-pool-importer")
+    parser.add_argument("--append", action="store_true", help="Append new deduped items instead of replacing the pool.")
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -31,7 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
 async def async_main() -> None:
     args = build_parser().parse_args()
     async with async_session_factory() as session:
-        result = await import_real_user_example_pool_from_export_dir(
+        import_func = (
+            append_real_user_example_pool_from_export_dir
+            if args.append
+            else import_real_user_example_pool_from_export_dir
+        )
+        result = await import_func(
             session,
             args.export_dir,
             asset_key=args.asset_key,

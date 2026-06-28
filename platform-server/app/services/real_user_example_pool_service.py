@@ -680,30 +680,7 @@ async def import_real_user_example_pool_from_export_dir(
     created_by: str = "real-user-pool-importer",
     dry_run: bool = False,
 ) -> RealUserPoolImportResult:
-    base = Path(export_dir).expanduser()
-    if not base.exists() or not base.is_dir():
-        raise ValueError(f"export_dir not found: {base}")
-    notes_path = base / "xhs_notes_full.csv"
-    comments_path = base / "xhs_comments_full.csv"
-    if not notes_path.exists() or not comments_path.exists():
-        raise ValueError("export_dir must contain xhs_notes_full.csv and xhs_comments_full.csv")
-
-    source_hash = _source_hash(notes_path, comments_path)
-    note_items, note_summary = _read_note_items(notes_path)
-    comment_items, comment_summary = _read_comment_items(comments_path)
-    items = note_items + comment_items
-    summary = {
-        "source_dir": str(base),
-        "source_hash": source_hash,
-        "total_items": len(items),
-        "note": note_summary,
-        "comment": comment_summary,
-        "tag_counts": dict(Counter(tag for item in items for tag in item.get("tags") or [])),
-        "risk_tag_counts": dict(Counter(tag for item in items for tag in item.get("risk_tags") or [])),
-        "layer_counts": dict(Counter(str(item.get("example_layer") or "") for item in items)),
-        "prompt_layer_available_counts": _prompt_layer_available_counts(items),
-        "title_shape_filter_reason_top": _title_shape_filter_reason_top(items),
-    }
+    base, source_hash, items, summary = _read_export_pool(export_dir)
 
     if dry_run:
         return RealUserPoolImportResult(
@@ -763,6 +740,115 @@ async def import_real_user_example_pool_from_export_dir(
         source_hash=source_hash,
         summary=summary,
         items=items,
+    )
+
+
+async def append_real_user_example_pool_from_export_dir(
+    db: AsyncSession,
+    export_dir: str | Path,
+    *,
+    asset_key: str = DEFAULT_REAL_USER_EXAMPLE_POOL_ASSET_KEY,
+    display_name: str | None = "母婴小红书真人原句池",
+    created_by: str = "real-user-pool-importer",
+    dry_run: bool = False,
+) -> RealUserPoolImportResult:
+    base, source_hash, incoming_items, incoming_summary = _read_export_pool(export_dir)
+    previous_asset = await _active_real_user_pool_asset(db, asset_key)
+    previous_content = previous_asset.content_json if previous_asset and isinstance(previous_asset.content_json, dict) else {}
+    previous_items = previous_content.get("items") if isinstance(previous_content, dict) else []
+    existing_items = list(previous_items) if isinstance(previous_items, list) else []
+
+    merged_items = list(existing_items)
+    seen_hashes: set[str] = set()
+    for item in existing_items:
+        dedupe_hash = _item_dedupe_hash(item)
+        if dedupe_hash:
+            seen_hashes.add(dedupe_hash)
+    appended_items: list[dict[str, Any]] = []
+    duplicate_count = 0
+    for item in incoming_items:
+        dedupe_hash = _item_dedupe_hash(item)
+        if dedupe_hash and dedupe_hash in seen_hashes:
+            duplicate_count += 1
+            continue
+        if dedupe_hash:
+            seen_hashes.add(dedupe_hash)
+        appended_items.append(item)
+        merged_items.append(item)
+
+    summary = {
+        "mode": "append",
+        "source_dir": str(base),
+        "source_hash": source_hash,
+        "previous_asset_id": previous_asset.id if previous_asset else None,
+        "previous_version_no": previous_asset.version_no if previous_asset else None,
+        "existing_item_count": len(existing_items),
+        "incoming_item_count": len(incoming_items),
+        "appended_item_count": len(appended_items),
+        "duplicate_item_count": duplicate_count,
+        "total_items": len(merged_items),
+        "incoming": incoming_summary,
+        "merged": _pool_items_summary(merged_items),
+    }
+
+    if dry_run:
+        return RealUserPoolImportResult(
+            asset=None,
+            import_run=None,
+            source_hash=source_hash,
+            summary=summary,
+            items=merged_items,
+        )
+
+    await db.execute(
+        update(AssetRegistry)
+        .where(
+            AssetRegistry.asset_type == REAL_USER_EXAMPLE_POOL_ASSET_TYPE,
+            AssetRegistry.asset_key == asset_key,
+            AssetRegistry.asset_stage == "production",
+            AssetRegistry.status == "active",
+        )
+        .values(status="archived")
+    )
+    version_no = await _next_asset_version(db, asset_key)
+    asset = AssetRegistry(
+        asset_type=REAL_USER_EXAMPLE_POOL_ASSET_TYPE,
+        asset_key=asset_key,
+        display_name=display_name,
+        version_no=version_no,
+        status="active",
+        asset_stage="production",
+        source_name=base.name,
+        source_uri=str(base),
+        source_hash=source_hash,
+        content_json={
+            "items": merged_items,
+            "schema_version": previous_content.get("schema_version") or "1.1",
+            "source_type": previous_content.get("source_type") or "xhs_crawl_export",
+        },
+        metadata_json=summary,
+        created_by=created_by,
+    )
+    db.add(asset)
+    await db.flush()
+
+    import_run = AssetImportRun(
+        source_name=base.name,
+        source_uri=str(base),
+        source_hash=source_hash,
+        status="succeeded",
+        imported_assets=1,
+        summary_json=summary,
+        created_by=created_by,
+    )
+    db.add(import_run)
+    await db.flush()
+    return RealUserPoolImportResult(
+        asset=asset,
+        import_run=import_run,
+        source_hash=source_hash,
+        summary=summary,
+        items=merged_items,
     )
 
 
@@ -845,6 +931,10 @@ def select_real_user_examples(
     route_prompt_exclude_terms: list[str] | None = None,
     detail_prompt_include_terms: list[str] | None = None,
     detail_prompt_exclude_terms: list[str] | None = None,
+    layer_source_keyword_include: dict[str, list[str]] | None = None,
+    layer_source_keyword_exclude: dict[str, list[str]] | None = None,
+    prompt_family_include: list[str] | None = None,
+    prompt_family_exclude: list[str] | None = None,
     prompt_family_stack_avoid: list[str] | None = None,
     used_dedupe_hashes: set[str] | None = None,
     used_route_families: dict[str, int] | set[str] | None = None,
@@ -900,6 +990,18 @@ def select_real_user_examples(
             detail_prompt_exclude_terms={
                 _normalize_for_match(item)
                 for item in detail_prompt_exclude_terms or []
+                if str(item).strip()
+            },
+            layer_source_keyword_include=_normalized_layer_term_config(layer_source_keyword_include),
+            layer_source_keyword_exclude=_normalized_layer_term_config(layer_source_keyword_exclude),
+            prompt_family_include={
+                str(item).strip()
+                for item in prompt_family_include or []
+                if str(item).strip()
+            },
+            prompt_family_exclude={
+                str(item).strip()
+                for item in prompt_family_exclude or []
                 if str(item).strip()
             },
             prompt_family_stack_avoid={
@@ -966,6 +1068,10 @@ def _select_layered_real_user_examples(
     route_prompt_exclude_terms: set[str],
     detail_prompt_include_terms: set[str],
     detail_prompt_exclude_terms: set[str],
+    layer_source_keyword_include: dict[str, set[str]],
+    layer_source_keyword_exclude: dict[str, set[str]],
+    prompt_family_include: set[str],
+    prompt_family_exclude: set[str],
     prompt_family_stack_avoid: set[str],
     original_exclude_terms: list[str],
     used_dedupe_hashes: set[str],
@@ -981,6 +1087,8 @@ def _select_layered_real_user_examples(
             count=title_shape_count,
             exclude_risk_tags=exclude_risk_tags,
             exclude_terms=exclude_terms,
+            source_keyword_include=layer_source_keyword_include.get(REAL_USER_TITLE_SHAPE_LAYER, set()),
+            source_keyword_exclude=layer_source_keyword_exclude.get(REAL_USER_TITLE_SHAPE_LAYER, set()),
             used_dedupe_hashes=used_dedupe_hashes,
             used_route_families=set(),
             already_selected_hashes=_selected_layer_dedupe_hashes(selected),
@@ -998,6 +1106,8 @@ def _select_layered_real_user_examples(
             route_family_exclude=route_family_exclude,
             route_prompt_include_terms=route_prompt_include_terms,
             route_prompt_exclude_terms=route_prompt_exclude_terms,
+            source_keyword_include=layer_source_keyword_include.get(REAL_USER_ROUTE_LAYER, set()),
+            source_keyword_exclude=layer_source_keyword_exclude.get(REAL_USER_ROUTE_LAYER, set()),
             used_dedupe_hashes=used_dedupe_hashes,
             used_route_families=used_route_families,
             already_selected_hashes=_selected_layer_dedupe_hashes(selected),
@@ -1015,6 +1125,8 @@ def _select_layered_real_user_examples(
             detail_family_exclude=detail_family_exclude,
             detail_prompt_include_terms=detail_prompt_include_terms,
             detail_prompt_exclude_terms=detail_prompt_exclude_terms,
+            source_keyword_include=layer_source_keyword_include.get(REAL_USER_DETAIL_LAYER, set()),
+            source_keyword_exclude=layer_source_keyword_exclude.get(REAL_USER_DETAIL_LAYER, set()),
             used_dedupe_hashes=used_dedupe_hashes,
             used_route_families=set(),
             already_selected_hashes=_selected_layer_dedupe_hashes(selected),
@@ -1028,10 +1140,14 @@ def _select_layered_real_user_examples(
         count=opening_total,
         exclude_risk_tags=exclude_risk_tags,
         exclude_terms=exclude_terms,
+        source_keyword_include=layer_source_keyword_include.get(REAL_USER_OPENING_LAYER, set()),
+        source_keyword_exclude=layer_source_keyword_exclude.get(REAL_USER_OPENING_LAYER, set()),
         used_dedupe_hashes=used_dedupe_hashes,
         used_route_families=set(),
         already_selected_hashes=_selected_layer_dedupe_hashes(selected),
-        prompt_family_exclude=_selected_prompt_families(selected, prompt_family_stack_avoid),
+        prompt_family_include=prompt_family_include,
+        prompt_family_exclude=prompt_family_exclude,
+        prompt_family_soft_exclude=_selected_prompt_families(selected, prompt_family_stack_avoid),
     )
     selected.extend(selected_openings)
     selected.extend(
@@ -1042,10 +1158,14 @@ def _select_layered_real_user_examples(
             count=texture_count,
             exclude_risk_tags=exclude_risk_tags,
             exclude_terms=exclude_terms,
+            source_keyword_include=layer_source_keyword_include.get(REAL_USER_TEXTURE_LAYER, set()),
+            source_keyword_exclude=layer_source_keyword_exclude.get(REAL_USER_TEXTURE_LAYER, set()),
             used_dedupe_hashes=used_dedupe_hashes,
             used_route_families=set(),
             already_selected_hashes=_selected_layer_dedupe_hashes(selected),
-            prompt_family_exclude=_selected_prompt_families(selected, prompt_family_stack_avoid),
+            prompt_family_include=prompt_family_include,
+            prompt_family_exclude=prompt_family_exclude,
+            prompt_family_soft_exclude=_selected_prompt_families(selected, prompt_family_stack_avoid),
         )
     )
     selected.extend(
@@ -1056,10 +1176,14 @@ def _select_layered_real_user_examples(
             count=ending_count + max(0, opening_or_ending_count - len(selected_openings)),
             exclude_risk_tags=exclude_risk_tags,
             exclude_terms=exclude_terms,
+            source_keyword_include=layer_source_keyword_include.get(REAL_USER_ENDING_LAYER, set()),
+            source_keyword_exclude=layer_source_keyword_exclude.get(REAL_USER_ENDING_LAYER, set()),
             used_dedupe_hashes=used_dedupe_hashes,
             used_route_families=set(),
             already_selected_hashes=_selected_layer_dedupe_hashes(selected),
-            prompt_family_exclude=_selected_prompt_families(selected, prompt_family_stack_avoid),
+            prompt_family_include=prompt_family_include,
+            prompt_family_exclude=prompt_family_exclude,
+            prompt_family_soft_exclude=_selected_prompt_families(selected, prompt_family_stack_avoid),
         )
     )
     if comment_count > 0:
@@ -1114,6 +1238,22 @@ def _select_layered_real_user_examples(
         meta["detail_prompt_include_terms"] = sorted(detail_prompt_include_terms)
     if detail_prompt_exclude_terms:
         meta["detail_prompt_exclude_terms"] = sorted(detail_prompt_exclude_terms)
+    if layer_source_keyword_include:
+        meta["layer_source_keyword_include"] = {
+            layer: sorted(terms)
+            for layer, terms in sorted(layer_source_keyword_include.items())
+            if terms
+        }
+    if layer_source_keyword_exclude:
+        meta["layer_source_keyword_exclude"] = {
+            layer: sorted(terms)
+            for layer, terms in sorted(layer_source_keyword_exclude.items())
+            if terms
+        }
+    if prompt_family_include:
+        meta["prompt_family_include"] = sorted(prompt_family_include)
+    if prompt_family_exclude:
+        meta["prompt_family_exclude"] = sorted(prompt_family_exclude)
     if prompt_family_stack_avoid:
         meta["prompt_family_stack_avoid"] = sorted(prompt_family_stack_avoid)
     meta["fallback_reused_dedupe_hashes"] = [
@@ -1229,7 +1369,11 @@ def _select_by_layer(
     route_prompt_exclude_terms: set[str] | None = None,
     detail_prompt_include_terms: set[str] | None = None,
     detail_prompt_exclude_terms: set[str] | None = None,
+    source_keyword_include: set[str] | None = None,
+    source_keyword_exclude: set[str] | None = None,
+    prompt_family_include: set[str] | None = None,
     prompt_family_exclude: set[str] | None = None,
+    prompt_family_soft_exclude: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     if count <= 0:
         return []
@@ -1246,6 +1390,12 @@ def _select_by_layer(
                 exclude_risk_tags=exclude_risk_tags,
                 exclude_terms=exclude_terms,
             )
+        ):
+            continue
+        if not _source_keyword_allowed(
+            item,
+            include_terms=source_keyword_include or set(),
+            exclude_terms=source_keyword_exclude or set(),
         ):
             continue
         view = _layer_prompt_view(item, layer, exclude_terms=exclude_terms)
@@ -1274,6 +1424,11 @@ def _select_by_layer(
                 continue
             if detail_prompt_exclude_terms and any(term and term in prompt_text for term in detail_prompt_exclude_terms):
                 continue
+        prompt_families = _prompt_families(view)
+        if prompt_family_include and not (prompt_families & prompt_family_include):
+            continue
+        if prompt_family_exclude and (prompt_families & prompt_family_exclude):
+            continue
         selection_hash = _prompt_dedupe_hash(view, layer)
         if _layer_dedupe_hashes(view, layer) & already_selected_hashes:
             continue
@@ -1358,9 +1513,9 @@ def _select_by_layer(
             ]
             if len(route_family_candidates) >= count:
                 candidate_pool = route_family_candidates
-    if prompt_family_exclude:
+    if prompt_family_soft_exclude:
         prompt_family_candidates = [
-            item for item in candidate_pool if not (_prompt_families(item) & prompt_family_exclude)
+            item for item in candidate_pool if not (_prompt_families(item) & prompt_family_soft_exclude)
         ]
         if len(prompt_family_candidates) >= count:
             candidate_pool = prompt_family_candidates
@@ -1377,6 +1532,44 @@ def _select_by_layer(
         _prompt_item(item, exclude_terms=exclude_terms, forced_layer=layer)
         for item in sorted(SystemRandom().sample(top, count), key=lambda item: _prompt_dedupe_hash(item, layer))
     ]
+
+
+def _normalized_layer_term_config(config: dict[str, list[str]] | None) -> dict[str, set[str]]:
+    if not isinstance(config, dict):
+        return {}
+    normalized: dict[str, set[str]] = {}
+    for raw_layer, raw_terms in config.items():
+        layer = str(raw_layer or "").strip()
+        if not layer:
+            continue
+        if isinstance(raw_terms, str):
+            terms = [raw_terms]
+        else:
+            terms = raw_terms if isinstance(raw_terms, list) else []
+        normalized_terms = {
+            _normalize_for_match(term)
+            for term in terms
+            if str(term).strip()
+        }
+        if normalized_terms:
+            normalized[layer] = normalized_terms
+    return normalized
+
+
+def _source_keyword_allowed(
+    item: dict[str, Any],
+    *,
+    include_terms: set[str],
+    exclude_terms: set[str],
+) -> bool:
+    if not include_terms and not exclude_terms:
+        return True
+    source_keyword = _normalize_for_match(str(item.get("source_keyword") or ""))
+    if include_terms and not any(term and term in source_keyword for term in include_terms):
+        return False
+    if exclude_terms and any(term and term in source_keyword for term in exclude_terms):
+        return False
+    return True
 
 
 def _ranked_layer_pool(items: list[dict[str, Any]], *, query_tag_set: set[str], layer: str) -> list[dict[str, Any]]:
@@ -1418,6 +1611,45 @@ def _prompt_families(item: dict[str, Any]) -> set[str]:
     if any(
         term in text
         for term in (
+            "说白了",
+            "普通妈妈",
+            "普通记录",
+            "随手记",
+            "随便记",
+            "写得碎",
+            "有点碎",
+            "不拔高",
+            "不想讲太满",
+            "不讲太满",
+            "没有标准答案",
+            "先记下来",
+            "边看边调",
+            "不是想讲多专业",
+        )
+    ):
+        families.add("pure_voice")
+    if any(
+        term in text
+        for term in (
+            "当妈以后",
+            "当妈后",
+            "小孩每天",
+            "小孩变化",
+            "小世界",
+            "很多细节",
+            "生活细节",
+            "日常安排",
+            "日常里",
+            "长期变化",
+            "小动作",
+            "跟着调整",
+            "跟着变",
+        )
+    ):
+        families.add("mom_observation")
+    if any(
+        term in text
+        for term in (
             "选奶",
             "挑奶",
             "换奶",
@@ -1425,14 +1657,52 @@ def _prompt_families(item: dict[str, Any]) -> set[str]:
             "做功课",
             "备选",
             "纠结",
+            "看牌子",
             "配方",
             "成分",
+            "攻略",
+            "下单",
             "下手",
             "入手",
             "看了好几",
         )
     ):
         families.add("selection_process")
+        families.add("product_decision")
+    elif any(term in text for term in ("选", "挑", "换")) and any(term in text for term in ("奶粉", "儿童奶粉", "旺玥")):
+        families.add("product_decision")
+    if any(term in text for term in ("贵", "肉疼", "价格", "不便宜", "吞金兽")):
+        families.add("price_complaint")
+    if any(
+        term in text
+        for term in (
+            "喝着",
+            "喝完",
+            "冲",
+            "泡",
+            "奶瓶",
+            "杯",
+            "早晚那杯",
+            "常备",
+            "一罐",
+        )
+    ):
+        families.add("milk_action")
+    if any(
+        term in text
+        for term in (
+            "有用",
+            "效果",
+            "帮了忙",
+            "跟上",
+            "顾到",
+            "兜底",
+            "省心",
+            "放心",
+            "踏实",
+        )
+    ):
+        families.add("result_claim")
     if "保护力" in text and any(term in text for term in ("眼脑", "dha", "燕窝酸", "营养")):
         families.add("sellpoint_pairing")
     return families
@@ -1779,6 +2049,9 @@ def _safe_prompt_text(item: dict[str, Any], *, exclude_terms: list[str]) -> str:
 
 
 def _title_shape_prompt_text(item: dict[str, Any], *, exclude_terms: list[str]) -> tuple[str, str]:
+    explicit = _curated_prompt_text(item, exclude_terms=exclude_terms, target_layer=REAL_USER_TITLE_SHAPE_LAYER)
+    if explicit:
+        return explicit, str(item.get("layer_reason") or "title_shape_curated:prompt_text")
     title = _strip_prompt_noise(str(item.get("title") or ""))
     reason = _title_shape_block_reason(title, exclude_terms=exclude_terms)
     if not reason:
@@ -2161,6 +2434,51 @@ def _strip_prompt_noise(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _read_export_pool(export_dir: str | Path) -> tuple[Path, str, list[dict[str, Any]], dict[str, Any]]:
+    base = Path(export_dir).expanduser()
+    if not base.exists() or not base.is_dir():
+        raise ValueError(f"export_dir not found: {base}")
+    notes_path = base / "xhs_notes_full.csv"
+    comments_path = base / "xhs_comments_full.csv"
+    if not notes_path.exists() or not comments_path.exists():
+        raise ValueError("export_dir must contain xhs_notes_full.csv and xhs_comments_full.csv")
+
+    source_hash = _source_hash(notes_path, comments_path)
+    note_items, note_summary = _read_note_items(notes_path)
+    comment_items, comment_summary = _read_comment_items(comments_path)
+    items = note_items + comment_items
+    return (
+        base,
+        source_hash,
+        items,
+        {
+            "source_dir": str(base),
+            "source_hash": source_hash,
+            "total_items": len(items),
+            "note": note_summary,
+            "comment": comment_summary,
+            **_pool_items_summary(items),
+        },
+    )
+
+
+def _pool_items_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "tag_counts": dict(Counter(tag for item in items for tag in item.get("tags") or [])),
+        "risk_tag_counts": dict(Counter(tag for item in items for tag in item.get("risk_tags") or [])),
+        "layer_counts": dict(Counter(str(item.get("example_layer") or "") for item in items)),
+        "prompt_layer_available_counts": _prompt_layer_available_counts(items),
+        "title_shape_filter_reason_top": _title_shape_filter_reason_top(items),
+    }
+
+
+def _item_dedupe_hash(item: dict[str, Any]) -> str:
+    dedupe_hash = str(item.get("dedupe_hash") or "").strip()
+    if dedupe_hash:
+        return dedupe_hash
+    return _short_hash(item.get("source_type"), item.get("title"), item.get("text"))
+
+
 def _read_note_items(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     items: list[dict[str, Any]] = []
     seen_note_ids: set[str] = set()
@@ -2356,6 +2674,21 @@ async def _next_asset_version(db: AsyncSession, asset_key: str) -> int:
     )
     current = result.scalar_one_or_none()
     return int(current or 0) + 1
+
+
+async def _active_real_user_pool_asset(db: AsyncSession, asset_key: str) -> AssetRegistry | None:
+    result = await db.execute(
+        select(AssetRegistry)
+        .where(
+            AssetRegistry.asset_type == REAL_USER_EXAMPLE_POOL_ASSET_TYPE,
+            AssetRegistry.asset_key == asset_key,
+            AssetRegistry.asset_stage == "production",
+            AssetRegistry.status == "active",
+        )
+        .order_by(AssetRegistry.version_no.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 def dump_import_result(result: RealUserPoolImportResult) -> str:

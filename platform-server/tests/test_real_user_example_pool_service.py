@@ -3,11 +3,14 @@
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models.base import Base
 from app.models.maga_assets import AssetImportRun, AssetRegistry
 from app.services.real_user_example_pool_service import (
+    REAL_USER_EXAMPLE_POOL_ASSET_TYPE,
+    append_real_user_example_pool_from_export_dir,
     infer_real_user_tags,
     infer_real_user_example_layer,
     import_real_user_example_pool_from_export_dir,
@@ -74,6 +77,74 @@ async def test_import_real_user_example_pool_dry_run_filters_and_removes_persona
     assert all("user_name" not in item and "author_name" not in item for item in result.items)
     assert all("user_id" not in item and "author_id" not in item for item in result.items)
     assert {item["source_type"] for item in result.items} == {"note", "comment"}
+
+
+@pytest.mark.asyncio
+async def test_append_real_user_example_pool_preserves_existing_and_adds_new_items(tmp_path):
+    export_dir = tmp_path / "export"
+    _write_export_dir(export_dir)
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[AssetRegistry.__table__, AssetImportRun.__table__],
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        incoming = await import_real_user_example_pool_from_export_dir(session, export_dir, dry_run=True)
+        existing_item = incoming.items[0]
+        old_only_item = {
+            "source_type": "note",
+            "text": "老资产里已有的一条真人表达",
+            "title": "老资产",
+            "tags": ["选奶"],
+            "risk_tags": [],
+            "quality_score": 10,
+            "dedupe_hash": "old-only",
+        }
+        session.add(
+            AssetRegistry(
+                asset_type=REAL_USER_EXAMPLE_POOL_ASSET_TYPE,
+                asset_key="test_pool",
+                display_name="test",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={"items": [existing_item, old_only_item], "schema_version": "1.1"},
+                metadata_json={},
+                created_by="test",
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        result = await append_real_user_example_pool_from_export_dir(session, export_dir, asset_key="test_pool")
+        await session.commit()
+
+    assert result.summary["existing_item_count"] == 2
+    assert result.summary["incoming_item_count"] == 2
+    assert result.summary["appended_item_count"] == 1
+    assert result.summary["duplicate_item_count"] == 1
+    assert result.summary["total_items"] == 3
+
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(AssetRegistry).where(
+                    AssetRegistry.asset_type == REAL_USER_EXAMPLE_POOL_ASSET_TYPE,
+                    AssetRegistry.asset_key == "test_pool",
+                )
+            )
+        ).scalars().all()
+
+    assert {row.version_no: row.status for row in rows} == {1: "archived", 2: "active"}
+    active = next(row for row in rows if row.status == "active")
+    assert [item["dedupe_hash"] for item in active.content_json["items"]] == [
+        existing_item["dedupe_hash"],
+        "old-only",
+        incoming.items[1]["dedupe_hash"],
+    ]
 
 
 def test_select_real_user_examples_uses_note_and_comment_counts():
@@ -312,6 +383,64 @@ def test_select_real_user_examples_layers_route_detail_texture_and_ending():
     assert meta["layer_counts"] == {"route": 1, "detail": 1, "texture": 1, "ending": 1}
 
 
+def test_select_real_user_examples_can_filter_source_keyword_by_layer():
+    selected, meta = select_real_user_examples(
+        [
+            {
+                "source_type": "note",
+                "text": "当妈后才懂这种日常。",
+                "title": "当妈后才懂",
+                "source_keyword": "general_title_pool",
+                "tags": ["营养"],
+                "risk_tags": [],
+                "quality_score": 20,
+                "dedupe_hash": "title-1",
+                "example_layer": "title_shape",
+            },
+            {
+                "source_type": "note",
+                "text": "说白了就是普通妈妈的碎碎念。",
+                "title": "轻业务",
+                "source_keyword": "row3_light_business_texture_curated",
+                "tags": ["营养"],
+                "risk_tags": [],
+                "quality_score": 20,
+                "dedupe_hash": "texture-curated",
+                "example_layer": "texture",
+                "prompt_text": "说白了就是普通妈妈的碎碎念。",
+                "prompt_text_source": "manual_curation_from_real_daily_texture",
+                "layer_reason": "row3_light_business_texture:low_business_semantics",
+            },
+            {
+                "source_type": "note",
+                "text": "除了贵点没毛病。",
+                "title": "旧纹理",
+                "source_keyword": "wangyue_old_texture_pool",
+                "tags": ["营养"],
+                "risk_tags": [],
+                "quality_score": 99,
+                "dedupe_hash": "texture-old",
+                "example_layer": "texture",
+            },
+        ],
+        query_text="注意力不集中，眼脑营养观察",
+        note_count=2,
+        comment_count=0,
+        title_shape_count=1,
+        texture_count=1,
+        layer_source_keyword_include={
+            "texture": ["row3_light_business_texture_curated"],
+        },
+    )
+
+    assert [item["example_layer"] for item in selected] == ["title_shape", "texture"]
+    assert selected[0]["source_dedupe_hash"] == "title-1"
+    assert selected[1]["dedupe_hash"] == "texture-curated"
+    assert meta["layer_source_keyword_include"] == {
+        "texture": ["row3_light_business_texture_curated"],
+    }
+
+
 def test_select_real_user_examples_layers_title_shape_and_opening_texture():
     selected, meta = select_real_user_examples(
         [
@@ -513,6 +642,39 @@ def test_title_shape_rejects_safe_title_when_source_context_is_blocked():
 
     assert selected == []
     assert meta["selected"]["title_shape"] == 0
+
+
+def test_title_shape_uses_curated_prompt_text_even_when_raw_title_is_blocked():
+    selected, meta = select_real_user_examples(
+        [
+            {
+                "source_type": "note",
+                "text": "结果前置型标题：把妈妈关心的状态放前面，但不要写成保证句。",
+                "prompt_text": "结果前置型标题：把妈妈关心的状态放前面，但不要写成保证句。",
+                "prompt_text_source": "curated_real_ugc_wangyue_title_reference_v1",
+                "title": "a2联名礼盒挖到宝",
+                "raw_title": "a2联名礼盒挖到宝",
+                "source_keyword": "儿童奶粉 少请假",
+                "tags": ["标题形态", "结果前置型"],
+                "risk_tags": [],
+                "quality_score": 20,
+                "dedupe_hash": "curated-title-shape",
+                "example_layer": "title_shape",
+                "layer_reason": "curated_real_ugc_title_reference:shape_only",
+            }
+        ],
+        query_text="孩子容易中招，选奶看保护力",
+        note_count=1,
+        comment_count=0,
+        title_shape_count=1,
+        exclude_terms=["a2", "联名"],
+    )
+
+    assert selected[0]["example_layer"] == "title_shape"
+    assert selected[0]["prompt_text"] == "结果前置型标题：把妈妈关心的状态放前面，但不要写成保证句。"
+    assert selected[0]["title"] == ""
+    assert meta["selected"]["title_shape"] == 1
+    assert meta["prompt_text_by_layer"]["title_shape"] == ["结果前置型标题：把妈妈关心的状态放前面，但不要写成保证句。"]
 
 
 def test_title_shape_keeps_clean_title_when_source_context_is_clean():
@@ -1817,6 +1979,91 @@ def test_prompt_family_stack_avoid_prefers_non_sellpoint_pairing_texture():
     assert [item["dedupe_hash"] for item in selected] == ["route-pairing", "texture-activity"]
     assert meta["prompt_family_stack_avoid"] == ["sellpoint_pairing"]
     assert meta["prompt_family_counts"]["sellpoint_pairing"] == 1
+
+
+def test_prompt_family_include_exclude_filters_texture_without_blocking_title_shape():
+    selected, meta = select_real_user_examples(
+        [
+            {
+                "source_type": "note",
+                "text": "带娃日常",
+                "prompt_text": "带娃日常",
+                "title": "带娃日常",
+                "tags": ["母婴奶粉"],
+                "risk_tags": [],
+                "quality_score": 10,
+                "dedupe_hash": "title-plain",
+                "example_layer": "title_shape",
+                "layer_reason": "curated_title_shape",
+            },
+            {
+                "source_type": "note",
+                "text": "写得可能有点碎，但真实带娃本来就挺碎。",
+                "prompt_text": "写得可能有点碎，但真实带娃本来就挺碎。",
+                "title": "",
+                "tags": ["母婴奶粉"],
+                "risk_tags": [],
+                "quality_score": 30,
+                "dedupe_hash": "texture-pure",
+                "example_layer": "texture",
+                "layer_reason": "curated_texture",
+            },
+            {
+                "source_type": "note",
+                "text": "当妈以后才发现，小孩每天也有自己的小世界。",
+                "prompt_text": "当妈以后才发现，小孩每天也有自己的小世界。",
+                "title": "",
+                "tags": ["母婴奶粉"],
+                "risk_tags": [],
+                "quality_score": 25,
+                "dedupe_hash": "texture-observation",
+                "example_layer": "texture",
+                "layer_reason": "curated_texture",
+            },
+            {
+                "source_type": "note",
+                "text": "除了贵没毛病，选奶粉这事我还是纠结了很久。",
+                "prompt_text": "除了贵没毛病，选奶粉这事我还是纠结了很久。",
+                "title": "",
+                "tags": ["选奶", "价格"],
+                "risk_tags": [],
+                "quality_score": 40,
+                "dedupe_hash": "texture-product",
+                "example_layer": "texture",
+                "layer_reason": "curated_texture",
+            },
+            {
+                "source_type": "note",
+                "text": "睡前那杯喝完以后，我心里踏实不少。",
+                "prompt_text": "睡前那杯喝完以后，我心里踏实不少。",
+                "title": "",
+                "tags": ["母婴奶粉"],
+                "risk_tags": [],
+                "quality_score": 35,
+                "dedupe_hash": "texture-milk",
+                "example_layer": "texture",
+                "layer_reason": "curated_texture",
+            },
+        ],
+        query_text="注意力不集中，眼脑营养",
+        note_count=3,
+        comment_count=0,
+        title_shape_count=1,
+        texture_count=2,
+        prompt_family_include=["pure_voice", "mom_observation"],
+        prompt_family_exclude=["product_decision", "price_complaint", "milk_action", "result_claim"],
+    )
+
+    assert [item["example_layer"] for item in selected] == ["title_shape", "texture", "texture"]
+    assert [item["dedupe_hash"] for item in selected[1:]] == ["texture-pure", "texture-observation"]
+    assert meta["prompt_family_include"] == ["mom_observation", "pure_voice"]
+    assert meta["prompt_family_exclude"] == [
+        "milk_action",
+        "price_complaint",
+        "product_decision",
+        "result_claim",
+    ]
+    assert meta["prompt_family_counts"] == {"mom_observation": 1, "pure_voice": 1}
 
 
 def test_texture_layer_can_use_short_snippet_from_route_note():
