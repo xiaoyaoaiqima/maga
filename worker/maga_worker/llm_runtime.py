@@ -6,7 +6,7 @@ from typing import Any
 
 from openai import OpenAI
 
-DEFAULT_CONTENT_MODEL = "deepseek-v3.2"
+DEFAULT_CONTENT_MODEL = "deepseek-v4-flash"
 DEFAULT_BASE_URL = "https://aihubmix.com/v1"
 
 
@@ -44,7 +44,7 @@ def runtime_api_key() -> str | None:
 
 
 def default_content_model() -> str:
-    return normalize_content_model(os.environ.get("MAGA_WORKER_CONTENT_MODEL"))
+    return normalize_content_model(os.environ.get("DEEPSEEK_MODEL"))
 
 
 def openai_client_kwargs(

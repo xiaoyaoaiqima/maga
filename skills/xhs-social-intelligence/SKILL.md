@@ -43,7 +43,7 @@ LLM 情感脚本需要 OpenAI-compatible API：
 ```bash
 LLM_API_KEY=...
 LLM_API_BASE=https://.../v1
-LLM_MODEL=deepseek-v4-flash
+DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
 不要在回复里泄露 token。网络或模型调用失败时，保留失败摘要、输出文件和 resume 命令。

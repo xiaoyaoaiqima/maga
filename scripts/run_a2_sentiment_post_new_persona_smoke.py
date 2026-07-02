@@ -285,12 +285,7 @@ def load_dotenv(path: Path) -> None:
 
 def bridge_worker_env_to_direct_llm_env() -> None:
     if not os.getenv("MAGA_DIRECT_CONTENT_MODEL"):
-        os.environ["MAGA_DIRECT_CONTENT_MODEL"] = (
-            os.getenv("MAGA_WORKER_CONTENT_MODEL")
-            or os.getenv("OPENAI_MODEL")
-            or os.getenv("DEEPSEEK_MODEL")
-            or "deepseek-v3.2"
-        )
+        os.environ["MAGA_DIRECT_CONTENT_MODEL"] = os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash"
     if not os.getenv("MAGA_DIRECT_MODEL_BASE_URL") and os.getenv("MAGA_WORKER_MODEL_BASE_URL"):
         os.environ["MAGA_DIRECT_MODEL_BASE_URL"] = os.getenv("MAGA_WORKER_MODEL_BASE_URL", "")
     if not os.getenv("MAGA_DIRECT_MODEL_API_KEY") and os.getenv("MAGA_WORKER_MODEL_API_KEY"):
@@ -300,7 +295,7 @@ def bridge_worker_env_to_direct_llm_env() -> None:
 def default_model_config() -> dict[str, Any]:
     return {
         "provider_code": "aihubmix",
-        "model_code": os.getenv("MAGA_DIRECT_CONTENT_MODEL") or "deepseek-v3.2",
+        "model_code": os.getenv("MAGA_DIRECT_CONTENT_MODEL") or os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash",
         "temperature": 0.86,
         "max_tokens": 900,
         "timeout": 120,
@@ -310,7 +305,12 @@ def default_model_config() -> dict[str, Any]:
 
 async def direct_content_generate(input_snapshot: dict[str, Any]) -> dict[str, Any]:
     model_config = dict(input_snapshot.get("model_config") or {})
-    model = str(model_config.get("model_code") or os.getenv("MAGA_DIRECT_CONTENT_MODEL") or "deepseek-v3.2")
+    model = str(
+        model_config.get("model_code")
+        or os.getenv("MAGA_DIRECT_CONTENT_MODEL")
+        or os.getenv("DEEPSEEK_MODEL")
+        or "deepseek-v4-flash"
+    )
     raw = await asyncio.to_thread(
         call_openai_compatible_model,
         model=model,

@@ -98,7 +98,7 @@ def build_llm_config(
     Build a unified LLM config using request overrides and environment defaults.
     """
     # 生成链路统一走 DeepSeek 默认模型，避免历史环境变量覆盖到 GPT 路由。
-    model = normalize_default_model(model_code or os.getenv("LLM_MODEL") or os.getenv("DEEPSEEK_MODEL"))
+    model = normalize_default_model(model_code or os.getenv("DEEPSEEK_MODEL"))
     temperature = model_config.get("temperature", DEFAULT_TEMPERATURE)
     max_tokens = model_config.get("max_tokens", DEFAULT_MAX_TOKENS)
     provider = provider_env or os.getenv("LLM_PROVIDER", "deepseek")

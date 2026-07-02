@@ -1,5 +1,6 @@
 import time
 import logging
+import os
 from typing import Dict, Any
 
 from app.schemas.content_generation import TaskGenerateRequest, TaskGenerateResponse
@@ -199,7 +200,7 @@ class ContentGenerationService:
             
             # Select provider
             from app.core.config import settings as app_settings
-            model_code = request.model_code or getattr(app_settings, "LLM_MODEL", "deepseek-v4-flash")
+            model_code = request.model_code or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
             
             # 自动路由策略：
             # 1. 如果请求指定了 model_code，则 provider 设为 None，交由 SDK 根据路由表自动选择（推荐）

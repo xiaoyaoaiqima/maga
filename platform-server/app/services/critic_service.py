@@ -323,7 +323,7 @@ class CriticService:
                     }
                 }
                 如果 prompt 为空，使用默认 prompt
-                如果 model_code 为空，使用环境变量 LLM_MODEL 或默认值 "deepseek-v4-flash"
+                如果 model_code 为空，使用环境变量 DEEPSEEK_MODEL 或默认值 "deepseek-v4-flash"
                 如果 model_config 为空，使用默认值 temperature=0.7, max_tokens=1500
             
         Returns:

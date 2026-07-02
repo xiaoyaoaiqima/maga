@@ -6,11 +6,17 @@ from maga_worker import llm_runtime
 def test_llm_runtime_prefers_maga_worker_provider_env(monkeypatch):
     monkeypatch.setenv("MAGA_WORKER_MODEL_BASE_URL", "https://provider.example/v1")
     monkeypatch.setenv("MAGA_WORKER_MODEL_API_KEY", "runtime-key")
-    monkeypatch.setenv("MAGA_WORKER_CONTENT_MODEL", "runtime-content")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 
-    assert llm_runtime.default_content_model() == "runtime-content"
+    assert llm_runtime.default_content_model() == "deepseek-v4-flash"
     assert llm_runtime.runtime_api_key() == "runtime-key"
     assert llm_runtime.runtime_base_url() == "https://provider.example/v1"
+
+
+def test_llm_runtime_uses_deepseek_model_as_default_content_model(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+
+    assert llm_runtime.default_content_model() == "deepseek-v4-flash"
 
 
 def test_llm_runtime_uses_openai_compatible_fallbacks(monkeypatch):
