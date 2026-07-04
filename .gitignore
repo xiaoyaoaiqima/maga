@@ -44,6 +44,7 @@ platform-server/scripts/export_v*_batch*_delivery.py
 platform-server/scripts/rewrite_v*_wangyue_*.py
 platform-server/scripts/recover_v*_batch*_postprocess.py
 platform-server/scripts/write_v*_live_preview.py
+platform-server/scripts/run_v*_wangyue_*_batch.py
 platform-server/scripts/update_royal_friso_*.py
 platform-server/scripts/import_royal_friso_selected_ugc_pool.py
 scripts/a2_*.py
