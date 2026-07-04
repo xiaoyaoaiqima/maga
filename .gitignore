@@ -56,6 +56,13 @@ scripts/refine_a2_*.py
 scripts/run_a2_*.py
 scripts/strict_clean_a2_*.py
 
+# Local one-off content-generation review docs.
+docs/A2_*.md
+docs/A2_*.json
+docs/a2*.md
+docs/a2*.json
+docs/皇家美素佳儿*.md
+
 # 需要版本化的 CSV 配置/源语料；批量生成和原始数据继续忽略。
 !platform-console/apps/raap-admin/data/关键词语料 - 人设.csv
 !platform-console/apps/raap-admin/data/关键词语料 - 卖点.csv
