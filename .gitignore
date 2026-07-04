@@ -38,6 +38,24 @@ worker/profiles/*/experts/*/lessons/
 批量生成/*
 *.csv
 
+# Local one-off content-generation iteration scripts.
+platform-server/scripts/build_v*_wangyue_*.py
+platform-server/scripts/export_v*_batch*_delivery.py
+platform-server/scripts/rewrite_v*_wangyue_*.py
+platform-server/scripts/recover_v*_batch*_postprocess.py
+platform-server/scripts/write_v*_live_preview.py
+platform-server/scripts/update_royal_friso_*.py
+platform-server/scripts/import_royal_friso_selected_ugc_pool.py
+scripts/a2_*.py
+scripts/append_a2_*.py
+scripts/audit_a2_*.py
+scripts/build_a2_*.py
+scripts/export_a2_*.py
+scripts/generate_a2_*.py
+scripts/refine_a2_*.py
+scripts/run_a2_*.py
+scripts/strict_clean_a2_*.py
+
 # 需要版本化的 CSV 配置/源语料；批量生成和原始数据继续忽略。
 !platform-console/apps/raap-admin/data/关键词语料 - 人设.csv
 !platform-console/apps/raap-admin/data/关键词语料 - 卖点.csv
