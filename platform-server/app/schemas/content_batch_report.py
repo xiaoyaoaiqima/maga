@@ -82,6 +82,7 @@ class ContentBatchReportSummary(BaseSchema):
     content_path_skeleton_stats: dict[str, Any] = Field(default_factory=dict)
     real_user_pool_stats: dict[str, Any] = Field(default_factory=dict)
     mouth_phrase_budget_stats: dict[str, Any] = Field(default_factory=dict)
+    business_usability_stats: dict[str, Any] = Field(default_factory=dict)
 
 
 class ContentBatchReportItem(BaseSchema):
@@ -97,6 +98,8 @@ class ContentBatchReportItem(BaseSchema):
     hard_pass: bool | None = None
     rewrite_required: bool | None = None
     rewrite_reason: str | None = None
+    business_usability_tier: str | None = None
+    business_usability_reason: str | None = None
     rewrite_rounds: int | None = None
     suggestion_count: int = 0
     replacement_count: int = 0
@@ -178,7 +181,10 @@ class ContentBatchStartRequest(BaseSchema):
         default_factory=ContentBatchModelConfig,
         alias="model_config",
     )
-    model_config_rotation: list[ContentBatchModelConfigRotationItem] = Field(default_factory=list, max_length=20)
+    model_config_rotation: list[ContentBatchModelConfigRotationItem] = Field(
+        default_factory=list,
+        max_length=20,
+    )
     created_by: str | None = Field(default=None, max_length=100)
 
 
@@ -195,6 +201,42 @@ class ContentCommentBatchStartRequest(BaseSchema):
     count: int | None = Field(default=None, ge=1, le=100)
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     created_by: str | None = Field(default=None, max_length=100)
+
+
+class ContentPPLRunStartRequest(BaseSchema):
+    profile_code: str = Field(..., max_length=128)
+    keyword_asset_key: str | None = Field(default=None, max_length=128)
+    quality_guard_profile_key: str | None = Field(default=None, max_length=128)
+    business_rule: str | None = Field(default=None, max_length=255)
+    rule_id: str | None = Field(default=None, max_length=128)
+    source_row_no: int | None = Field(default=None, ge=1)
+    draft_corpus: str | None = None
+    draft_rule_id: str | None = Field(default=None, max_length=128)
+    draft_source_row_no: int | None = Field(default=None, ge=1)
+    count: int | None = Field(default=None, ge=1, le=ARTICLE_BATCH_MAX_COUNT)
+    executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
+    generation_model_config: ContentBatchModelConfig = Field(
+        default_factory=ContentBatchModelConfig,
+        alias="model_config",
+    )
+    model_config_rotation: list[ContentBatchModelConfigRotationItem] = Field(default_factory=list, max_length=20)
+    created_by: str | None = Field(default=None, max_length=100)
+
+
+class ContentPPLProfileResponse(BaseSchema):
+    profile_code: str
+    label: str
+    content_type: Literal["article", "comment"]
+    asset_key: str
+    keyword_asset_key: str | None = None
+    quality_guard_profile_key: str | None = None
+    description: str = ""
+    default_count: int = 10
+    aliases: list[str] = Field(default_factory=list)
+
+
+class ContentPPLProfileListResponse(BaseSchema):
+    items: list[ContentPPLProfileResponse]
 
 
 class ContentGenerationPreflightRequest(BaseSchema):
@@ -235,6 +277,10 @@ class ContentBatchStartResponse(BaseSchema):
     batch_code: str | None = None
     execution: ContentBatchExecutionSummary
     report: ContentBatchReportResponse
+
+
+class ContentPPLRunStartResponse(ContentBatchStartResponse):
+    profile: ContentPPLProfileResponse
 
 
 class ContentBatchListItem(TimestampSchema):

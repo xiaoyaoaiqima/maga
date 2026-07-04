@@ -118,6 +118,27 @@ def test_comment_batch_start_request_allows_one_hundred_items():
         ContentCommentBatchStartRequest(count=101)
 
 
+@pytest.mark.asyncio
+async def test_ppl_profile_list_exposes_brand_generation_profiles(content_agent_workbench_client):
+    client, _session_factory = content_agent_workbench_client
+
+    response = await client.get("/api/v1/content-agent/ppl-runs/profiles")
+
+    assert response.status_code == 200
+    profiles = response.json()["data"]["items"]
+    profile_codes = {profile["profile_code"] for profile in profiles}
+    assert {
+        "royal_friso_ugc_article",
+        "wangyue_0705_article",
+        "a2_sentiment_post_article",
+        "a2_sentiment_comment",
+    }.issubset(profile_codes)
+    royal = next(profile for profile in profiles if profile["profile_code"] == "royal_friso_ugc_article")
+    assert royal["content_type"] == "article"
+    assert royal["asset_key"] == "royal_friso_ugc_post_rules_v1"
+    assert royal["keyword_asset_key"] == "royal_friso_ugc_post_keywords_v1"
+
+
 def test_comment_rule_selection_balances_angles_when_rule_pool_is_large():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
     rules = [
@@ -4118,6 +4139,161 @@ class _CommentRewriteSequenceOrchestrator:
             stage_calls=[object()],
             run=SimpleNamespace(status="succeeded"),
         )
+
+
+@pytest.mark.asyncio
+async def test_ppl_run_can_start_royal_article_profile(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    async with session_factory() as session:
+        session.add_all(
+            [
+                AssetRegistry(
+                    asset_type="article_business_rule_set",
+                    asset_key="royal_friso_ugc_post_rules_v1",
+                    display_name="皇家美素佳儿UGC规则",
+                    version_no=1,
+                    status="active",
+                    asset_stage="production",
+                    content_json={
+                        "rule_type": "business_rule",
+                        "activity_name": "皇家美素佳儿UGC活动",
+                        "default_generation_count": 10,
+                        "items": [
+                            {
+                                "rule_id": "business_rule_001",
+                                "business_rule": "日常口粮记录",
+                                "topic": "日常口粮记录",
+                                "corpus": "写皇家美素佳儿作为家里口粮自然出现。",
+                                "examples": ["家里这罐皇家美素佳儿先继续喝着。"],
+                                "source_row_no": 1,
+                            }
+                        ],
+                    },
+                    metadata_json={
+                        "rule_type": "business_rule",
+                        "keyword_asset_key": "royal_friso_ugc_post_keywords_v1",
+                        "default_generation_count": 10,
+                    },
+                ),
+                AssetRegistry(
+                    asset_type="content_generation_keywords",
+                    asset_key="royal_friso_ugc_post_keywords_v1",
+                    display_name="皇家美素佳儿UGC表达扩散语料",
+                    version_no=1,
+                    status="active",
+                    asset_stage="production",
+                    content_json={
+                        "asset_type": "content_generation_keywords",
+                        "categories": [
+                            {
+                                "category_code": "article_generation_requirement",
+                                "category_name": "生成要求",
+                                "enabled": True,
+                                "required": True,
+                                "selection_mode": "one",
+                                "applicable_content_types": ["article"],
+                                "sub_keywords": [
+                                    {
+                                        "keyword_code": "royal_requirement",
+                                        "keyword_name": "皇家要求",
+                                        "corpus": ["只写一篇皇家UGC帖子。"],
+                                        "enabled": True,
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                ),
+            ]
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/content-agent/ppl-runs/start",
+        json={"profile_code": "royal", "count": 1, "created_by": "ops"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["profile"]["profile_code"] == "royal_friso_ugc_article"
+    assert data["profile"]["content_type"] == "article"
+    assert data["report"]["asset_key"] == "royal_friso_ugc_post_rules_v1"
+    assert data["execution"]["requested_limit"] == 1
+
+    async with session_factory() as session:
+        item = (
+            await session.execute(
+                select(ContentBatchItem)
+                .where(ContentBatchItem.batch_id == data["batch_id"])
+                .order_by(ContentBatchItem.item_no)
+            )
+        ).scalars().first()
+
+    assert item.plan_json["asset_key"] == "royal_friso_ugc_post_rules_v1"
+    assert item.plan_json["keyword_asset_key"] == "royal_friso_ugc_post_keywords_v1"
+    assert item.plan_json["unified_generation"]["keyword_asset"]["asset_key"] == "royal_friso_ugc_post_keywords_v1"
+
+
+@pytest.mark.asyncio
+async def test_ppl_run_can_start_a2_comment_profile(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    async with session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type="comment_business_rule_set",
+                asset_key="a2_sentiment_comment_activity",
+                display_name="A2舆情改善评论规则",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "rule_type": "business_rule",
+                    "activity_name": "A2舆情改善评论",
+                    "default_generation_count": 1,
+                    "quality_guard_profile_key": "a2_sentiment_comment_202606",
+                    "items": [
+                        {
+                            "rule_id": "a2_001",
+                            "business_rule": "A2舆情改善评论",
+                            "corpus": "补货前先扫物流码：\n关键词方向是有货+批批检，像妈妈分享到货后先看报告。",
+                            "examples": ["a2有货了我先扫罐底码看报告"],
+                            "source_row_no": 1,
+                        }
+                    ],
+                },
+                metadata_json={
+                    "rule_type": "business_rule",
+                    "default_generation_count": 1,
+                    "quality_guard_profile_key": "a2_sentiment_comment_202606",
+                },
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/content-agent/ppl-runs/start",
+        json={"profile_code": "a2_comment", "count": 1, "created_by": "ops"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["profile"]["profile_code"] == "a2_sentiment_comment"
+    assert data["profile"]["content_type"] == "comment"
+    assert data["report"]["asset_key"] == "a2_sentiment_comment_activity"
+    assert data["execution"]["requested_limit"] == 1
+
+    async with session_factory() as session:
+        item = (
+            await session.execute(
+                select(ContentBatchItem)
+                .where(ContentBatchItem.batch_id == data["batch_id"])
+                .order_by(ContentBatchItem.item_no)
+            )
+        ).scalars().first()
+
+    assert item.plan_json["asset_key"] == "a2_sentiment_comment_activity"
+    assert item.plan_json["quality_guard_profile_key"] == "a2_sentiment_comment_202606"
+    assert item.plan_json["unified_generation"]["capability"] == "content.generate"
 
 
 @pytest.mark.asyncio

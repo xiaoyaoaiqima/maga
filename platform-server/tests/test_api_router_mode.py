@@ -30,6 +30,8 @@ def test_clean_mode_exposes_maga_workbench_routes_only():
     assert "/health/detailed" in paths
     assert "/content-agent/batches/start" in paths
     assert "/content-agent/comment-batches/start" in paths
+    assert "/content-agent/ppl-runs/profiles" in paths
+    assert "/content-agent/ppl-runs/start" in paths
     assert "/content-agent/experts" in paths
     assert "/assets/generation-options" in paths
     assert "/assets/content-generation-keywords" in paths
@@ -71,6 +73,7 @@ def test_full_mode_keeps_legacy_routes_available():
     paths = _route_paths("full")
 
     assert "/content-agent/batches/start" in paths
+    assert "/content-agent/ppl-runs/start" in paths
     assert "/jobs" in paths
     assert "/plugins" in paths
     assert "/plugin-contexts" in paths

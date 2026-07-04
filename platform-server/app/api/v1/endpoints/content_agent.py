@@ -23,6 +23,9 @@ from app.schemas.content_batch_report import (
     ContentBatchStartRequest,
     ContentBatchStartResponse,
     ContentFeedbackSampleListResponse,
+    ContentPPLProfileListResponse,
+    ContentPPLRunStartRequest,
+    ContentPPLRunStartResponse,
 )
 from app.schemas.content_agent import (
     ContentAgentArtifactCreate,
@@ -46,6 +49,7 @@ from app.services.content_batch_planner import ContentBatchPlanner
 from app.services.content_batch_report_service import ContentBatchReportService
 from app.services.content_batch_review_service import ContentBatchReviewService
 from app.services.content_comment_batch_service import ContentCommentBatchService
+from app.services.content_generation_ppl_profile_service import ContentGenerationPPLProfileService
 from app.services.executor_invocation_service import ExecutorInvocationClient, MockExecutorInvocationClient
 from app.services.content_generation_preflight_service import ContentGenerationPreflightService
 
@@ -139,6 +143,45 @@ def _invocation_client_for_invoke_url(invoke_url: str | None):
     return ExecutorInvocationClient()
 
 
+@router.get("/ppl-runs/profiles", response_model=ResponseData[ContentPPLProfileListResponse])
+async def list_ppl_profiles() -> ResponseData[ContentPPLProfileListResponse]:
+    profiles = ContentGenerationPPLProfileService().list_profiles()
+    return ResponseData(data=ContentPPLProfileListResponse(items=profiles))
+
+
+@router.post("/ppl-runs/start", response_model=ResponseData[ContentPPLRunStartResponse])
+async def start_ppl_generation(
+    request: ContentPPLRunStartRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentPPLRunStartResponse]:
+    service = ContentGenerationPPLProfileService()
+    try:
+        profile = service.require_profile(request.profile_code)
+        if profile.content_type == "article":
+            batch_response = await start_batch_generation(
+                service.build_article_request(profile, request),
+                db,
+            )
+        else:
+            batch_response = await start_comment_batch_generation(
+                service.build_comment_request(profile, request),
+                db,
+            )
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+
+    if not batch_response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PPL run returned empty response",
+        )
+    response = ContentPPLRunStartResponse(
+        **batch_response.data.model_dump(),
+        profile=profile.response(),
+    )
+    return ResponseData(message=batch_response.message, data=response)
+
+
 @router.post("/batches/start", response_model=ResponseData[ContentBatchStartResponse])
 async def start_batch_generation(
     request: ContentBatchStartRequest,
@@ -182,6 +225,7 @@ async def start_batch_generation(
             callback_base_url="/api/v1/content-agent",
             executor_code=executor_code,
         ).execute_batch_items(job_id, limit=job.count, created_by=request.created_by)
+        await db.commit()
         db.expire_all()
         report = await ContentBatchReportService(db).get_batch_report(job_id)
     except ValueError as exc:
@@ -297,14 +341,19 @@ async def submit_batch_item_feedback(
     return ResponseData(message="Operator feedback saved", data=result)
 
 
-@router.get("/batches/{batch_id}/report", response_model=ResponseData[ContentBatchReportResponse])
+@router.get(
+    "/batches/{batch_id}/report",
+    response_model=ResponseData[ContentBatchReportResponse],
+    response_model_exclude_none=True,
+)
 async def get_batch_report(
     batch_id: int,
+    full: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> ResponseData[ContentBatchReportResponse]:
     service = ContentBatchReportService(db)
     try:
-        report = await service.get_batch_report(batch_id)
+        report = await service.get_batch_report(batch_id, include_details=full)
     except ValueError as exc:
         raise _map_protocol_error(exc) from exc
     return ResponseData(data=report)
