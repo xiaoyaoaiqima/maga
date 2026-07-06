@@ -26,6 +26,7 @@ class ContentGenerationPPLProfile:
     quality_guard_profile_key: str | None = None
     description: str = ""
     default_count: int = 10
+    default_articles_per_prompt: int = 1
     aliases: tuple[str, ...] = ()
 
     def response(self) -> ContentPPLProfileResponse:
@@ -38,6 +39,7 @@ class ContentGenerationPPLProfile:
             quality_guard_profile_key=self.quality_guard_profile_key,
             description=self.description,
             default_count=self.default_count,
+            default_articles_per_prompt=self.default_articles_per_prompt,
             aliases=list(self.aliases),
         )
 
@@ -54,12 +56,23 @@ PPL_PROFILES: tuple[ContentGenerationPPLProfile, ...] = (
     ),
     ContentGenerationPPLProfile(
         profile_code="wangyue_0705_article",
-        label="旺玥0705活动帖子",
+        label="旺玥0705活动帖子-legacy",
         content_type="article",
         asset_key="wangyue_v353_protection_review_concrete_anchor_article_rules",
         keyword_asset_key="wangyue_article_generation_keywords_v352_real_middle_bridge",
-        description="旺玥0705帖子生文：产品出现资格和正向反馈按旺玥文章规则走。",
-        aliases=("wangyue", "wangyue_article"),
+        description="旺玥0705帖子生文旧版 profile：v353 规则和 v352 表达扩散语料。",
+        aliases=("wangyue_legacy", "wangyue_v353"),
+    ),
+    ContentGenerationPPLProfile(
+        profile_code="wangyue_v2_0705_article",
+        label="旺玥0705活动帖子-v2",
+        content_type="article",
+        asset_key="wangyue_v2_core_storyline_article_rules",
+        keyword_asset_key="wangyue_v2_minimal_generation_keywords",
+        description="旺玥0705 v2帖子生文：核心故事线规则语料 + 最小表达扩散语料，适合固定调试闭环。",
+        default_count=20,
+        default_articles_per_prompt=2,
+        aliases=("wangyue", "wangyue_article", "wangyue_v2"),
     ),
     ContentGenerationPPLProfile(
         profile_code="a2_sentiment_post_article",
@@ -119,6 +132,7 @@ class ContentGenerationPPLProfileService:
             rule_id=request.rule_id,
             source_row_no=request.source_row_no,
             count=request.count or profile.default_count,
+            articles_per_prompt=request.articles_per_prompt or profile.default_articles_per_prompt,
             executor_code=request.executor_code or DEFAULT_EXECUTOR_CODE,
             generation_model_config=request.generation_model_config,
             model_config_rotation=list(request.model_config_rotation),

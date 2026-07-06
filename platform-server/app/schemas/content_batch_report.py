@@ -220,6 +220,12 @@ class ContentPPLRunStartRequest(BaseSchema):
     draft_rule_id: str | None = Field(default=None, max_length=128)
     draft_source_row_no: int | None = Field(default=None, ge=1)
     count: int | None = Field(default=None, ge=1, le=ARTICLE_BATCH_MAX_COUNT)
+    articles_per_prompt: int | None = Field(
+        default=None,
+        ge=1,
+        le=2,
+        description="文章 PPL 每次 content.generate 调用生成几篇；不填时使用 profile 默认值。",
+    )
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     generation_model_config: ContentBatchModelConfig = Field(
         default_factory=ContentBatchModelConfig,
@@ -238,6 +244,7 @@ class ContentPPLProfileResponse(BaseSchema):
     quality_guard_profile_key: str | None = None
     description: str = ""
     default_count: int = 10
+    default_articles_per_prompt: int = 1
     aliases: list[str] = Field(default_factory=list)
 
 

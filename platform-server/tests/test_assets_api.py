@@ -32,6 +32,7 @@ def test_row_to_rule_item_does_not_infer_product_mode_when_post_type_is_explicit
     assert item["painpoint"] == "容易中招"
     assert item["selling_point"] == "进阶保护力"
     assert "product_appearance_mode" not in item
+    assert "product_relation" not in item
 
 
 @pytest_asyncio.fixture

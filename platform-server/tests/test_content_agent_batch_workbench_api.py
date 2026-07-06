@@ -130,6 +130,7 @@ async def test_ppl_profile_list_exposes_brand_generation_profiles(content_agent_
     assert {
         "royal_friso_ugc_article",
         "wangyue_0705_article",
+        "wangyue_v2_0705_article",
         "a2_sentiment_post_article",
         "a2_sentiment_comment",
     }.issubset(profile_codes)
@@ -137,6 +138,11 @@ async def test_ppl_profile_list_exposes_brand_generation_profiles(content_agent_
     assert royal["content_type"] == "article"
     assert royal["asset_key"] == "royal_friso_ugc_post_rules_v1"
     assert royal["keyword_asset_key"] == "royal_friso_ugc_post_keywords_v1"
+    wangyue_v2 = next(profile for profile in profiles if profile["profile_code"] == "wangyue_v2_0705_article")
+    assert wangyue_v2["asset_key"] == "wangyue_v2_core_storyline_article_rules"
+    assert wangyue_v2["keyword_asset_key"] == "wangyue_v2_minimal_generation_keywords"
+    assert wangyue_v2["default_count"] == 20
+    assert wangyue_v2["default_articles_per_prompt"] == 2
 
 
 def test_comment_rule_selection_balances_angles_when_rule_pool_is_large():

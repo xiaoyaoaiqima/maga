@@ -387,6 +387,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "draft_rule_id": args.draft_rule_id,
             "draft_source_row_no": args.draft_source_row_no,
             "count": args.count,
+            "articles_per_prompt": args.articles_per_prompt,
             "executor_code": args.executor_code,
             "model_config": model_config,
             "model_config_rotation": rotation or [],
@@ -482,6 +483,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--profile-code", help="Profile code or alias, for example royal, wangyue, a2_post, a2_comment.")
     parser.add_argument("--count", type=int)
+    parser.add_argument("--articles-per-prompt", type=int, choices=(1, 2))
     parser.add_argument("--created-by", default="codex-ppl-run")
     parser.add_argument("--executor-code")
     parser.add_argument("--keyword-asset-key")
