@@ -16,7 +16,7 @@ from sqlalchemy.sql import text
 from app.core.config import settings
 from app.core.content_agent_defaults import MAGA_WORKER_INVOKE_URL
 from app.models.base import Base
-from app.models.maga_core import MAGA_CORE_TABLE_NAMES  # noqa: F401 - registers clean MAGA models
+from app.models.maga_core import MAGA_STARTUP_TABLE_NAMES  # noqa: F401 - registers startup models
 from app.services.content_agent_bootstrap_service import (
     seed_a2_sentiment_comment_forbidden_terms,
     seed_default_content_agent_executors,
@@ -94,11 +94,15 @@ analytics_async_session_factory = async_sessionmaker(
     autoflush=False,
 )
 
+
+def _startup_tables() -> list:
+    return [Base.metadata.tables[name] for name in MAGA_STARTUP_TABLE_NAMES]
+
+
 async def init_db() -> None:
     """Initialize database with retry logic"""
     import asyncio
     from sqlalchemy.exc import OperationalError
-    import app.models  # noqa: F401
     
     max_retries = 30
     retry_delay = 2
@@ -106,8 +110,8 @@ async def init_db() -> None:
     for attempt in range(max_retries):
         try:
             async with engine.begin() as conn:
-                # Create all tables
-                await conn.run_sync(Base.metadata.create_all)
+                tables = _startup_tables()
+                await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=tables))
                 # Ensure the default content-agent executor exists so fresh
                 # local/server databases do not fail generation with
                 # "executor not found" before an explicit seed command runs.

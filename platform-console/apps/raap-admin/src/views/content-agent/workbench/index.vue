@@ -392,7 +392,7 @@ const showGenerationSnapshot = (item: ContentAgentApi.BatchReportItem) => {
       ]),
       snapshotSection('业务规则', [snapshotPre(snapshot.business_rule)]),
       snapshotSection(
-        '系统关键词',
+        '表达扩散语料',
         snapshotKeywordNodes(snapshot.selected_keywords),
       ),
       snapshotSection('Expert / 模型', [

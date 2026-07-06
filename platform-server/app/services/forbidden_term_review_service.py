@@ -22,6 +22,29 @@ STATIC_FORBIDDEN_TERMS = [
     "疗效",
     *STATIC_FORBIDDEN_REPLACEMENTS.keys(),
 ]
+WANGYUE_STATIC_FORBIDDEN_TERMS = [
+    "🍼",
+    "厌奶",
+    "体质",
+    "肠胃",
+    "脾胃",
+    "天然",
+    "儿保",
+    "抵抗力",
+    "宝宝",
+    "宝妈",
+    "自护力",
+    "底气",
+    "源乳",
+    "初乳",
+    "换季",
+    "流感",
+    "秋游",
+    "春游",
+]
+ALLOWED_PROPRIETARY_TERMS = {
+    "天然乳脂": "__MAGA_ALLOWED_TIANRANRUZHI__",
+}
 MAX_FORBIDDEN_TERM_REWRITE_ROUNDS = 2
 
 
@@ -40,7 +63,7 @@ class ForbiddenTermReviewService:
 
     async def list_terms(self, *, asset_key: str | None = None) -> list[str]:
         terms: list[str] = []
-        for term in STATIC_FORBIDDEN_TERMS:
+        for term in _static_forbidden_terms_for_asset(asset_key):
             if term not in terms:
                 terms.append(term)
         for term in await BusinessForbiddenTermService(self.db).list_terms(asset_key=asset_key):
@@ -169,11 +192,27 @@ class ForbiddenTermReviewService:
 
 def find_forbidden_hits(text: str, terms: list[str] | None = None) -> list[str]:
     hits: list[str] = []
+    checked_text = _mask_allowed_proprietary_terms(text)
     for term in terms or STATIC_FORBIDDEN_TERMS:
-        if term and term in text and term not in hits:
+        if term and term in checked_text and term not in hits:
             hits.append(term)
     # 重叠禁词需要先处理长词，避免兜底清理时短词先删掉后留下怪碎片。
     return sorted(hits, key=len, reverse=True)
+
+
+def _mask_allowed_proprietary_terms(text: str) -> str:
+    masked = str(text or "")
+    for term, placeholder in ALLOWED_PROPRIETARY_TERMS.items():
+        masked = masked.replace(term, placeholder)
+    return masked
+
+
+def _static_forbidden_terms_for_asset(asset_key: str | None) -> list[str]:
+    terms = list(STATIC_FORBIDDEN_TERMS)
+    normalized = str(asset_key or "").lower()
+    if normalized.startswith("wangyue_") or "wangyue" in normalized:
+        terms.extend(WANGYUE_STATIC_FORBIDDEN_TERMS)
+    return terms
 
 
 def _quality_with_forbidden_review(quality_json: dict[str, Any], review_payload: dict[str, Any]) -> dict[str, Any]:

@@ -7,6 +7,7 @@ from app.services.executor_invocation_service import (
     InvokeResult,
     MockExecutorInvocationClient,
     build_invoke_envelope,
+    _normalize_unified_content_output,
 )
 from app.utils.model_config import ensure_chat_completions_endpoint
 
@@ -33,6 +34,65 @@ class FakeAsyncClient:
 
 def test_openai_compatible_v1_base_url_appends_chat_completions_once():
     assert ensure_chat_completions_endpoint("https://aihubmix.com/v1") == "https://aihubmix.com/v1/chat/completions"
+
+
+def test_normalize_article_output_accepts_items_json_and_strips_topic_tags():
+    output = _normalize_unified_content_output(
+        """
+        {
+          "items": [
+            {"title": "肚子响少了#儿童奶粉[话题]#", "body": "旺玥喝了一周，肚子响少了。#旺玥#"},
+            {"title": "精神好些", "body": "娃晚上还在客厅玩。 #儿童成长"}
+          ]
+        }
+        """,
+        {"content_type": "article", "output_fields": ["title", "body"]},
+    )
+
+    assert output["title"] == "肚子响少了"
+    assert output["body"] == "旺玥喝了一周，肚子响少了。"
+    assert output["items"] == [
+        {"title": "肚子响少了", "body": "旺玥喝了一周，肚子响少了。"},
+        {"title": "精神好些", "body": "娃晚上还在客厅玩。"},
+    ]
+
+
+def test_normalize_article_output_keeps_single_article_contract():
+    output = _normalize_unified_content_output(
+        '{"title":"标题#话题#","body":"正文内容 #收尾话题"}',
+        {"content_type": "article", "output_fields": ["title", "body"]},
+    )
+
+    assert output == {"title": "标题", "body": "正文内容"}
+
+
+def test_normalize_comment_output_accepts_json_string_array_mode():
+    output = _normalize_unified_content_output(
+        '["a2终于到货了", "我也买到了新货"]',
+        {
+            "content_type": "comment",
+            "output_fields": ["comment"],
+            "output_format_mode": "json_string_array",
+        },
+    )
+
+    assert output["comment"] == "a2终于到货了"
+    assert output["comments"] == ["a2终于到货了", "我也买到了新货"]
+    assert output["items"] == [{"comment": "a2终于到货了"}, {"comment": "我也买到了新货"}]
+
+
+def test_normalize_comment_output_accepts_json_object_array_mode():
+    output = _normalize_unified_content_output(
+        '[{"内容":"报告能扫出来"}, {"comment":"礼盒里的东西挺实在"}]',
+        {
+            "content_type": "comment",
+            "output_fields": ["comment"],
+            "output_format": {"mode": "json_object_array", "count": 2},
+        },
+    )
+
+    assert output["comment"] == "报告能扫出来"
+    assert output["comments"] == ["报告能扫出来", "礼盒里的东西挺实在"]
 
 
 @pytest.mark.asyncio
@@ -273,6 +333,33 @@ async def test_direct_llm_generate_parses_article_json(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_direct_llm_generate_flattens_nested_article_json_body(monkeypatch):
+    async def fake_call(**kwargs):
+        return '{"title":"外层标题","body":"{\\"title\\":\\"内层标题\\",\\"body\\":\\"内层正文。\\"}"}'
+
+    monkeypatch.setattr("app.services.executor_invocation_service._call_openai_compatible_model", fake_call)
+    client = ExecutorInvocationClient()
+
+    result = await client.invoke(
+        invoke_url="llm://direct/content",
+        envelope={
+            "stage_call_id": "stage-direct-nested-json-body",
+            "capability": "content.generate",
+            "input": {
+                "content_type": "article",
+                "output_fields": ["title", "body"],
+                "rendered_prompt": "生成一篇文章",
+                "model_config": {"model_code": "deepseek-v4-flash"},
+            },
+        },
+    )
+
+    assert result.status == "succeeded"
+    assert result.output["title"] == "内层标题"
+    assert result.output["body"] == "内层正文。"
+
+
+@pytest.mark.asyncio
 async def test_direct_llm_generate_repairs_loose_article_json(monkeypatch):
     async def fake_call(**kwargs):
         return '{\n"title": "有姐妹一起转a2吗？刚补了一罐试试🧐",\n"body": "家里奶粉快见底了。\\n\\n到货后扫了罐底码，报告能看到。"\n'
@@ -444,6 +531,33 @@ async def test_direct_llm_rewrite_retries_empty_output(monkeypatch):
     assert result.output["title"] == "新标题"
     assert result.output["body"] == "新正文"
     assert result.output["runtime_result"]["model_attempts"] == 2
+
+
+@pytest.mark.asyncio
+async def test_direct_llm_rewrite_flattens_nested_article_json_body(monkeypatch):
+    async def fake_call(**kwargs):
+        return '{"title":"外层标题","body":"{\\"title\\":\\"改后标题\\",\\"body\\":\\"改后正文。\\"}"}'
+
+    monkeypatch.setattr("app.services.executor_invocation_service._call_openai_compatible_model", fake_call)
+    client = ExecutorInvocationClient()
+
+    result = await client.invoke(
+        invoke_url="llm://direct/content",
+        envelope={
+            "stage_call_id": "stage-direct-rewrite-nested-json-body",
+            "capability": "content.rewrite",
+            "input": {
+                "content_type": "article",
+                "output_fields": ["title", "body"],
+                "previous_content": {"title": "旧标题", "body": "旧正文"},
+                "model_config": {"model_code": "deepseek-v4-flash"},
+            },
+        },
+    )
+
+    assert result.status == "succeeded"
+    assert result.output["title"] == "改后标题"
+    assert result.output["body"] == "改后正文。"
 
 
 @pytest.mark.asyncio

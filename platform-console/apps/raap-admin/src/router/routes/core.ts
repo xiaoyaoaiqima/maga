@@ -84,7 +84,7 @@ const coreRoutes: RouteRecordRaw[] = [
         component: () =>
           import('#/views/content-agent/system-prompt-keywords/index.vue'),
         meta: {
-          title: '系统提示词关键词',
+          title: '表达扩散语料',
           hideInMenu: true,
           hideInTab: false,
           activeMenu: '/content-agent/system-prompt-keywords',

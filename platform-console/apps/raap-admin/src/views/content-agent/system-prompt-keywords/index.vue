@@ -58,7 +58,7 @@ type SubKeyword = AssetsApi.SystemPromptSubKeyword;
 
 const defaultAssetKey = 'default_content_generation_keywords';
 const assetKey = ref(defaultAssetKey);
-const displayName = ref('系统提示词关键词');
+const displayName = ref('表达扩散语料');
 const loading = ref(false);
 const saving = ref(false);
 const source = ref('fallback');
@@ -73,7 +73,7 @@ const versions = ref<AssetsApi.AssetSummary[]>([]);
 const previewModalVisible = ref(false);
 const previewLoading = ref(false);
 const previewContentType = ref<'article' | 'comment'>('comment');
-const previewRuleText = ref('这里是本次业务规则里的语料，用于预览系统关键词会如何进入最终 prompt。');
+const previewRuleText = ref('这里是本次业务规则里的语料，用于预览表达扩散语料会如何进入最终 prompt。');
 const previewResult = ref<AssetsApi.SystemPromptKeywordPreviewResult | null>(null);
 
 const selectedCategory = computed(() =>
@@ -194,7 +194,7 @@ async function loadKeywords() {
     const asset = await getContentGenerationKeywordsApi({
       asset_key: assetKey.value,
     });
-    displayName.value = asset.display_name || '系统提示词关键词';
+    displayName.value = asset.display_name || '表达扩散语料';
     source.value = asset.source;
     versionNo.value = asset.version_no ?? null;
     updateTime.value = asset.update_time || null;
@@ -202,7 +202,7 @@ async function loadKeywords() {
     selectedCategoryCode.value =
       categories.value[0]?.category_code || selectedCategoryCode.value;
   } catch {
-    message.error('获取系统提示词关键词失败');
+    message.error('获取表达扩散语料失败');
   } finally {
     loading.value = false;
   }
@@ -354,7 +354,7 @@ async function saveKeywords() {
     message.success(`已保存为版本 ${asset.version_no}`);
     await loadKeywords();
   } catch (error: any) {
-    message.error(error?.message || '保存系统提示词关键词失败');
+    message.error(error?.message || '保存表达扩散语料失败');
   } finally {
     saving.value = false;
   }

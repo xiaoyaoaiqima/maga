@@ -236,6 +236,41 @@ def test_content_generate_runtime_uses_model_config_provider(monkeypatch):
     assert calls[0]["api_key"] == "db-key"
 
 
+def test_content_generate_runtime_accepts_items_json(monkeypatch):
+    monkeypatch.delenv("MAGA_WORKER_RUNTIME_FAST_FAKE", raising=False)
+
+    def model_with_items(*args, **kwargs):
+        return (
+            '{"items":['
+            '{"title":"肚子响少了#儿童奶粉[话题]#","body":"旺玥喝了一周，肚子响少了。#旺玥#"},'
+            '{"title":"精神好些","body":"娃晚上还在客厅玩。 #儿童成长"}'
+            "]}"
+        )
+
+    monkeypatch.setattr("maga_worker.llm_runtime.call_model", model_with_items)
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/invoke",
+        json=_envelope(
+            "content.generate",
+            {
+                "content_type": "article",
+                "output_fields": ["title", "body"],
+                "rendered_prompt": "一次生成 2 篇",
+            },
+            stage_call_id="stage-content-items",
+        ),
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    output = response.json()["output"]
+    assert output["title"] == "肚子响少了"
+    assert output["body"] == "旺玥喝了一周，肚子响少了。"
+    assert output["items"][1]["body"] == "娃晚上还在客厅玩。"
+
+
 def test_content_rewrite_fake_mode_removes_forbidden_terms(monkeypatch):
     monkeypatch.setenv("MAGA_WORKER_RUNTIME_FAST_FAKE", "1")
     client = _client(monkeypatch)

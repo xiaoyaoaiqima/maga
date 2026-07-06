@@ -12,6 +12,26 @@ from app.models.base import Base
 from app.models.content_agent import ExecutorRegistry
 from app.models.expert_config import ExpertConfig
 from app.models.maga_assets import AssetChangeProposal, AssetChangeRequest, AssetImportRun, AssetRegistry
+from app.services.product_experience_rule_service import _row_to_rule_item
+
+
+def test_row_to_rule_item_does_not_infer_product_mode_when_post_type_is_explicit():
+    item = _row_to_rule_item(
+        {
+            "业务规则名称": "V2M-01｜进阶保护力｜使用反馈｜容易中招",
+            "规则语料": "任务：写小红书妈妈UGC正向种草笔记。",
+            "帖子类型": "使用反馈",
+            "痛点": "容易中招",
+            "卖点方向": "进阶保护力",
+        },
+        1,
+    )
+
+    assert item is not None
+    assert item["post_type"] == "使用反馈"
+    assert item["painpoint"] == "容易中招"
+    assert item["selling_point"] == "进阶保护力"
+    assert "product_appearance_mode" not in item
 
 
 @pytest_asyncio.fixture
@@ -198,6 +218,73 @@ async def asset_client():
         yield client
 
     await engine.dispose()
+
+
+def test_product_experience_rule_import_preserves_structure_and_scene_constraint_fields():
+    item = _row_to_rule_item(
+        {
+            "业务规则": "V152-01｜保护力关注种草",
+            "语料": "写一篇旺玥妈妈UGC。",
+            "帖子类型": "使用反馈",
+            "structure_slot": "先反馈后补产品",
+            "scene_motive_bucket": "保护力反馈关系",
+            "scene_constraint": "围绕身边反馈或集体活动后的自家状态观察",
+            "正文场景": "旧正文场景长文本",
+        },
+        1,
+    )
+
+    assert item is not None
+    assert item["structure_slot"] == "先反馈后补产品"
+    assert item["scene_motive_bucket"] == "保护力反馈关系"
+    assert item["scene_constraint"] == "围绕身边反馈或集体活动后的自家状态观察"
+
+
+def test_product_experience_rule_import_preserves_selling_surface_fields():
+    item = _row_to_rule_item(
+        {
+            "业务规则": "V163-01｜保护力关注种草",
+            "语料": "写一篇旺玥妈妈UGC。",
+            "卖点表达口吻": "像妈妈说看中保护力支持，喝下来这段时间状态稳。",
+            "成分承接": "乳铁蛋白、HMO只承接保护力相关观察。",
+            "好处表达": "少请假、少中招、精神头在线里选一个方向。",
+            "表达机制": "从自家状态或一直留下来的理由进入。",
+        },
+        1,
+    )
+
+    assert item is not None
+    assert item["selling_point_surface"] == "像妈妈说看中保护力支持，喝下来这段时间状态稳。"
+    assert item["ingredient_surface"] == "乳铁蛋白、HMO只承接保护力相关观察。"
+    assert item["benefit_surface"] == "少请假、少中招、精神头在线里选一个方向。"
+    assert (
+        item["selling_kernel"]
+        == "卖点表达：像妈妈说看中保护力支持，喝下来这段时间状态稳；"
+        "成分承接：乳铁蛋白、HMO只承接保护力相关观察；"
+        "好处表达：少请假、少中招、精神头在线里选一个方向"
+    )
+    assert item["expression_mechanism"] == "从自家状态或一直留下来的理由进入。"
+
+
+def test_product_experience_rule_import_preserves_selling_description_field():
+    item = _row_to_rule_item(
+        {
+            "业务规则": "V236-01｜卖点描述池",
+            "语料": "写一篇旺玥妈妈UGC。",
+            "痛点": "营养不足",
+            "卖点方向": "营养丰富",
+            "卖点描述": "饭菜有波动时，旺玥的价值落在基础营养更好接住，钙铁锌可以自然提一嘴。",
+        },
+        1,
+    )
+
+    assert item is not None
+    assert item["selling_description"] == "饭菜有波动时，旺玥的价值落在基础营养更好接住，钙铁锌可以自然提一嘴。"
+    assert (
+        item["selling_kernel"]
+        == "痛点：营养不足；卖点：营养丰富；"
+        "卖点描述：饭菜有波动时，旺玥的价值落在基础营养更好接住，钙铁锌可以自然提一嘴"
+    )
 
 
 @pytest.mark.asyncio
@@ -405,7 +492,9 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
     ]
     assert fallback_by_code["perturbation_rule"]["sub_keywords"][0]["keyword_name"] == "随机发散"
     assert "离散运动" in fallback_by_code["perturbation_rule"]["sub_keywords"][0]["corpus"][0]
-    assert "至少一半在8到20字" in fallback_by_code["perturbation_rule"]["sub_keywords"][2]["corpus"][0]
+    assert [item["keyword_code"] for item in fallback_by_code["perturbation_rule"]["sub_keywords"]] == [
+        "random_thinking_shift"
+    ]
     assert "纸尿裤" not in fallback_by_code["writing_method"]["sub_keywords"][0]["corpus"][0]
     assert "5到8字" in fallback_by_code["comment_format_control"]["sub_keywords"][0]["corpus"][0]
     assert "口气词" in fallback_by_code["comment_format_control"]["sub_keywords"][0]["corpus"][0]
@@ -429,7 +518,7 @@ async def test_content_generation_keywords_get_fallback_and_save_versions(asset_
 
     payload = {
         "asset_key": "default_content_generation_keywords",
-        "display_name": "系统提示词关键词",
+        "display_name": "表达扩散语料",
         "created_by": "ops",
         "selection_policy": {"default_mode": "one_per_enabled_category"},
         "categories": [
@@ -560,7 +649,7 @@ async def test_import_and_preview_content_generation_keywords(asset_client):
     import_response = await asset_client.post(
         "/api/v1/assets/imports/content-generation-keywords",
         data={"created_by": "ops"},
-        files={"file": ("系统提示词关键词.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+        files={"file": ("表达扩散语料.csv", csv_content.encode("utf-8-sig"), "text/csv")},
     )
     assert import_response.status_code == 200
     imported = import_response.json()["data"]
@@ -590,7 +679,7 @@ async def test_import_and_preview_content_generation_keywords(asset_client):
     preview = preview_response.json()["data"]
     assert [item["category_code"] for item in preview["selected_keywords"]] == ["persona", "rhythm"]
     assert "像妈妈在评论区问源悦真实反馈" in preview["rendered_prompt"]
-    assert "短句表达，像顺手评论" in preview["rendered_prompt"]
+    assert "短句表达，像顺手评论" not in preview["rendered_prompt"]
 
 
 @pytest.mark.asyncio
@@ -934,6 +1023,81 @@ async def test_upload_comment_business_rule_set_accepts_three_column_rule_then_u
 
 
 @pytest.mark.asyncio
+async def test_upload_comment_business_rule_set_accepts_direct_rule_bank_csv(asset_client):
+    csv_content = "\n".join(
+        [
+            "rule_id,category,major_category,focus,examples,source_title",
+            '"a2_direct_01","有货-直给到货情绪","有货","像妈妈看到 a2 到货后顺手接一句，不回讲以前买不到。","a2终于到货了，我去看看',
+            '我也买到a2新货了","A2舆情改善评论-有货直给到货情绪"',
+            '"a2_direct_02","批批检-报告信息能看见","批批检","像妈妈扫完报告后顺手补充，入口能点开，不写成安全背书。","我刚扫了我手上这罐，报告能出来',
+            '入口能点开，里面有几份报告","A2舆情改善评论-报告信息能看见"',
+        ]
+    )
+
+    response = await asset_client.post(
+        "/api/v1/assets/imports/comment-business-rule-set",
+        data={
+            "asset_key": "a2_sentiment_comment_activity",
+            "display_name": "A2舆情改善评论",
+            "created_by": "ops",
+            "quality_guard_profile_key": "a2_sentiment_comment_202606",
+        },
+        files={"file": ("a2_rule_bank.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["summary_json"]["rule_count"] == 2
+    assert payload["summary_json"]["example_count"] == 4
+
+    detail_response = await asset_client.get(
+        "/api/v1/assets/comment_business_rule_set/a2_sentiment_comment_activity"
+    )
+    asset = detail_response.json()["data"]
+    first = asset["content_json"]["items"][0]
+    assert first["rule_id"] == "a2_direct_01"
+    assert first["business_rule"] == "有货-直给到货情绪"
+    assert first["corpus"] == "像妈妈看到 a2 到货后顺手接一句，不回讲以前买不到。"
+    assert first["examples"] == ["a2终于到货了，我去看看", "我也买到a2新货了"]
+    assert "a2终于到货了" not in first["corpus"]
+    assert asset["content_json"]["quality_guard_profile_key"] == "a2_sentiment_comment_202606"
+
+
+@pytest.mark.asyncio
+async def test_upload_comment_business_rule_set_preserves_prompt_slot_corpus(asset_client):
+    csv_content = "\n".join(
+        [
+            "rule_id,category,focus,examples,说话风格",
+            '"a2_direct_01","有货-直给到货情绪","像妈妈看到 a2 到货后顺手接一句。","a2终于到货了","适当加几个网络热词，不要过度。',
+            '像评论区接楼，短一点，顺手补一句。"',
+        ]
+    )
+
+    response = await asset_client.post(
+        "/api/v1/assets/imports/comment-business-rule-set",
+        data={
+            "asset_key": "a2_sentiment_comment_activity_with_slots",
+            "display_name": "A2舆情改善评论",
+            "created_by": "ops",
+        },
+        files={"file": ("a2_rule_bank_slots.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+
+    assert response.status_code == 200
+    detail_response = await asset_client.get(
+        "/api/v1/assets/comment_business_rule_set/a2_sentiment_comment_activity_with_slots"
+    )
+    asset = detail_response.json()["data"]
+    first = asset["content_json"]["items"][0]
+    assert first["prompt_slots"] == {
+        "说话风格": [
+            "适当加几个网络热词，不要过度。",
+            "像评论区接楼，短一点，顺手补一句。",
+        ]
+    }
+
+
+@pytest.mark.asyncio
 async def test_comment_business_rule_draft_save_list_and_publish(asset_client):
     csv_content = "\n".join(
         [
@@ -1083,7 +1247,7 @@ async def test_upload_article_business_rule_set_imports_rule_asset(asset_client)
     assert data["imported_assets"] == 1
     assert ["article_business_rule_set", "yuanyue_product_experience"] in data["asset_keys"]
     assert data["summary_json"]["rule_count"] == 2
-    assert data["summary_json"]["example_count"] == 5
+    assert data["summary_json"]["example_count"] == 4
     assert data["summary_json"]["keyword_asset_key"] == "yuanyue_article_business_keywords"
     assert data["summary_json"]["keyword_selection"] == {
         "article_speaking_style": ["routine_log", "kid_reaction_record"]
@@ -1105,12 +1269,18 @@ async def test_upload_article_business_rule_set_imports_rule_asset(asset_client)
         "article_speaking_style": ["routine_log", "kid_reaction_record"]
     }
     assert asset["content_json"]["rule_type"] == "business_rule"
+    assert asset["content_json"]["allow_repeat_generation"] is True
+    assert asset["metadata_json"]["allow_repeat_generation"] is True
     assert asset["content_json"]["items"][0]["business_rule"] == "奶量补充"
     assert "product_experience" not in asset["content_json"]["items"][0]
     assert "baby_stage" not in asset["content_json"]["items"][0]
     assert "use_duration" not in asset["content_json"]["items"][0]
     assert asset["content_json"]["items"][0]["topic"] == "奶量补充"
-    assert asset["content_json"]["items"][0]["examples"] == ["新列示例1", "新列示例2", "新列示例3", "新列补充1"]
+    assert asset["content_json"]["items"][0]["examples"] == [
+        "刚换源悦那阵子，喂奶没之前那么拉扯。",
+        "有时候不用追着喂，家里人也松口气。",
+        "新列补充1",
+    ]
     assert asset["content_json"]["items"][0]["supplements"] == []
     assert asset["content_json"]["items"][1]["examples"] == ["主要看喝完后的肚肚状态和便便节奏。"]
     assert "1 条规则示例少于3条" in asset["metadata_json"]["warnings"]
@@ -1238,6 +1408,67 @@ async def test_upload_article_business_rule_set_rejects_old_product_experience_h
 
 
 @pytest.mark.asyncio
+async def test_upload_article_business_rule_set_preserves_product_permission_slots(asset_client):
+    corpus = (
+        "活动：0705旺玥活动。篇幅类型：短文；正文约60-120字。\n\n"
+        "产品只能作为家里库存物件出现，不要写成种草。"
+    )
+    csv_content = "\n".join(
+        [
+            "业务规则,痛点,卖点方向,主正向证据,帖子类型,产品出现方式,UGC类型,生活动机,产品角色,产品浓度,不完美感,产品动作表面,标题形态,标题emoji,正文场景,产品出现位置,收尾方式,语料",
+            f'"补货/家务清单｜产品是家里库存物件","容易中招","保护力营养关注","少请假、户外回来不蔫","补货/家务清单","产品是家里库存物件","复购/囤货型","月底看账单","库存物件/补货清单一项","中低","这个月又没少花",,"清单/库存标签","TITLE_EMOJI_LIGHT","快递到货拆箱","清单项中出现","放回位置","{corpus}"',
+            f'"使用记录｜产品是日常动作的一部分","营养不足","日常营养补充","饭奶状态稳、日常营养不断档","使用记录","产品是日常动作的一部分","日常使用记录型","早上赶时间","低浓度在场物件","低","当天还是一地乱","物件在场",,"TITLE_EMOJI_NONE",,"中段桌面物件里出现","没总结","{corpus}"',
+        ]
+    )
+
+    response = await asset_client.post(
+        "/api/v1/assets/imports/article-business-rule-set",
+        data={
+            "asset_key": "wangyue_product_permission_slots",
+            "display_name": "0705旺玥活动-产品出现许可",
+            "created_by": "ops",
+        },
+        files={"file": ("旺玥-产品出现许可.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+
+    assert response.status_code == 200
+    detail_response = await asset_client.get(
+        "/api/v1/assets/article_business_rule_set/wangyue_product_permission_slots"
+    )
+    asset = detail_response.json()["data"]
+    first, second = asset["content_json"]["items"]
+    assert first["post_type"] == "补货/家务清单"
+    assert first["product_appearance_mode"] == "产品是家里库存物件"
+    assert first["painpoint"] == "容易中招"
+    assert first["selling_point"] == "保护力营养关注"
+    assert first["positive_evidence"] == "少请假、户外回来不蔫"
+    assert first["ugc_post_type"] == "复购/囤货型"
+    assert first["life_trigger"] == "月底看账单"
+    assert first["product_role"] == "库存物件/补货清单一项"
+    assert first["product_density"] == "中低"
+    assert first["imperfection"] == "这个月又没少花"
+    assert first["title_shape_mode"] == "清单/库存标签"
+    assert first["title_emoji_mode"] == "TITLE_EMOJI_LIGHT"
+    assert first["scene_motive_bucket"] == "快递到货拆箱"
+    assert first["product_position_mode"] == "清单项中出现"
+    assert first["ending_mode"] == "放回位置"
+    assert second["post_type"] == "使用记录"
+    assert second["product_appearance_mode"] == "产品是日常动作的一部分"
+    assert second["painpoint"] == "营养不足"
+    assert second["selling_point"] == "日常营养补充"
+    assert second["positive_evidence"] == "饭奶状态稳、日常营养不断档"
+    assert second["ugc_post_type"] == "日常使用记录型"
+    assert second["life_trigger"] == "早上赶时间"
+    assert second["product_role"] == "低浓度在场物件"
+    assert second["product_density"] == "低"
+    assert second["imperfection"] == "当天还是一地乱"
+    assert second["product_action_surface"] == "物件在场"
+    assert second["title_emoji_mode"] == "TITLE_EMOJI_NONE"
+    assert second["product_position_mode"] == "中段桌面物件里出现"
+    assert second["ending_mode"] == "没总结"
+
+
+@pytest.mark.asyncio
 async def test_upload_article_business_rule_set_infers_activity_and_word_count(asset_client):
     mid_corpus = (
         "## 业务规则\n\n"
@@ -1249,7 +1480,7 @@ async def test_upload_article_business_rule_set_infers_activity_and_word_count(a
         "## 业务规则\n\n"
         "活动：0705旺玥活动。篇幅类型：短文；正文必须40-80字，"
         "建议45-65字；只写一段，不换行。\n\n"
-        "可参考素材：\n- 晚饭又挑两口，睡前那杯旺玥我就没省。"
+        "可参考素材：\n- 又开一听旺玥，先记一下这段时间的安排。"
     )
     csv_content = "\n".join(
         [

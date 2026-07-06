@@ -281,7 +281,7 @@ async def import_content_generation_keywords_endpoint(
     created_by: str = Form(default="maga-operator"),
     db: AsyncSession = Depends(get_db),
 ):
-    filename = file.filename or "系统提示词关键词.csv"
+    filename = file.filename or "表达扩散语料.csv"
     if not filename.lower().endswith((".csv", ".xlsx")):
         raise HTTPException(status_code=400, detail="only .csv and .xlsx files are supported")
 
@@ -342,7 +342,7 @@ async def get_content_generation_keywords(
             data=SystemPromptKeywordAssetResponse(
                 asset_type=CONTENT_GENERATION_KEYWORDS_ASSET_TYPE,
                 asset_key=asset_key,
-                display_name="系统提示词关键词",
+                display_name="表达扩散语料",
                 source="fallback",
                 content_json=content_json,
                 metadata_json={
@@ -464,7 +464,7 @@ async def export_content_generation_keywords(
     service = SystemPromptKeywordService(db)
     asset = await service.get_latest_asset(asset_key=asset_key)
     content_json = asset.content_json if asset else fallback_system_prompt_keyword_content()
-    filename = f"{asset_key}_系统提示词关键词.csv"
+    filename = f"{asset_key}_表达扩散语料.csv"
     return ResponseData(
         code=200,
         message="success",
@@ -485,7 +485,7 @@ async def preview_content_generation_keywords(
     business_rule = payload.business_rule or {
         "rule_type": "business_rule",
         "business_rule": "示例业务规则",
-        "corpus": "这里是本次业务规则里的语料，用于预览系统关键词会如何进入最终 prompt。",
+        "corpus": "这里是本次业务规则里的语料，用于预览表达扩散语料会如何进入最终 prompt。",
         "examples": ["这是一条用于预览的参考示例。"],
     }
     keyword_override = (

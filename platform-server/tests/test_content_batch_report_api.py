@@ -93,6 +93,8 @@ async def test_get_batch_report_endpoint_returns_operator_view(batch_report_clie
     assert data["items"][0]["title"] == "换奶前先看这3点"
     assert data["items"][0]["hard_pass"] is True
     assert data["items"][0]["rewrite_required"] is False
+    assert "generation_snapshot" not in data["items"][0]
+    assert "diversity" not in data["items"][0]
 
 
 @pytest.mark.asyncio

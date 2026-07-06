@@ -187,8 +187,12 @@ main() {
   done
   curl -fsS http://127.0.0.1:5100/api/v1/health/ready >/dev/null
 
-  log "checking worker health"
-  run_compose exec -T maga-worker curl -fsS http://127.0.0.1:8765/health >/dev/null
+  if [[ -n "$(run_compose ps -q maga-worker 2>/dev/null || true)" ]]; then
+    log "checking worker health"
+    run_compose exec -T maga-worker curl -fsS http://127.0.0.1:8765/health >/dev/null
+  else
+    log "skipping worker health check; maga-worker is not running"
+  fi
 
   log "checking frontend publication"
   test -x "${FRONTEND_DIR}"

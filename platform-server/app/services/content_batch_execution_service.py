@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, replace
 import re
 from typing import Any
 
@@ -16,18 +17,32 @@ from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.content_rewrite_context import rewrite_business_rule_context
 from app.services.executor_invocation_service import ExecutorInvocationClient
 from app.services.activity_quality_guard_service import ActivityQualityGuardService
+from app.services.ai_flavor_humanizer_service import AIFlavorReview, review_ai_flavor
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService
 from app.services.product_experience_phrase_guard_service import (
     ProductExperiencePhraseReview,
+    SEMANTIC_ODD_PRODUCT_EXPERIENCE_PHRASES,
     review_product_experience_phrase,
     sanitize_adult_self_drinking_phrases,
     sanitize_baby_milk_action_phrases,
     sanitize_common_ai_closure,
+    sanitize_formula_dry_powder_ingestion,
     sanitize_odd_product_experience_phrases,
     sanitize_product_experience_format,
     sanitize_temporal_context,
     sanitize_wangyue_context_phrases,
+    sanitize_wangyue_formula_usage_form,
+    sanitize_wangyue_time_event_context,
     should_review_product_experience,
+)
+from app.services.product_experience_llm_review_service import (
+    ProductExperienceLLMReview,
+    ProductExperienceLLMReviewService,
+)
+from app.services.royal_friso_ugc_structure_guard_service import (
+    RoyalFrisoUGCStructureGuardService,
+    RoyalFrisoUGCStructureReview,
+    royal_friso_structure_rewrite_instructions,
 )
 from app.services.unified_content_generation_service import (
     CONTENT_GENERATE_CAPABILITY,
@@ -38,6 +53,11 @@ SIMILARITY_REWRITE_THRESHOLD = 0.42
 HISTORY_SIMILARITY_REWRITE_THRESHOLD = 0.48
 MAX_SIMILARITY_REWRITE_ROUNDS = 2
 MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS = 2
+MAX_PRODUCT_EXPERIENCE_LLM_REWRITE_ROUNDS = 1
+MAX_AI_FLAVOR_REWRITE_ROUNDS = 2
+MAX_ROYAL_FRISO_STRUCTURE_REWRITE_ROUNDS = 1
+POSTPROCESS_REWRITE_CONCURRENCY = 10
+POST_DELETE_CLEANUP_FLUENCY_REASON = "post_delete_cleanup_fluency_check"
 HISTORY_SIMILARITY_LOOKBACK_LIMIT = 50
 TITLE_GUARD_HISTORY_LOOKBACK_LIMIT = 60
 TITLE_GUARD_FORBIDDEN_SUBSTRINGS = (
@@ -72,7 +92,6 @@ TITLE_GUARD_FORBIDDEN_SUBSTRINGS = (
     "长高",
     "窜个",
     "旺玥4段",
-    "4段",
     "没选错",
     "全靠",
     "防风",
@@ -88,7 +107,6 @@ TITLE_GUARD_FORBIDDEN_SUBSTRINGS = (
     "靠这招",
     "换到旺玥",
     "给娃选奶",
-    "怎么选",
     "原来那罐",
     "选奶记录",
     "开始看旺玥",
@@ -128,6 +146,8 @@ TITLE_GUARD_MARKETING_CLAIM_PATTERNS = (
     re.compile(r"(?:智商税|没输过|补给站|选奶实录)"),
 )
 TITLE_GUARD_AWKWARD_PATTERNS = (
+    re.compile(r"^\s*[{\[]"),
+    re.compile(r"\"(?:title|body)\"\s*:"),
     re.compile(r"(?:请见谅|不恰当|比喻不恰当|欢迎|留言|评论区)"),
     re.compile(r"(?:全面考量|综合考量|深度解析|真实测评|亲测有效|使用心得)"),
     re.compile(r"(?:居然是因为这个|原因找到了|答案来了|秘密在这里)"),
@@ -148,6 +168,9 @@ TITLE_GUARD_AWKWARD_PATTERNS = (
     re.compile(r"每天泡奶"),
     re.compile(r"(?:递给孩子喝|喝一口)"),
     re.compile(r"(?:治住了|功劳吗|挑老公)"),
+    re.compile(r"(?:今天|昨天|上午|下午|今晚|这次|刚才).{0,8}(?:出奇地|真是)?.{0,8}(?:没怎么|没咋|不怎么|少).{0,4}请假"),
+    re.compile(r"停课"),
+    re.compile(r"(?:他们班|班里).{0,6}班里"),
     re.compile(r"(?:正文里|标题里|文案里|这篇).{0,8}(?:观察|想说|记录)"),
     re.compile(r"观察记录"),
     re.compile(r"开罐.{0,8}湿"),
@@ -161,6 +184,13 @@ TITLE_GUARD_AWKWARD_PATTERNS = (
     re.compile(r"开罐记录.{0,8}(?:皇家美素佳儿|旺玥)"),
     re.compile(r"成分.{0,12}心动"),
     re.compile(r"嘴巴严实"),
+    re.compile(r"^我那时候"),
+    re.compile(r"^尤其看"),
+    re.compile(r"^价格差.{0,8}(?:大|不算大)$"),
+    re.compile(r"^先继续喝着吧$"),
+    re.compile(r"^省得我天天纠结"),
+    re.compile(r"^旺玥这(?:两样|几个).{0,6}都有$"),
+    re.compile(r"^给孩子喝了一段时间$"),
 )
 TITLE_MARKETING_CLAIM_TERMS = (
     "保护力",
@@ -198,6 +228,7 @@ EMOJI_PATTERN = re.compile(
     "\u2600-\u27BF"
     "]+"
 )
+TITLE_SURFACE_ALLOWED_EMOJIS = frozenset("😂🥲🙃🤏🙂🤣")
 PERSONA_STYLE_REWRITE_PRESETS = (
     {
         "code": "roommate_direct",
@@ -242,6 +273,16 @@ class _ItemExecutionResult:
     item_id: int
     generated: bool
     failed: bool
+    generated_count: int | None = None
+    failed_count: int | None = None
+
+    @property
+    def effective_generated_count(self) -> int:
+        return self.generated_count if self.generated_count is not None else int(self.generated)
+
+    @property
+    def effective_failed_count(self) -> int:
+        return self.failed_count if self.failed_count is not None else int(self.failed)
 
 
 class ContentBatchExecutionService:
@@ -261,6 +302,7 @@ class ContentBatchExecutionService:
         callback_base_url: str,
         executor_code: str = DEFAULT_EXECUTOR_CODE,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
+        product_experience_llm_reviewer: ProductExperienceLLMReviewService | None = None,
     ):
         self.db = db
         self.invocation_client = invocation_client
@@ -273,13 +315,16 @@ class ContentBatchExecutionService:
             autocommit=False,
             autoflush=False,
         )
+        self.product_experience_llm_reviewer = (
+            product_experience_llm_reviewer or ProductExperienceLLMReviewService()
+        )
 
     async def execute_batch_items(
         self,
         batch_id: int,
         *,
         limit: int,
-        concurrency: int = 5,
+        concurrency: int = 10,
         created_by: str | None = None,
     ) -> BatchExecutionResult:
         if limit <= 0:
@@ -289,30 +334,61 @@ class ContentBatchExecutionService:
         job = await self._require_job(batch_id)
         items = await self._planned_items(batch_id, limit)
         item_ids = [item.id for item in items]
+        execution_groups = _multi_output_execution_groups(items)
         job_context = {"id": job.id, "batch_code": job.batch_code, "count": job.count}
         semaphore = asyncio.Semaphore(concurrency)
 
-        async def run_item(item_id: int) -> _ItemExecutionResult:
+        async def run_group(group_item_ids: list[int]) -> _ItemExecutionResult:
             # Each item owns a DB session because AsyncSession is not safe for
-            # concurrent flush/commit while five executor calls are in flight.
+            # concurrent flush/commit while executor calls are in flight.
             async with semaphore:
-                return await self._execute_one_item(item_id, job_context, created_by=created_by)
+                if len(group_item_ids) == 1:
+                    return await self._execute_one_item(group_item_ids[0], job_context, created_by=created_by)
+                return await self._execute_multi_output_item_group(
+                    group_item_ids,
+                    job_context,
+                    created_by=created_by,
+                )
 
-        results = await asyncio.gather(*(run_item(item_id) for item_id in item_ids))
-        await self._rewrite_similar_generated_items(batch_id, job)
-        await self._rewrite_product_experience_phrase_items(batch_id, job)
-        await self._repair_generated_titles(batch_id, job)
-        await self._rewrite_mouth_phrase_budget_items(batch_id, job)
-        await self._repair_article_length_items(batch_id, job)
-        await self._repair_generated_titles(batch_id, job)
-        generated = sum(1 for result in results if result.generated)
-        failed = sum(1 for result in results if result.failed)
+        results = await asyncio.gather(*(run_group(group_item_ids) for group_item_ids in execution_groups))
+        generated = sum(result.effective_generated_count for result in results)
+        failed = sum(result.effective_failed_count for result in results)
 
         if generated:
             job.status = "partially_generated" if generated < job.count else "generated"
         elif failed:
             job.status = "failed"
         await self.db.flush()
+
+        postprocess_errors = []
+        postprocess_steps = [
+            ("similarity_rewrite", self._rewrite_similar_generated_items),
+            ("product_experience_phrase_rewrite", self._rewrite_product_experience_phrase_items),
+            ("mouth_phrase_budget_rewrite", self._rewrite_mouth_phrase_budget_items),
+            ("article_length_repair", self._repair_article_length_items),
+            ("ai_flavor_rewrite", self._rewrite_ai_flavor_items),
+            ("product_experience_llm_quality_rewrite", self._rewrite_product_experience_llm_quality_items),
+            ("royal_friso_structure_rewrite", self._rewrite_royal_friso_structure_items),
+            ("title_repair", self._repair_generated_titles),
+        ]
+        for step_name, step in postprocess_steps:
+            try:
+                await step(batch_id, job)
+            except Exception as exc:  # noqa: BLE001 - postprocess must not hide generated items
+                postprocess_errors.append(
+                    {
+                        "step": step_name,
+                        "error": str(exc),
+                        "error_type": exc.__class__.__name__,
+                    }
+                )
+        if postprocess_errors:
+            strategy = dict(job.strategy_json or {})
+            existing_errors = list(strategy.get("postprocess_errors") or [])
+            strategy["postprocess_errors"] = [*existing_errors, *postprocess_errors]
+            job.strategy_json = strategy
+            await self.db.flush()
+
         return BatchExecutionResult(
             batch_id=batch_id,
             requested_limit=limit,
@@ -336,6 +412,34 @@ class ContentBatchExecutionService:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def _generated_item_ids(self, batch_id: int) -> list[int]:
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(ContentBatchItem.id)
+                .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
+                .order_by(ContentBatchItem.item_no)
+            )
+            return [int(item_id) for item_id in result.scalars().all()]
+
+    async def _run_generated_item_workers(
+        self,
+        batch_id: int,
+        worker: Callable[[int], Awaitable[int]],
+        *,
+        concurrency: int = POSTPROCESS_REWRITE_CONCURRENCY,
+    ) -> int:
+        item_ids = await self._generated_item_ids(batch_id)
+        if not item_ids:
+            return 0
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def run_item(item_id: int) -> int:
+            async with semaphore:
+                return await worker(item_id)
+
+        results = await asyncio.gather(*(run_item(item_id) for item_id in item_ids))
+        return sum(results)
 
     async def _execute_one_item(
         self,
@@ -373,6 +477,7 @@ class ContentBatchExecutionService:
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                     "keyword_asset": unified.input_snapshot.get("keyword_asset") or {},
                     "expert": unified.input_snapshot.get("expert") or {},
+                    "model_config": unified.input_snapshot.get("model_config") or {},
                     "rendered_prompt": unified.input_snapshot.get("rendered_prompt") or "",
                 },
             }
@@ -389,6 +494,7 @@ class ContentBatchExecutionService:
                 final = result.output or {}
                 title = str(final.get("title") or "").strip()
                 body = str(final.get("body") or "").strip()
+                multi_output_items = _generated_article_items(final)
                 if not title or not body:
                     raise ValueError("content.generate returned empty article")
                 item.status = "generated"
@@ -407,6 +513,13 @@ class ContentBatchExecutionService:
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                     "expert_config_code": (unified.input_snapshot.get("expert") or {}).get("expert_config_code"),
                 }
+                if multi_output_items:
+                    item.quality_json["multi_output"] = {
+                        "mode": "items_json",
+                        "returned_count": len(multi_output_items),
+                        "selected_index": 0,
+                        "items": multi_output_items,
+                    }
                 item.diversity_json = {
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                 }
@@ -415,13 +528,20 @@ class ContentBatchExecutionService:
                     orchestrator=orchestrator,
                     run_id=result.run.id,
                 )
-                await ForbiddenTermReviewService(db).review_and_rewrite_item(
+                forbidden_review = await ForbiddenTermReviewService(db).review_and_rewrite_item(
                     item=item,
                     asset_key=item.plan_json.get("asset_key"),
                     orchestrator=orchestrator,
                     executor_code=self.executor_code,
                     content_type="article",
                 )
+                if forbidden_review.get("final_hits"):
+                    self._mark_forbidden_term_blocking_failure(
+                        item,
+                        list(forbidden_review.get("final_hits") or []),
+                    )
+                    await db.commit()
+                    return _ItemExecutionResult(item_id=item_id, generated=True, failed=False)
                 ActivityQualityGuardService().review_item(item)
                 item.error_message = None
                 await db.commit()
@@ -434,37 +554,858 @@ class ContentBatchExecutionService:
                 await db.commit()
                 return _ItemExecutionResult(item_id=item_id, generated=False, failed=True)
 
-    async def _repair_article_length_items(self, batch_id: int, job: ContentBatchJob) -> int:
+    async def _execute_multi_output_item_group(
+        self,
+        item_ids: list[int],
+        job_context: dict[str, Any],
+        *,
+        created_by: str | None = None,
+    ) -> _ItemExecutionResult:
         async with self.session_factory() as db:
             result = await db.execute(
                 select(ContentBatchItem)
-                .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
+                .where(ContentBatchItem.id.in_(item_ids))
                 .order_by(ContentBatchItem.item_no)
             )
             items = list(result.scalars().all())
-            repair_count = 0
+            if not items:
+                return _ItemExecutionResult(item_id=0, generated=False, failed=True, failed_count=len(item_ids))
+            for item in items:
+                item.status = "running"
+            await db.commit()
+
+            leader = items[0]
+            item_id = int(leader.id or 0)
+            output_count = len(items)
             orchestrator = ContentAgentOrchestrator(
                 db,
                 invocation_client=self.invocation_client,
                 callback_base_url=self.callback_base_url,
             )
-            for item in items:
-                if not item.run_id:
-                    continue
-                repair = await self._repair_article_length_if_needed(
-                    item,
-                    orchestrator=orchestrator,
-                    run_id=item.run_id,
+            leader_plan = dict(leader.plan_json or {})
+            leader_plan["multi_output_count"] = output_count
+            leader_plan["article_output_count"] = output_count
+            leader_plan["items_per_prompt"] = output_count
+            unified = await UnifiedContentGenerationService(db).build_snapshot(
+                content_type="article",
+                business_rule=leader_plan,
+                item_no=leader.item_no,
+                output_fields=["title", "body"],
+                keyword_asset_key=leader_plan.get("keyword_asset_key"),
+                model_config=leader_plan.get("model_config") or {},
+            )
+            unified_generation = {
+                "capability": CONTENT_GENERATE_CAPABILITY,
+                "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
+                "keyword_asset": unified.input_snapshot.get("keyword_asset") or {},
+                "expert": unified.input_snapshot.get("expert") or {},
+                "model_config": unified.input_snapshot.get("model_config") or {},
+                "rendered_prompt": unified.input_snapshot.get("rendered_prompt") or "",
+            }
+            for index, item in enumerate(items):
+                group = dict(((item.plan_json or {}).get("multi_output_group") or {}))
+                group.update({"actual_count": output_count, "selected_index": index})
+                item.plan_json = {
+                    **(item.plan_json or {}),
+                    "multi_output_group": group,
+                    "batch_context": {
+                        "batch_id": job_context["id"],
+                        "batch_code": job_context["batch_code"],
+                        "item_no": item.item_no,
+                    },
+                    "unified_generation": unified_generation,
+                }
+            await db.flush()
+            task_request = ContentAgentTaskCreate(
+                task_type="content_generate",
+                executor_code=self.executor_code,
+                input_snapshot=unified.input_snapshot,
+                asset_refs=unified.asset_refs,
+                created_by=created_by,
+            )
+            try:
+                result = await orchestrator.run_single_capability(task_request, capability=CONTENT_GENERATE_CAPABILITY)
+                final = result.output or {}
+                generated_items = _generated_article_items(final)
+                if len(generated_items) < output_count:
+                    raise ValueError(
+                        f"content.generate returned {len(generated_items)} articles for {output_count} planned items"
+                    )
+                for index, item in enumerate(items):
+                    article = generated_items[index]
+                    title = str(article.get("title") or "").strip()
+                    body = str(article.get("body") or "").strip()
+                    if not title or not body:
+                        raise ValueError("content.generate returned empty article in multi-output group")
+                    item.status = "generated"
+                    item.task_id = result.run.task_id
+                    item.run_id = result.run.id
+                    item.title = title
+                    item.body = body
+                    review_report = _default_unified_review_report()
+                    item.quality_json = {
+                        "executor": self._executor_label(result.stage_calls),
+                        "stage_call_count": len(result.stage_calls),
+                        "run_status": result.run.status,
+                        "review_report": review_report,
+                        "hard_pass": True,
+                        "soft_score_avg": None,
+                        "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
+                        "expert_config_code": (unified.input_snapshot.get("expert") or {}).get("expert_config_code"),
+                        "multi_output": {
+                            "mode": "items_json",
+                            "returned_count": len(generated_items),
+                            "selected_index": index,
+                            "items": generated_items,
+                            "materialized_to_batch_items": True,
+                        },
+                    }
+                    item.diversity_json = {
+                        "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
+                    }
+                    await self._rewrite_item_for_persona_style(
+                        item=item,
+                        orchestrator=orchestrator,
+                        run_id=result.run.id,
+                    )
+                    forbidden_review = await ForbiddenTermReviewService(db).review_and_rewrite_item(
+                        item=item,
+                        asset_key=item.plan_json.get("asset_key"),
+                        orchestrator=orchestrator,
+                        executor_code=self.executor_code,
+                        content_type="article",
+                    )
+                    if forbidden_review.get("final_hits"):
+                        self._mark_forbidden_term_blocking_failure(
+                            item,
+                            list(forbidden_review.get("final_hits") or []),
+                        )
+                    ActivityQualityGuardService().review_item(item)
+                    item.error_message = None
+                await db.commit()
+                return _ItemExecutionResult(
+                    item_id=item_id,
+                    generated=True,
+                    failed=False,
+                    generated_count=output_count,
+                    failed_count=0,
                 )
+            except Exception as exc:  # noqa: BLE001 - persist failed status for operator inspection
+                for item in items:
+                    item.status = "failed"
+                    item.error_message = str(exc)
+                await db.commit()
+                return _ItemExecutionResult(
+                    item_id=item_id,
+                    generated=False,
+                    failed=True,
+                    generated_count=0,
+                    failed_count=output_count,
+                )
+
+    async def _repair_article_length_items(self, batch_id: int, job: ContentBatchJob) -> int:
+        async def worker(item_id: int) -> int:
+            async with self.session_factory() as db:
+                item = await self._require_item(db, item_id)
+                if item.status != "generated" or not item.run_id:
+                    return 0
+                repair = self._repair_article_length_if_needed(item)
                 if not repair:
-                    continue
+                    return 0
                 quality = dict(item.quality_json or {})
                 quality["article_length_guard"] = repair
                 item.quality_json = quality
-                repair_count += 1
-            if repair_count:
                 await db.commit()
-            return repair_count
+                return 1
+
+        return await self._run_generated_item_workers(batch_id, worker)
+
+    async def _rewrite_ai_flavor_items(self, batch_id: int, job: ContentBatchJob) -> int:
+        async def worker(item_id: int) -> int:
+            async with self.session_factory() as db:
+                item = await self._require_item(db, item_id)
+                if item.status != "generated":
+                    return 0
+                if _is_postprocess_blocked(item):
+                    return 0
+                if _should_review_product_experience_llm_quality(item.plan_json):
+                    return 0
+                rewrite_count = 0
+                review_count = 0
+                orchestrator = ContentAgentOrchestrator(
+                    db,
+                    invocation_client=self.invocation_client,
+                    callback_base_url=self.callback_base_url,
+                )
+                review = review_ai_flavor(title=item.title, body=item.body, plan=item.plan_json)
+                self._mark_ai_flavor_review(item, review)
+                review_count += 1
+                while review.rewrite_required and self._ai_flavor_rewrite_rounds(item) < MAX_AI_FLAVOR_REWRITE_ROUNDS:
+                    if not item.run_id or not item.body:
+                        break
+                    rewritten = await self._rewrite_item_for_ai_flavor(
+                        item,
+                        review,
+                        orchestrator=orchestrator,
+                    )
+                    if not rewritten:
+                        break
+                    rewrite_count += 1
+                    review = review_ai_flavor(title=item.title, body=item.body, plan=item.plan_json)
+                if review_count or rewrite_count:
+                    await db.commit()
+                return rewrite_count
+
+        return await self._run_generated_item_workers(batch_id, worker)
+
+    async def _rewrite_item_for_ai_flavor(
+        self,
+        item: ContentBatchItem,
+        review: AIFlavorReview,
+        *,
+        orchestrator: ContentAgentOrchestrator,
+    ) -> bool:
+        if not item.run_id or not item.body:
+            return False
+        try:
+            input_payload = self._ai_flavor_rewrite_input(item, review)
+            result = await orchestrator.run_content_rewrite_stage(
+                run_id=item.run_id,
+                executor_code=self.executor_code,
+                input_payload=input_payload,
+            )
+            final = result.output or {}
+            final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
+            title = str(final.get("title") or final_content.get("title") or "").strip()
+            body = str(final.get("body") or final_content.get("body") or "").strip()
+            if not title or not body:
+                raise ValueError("content.rewrite returned empty article")
+            before = {"title": item.title or "", "body": item.body or ""}
+            if _is_ai_flavor_title_only_review(review):
+                body = before["body"]
+            after = {"title": title, "body": body}
+            if _rewrite_removed_required_wangyue_product(before, after, item.plan_json):
+                raise ValueError("rewrite_removed_required_wangyue_product")
+            item.title = title
+            item.body = body
+            post_review = review_ai_flavor(title=item.title, body=item.body, plan=item.plan_json)
+            quality = dict(item.quality_json or {})
+            rewrites = list(quality.get("ai_flavor_humanizer_rewrites") or [])
+            rewrites.append(
+                {
+                    "pre_review": review.model_dump(),
+                    "post_review": post_review.model_dump(),
+                    "before": before,
+                    "after": {"title": item.title, "body": item.body},
+                    "passed": post_review.pass_,
+                    "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
+                }
+            )
+            quality["ai_flavor_humanizer_rewrites"] = rewrites
+            quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + len(result.stage_calls)
+            quality["run_status"] = result.run.status
+            item.quality_json = quality
+            self._mark_ai_flavor_review(item, post_review)
+            forbidden_review = await self._repair_forbidden_terms_after_post_rewrite(
+                item,
+                orchestrator=orchestrator,
+            )
+            if forbidden_review and forbidden_review.get("final_hits"):
+                self._mark_forbidden_term_blocking_failure(
+                    item,
+                    list(forbidden_review.get("final_hits") or []),
+                )
+                await orchestrator.db.flush()
+                return False
+            if forbidden_review and forbidden_review.get("initial_hits"):
+                post_review = review_ai_flavor(title=item.title, body=item.body, plan=item.plan_json)
+                self._mark_ai_flavor_review(item, post_review)
+            blocked = False
+            if should_review_product_experience(item.plan_json):
+                phrase_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                phrase_review = await self._repair_product_experience_phrase_after_post_rewrite(
+                    orchestrator.db,
+                    item,
+                    phrase_review,
+                    cleanup_key_prefix="ai_flavor",
+                )
+                if _has_blocking_product_experience_phrase_review(phrase_review):
+                    self._mark_product_experience_blocking_failure(
+                        item,
+                        phrase_review,
+                        source="ai_flavor_humanizer",
+                    )
+                    blocked = True
+                else:
+                    self._mark_product_experience_phrase_review(item, phrase_review)
+            if not blocked:
+                item.error_message = None
+            await orchestrator.db.flush()
+            return not blocked
+        except Exception as exc:  # noqa: BLE001 - keep generated content if humanizer fails
+            quality = dict(item.quality_json or {})
+            failures = list(quality.get("ai_flavor_humanizer_failures") or [])
+            failures.append({"review": review.model_dump(), "error_message": str(exc)})
+            quality["ai_flavor_humanizer_failures"] = failures
+            item.quality_json = quality
+            await orchestrator.db.flush()
+            return False
+
+    async def _repair_forbidden_terms_after_post_rewrite(
+        self,
+        item: ContentBatchItem,
+        *,
+        orchestrator: ContentAgentOrchestrator,
+    ) -> dict[str, Any] | None:
+        service = ForbiddenTermReviewService(orchestrator.db)
+        audit = await service.audit_text(
+            asset_key=item.plan_json.get("asset_key"),
+            title=item.title,
+            body=item.body,
+        )
+        if not audit.hits:
+            return None
+        return await service.review_and_rewrite_item(
+            item=item,
+            asset_key=item.plan_json.get("asset_key"),
+            orchestrator=orchestrator,
+            executor_code=self.executor_code,
+            content_type="article",
+        )
+
+    async def _repair_product_experience_phrase_after_post_rewrite(
+        self,
+        db: AsyncSession,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+        *,
+        cleanup_key_prefix: str,
+    ) -> ProductExperiencePhraseReview:
+        cleanup_applied = False
+        if review.temporal_context_hits:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key=f"{cleanup_key_prefix}_temporal_context_cleanups",
+                title=sanitize_temporal_context(item.title or ""),
+                body=sanitize_temporal_context(item.body or ""),
+            )
+            cleanup_applied = True
+        if "formula_dry_powder_ingestion" in review.reasons:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key=f"{cleanup_key_prefix}_formula_dry_powder_cleanups",
+                title=sanitize_formula_dry_powder_ingestion(item.title or ""),
+                body=sanitize_formula_dry_powder_ingestion(item.body or ""),
+            )
+            cleanup_applied = True
+        if "formula_usage_form_error" in review.reasons:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key=f"{cleanup_key_prefix}_formula_usage_form_cleanups",
+                title=sanitize_wangyue_formula_usage_form(item.title or ""),
+                body=sanitize_wangyue_formula_usage_form(item.body or ""),
+            )
+            cleanup_applied = True
+        if "wangyue_time_event_context" in review.reasons:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key=f"{cleanup_key_prefix}_wangyue_time_event_cleanups",
+                title=sanitize_wangyue_time_event_context(item.title or ""),
+                body=sanitize_wangyue_time_event_context(item.body or ""),
+            )
+            cleanup_applied = True
+
+        review_for_llm = (
+            _append_product_experience_review_reason(review, POST_DELETE_CLEANUP_FLUENCY_REASON)
+            if cleanup_applied
+            else review
+        )
+        should_model_repair = cleanup_applied or _has_blocking_product_experience_phrase_review(review_for_llm)
+        if (
+            should_model_repair
+            and review_for_llm.rewrite_required
+            and self._product_experience_phrase_rewrite_rounds(item) < MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS
+        ):
+            rewritten = await self._rewrite_item_for_product_experience_phrase(db, item, review_for_llm)
+            if rewritten:
+                return review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+            return review_for_llm
+        return review
+
+    def _ai_flavor_rewrite_input(self, item: ContentBatchItem, review: AIFlavorReview) -> dict[str, Any]:
+        unified_generation = (item.plan_json or {}).get("unified_generation") or {}
+        rewrite_round = self._ai_flavor_rewrite_rounds(item) + 1
+        return {
+            "previous_content": {"title": item.title or "", "body": item.body or ""},
+            "content_type": "article",
+            "output_fields": ["title", "body"],
+            "business_rule": rewrite_business_rule_context(item.plan_json),
+            "selected_keywords": unified_generation.get("selected_keywords") or [],
+            "model_config": dict((item.plan_json or {}).get("model_config") or {}),
+            "rewrite_source": "ai_flavor_humanizer",
+            "review_report": {
+                "rewrite_required": True,
+                "rewrite_reason": "AI 味 / 解释腔 / 标题卖点前置",
+                "ai_flavor_review": review.model_dump(),
+            },
+            "rewrite_round": rewrite_round,
+            "rewrite_instructions": [
+                "按 great-writer humanizer 四步改：口语检验、密度与节奏、AI 痕迹清除、反风格检查。",
+                "硬性验收：改写后的 title/body 不能再命中本轮 ai_flavor_review 里的 title_hits/body_hits；如果 title_hits 有词，标题必须避开这些词。",
+                "标题只写生活入口、孩子动作、妈妈状态或一个很短的场景碎片；标题不要出现产品卖点词、成分词、风险结果词，也不要写“选奶看了XX/关注XX”这种运营概括。",
+                "正文保留原业务意图、产品事实和合规边界；不要新增功效承诺、治疗、预防、确定改善、少请假、不生病、注意力变好、长高长肉。",
+                "不可新增清单：不要新增时间/季节/季节性活动节点，不要新增疾病或大环境，不要新增产品使用动作，不要新增成分到效果的新因果，不要新增年龄阶段事实，不要新增购买/囤货/复购链路。",
+                "硬性验收：如果原文已经出现本篇产品名或品牌名，改写后正文必须仍明确保留；真人润色只改表达，不能把产品从正文里洗掉。",
+                "删掉审核腔和自我辩解句，例如“不是说喝了就怎样/没指望喝了就/不会说喝了就/目前还在观察/说不上有没有用/不能指望一罐奶粉”。合规边界靠不写功效承诺解决，不要在正文里显性声明。",
+                "改写后仍要正面表达产品：只保留原文已有的一个真实可用产品依据或使用感；不要新增产品动作、补货动作或价格取舍。",
+                "把解释腔改成生活场景：少解释为什么好，多写一个具体处境、动作或妈妈当时怎么想。",
+                "罗列太密时只保留一个最强产品依据，其余删掉或变成一句背景；不要堆参数和成分。",
+                "节奏打散：长短句交错，允许一点省略和补充，不要每句都完整闭环。",
+                "如果是选奶/选择复盘型，正文压成一个生活入口 + 一个正向选择依据 + 一个非价格的现实细节；不要写完整广告复盘，也不要用“不敢说有效”来制造真实感。",
+                "标题不要替正文交代选择逻辑；把“我认真看了阶段/选择依据/重点关注”这类高解释义务标题，改成低义务生活碎片或名词短语。",
+                "正文结尾不要太会总结，不要用“只能说/不算满分推荐/每家情况不一样/看自己需求/有个底/心里稳点/没觉得选错/后面再看/继续观察”连续收束；能停在生活动作、补货动作或一个正向细节就停。",
+                "只输出 JSON：title, body。",
+            ],
+        }
+
+    def _ai_flavor_rewrite_rounds(self, item: ContentBatchItem) -> int:
+        quality = dict(item.quality_json or {})
+        return len(quality.get("ai_flavor_humanizer_rewrites") or [])
+
+    async def _rewrite_product_experience_llm_quality_items(self, batch_id: int, job: ContentBatchJob) -> int:
+        async def worker(item_id: int) -> int:
+            async with self.session_factory() as db:
+                item = await self._require_item(db, item_id)
+                if item.status != "generated" or not _should_review_product_experience_llm_quality(item.plan_json):
+                    return 0
+                if _is_postprocess_blocked(item):
+                    return 0
+                rewrite_count = 0
+                review_count = 0
+                orchestrator = ContentAgentOrchestrator(
+                    db,
+                    invocation_client=self.invocation_client,
+                    callback_base_url=self.callback_base_url,
+                )
+                phrase_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                ai_flavor_review = review_ai_flavor(title=item.title, body=item.body, plan=item.plan_json)
+                self._mark_ai_flavor_review(item, ai_flavor_review)
+                review_plan = await self._plan_with_provider_config_for_llm_review(
+                    item.plan_json,
+                    orchestrator=orchestrator,
+                )
+                try:
+                    review = await self.product_experience_llm_reviewer.review(
+                        title=item.title,
+                        body=item.body,
+                        plan=review_plan,
+                        phrase_review=phrase_review,
+                        ai_flavor_review=ai_flavor_review,
+                    )
+                except Exception as exc:  # noqa: BLE001 - keep generated content if reviewer is unavailable
+                    self._mark_product_experience_llm_review_failure(item, str(exc))
+                    review_count += 1
+                    if ai_flavor_review.rewrite_required and item.run_id and item.body:
+                        rewritten = await self._rewrite_item_for_ai_flavor(
+                            item,
+                            ai_flavor_review,
+                            orchestrator=orchestrator,
+                        )
+                        if rewritten:
+                            rewrite_count += 1
+                    await db.commit()
+                    return rewrite_count
+                self._mark_product_experience_llm_review(
+                    item,
+                    review,
+                    mark_rewrite_required=_should_repair_product_experience_llm_quality(item.plan_json, review),
+                )
+                review_count += 1
+
+                async def refresh_reviews() -> bool:
+                    nonlocal ai_flavor_review, review, review_count
+                    phrase_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                    ai_flavor_review = review_ai_flavor(title=item.title, body=item.body, plan=item.plan_json)
+                    self._mark_ai_flavor_review(item, ai_flavor_review)
+                    review_plan = await self._plan_with_provider_config_for_llm_review(
+                        item.plan_json,
+                        orchestrator=orchestrator,
+                    )
+                    try:
+                        review = await self.product_experience_llm_reviewer.review(
+                            title=item.title,
+                            body=item.body,
+                            plan=review_plan,
+                            phrase_review=phrase_review,
+                            ai_flavor_review=ai_flavor_review,
+                        )
+                    except Exception as exc:  # noqa: BLE001 - keep rewritten content if re-review fails
+                        self._mark_product_experience_llm_review_failure(item, str(exc))
+                        return False
+                    self._mark_product_experience_llm_review(
+                        item,
+                        review,
+                        mark_rewrite_required=_should_repair_product_experience_llm_quality(item.plan_json, review),
+                    )
+                    review_count += 1
+                    return True
+
+                while True:
+                    if _should_repair_product_experience_llm_quality(item.plan_json, review):
+                        if self._product_experience_llm_rewrite_rounds(item) >= MAX_PRODUCT_EXPERIENCE_LLM_REWRITE_ROUNDS:
+                            break
+                        if not item.run_id or not item.body:
+                            break
+                        rewritten = await self._rewrite_item_for_product_experience_llm_quality(
+                            item,
+                            review,
+                            orchestrator=orchestrator,
+                        )
+                        if not rewritten:
+                            break
+                        rewrite_count += 1
+                        if not await refresh_reviews():
+                            break
+                        continue
+                    if not ai_flavor_review.rewrite_required:
+                        break
+                    if self._ai_flavor_rewrite_rounds(item) >= MAX_AI_FLAVOR_REWRITE_ROUNDS:
+                        break
+                    if not item.run_id or not item.body:
+                        break
+                    rewritten = await self._rewrite_item_for_ai_flavor(
+                        item,
+                        ai_flavor_review,
+                        orchestrator=orchestrator,
+                    )
+                    if not rewritten:
+                        break
+                    rewrite_count += 1
+                    if not await refresh_reviews():
+                        break
+                if review_count or rewrite_count:
+                    await db.commit()
+                return rewrite_count
+
+        return await self._run_generated_item_workers(batch_id, worker)
+
+    async def _rewrite_royal_friso_structure_items(self, batch_id: int, job: ContentBatchJob) -> int:
+        guard = RoyalFrisoUGCStructureGuardService()
+
+        async def worker(item_id: int) -> int:
+            async with self.session_factory() as db:
+                item = await self._require_item(db, item_id)
+                if item.status != "generated" or _is_postprocess_blocked(item):
+                    return 0
+                review = guard.review(title=item.title, body=item.body, plan=item.plan_json)
+                if review is None:
+                    return 0
+                self._mark_royal_friso_structure_review(item, review)
+                rewrite_count = 0
+                orchestrator = ContentAgentOrchestrator(
+                    db,
+                    invocation_client=self.invocation_client,
+                    callback_base_url=self.callback_base_url,
+                )
+                while (
+                    review.rewrite_required
+                    and item.run_id
+                    and item.body
+                    and self._royal_friso_structure_rewrite_rounds(item) < MAX_ROYAL_FRISO_STRUCTURE_REWRITE_ROUNDS
+                ):
+                    rewritten = await self._rewrite_item_for_royal_friso_structure(
+                        item,
+                        review,
+                        orchestrator=orchestrator,
+                    )
+                    if not rewritten:
+                        break
+                    rewrite_count += 1
+                    review = guard.review(title=item.title, body=item.body, plan=item.plan_json)
+                    if review is None:
+                        break
+                    self._mark_royal_friso_structure_review(item, review)
+                if review and review.rewrite_required:
+                    self._mark_royal_friso_structure_blocking_failure(item, review)
+                await db.commit()
+                return rewrite_count
+
+        return await self._run_generated_item_workers(batch_id, worker)
+
+    async def _rewrite_item_for_royal_friso_structure(
+        self,
+        item: ContentBatchItem,
+        review: RoyalFrisoUGCStructureReview,
+        *,
+        orchestrator: ContentAgentOrchestrator,
+    ) -> bool:
+        try:
+            input_payload = self._royal_friso_structure_rewrite_input(item, review)
+            result = await orchestrator.run_content_rewrite_stage(
+                run_id=item.run_id,
+                executor_code=self.executor_code,
+                input_payload=input_payload,
+            )
+            final = result.output or {}
+            final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
+            title = str(final.get("title") or final_content.get("title") or "").strip()
+            body = str(final.get("body") or final_content.get("body") or "").strip()
+            if not title or not body:
+                raise ValueError("content.rewrite returned empty article")
+            before = {"title": item.title or "", "body": item.body or ""}
+            after = {"title": title, "body": body}
+            if before["body"] and "皇家美素佳儿" in before["body"] and "皇家美素佳儿" not in after["body"]:
+                raise ValueError("rewrite_removed_required_royal_friso_product")
+            item.title = title
+            item.body = body
+            quality = dict(item.quality_json or {})
+            rewrites = list(quality.get("royal_friso_ugc_structure_rewrites") or [])
+            rewrites.append(
+                {
+                    "pre_review": review.model_dump(),
+                    "before": before,
+                    "after": after,
+                    "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
+                }
+            )
+            quality["royal_friso_ugc_structure_rewrites"] = rewrites
+            quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + len(result.stage_calls)
+            quality["run_status"] = result.run.status
+            item.quality_json = quality
+            forbidden_review = await self._repair_forbidden_terms_after_post_rewrite(
+                item,
+                orchestrator=orchestrator,
+            )
+            if forbidden_review and forbidden_review.get("final_hits"):
+                self._mark_forbidden_term_blocking_failure(
+                    item,
+                    list(forbidden_review.get("final_hits") or []),
+                )
+                await orchestrator.db.flush()
+                return False
+            item.error_message = None
+            await orchestrator.db.flush()
+            return True
+        except Exception as exc:  # noqa: BLE001 - keep generated content if rewrite fails
+            quality = dict(item.quality_json or {})
+            failures = list(quality.get("royal_friso_ugc_structure_failures") or [])
+            failures.append({"review": review.model_dump(), "error_message": str(exc)})
+            quality["royal_friso_ugc_structure_failures"] = failures
+            item.quality_json = quality
+            await orchestrator.db.flush()
+            return False
+
+    def _royal_friso_structure_rewrite_input(
+        self,
+        item: ContentBatchItem,
+        review: RoyalFrisoUGCStructureReview,
+    ) -> dict[str, Any]:
+        unified_generation = (item.plan_json or {}).get("unified_generation") or {}
+        return {
+            "previous_content": {"title": item.title or "", "body": item.body or ""},
+            "content_type": "article",
+            "output_fields": ["title", "body"],
+            "business_rule": rewrite_business_rule_context(item.plan_json),
+            "selected_keywords": unified_generation.get("selected_keywords") or [],
+            "model_config": dict((item.plan_json or {}).get("model_config") or {}),
+            "rewrite_source": "royal_friso_ugc_structure_guard",
+            "review_report": {
+                "rewrite_required": True,
+                "rewrite_reason": "皇家UGC结构风险需要改写",
+                "royal_friso_ugc_structure_guard": review.model_dump(),
+            },
+            "rewrite_round": self._royal_friso_structure_rewrite_rounds(item) + 1,
+            "rewrite_instructions": royal_friso_structure_rewrite_instructions(review),
+        }
+
+    async def _plan_with_provider_config_for_llm_review(
+        self,
+        plan: dict[str, Any] | None,
+        *,
+        orchestrator: ContentAgentOrchestrator,
+    ) -> dict[str, Any]:
+        """Attach transient provider credentials for the LLM reviewer only."""
+        plan = dict(plan or {})
+        unified_generation = plan.get("unified_generation") or {}
+        expert = unified_generation.get("expert") or {}
+        model_config = dict(
+            plan.get("model_config")
+            or unified_generation.get("model_config")
+            or expert.get("model_config")
+            or {}
+        )
+        if not model_config:
+            return plan
+        payload = await orchestrator._input_payload_with_provider_config({"model_config": model_config})
+        hydrated_model_config = payload.get("model_config") if isinstance(payload, dict) else None
+        if not isinstance(hydrated_model_config, dict):
+            return plan
+        return {**plan, "model_config": hydrated_model_config}
+
+    async def _rewrite_item_for_product_experience_llm_quality(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperienceLLMReview,
+        *,
+        orchestrator: ContentAgentOrchestrator,
+    ) -> bool:
+        if not item.run_id or not item.body:
+            return False
+        try:
+            input_payload = self._product_experience_llm_quality_rewrite_input(item, review)
+            result = await orchestrator.run_content_rewrite_stage(
+                run_id=item.run_id,
+                executor_code=self.executor_code,
+                input_payload=input_payload,
+            )
+            final = result.output or {}
+            final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
+            title = str(final.get("title") or final_content.get("title") or "").strip()
+            body = str(final.get("body") or final_content.get("body") or "").strip()
+            if not title or not body:
+                raise ValueError("content.rewrite returned empty article")
+            before = {"title": item.title or "", "body": item.body or ""}
+            after = {"title": title, "body": body}
+            if _rewrite_removed_required_wangyue_product(before, after, item.plan_json):
+                raise ValueError("rewrite_removed_required_wangyue_product")
+            item.title = title
+            item.body = body
+            phrase_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+            quality = dict(item.quality_json or {})
+            rewrites = list(quality.get("product_experience_llm_quality_rewrites") or [])
+            rewrites.append(
+                {
+                    "pre_review": review.model_dump(),
+                    "before": before,
+                    "after": {"title": item.title, "body": item.body},
+                    "phrase_review_after_rewrite": phrase_review.model_dump(),
+                    "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
+                }
+            )
+            quality["product_experience_llm_quality_rewrites"] = rewrites
+            quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + len(result.stage_calls)
+            quality["run_status"] = result.run.status
+            item.quality_json = quality
+            self._mark_product_experience_phrase_review(item, phrase_review)
+            item.error_message = None
+            await orchestrator.db.flush()
+            return True
+        except Exception as exc:  # noqa: BLE001 - keep generated content if quality rewrite fails
+            quality = dict(item.quality_json or {})
+            failures = list(quality.get("product_experience_llm_quality_failures") or [])
+            failures.append({"review": review.model_dump(), "error_message": str(exc)})
+            quality["product_experience_llm_quality_failures"] = failures
+            item.quality_json = quality
+            await orchestrator.db.flush()
+            return False
+
+    def _product_experience_llm_quality_rewrite_input(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperienceLLMReview,
+    ) -> dict[str, Any]:
+        unified_generation = (item.plan_json or {}).get("unified_generation") or {}
+        issue_lines = [
+            f"{issue.code}: {issue.evidence}；原因：{issue.reason}"
+            for issue in review.issues
+        ]
+        issue_codes = {issue.code for issue in review.issues}
+        age_stage_instruction = (
+            "本轮命中产品年龄事实硬错误：必须把孩子使用、购买或备着产品的时间关系改到业务规则允许的年龄阶段。"
+            "删除断奶、辅食、一两岁、未满三岁、三岁前开始喝这类链路；保留原文一个正向产品价值或效果证明。"
+            "不要机械替换年龄词导致残句，也不要完整复述成“3岁以上4段儿童奶粉”。"
+            if "wangyue_age_stage_error" in issue_codes
+            else "产品年龄事实必须按业务规则正确：不要新增低龄、断奶、辅食、前序段位或未到适用年龄就开始喝的链路。"
+        )
+        return {
+            "previous_content": {"title": item.title or "", "body": item.body or ""},
+            "content_type": "article",
+            "output_fields": ["title", "body"],
+            "business_rule": rewrite_business_rule_context(item.plan_json),
+            "selected_keywords": unified_generation.get("selected_keywords") or [],
+            "model_config": dict((item.plan_json or {}).get("model_config") or {}),
+            "rewrite_source": "product_experience_llm_quality_review",
+            "review_report": {
+                "rewrite_required": True,
+                "rewrite_reason": "LLM 判断产品出现/决策链/真人感需要改写",
+                "product_experience_llm_review": review.model_dump(),
+            },
+            "rewrite_round": self._product_experience_llm_rewrite_rounds(item) + 1,
+            "rewrite_instructions": [
+                "按 LLM 质检意见局部改写，不要整篇重写成新广告。",
+                "本轮问题：" + ("；".join(issue_lines) if issue_lines else review.overall_reason),
+                f"业务入池档位：{review.business_usability_tier}；原因：{review.business_usability_reason or review.overall_reason}。",
+                "如果是 light_fix_usable，只做轻修：修错字、断句、病句、旧模板词、轻微强因果或安全降调；保留原种草内核和强正向产品价值，不要整篇重写。",
+                "如果是 hold_out，优先修事实错误、产品形态错误、成分-效果错配、医疗/保证倾向或文本断裂；修不顺就宁可保留问题标记，不要编新事实。",
+                "质检问题只用于定位，不要照搬质检里的压缩式改写方向；尤其不要因为有完整链路问题就机械删到只剩产品和一个反馈。",
+                age_stage_instruction,
+                "核心目标：保留本篇产品一个明确、正向、可种草的产品价值；效果证明可以保留为主种草点。改写只处理已被质检指出的广告链、突兀产品出现或模板腔，不把正文压缩成提纲。",
+                "硬性验收：如果原文已经出现本篇产品名或品牌名，改写后正文必须仍明确保留；可以删多余解释，但不能把产品从正文里洗掉。",
+                "删除节点要克制：优先删多余产品解释、重复卖点、妈妈安心收口或促销式结论；保留生活入口、发帖动作、一个具体场景细节和一个正向反馈。",
+                "不要新增冲泡、加进牛奶、早餐搭配、每天喝、孩子喝完、孩子接受这类产品动作；如果原文没有这些动作，不要为了自然感补出来。",
+                "不要用“还在观察、不能指望一罐奶粉、每家孩子不一样、不敢说有效”这类不确定声明替代产品价值。",
+                "按帖子类型纠偏，而不是削短：复购/长期使用围绕补货和一个没断原因；问题解决保留生活困扰和产品作为处理链路一环；使用反馈保留当前安排、场景细节和一个感受；轻测评保留一个观察点和提到它的生活语境；对比选择保留一个选择依据和一个取舍。",
+                "如果原正文已经超过80字，改写后也尽量保持80字以上；需要删广告链时，用生活细节或发帖动作补回自然密度，但不要新增第二个产品卖点或第二个效果证明。",
+                "标题低义务，优先生活入口、短名词、动作碎片；不要把卖点和完整决策写进标题。",
+                "正文单段不换行；只输出 JSON：title, body。",
+            ],
+        }
+
+    def _product_experience_llm_rewrite_rounds(self, item: ContentBatchItem) -> int:
+        quality = dict(item.quality_json or {})
+        return len(quality.get("product_experience_llm_quality_rewrites") or [])
+
+    def _mark_product_experience_llm_review(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperienceLLMReview,
+        *,
+        mark_rewrite_required: bool | None = None,
+    ) -> None:
+        quality = dict(item.quality_json or {})
+        review_report = dict(quality.get("review_report") or {})
+        review_report["product_experience_llm_review"] = review.model_dump()
+        should_mark_rewrite = review.rewrite_required if mark_rewrite_required is None else mark_rewrite_required
+        if should_mark_rewrite:
+            review_report.update(
+                {
+                    "rewrite_required": True,
+                    "rewrite_reason": "LLM 判断产品出现/决策链/真人感需要改写",
+                }
+            )
+        elif str(review_report.get("rewrite_reason") or "").startswith("LLM 判断产品出现"):
+            review_report["rewrite_required"] = False
+            review_report.pop("rewrite_reason", None)
+        quality["review_report"] = review_report
+        quality["product_experience_llm_quality_review"] = {
+            "pass": review.pass_,
+            "rewrite_required": review.rewrite_required,
+            "mark_rewrite_required": should_mark_rewrite,
+            "severity": review.severity,
+            "business_usability_tier": review.business_usability_tier,
+            "business_usability_reason": review.business_usability_reason,
+            "issues": [issue.code for issue in review.issues],
+            "scores": {
+                "product_appearance_naturalness": review.product_appearance_naturalness,
+                "decision_chain_fit": review.decision_chain_fit,
+                "product_value_strength": review.product_value_strength,
+                "human_realness": review.human_realness,
+            },
+        }
+        item.quality_json = quality
+
+    def _mark_product_experience_llm_review_failure(self, item: ContentBatchItem, error_message: str) -> None:
+        quality = dict(item.quality_json or {})
+        failures = list(quality.get("product_experience_llm_quality_failures") or [])
+        failures.append({"error_message": error_message})
+        quality["product_experience_llm_quality_failures"] = failures
+        if str((item.plan_json or {}).get("asset_key") or "").startswith("wangyue_v2_"):
+            quality["product_experience_llm_quality_review_unavailable_mark_only"] = True
+        item.quality_json = quality
 
     async def _rewrite_item_for_persona_style(
         self,
@@ -529,120 +1470,54 @@ class ContentBatchExecutionService:
             raise ValueError("batch item not found")
         return item
 
-    async def _repair_article_length_if_needed(
-        self,
+    @staticmethod
+    def _repair_article_length_if_needed(
         item: ContentBatchItem,
-        *,
-        orchestrator: ContentAgentOrchestrator,
-        run_id: int,
     ) -> dict[str, Any] | None:
-        target = _article_length_target(item.plan_json or {})
-        if not target:
+        min_chars = 30
+        max_chars = 600
+        body = item.body or ""
+        body_chars = _compact_len(body)
+        full_text = f"{item.title or ''}\n{body}"
+        reasoning_leak = "<think" in full_text.lower()
+        if not reasoning_leak and min_chars <= body_chars <= max_chars:
             return None
-        kind, min_chars, max_chars = target
-        before_chars = _compact_len(item.body)
-        if min_chars <= before_chars <= max_chars:
-            return None
-        after_chars = before_chars
-        attempts = 0
-        last_error = None
-        for attempts in range(1, 3):
-            rewrite_input = _length_rewrite_input(
-                item,
-                kind=kind,
-                min_chars=min_chars,
-                max_chars=max_chars,
-                before_chars=after_chars,
-                rewrite_round=attempts,
-            )
-            try:
-                result = await orchestrator.run_content_rewrite_stage(
-                    run_id=run_id,
-                    executor_code=self.executor_code,
-                    input_payload=rewrite_input,
-                )
-            except Exception as exc:  # noqa: BLE001 - keep generated item when optional repair fails
-                last_error = str(exc)
-                break
-            output = result.output or {}
-            final = output.get("final") if isinstance(output.get("final"), dict) else {}
-            title = str(output.get("title") or final.get("title") or "").strip()
-            body = str(output.get("body") or final.get("body") or "").strip()
-            candidate_title = title or item.title or ""
-            candidate_body = body or item.body or ""
-            if should_review_product_experience(item.plan_json):
-                product_review = review_product_experience_phrase(
-                    title=candidate_title,
-                    body=candidate_body,
-                    plan=item.plan_json,
-                )
-                if product_review.rewrite_required:
-                    fallback_applied = False
-                    if _is_wangyue_growth_nutrition_plan(item.plan_json or {}):
-                        fallback_title = item.title or "给孩子选旺玥这事"
-                        fallback_body = _fallback_wangyue_growth_nutrition_body(item)
-                        fallback_review = review_product_experience_phrase(
-                            title=fallback_title,
-                            body=fallback_body,
-                            plan=item.plan_json,
-                        )
-                        fallback_chars = _compact_len(fallback_body)
-                        if min_chars <= fallback_chars <= max_chars and not fallback_review.rewrite_required:
-                            quality = dict(item.quality_json or {})
-                            fallbacks = list(quality.get("article_length_product_guard_fallbacks") or [])
-                            fallbacks.append(
-                                {
-                                    "rewrite_round": attempts,
-                                    "blocked_review": product_review.model_dump(),
-                                    "before": {"title": item.title or "", "body": item.body or ""},
-                                    "after": {"title": fallback_title, "body": fallback_body},
-                                    "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
-                                }
-                            )
-                            quality["article_length_product_guard_fallbacks"] = fallbacks
-                            item.quality_json = quality
-                            item.title = fallback_title
-                            item.body = fallback_body
-                            after_chars = fallback_chars
-                            self._mark_product_experience_phrase_review(item, fallback_review)
-                            fallback_applied = True
-                    if fallback_applied:
-                        break
-                    last_error = "blocked_by_product_experience_phrase_guard"
-                    quality = dict(item.quality_json or {})
-                    failures = list(quality.get("article_length_repair_failures") or [])
-                    failures.append(
-                        {
-                            "rewrite_round": attempts,
-                            "error_message": last_error,
-                            "product_experience_phrase_review": product_review.model_dump(),
-                            "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
-                        }
-                    )
-                    quality["article_length_repair_failures"] = failures
-                    item.quality_json = quality
-                    break
-            if title:
-                item.title = title
-            if body:
-                item.body = body
-            after_chars = _compact_len(item.body)
-            if should_review_product_experience(item.plan_json):
-                self._mark_product_experience_phrase_review(
-                    item,
-                    review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json),
-                )
-            if min_chars <= after_chars <= max_chars:
-                break
+
+        if reasoning_leak:
+            status = "reasoning_leak"
+            reason = "正文包含模型推理泄露，疑似生成异常"
+        elif body_chars < min_chars:
+            status = "extreme_short"
+            reason = "正文过短，疑似生成异常"
+        else:
+            status = "extreme_long"
+            reason = "正文过长，疑似生成异常"
+
+        quality = dict(item.quality_json or {})
+        review_report = dict(quality.get("review_report") or {})
+        review_report.update(
+            {
+                "rewrite_required": True,
+                "rewrite_reason": reason,
+            }
+        )
+        quality["review_report"] = review_report
+        quality["hard_pass"] = False
+        quality["postprocess_blocked"] = {
+            "source": "article_length_guard",
+            "reasons": [status],
+            "hits": [],
+        }
+        item.quality_json = quality
         return {
-            "kind": kind,
-            "before_chars": before_chars,
-            "after_chars": after_chars,
-            "target_min": min_chars,
-            "target_max": max_chars,
-            "attempts": attempts,
-            **({"error": last_error} if last_error else {}),
-            "status": "passed" if min_chars <= after_chars <= max_chars else "still_out_of_range",
+            "pass": False,
+            "status": status,
+            "body_chars": body_chars,
+            "min_chars": min_chars,
+            "max_chars": max_chars,
+            "rewrite_required": False,
+            "manual_review_required": True,
+            "reason": reason,
         }
 
     def _executor_label(self, stage_calls: list[Any]) -> str:
@@ -664,6 +1539,8 @@ class ContentBatchExecutionService:
             history_items = await self._history_items_for_similarity(db, job)
             rewrite_count = 0
             for index, item in enumerate(items):
+                if _is_postprocess_blocked(item):
+                    continue
                 while item.body and item.run_id and self._similarity_rewrite_rounds(item) < MAX_SIMILARITY_REWRITE_ROUNDS:
                     best_match = self._most_similar_candidate(item, [*items[:index], *history_items])
                     if not best_match or best_match["score"] < self._similarity_threshold(best_match):
@@ -693,6 +1570,8 @@ class ContentBatchExecutionService:
             used_titles: set[str] = set()
             repair_count = 0
             for item in items:
+                if _is_postprocess_blocked(item):
+                    continue
                 format_cleaned_title = _sanitize_generated_title_format(item.title or "")
                 if format_cleaned_title and format_cleaned_title != (item.title or ""):
                     before = item.title or ""
@@ -757,251 +1636,87 @@ class ContentBatchExecutionService:
         }
 
     async def _rewrite_product_experience_phrase_items(self, batch_id: int, job: ContentBatchJob) -> int:
-        async with self.session_factory() as db:
-            result = await db.execute(
-                select(ContentBatchItem)
-                .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
-                .order_by(ContentBatchItem.item_no)
-            )
-            items = list(result.scalars().all())
-            rewrite_count = 0
-            for item in items:
-                if not should_review_product_experience(item.plan_json):
-                    continue
+        async def worker(item_id: int) -> int:
+            async with self.session_factory() as db:
+                item = await self._require_item(db, item_id)
+                if item.status != "generated" or not should_review_product_experience(item.plan_json):
+                    return 0
+                if _is_postprocess_blocked(item):
+                    return 0
                 review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                if review.temporal_context_hits:
-                    before = {"title": item.title or "", "body": item.body or ""}
-                    item.title = sanitize_temporal_context(item.title)
-                    item.body = sanitize_temporal_context(item.body)
-                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    quality = dict(item.quality_json or {})
-                    cleanups = list(quality.get("product_experience_temporal_context_cleanups") or [])
-                    cleanups.append(
-                        {
-                            "before": before,
-                            "after": {"title": item.title or "", "body": item.body or ""},
-                            "pre_review": review.model_dump(),
-                            "post_review": post_review.model_dump(),
-                        }
+                if _should_mark_only_product_experience_phrase_review(item.plan_json, review):
+                    self._mark_product_experience_phrase_review(item, review, mark_rewrite_required=False)
+                    await db.commit()
+                    return 0
+                rewrite_count = 0
+                cleanup_applied = False
+                if "formula_dry_powder_ingestion" in review.reasons:
+                    review = self._apply_product_experience_text_cleanup(
+                        item,
+                        review,
+                        cleanup_key="product_experience_formula_dry_powder_cleanups",
+                        title=sanitize_formula_dry_powder_ingestion(item.title or ""),
+                        body=sanitize_formula_dry_powder_ingestion(item.body or ""),
                     )
-                    quality["product_experience_temporal_context_cleanups"] = cleanups
-                    item.quality_json = quality
-                    review = post_review
-                    rewrite_count += 1
-                if "common_ai_closure_phrase" in review.reasons:
-                    before = {"title": item.title or "", "body": item.body or ""}
-                    item.title = sanitize_common_ai_closure(item.title)
-                    item.body = sanitize_common_ai_closure(item.body)
-                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    quality = dict(item.quality_json or {})
-                    cleanups = list(quality.get("product_experience_common_ai_closure_cleanups") or [])
-                    cleanups.append(
-                        {
-                            "before": before,
-                            "after": {"title": item.title or "", "body": item.body or ""},
-                            "pre_review": review.model_dump(),
-                            "post_review": post_review.model_dump(),
-                        }
+                    cleanup_applied = True
+                if "formula_usage_form_error" in review.reasons:
+                    review = self._apply_product_experience_text_cleanup(
+                        item,
+                        review,
+                        cleanup_key="product_experience_formula_usage_form_cleanups",
+                        title=sanitize_wangyue_formula_usage_form(item.title or ""),
+                        body=sanitize_wangyue_formula_usage_form(item.body or ""),
                     )
-                    quality["product_experience_common_ai_closure_cleanups"] = cleanups
-                    item.quality_json = quality
-                    review = post_review
-                    rewrite_count += 1
-                if "wangyue_growth_nutrition_drift_context" in review.reasons:
-                    rewritten = await self._rewrite_item_for_product_experience_phrase(db, item, review)
-                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    review = post_review
+                    cleanup_applied = True
+                if "wangyue_time_event_context" in review.reasons:
+                    review = self._apply_product_experience_text_cleanup(
+                        item,
+                        review,
+                        cleanup_key="product_experience_wangyue_time_event_cleanups",
+                        title=sanitize_wangyue_time_event_context(item.title or ""),
+                        body=sanitize_wangyue_time_event_context(item.body or ""),
+                    )
+                    cleanup_applied = True
+                review_for_llm = (
+                    _append_product_experience_review_reason(review, POST_DELETE_CLEANUP_FLUENCY_REASON)
+                    if cleanup_applied
+                    else review
+                )
+                if review_for_llm.rewrite_required:
+                    rewritten = await self._rewrite_item_for_product_experience_phrase(db, item, review_for_llm)
                     if rewritten:
                         rewrite_count += 1
-                    while (
-                        "wangyue_growth_nutrition_drift_context" in review.reasons
-                        and self._product_experience_phrase_rewrite_rounds(item) < MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS
-                    ):
-                        rewritten = await self._rewrite_item_for_product_experience_phrase(db, item, review)
-                        post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                        review = post_review
-                        if not rewritten:
-                            break
-                        rewrite_count += 1
-                    if "wangyue_growth_nutrition_drift_context" in review.reasons:
-                        cleaned = self._fallback_clean_wangyue_growth_nutrition_drift(item, review)
-                        if cleaned:
-                            post_review = review_product_experience_phrase(
-                                title=item.title,
-                                body=item.body,
-                                plan=item.plan_json,
-                            )
-                            review = post_review
-                            rewrite_count += 1
-                if "odd_product_experience_phrase" in review.reasons:
-                    before = {"title": item.title or "", "body": item.body or ""}
-                    item.title = sanitize_odd_product_experience_phrases(item.title)
-                    item.body = sanitize_odd_product_experience_phrases(item.body)
-                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    quality = dict(item.quality_json or {})
-                    cleanups = list(quality.get("product_experience_odd_phrase_cleanups") or [])
-                    cleanups.append(
-                        {
-                            "before": before,
-                            "after": {"title": item.title or "", "body": item.body or ""},
-                            "pre_review": review.model_dump(),
-                            "post_review": post_review.model_dump(),
-                        }
+                        review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                    else:
+                        review = review_for_llm
+                if _has_blocking_product_experience_phrase_review(review):
+                    self._mark_product_experience_blocking_failure(
+                        item,
+                        review,
+                        source="product_experience_phrase_guard",
                     )
-                    quality["product_experience_odd_phrase_cleanups"] = cleanups
-                    item.quality_json = quality
-                    review = post_review
-                    rewrite_count += 1
-                if "adult_self_drinking_child_formula" in review.reasons:
-                    before = {"title": item.title or "", "body": item.body or ""}
-                    item.title = sanitize_adult_self_drinking_phrases(item.title)
-                    item.body = sanitize_adult_self_drinking_phrases(item.body)
-                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    quality = dict(item.quality_json or {})
-                    cleanups = list(quality.get("product_experience_adult_self_drinking_cleanups") or [])
-                    cleanups.append(
-                        {
-                            "before": before,
-                            "after": {"title": item.title or "", "body": item.body or ""},
-                            "pre_review": review.model_dump(),
-                            "post_review": post_review.model_dump(),
-                        }
-                    )
-                    quality["product_experience_adult_self_drinking_cleanups"] = cleanups
-                    item.quality_json = quality
-                    review = post_review
-                    rewrite_count += 1
-                if "child_self_brewing_formula" in review.reasons:
-                    rewritten = await self._rewrite_item_for_product_experience_phrase(db, item, review)
-                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    review = post_review
-                    if rewritten:
-                        rewrite_count += 1
-                    if "child_self_brewing_formula" in review.reasons:
-                        before = {"title": item.title or "", "body": item.body or ""}
-                        item.title = sanitize_baby_milk_action_phrases(item.title)
-                        item.body = sanitize_baby_milk_action_phrases(item.body)
-                        post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                        quality = dict(item.quality_json or {})
-                        cleanups = list(quality.get("product_experience_child_self_brewing_cleanups") or [])
-                        cleanups.append(
-                            {
-                                "before": before,
-                                "after": {"title": item.title or "", "body": item.body or ""},
-                                "pre_review": review.model_dump(),
-                                "post_review": post_review.model_dump(),
-                            }
-                        )
-                        quality["product_experience_child_self_brewing_cleanups"] = cleanups
-                        item.quality_json = quality
-                        review = post_review
-                        rewrite_count += 1
-                if "wangyue_row2_drinking_action_context" in review.reasons:
-                    rewritten = await self._rewrite_item_for_product_experience_phrase(db, item, review)
-                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    review = post_review
-                    if rewritten:
-                        rewrite_count += 1
-                    while (
-                        "wangyue_row2_drinking_action_context" in review.reasons
-                        and self._product_experience_phrase_rewrite_rounds(item) < MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS
-                    ):
-                        rewritten = await self._rewrite_item_for_product_experience_phrase(db, item, review)
-                        post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                        review = post_review
-                        if not rewritten:
-                            break
-                        rewrite_count += 1
-                if "child_formula_bottle_context" in review.reasons:
-                    before = {"title": item.title or "", "body": item.body or ""}
-                    item.title = sanitize_baby_milk_action_phrases(item.title)
-                    item.body = sanitize_baby_milk_action_phrases(item.body)
-                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    quality = dict(item.quality_json or {})
-                    cleanups = list(quality.get("product_experience_baby_milk_action_cleanups") or [])
-                    cleanups.append(
-                        {
-                            "before": before,
-                            "after": {"title": item.title or "", "body": item.body or ""},
-                            "pre_review": review.model_dump(),
-                            "post_review": post_review.model_dump(),
-                        }
-                    )
-                    quality["product_experience_baby_milk_action_cleanups"] = cleanups
-                    item.quality_json = quality
-                    review = post_review
-                    rewrite_count += 1
-                if (
-                    "wangyue_wrong_brand" in review.reasons
-                    or "wangyue_explicit_age_context" in review.reasons
-                    or "wangyue_portable_form_context" in review.reasons
-                    or "wangyue_digestive_effect_context" in review.reasons
-                    or "wangyue_article_logic_drift_context" in review.reasons
-                ):
-                    before = {"title": item.title or "", "body": item.body or ""}
-                    item.title = sanitize_wangyue_context_phrases(item.title)
-                    item.body = sanitize_wangyue_context_phrases(item.body)
-                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    quality = dict(item.quality_json or {})
-                    cleanups = list(quality.get("product_experience_wangyue_context_cleanups") or [])
-                    cleanups.append(
-                        {
-                            "before": before,
-                            "after": {"title": item.title or "", "body": item.body or ""},
-                            "pre_review": review.model_dump(),
-                            "post_review": post_review.model_dump(),
-                        }
-                    )
-                    quality["product_experience_wangyue_context_cleanups"] = cleanups
-                    item.quality_json = quality
-                    review = post_review
-                    rewrite_count += 1
-                formatted_title = sanitize_product_experience_format(item.title)
-                formatted_body = sanitize_product_experience_format(item.body)
-                if formatted_title != (item.title or "") or formatted_body != (item.body or ""):
-                    before = {"title": item.title or "", "body": item.body or ""}
-                    item.title = formatted_title
-                    item.body = formatted_body
-                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    quality = dict(item.quality_json or {})
-                    cleanups = list(quality.get("product_experience_format_cleanups") or [])
-                    cleanups.append(
-                        {
-                            "before": before,
-                            "after": {"title": item.title or "", "body": item.body or ""},
-                            "pre_review": review.model_dump(),
-                            "post_review": post_review.model_dump(),
-                        }
-                    )
-                    quality["product_experience_format_cleanups"] = cleanups
-                    item.quality_json = quality
-                    review = post_review
-                    rewrite_count += 1
-                if "long_unpunctuated_body_segment" in review.reasons:
-                    rewritten = await self._rewrite_item_for_product_experience_phrase(db, item, review)
-                    post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    review = post_review
-                    if rewritten:
-                        rewrite_count += 1
+                    await db.commit()
+                    return rewrite_count
                 self._mark_product_experience_phrase_review(item, review)
-            if items:
                 await db.commit()
-            return rewrite_count
+                return rewrite_count
+
+        return await self._run_generated_item_workers(batch_id, worker)
 
     async def _rewrite_mouth_phrase_budget_items(self, batch_id: int, job: ContentBatchJob) -> int:
-        async with self.session_factory() as db:
-            result = await db.execute(
-                select(ContentBatchItem)
-                .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
-                .order_by(ContentBatchItem.item_no)
-            )
-            items = list(result.scalars().all())
-            rewrite_count = 0
-            for item in items:
+        async def worker(item_id: int) -> int:
+            async with self.session_factory() as db:
+                item = await self._require_item(db, item_id)
+                if item.status != "generated":
+                    return 0
+                if _is_postprocess_blocked(item):
+                    return 0
+                rewrite_count = 0
                 initial_hits = _mouth_phrase_budget_hits(item)
                 if not initial_hits:
                     self._mark_mouth_phrase_budget_guard(item, initial_hits=[], final_hits=[])
-                    continue
+                    await db.commit()
+                    return 0
                 hits = initial_hits
                 for _ in range(2):
                     if not hits:
@@ -1017,9 +1732,10 @@ class ContentBatchExecutionService:
                     initial_hits=initial_hits,
                     final_hits=final_hits,
                 )
-            if items:
                 await db.commit()
-            return rewrite_count
+                return rewrite_count
+
+        return await self._run_generated_item_workers(batch_id, worker)
 
     async def _rewrite_item_for_mouth_phrase_budget(
         self,
@@ -1186,8 +1902,15 @@ class ContentBatchExecutionService:
             for hit in (
                 review.wangyue_row2_drinking_action_hits
                 + review.child_self_brewing_hits
+                + review.hard_risk_hits
                 + review.wangyue_article_logic_drift_hits
+                + review.wangyue_portable_form_hits
+                + review.wangyue_supplement_replacement_hits
                 + review.wangyue_growth_nutrition_drift_hits
+                + review.wangyue_child_product_promo_hits
+                + review.wangyue_time_event_context_hits
+                + review.wangyue_hidden_negative_comparison_hits
+                + review.physical_action_carrier_mismatch_hits
                 + review.odd_phrase_hits
                 + review.malformed_fragment_hits
             )
@@ -1200,9 +1923,16 @@ class ContentBatchExecutionService:
             else "标题尽量不改；如果正文改写导致标题明显不顺，再做轻微调整。"
         )
         has_growth_nutrition_drift = bool(review.wangyue_growth_nutrition_drift_hits)
-        if hit_summary:
+        if "complete_selection_price_acceptance_closure_skeleton" in review.reasons:
             phrase_instruction = (
-                f"本轮命中的口癖骨架是 {hit_summary}；至少删掉其中两个维度，尤其别把购买判断、价格、孩子接受、安心收口连在一起。"
+                f"本轮有链路密度信号：{hit_summary or '选择/价格/孩子接受/妈妈收口'}；"
+                "这不是单篇硬伤。只有同时命中事实错误、隐性负面、广告收口或强因果风险时，才处理对应问题句；"
+                "不要因为节点多就机械删掉正向产品价值或效果证明。"
+            )
+        elif hit_summary:
+            phrase_instruction = (
+                f"本轮有链路密度信号：{hit_summary}；它只用于提醒批量同质化。"
+                "本轮改写只处理其它明确命中的硬问题，不要为了降链路密度削弱种草表达。"
             )
         elif has_growth_nutrition_drift:
             phrase_instruction = (
@@ -1215,15 +1945,108 @@ class ContentBatchExecutionService:
             if review.ai_phrase_hits
             else "不要新增省心、踏实、心里有数、先这样、固定下来这类统一收口词。"
         )
+        common_closure_instruction = (
+            "本轮命中通用 AI 收口句式；优先删除含“继续观察、先这样、希望一直这样、松了口气、欢迎留言”等模板收口的半句。"
+            "不要机械替换成另一个固定总结，也不要补新的妈妈安心式收口。"
+            if "common_ai_closure_phrase" in review.reasons
+            else "不要新增继续观察、先这样、希望一直这样、松了口气、欢迎留言这类通用 AI 收口。"
+        )
+        temporal_context_instruction = (
+            "本轮命中明确时间语境："
+            f"{'/'.join(review.temporal_context_hits)}。"
+            "用模型改顺上下文，不要硬替换；核心是删掉会和发布时间冲突的季节、天气、疾病大环境或季节性活动时点。"
+            "可以保留最近、现在、今天、昨天、上周、前两天、刚才、刚补、刚到、班里请假这类真人随手记录口吻，只要不和换季/流感/季节语境绑定。"
+            "删除后如果上下文不顺，只补主语、标点或极短连接；不要新增新的活动、天气、疾病或季节性场景。"
+            if review.temporal_context_hits
+            else "不要新增会和发布时间冲突的季节、天气、疾病大环境或季节性活动时点；最近、昨天、刚补货、刚拆快递等真人时间口吻可以保留。"
+        )
+        wangyue_age_stage_instruction = (
+            "本轮命中旺玥年龄/阶段不匹配："
+            f"{'/'.join(review.wangyue_explicit_age_hits)}。"
+            "产品年龄边界：旺玥只放在孩子3岁以后的儿童奶粉阶段；正文不要完整复述成“3岁以上4段儿童奶粉”。"
+            "用模型把命中句和相邻上下文整句改顺，不要机械删年龄词，不要把“一岁多/两岁/半岁”替换成“孩子/这个阶段”造成残句。"
+            "把旺玥相关使用/购买/备货关系改到3岁以后；不要新增固定喝法、补货链路或阶段定义句。"
+            "不能写低龄、婴配、断奶、辅食、1-2岁开始喝旺玥。"
+            if review.wangyue_explicit_age_hits
+            else "旺玥年龄事实必须正确：只放在孩子3岁以后的儿童奶粉阶段；正文不要完整复述成“3岁以上4段儿童奶粉”；不要新增低龄、婴配、断奶、辅食或1-2岁开始喝旺玥。"
+        )
+        odd_phrase_instruction = (
+            "本轮命中历史硬替换问题词："
+            f"{'/'.join(review.odd_phrase_hits)}。"
+            "不要照着固定替换表机械改词；优先删掉问题短句，或用模型把相邻上下文改顺，保持真人口气。"
+            if review.odd_phrase_hits
+            else "不要新增历史硬替换问题词；如果只是机械清理，保持原文逻辑和真人口气。"
+        )
         adult_self_drinking_instruction = (
             f"本轮出现成人自己喝儿童奶粉的错误场景：{'/'.join(review.adult_self_drinking_hits)}；直接删除或改成给孩子冲/孩子喝，不要扩写成新情节。"
             if review.adult_self_drinking_hits
             else "不要写妈妈自己喝、给自己冲或成人试喝旺玥；旺玥只作为给孩子喝的儿童奶粉出现。"
         )
+        formula_usage_form_instruction = (
+            "本轮命中旺玥产品物理使用/存放形态错误："
+            f"{'/'.join(review.formula_usage_form_hits)}。"
+            "优先删除命中短句或相邻产品动作，把句子改顺；保留原有正向产品价值。"
+            "不要改成新的固定喝法、分装存放、冲泡过程、孩子操作或完整喝奶流程。"
+            if review.formula_usage_form_hits
+            else "生活细节可以自由，但不要扩写旺玥的物理使用事实；不新增分装存放、固定喝法、孩子操作或完整喝奶流程。"
+        )
+        physical_action_carrier_instruction = (
+            "本轮命中生活物理动作/信息载体错配："
+            f"{'/'.join(review.physical_action_carrier_mismatch_hits)}。"
+            "问题不是不能写配方，而是把罐装奶粉和“翻配方表”硬接在一起时，读起来像动作和信息载体错配。"
+            "只局部处理命中句：优先删除不合理动作词，保留原本的配方/成分关注，不补新的拿罐、翻看、冲泡或喝奶动作。"
+            "不要新增冲泡、喝奶、下单、对比清单或新的效果证明。"
+            if review.physical_action_carrier_mismatch_hits
+            else "写配方/成分时要让信息载体符合现实：罐装奶粉适合写看罐身、扫一眼营养成分；不要把奶粉罐动作硬写成翻配方表。"
+        )
+        ingredient_benefit_instruction = (
+            "本轮命中旺玥成分-好处错配："
+            f"{'/'.join(review.ingredient_benefit_mismatch_hits)}。"
+            "改写时保留强正向效果证明，但换正确承接关系：乳铁蛋白/免疫球蛋白/HMO只承接保护力、少中招、状态稳这类保护力观察；"
+            "抱起来沉、背上有肉、衣服撑起来、跑跳有劲、身形结实这类成长身体变化，要由阶段营养、整体营养配置、钙铁锌或营养丰富承接。"
+            "不要把强效果洗成“还在观察/不一定/每家不同”，也不要新增第二套成分清单。"
+            if review.ingredient_benefit_mismatch_hits
+            else "旺玥成分和好处要匹配：乳铁蛋白/免疫球蛋白/HMO不解释长肉、抱沉、衣服撑起来；成长类变化用阶段营养、整体营养配置或钙铁锌承接。"
+        )
+        supplement_replacement_instruction = (
+            "本轮命中旺玥营养替代暗示："
+            f"{'/'.join(review.wangyue_supplement_replacement_hits)}。"
+            "问题不是不能写营养好处，而是不能把旺玥写成替代营养片、维生素、补剂或钙片。"
+            "请局部删掉补剂替代关系，保留原有正向产品价值；可以承接为基础营养、关键营养或日常营养安排更清楚。"
+            "不要新增新的补剂对比、固定喝法、安心模板或合规不确定句。"
+            if review.wangyue_supplement_replacement_hits
+            else "旺玥可以正面写营养配置和日常营养价值，但不要写成替代营养片、维生素、补剂或钙片。"
+        )
+        post_delete_cleanup_instruction = (
+            "本轮已经先按规则删除了高幻觉风险或产品使用形态错误动作。"
+            "你的任务是检查删除后的标题和正文是否出现残句、断句、指代不清或前后不接；"
+            "如果已经通顺，尽量保持原文不动；如果不顺，只删多余标点或补极短连接。"
+            "不要新增冲泡、喝奶、试喝、孩子接受度、新效果证明或新生活情节。"
+            if POST_DELETE_CLEANUP_FLUENCY_REASON in review.reasons
+            else "如果正文已经做过删除式清理，保持删后文本顺畅即可；不要补新喝奶动作或新事实。"
+        )
+        hard_risk_instruction = (
+            "本轮命中高风险或逻辑错误表达："
+            f"{'/'.join(review.hard_risk_hits)}。"
+            "如果是孩子已经哈啾、打喷嚏、流鼻涕、咳嗽、不舒服之后才换上/安排上/补上/喝旺玥，"
+            "请删除这种事后补救因果；改成旺玥本来就是日常儿童奶粉选择，或只保留妈妈担心接触多、关注保护力的想法。"
+            "不要固定替换成安全套话，不要新增生病、治疗、立刻见效、少跑医院或确定归因。"
+            if review.hard_risk_hits
+            else "不要写孩子已经出现不舒服后才临时喝旺玥；旺玥只作为日常儿童奶粉选择出现，不写治疗、补救或立刻见效。"
+        )
+        semantic_odd_instruction = (
+            "本轮命中会牵动上下文逻辑的敏感表达："
+            f"{'/'.join(_semantic_odd_product_experience_phrase_hits(review))}。"
+            "不要把它们固定替换成“班里请假/小状况”，要用模型改顺标题和正文："
+            "优先删掉疾病或停课所在的半句，或改成妈妈对集体生活接触多的普通担心。"
+            "改写后不能出现手足口、流感、停课，也不能出现“班里班里”“班里请假停课”这类拼接句。"
+            if _semantic_odd_product_experience_phrase_hits(review)
+            else "不要把具体疾病或停课情节写进旺玥帖子；如需表达担心，用集体生活接触多、容易中招这类普通语境。"
+        )
         child_self_brewing_instruction = (
             "本轮出现孩子自己冲/泡/舀奶粉的不合理动作："
             f"{'/'.join(review.child_self_brewing_hits)}。"
-            "请用模型改顺这句话的上下文：可以改成妈妈冲好递给孩子、孩子等着喝、孩子喝奶配合、喝完后放杯子等合理动作。"
+            "请局部删除孩子操作奶粉的动作；删除后如果不顺，只补主语、标点或极短连接。"
             "不要硬塞固定替换短语，不要保留“自己冲/自己泡/自己舀/自己挖/自己催我泡奶粉”等动作，也不要新增奶粉盒、书包、随身带奶粉或成人试喝情节。"
             if review.child_self_brewing_hits
             else "不要写孩子自己冲奶粉、泡奶粉、舀粉、挖粉或自己操作奶粉罐；冲泡动作由妈妈完成，孩子只负责等、接、喝或喝完后的自然动作。"
@@ -1231,7 +2054,7 @@ class ContentBatchExecutionService:
         row2_drinking_action_instruction = (
             "本轮命中旺玥 row2 的喝奶动作/补给路径残留："
             f"{'/'.join(review.wangyue_row2_drinking_action_hits)}。"
-            "这条规则重点是孩子活动量大时，妈妈为什么选择皇家美素佳儿旺玥儿童奶粉；"
+            "这条规则重点是孩子活动量大时，妈妈为什么选择旺玥儿童奶粉；"
             "硬性验收：改写后的 title/body 不能再出现这些命中词，也不要换成同类的当早餐喝、放学先喝一杯、常备着、包里翻出来、翻出奶粉罐。"
             "请局部改顺命中的半句及相邻补给短句，把冲泡、每天几杯、孩子愿意喝、家里备着/常喝/囤货、放桌上自己倒这类路径删掉或改成选择理由/普通观察；"
             "如果不知道怎么接，就删掉命中词所在的后半句，保留前面的生活观察和旺玥选择理由。"
@@ -1256,7 +2079,7 @@ class ContentBatchExecutionService:
         growth_nutrition_drift_instruction = (
             "本轮命中旺玥营养/成长规则漂移："
             f"{'/'.join(review.wangyue_growth_nutrition_drift_hits)}。"
-            "请保留核心：给孩子选择皇家美素佳儿旺玥儿童奶粉，是为了补充营养、支持成长。"
+            "请保留核心：给孩子选择旺玥儿童奶粉，是为了补充营养、支持成长。"
             "硬性验收：改写后的 title/body 不能再出现这些命中词，也不能换成同类的喝完、好喝、主动提醒泡、精神好、状态不错、蹦蹦跳跳。"
             "去掉吃饭饭量、挑食、三餐补救、身高体重证明、固定喝奶动作、孩子自己喝/冲泡、选对了/一步搞定这类收口。"
             "改成自然短帖，正文40-130字，标题另写，正文一段不换行。"
@@ -1268,28 +2091,141 @@ class ContentBatchExecutionService:
             f"{'/'.join(review.wangyue_article_logic_drift_hits)}。"
             "这些不是通用禁词，但会把帖子带成购买渠道、囤货、冲泡口感、眼脑具体效果或效果证明。"
             "硬性验收：改写后的 title/body 不能再出现这些命中词；"
-            "直接删除对应半句，必要时用原业务规则里的卖点白话补一个很短连接，不要新增同类词如口粮、购物车、下单、护眼、眼睛、绘本、画画、脸色亮、奶香、不结块。"
+            "如果命中的是单点时间搭配累计效果，例如今天/昨天/刚开/这次换后接少请假、没中招、状态稳、长高长肉，"
+            "不要削弱正向效果本身，改成有时间跨度的表达，或删除单点时间锚点。"
+            "直接删除对应半句；删除后只做通顺度修复，不补新的卖点白话、购买渠道、喝奶动作或效果证明。"
             if review.wangyue_article_logic_drift_hits
             else "旺玥正文不要写成购买渠道、囤货、冲泡口感或效果证明；产品只作为儿童奶粉选择出现。"
         )
+        wangyue_context_instruction = (
+            "本轮命中旺玥场景路径错误："
+            f"{'/'.join(review.wangyue_portable_form_hits + review.wangyue_supplement_replacement_hits + review.wangyue_article_logic_drift_hits)}。"
+            "用模型改顺上下文，优先删除塞书包、路上喝、随身带、翻包看到产品、营养片/维生素/补剂替代、奶粉盒、购物车、下单、囤货、家里备着、奶粉罐这些剧情半句；"
+            "不要硬替换成固定短语，也不要改成新的喝奶动作、冲泡动作或导购过程。"
+            if _semantic_wangyue_context_reasons(review)
+            else "旺玥正文不要写成便携外带、购买渠道、囤货、冲泡口感或奶粉罐剧情。"
+        )
+        child_product_promo_instruction = (
+            "本轮命中孩子主动介绍/推荐/邀请别人喝旺玥的不合理产品台词："
+            f"{'/'.join(review.wangyue_child_product_promo_hits)}。"
+            "用模型改顺上下文：删掉这段孩子对外推荐产品的对话，改回妈妈随机记录孩子活动量、日常状态，或妈妈为什么选旺玥儿童奶粉。"
+            "不要改成新的孩子安利、社交推荐、喝奶邀请、冲泡动作或导购过程。"
+            if review.wangyue_child_product_promo_hits
+            else "不要写孩子主动介绍、推荐、安利旺玥，或邀请别的小朋友来一杯；产品判断只能由妈妈叙述。"
+        )
+        wangyue_time_event_instruction = (
+            "本轮命中不适合通用投放的明确时间/活动节点："
+            f"{'/'.join(review.wangyue_time_event_context_hits)}。"
+            "用模型改顺上下文，不要硬替换：删掉命中的季节、天气、疾病大环境或季节性活动时点；承接时写成具体生活画面，不要换成抽象入口词或运营概括。"
+            "改写后不要再出现本轮命中词；但可以保留普通地点、周末、昨天、前两天、刚到、刚补、刚拆快递、班里请假这类真人记录口吻。"
+            if review.wangyue_time_event_context_hits
+            else "旺玥文章不要新增会和发布时间冲突的季节、天气、疾病大环境或季节性活动时点；可以写普通地点、刚拆快递、刚补货、昨天、最近、班里请假等生活记录。"
+        )
+        wangyue_hidden_negative_instruction = (
+            "本轮命中旺玥隐性负面/降级比较："
+            f"{'/'.join(review.wangyue_hidden_negative_comparison_hits)}。"
+            "用模型改顺整个价格或比较句，不要硬替换词；核心是保留旺玥的正向产品价值，删掉价格、预算、贵不贵、值不值和低配参照物框架。"
+            "不要保留价格取舍，也不要换成另一句价格评价；需要承接时，只保留原文或业务规则里已有的非价格产品依据，并用妈妈自然口气写出来。"
+            "不要照抄本提示里的抽象词当正文，也不要输出类似“更看重配方/营养配置”的模板句。"
+            if review.wangyue_hidden_negative_comparison_hits
+            else "旺玥文章不要新增价格、预算、贵不贵、值不值或低配参照物；对比选择只保留非价格产品依据，不要写成价格取舍。"
+        )
         wangyue_product_mention_instruction = (
-            "本轮旺玥正文缺少产品名；只自然补一次“皇家美素佳儿旺玥”或“旺玥儿童奶粉”，不要因此扩写成导购或卖点清单。"
+            "本轮旺玥正文缺少产品名；只自然补一次“旺玥”或“旺玥儿童奶粉”，不要因此扩写成导购或卖点清单。"
             if "wangyue_missing_product_mention" in review.reasons
             else "旺玥文章里产品名至少自然出现一次，避免只用“它/这款/里面”承接卖点。"
+        )
+        scene_motive_bucket = str((item.plan_json or {}).get("scene_motive_bucket") or "")
+        scene_motive_instruction = (
+            "本轮正文偏离了指定生活入口："
+            f"本篇入口是“{scene_motive_bucket}”，但命中了 {'/'.join(review.scene_motive_drift_hits)}。"
+            "硬性验收：改写后的 title/body 不能再出现这些命中词，也不要换成同类的整理柜子、翻柜子、快见底、购物清单。"
+            "请回到指定入口的第一现场，只修当前句子的入口偏移，不新增产品动作或另一套生活事件；"
+            "产品只作为其中一个物件轻带，不要再写库存归位。"
+            if review.scene_motive_drift_hits
+            else "正文要跟随 scene_motive_bucket 的生活入口，不要默认回到整理柜子、快见底、购物清单这一套。"
+        )
+        product_action_surface = str((item.plan_json or {}).get("product_action_surface") or "")
+        product_action_surface_instruction = (
+            "本轮产品动作露出强度过高："
+            f"本篇要求“{product_action_surface}”，但命中了 {'/'.join(review.product_action_surface_hits)}。"
+            "改写时降低产品动作：物件在场就只写杯子/罐子在桌上、餐边柜旁、早餐角；"
+            "妈妈顺手挪放就只写挪到一边、放到桌角、摆回原处；"
+            "不要再写孩子端起来喝、喝两口、喝完、妈妈专门冲一杯。"
+            if review.product_action_surface_hits
+            else "使用记录里的产品动作要服从 product_action_surface，不要每篇都写成冲一杯、端起来、喝两口。"
+        )
+        product_fact_number_instruction = (
+            "本轮命中旺玥产品事实数字口径漂移："
+            f"{'/'.join(review.product_fact_number_drift_hits)}。"
+            "改写时保留正向营养价值，但删掉或改顺错误数字口径；"
+            "关键营养只能按业务规则已有口径写成多种关键营养或30多种关键营养，不要新增十几种、十多种、20多种、几十种。"
+            "不要因为修数字而削弱种草，也不要新增另一套成分清单。"
+            if review.product_fact_number_drift_hits
+            else "旺玥产品事实数字口径要稳定：可以写多种关键营养或30多种关键营养；不要新增十几种、十多种、20多种、几十种关键营养。"
+        )
+        effect_scope_instruction = (
+            "本轮命中非本痛点效果迁移："
+            f"{'/'.join(review.effect_scope_drift_hits)}。"
+            "改写时删掉旺玥/喝奶与睡觉、整夜安稳、不闹腾这类睡眠效果之间的连接；"
+            "保留本篇业务规则里的正向价值，例如保护力、活动后状态稳、精神头、日常营养或成长阶段营养。"
+            "不要改成合规声明式不确定，也不要新增新的睡眠、固定睡前喝奶或完整喝奶流程。"
+            if review.effect_scope_drift_hits
+            else "不要把旺玥效果迁移到本篇痛点外；除非业务规则明确要求，不要写旺玥/喝奶带来睡眠安稳、整夜不闹或入睡改善。"
+        )
+        product_effect_proof_instruction = (
+            "本轮有产品动作和效果证明链路密度信号："
+            + "；".join(
+                f"{part}:{'/'.join(hits)}"
+                for part, hits in review.product_effect_proof_chain_hits.items()
+                if hits
+            )
+            + "。这主要是批量分布信号，不是单篇硬删理由；"
+            "如果本轮还有事实错误、产品形态错误、隐性负面、强因果或广告收口，只改那些问题句。"
+            "合理的正向效果证明可以保留，不要改成合规声明式不确定。"
+            if review.product_effect_proof_chain_hits
+            else "不要为了完整而主动补齐产品证明链；正向产品节点多少按帖子类型和业务规则自然决定。"
+        )
+        decision_chain_instruction = (
+            "本轮有候选决策链信号："
+            + "；".join(
+                f"{part}:{'/'.join(hits)}" for part, hits in review.decision_chain_hits.items() if hits
+            )
+            + "。这些只是给后续 LLM 质检的提示，不是禁词。"
+            "本轮如果还有其他硬问题，只处理硬问题所在句；不要仅因为这些信号删除正向产品价值。"
+            if review.decision_chain_hits
+            else "不要主动把正文补成完整决策链；每篇保留必要的正向产品节点即可。"
+        )
+        ugc_post_type_instruction = (
+            "本轮 UGC 类型跑偏："
+            f"本篇要求“{(item.plan_json or {}).get('ugc_post_type') or ''}”，但命中了 {'/'.join(review.ugc_post_type_drift_hits)}。"
+            "如果是轻复盘型，不要再用想问大家、求经验、怎么判断、要不要继续这类求问收尾；"
+            "改成“我这段时间回看后的正向依据/现实细节”，不要把动机变成征集答案，也不要用不确定感替代产品价值。"
+            if review.ugc_post_type_drift_hits
+            else "UGC 类型要稳定：轻复盘写自己的阶段性回看，求建议才可以以问题和征集经验为主。"
         )
         retry_instruction = (
             "这是同一条内容的再次改写：上一轮仍残留 row4 偏题表达。不要同义替换命中词，直接删掉偏题半句；"
             "正文只保留“选择旺玥儿童奶粉来补充成长阶段营养、支持成长”的自然表达。"
             if has_growth_nutrition_drift and self._product_experience_phrase_rewrite_rounds(item) > 0
             else (
-                "这是同一条内容的再次改写：上一轮仍残留 row2 喝奶动作/补给路径。不要同义替换命中词，直接删掉命中词所在的后半句，保留生活观察和选择旺玥儿童奶粉的理由。"
-                if review.wangyue_row2_drinking_action_hits
-                and self._product_experience_phrase_rewrite_rounds(item) > 0
-                else "如果本轮是首次改写，优先改顺，不要过度扩写。"
+                "这是同一条内容的再次改写：上一轮仍残留高风险或事后补救表达。直接删掉孩子出状况后才选/换/喝旺玥的因果链；保留日常接触多、妈妈关注保护力、旺玥作为日常儿童奶粉选择即可。"
+                if review.hard_risk_hits and self._product_experience_phrase_rewrite_rounds(item) > 0
+                else (
+                    "这是同一条内容的再次改写：上一轮仍残留 row2 喝奶动作/补给路径。不要同义替换命中词，直接删掉命中词所在的后半句，保留生活观察和选择旺玥儿童奶粉的理由。"
+                    if review.wangyue_row2_drinking_action_hits
+                    and self._product_experience_phrase_rewrite_rounds(item) > 0
+                    else (
+                        "这是同一条内容的再次改写：上一轮仍残留产品动作或效果证明相关硬问题。只处理明确命中的问题句，不要机械删掉全部效果证明。"
+                        if review.product_effect_proof_chain_hits
+                        and self._product_experience_phrase_rewrite_rounds(item) > 0
+                        else "如果本轮是首次改写，优先改顺，不要过度扩写。"
+                    )
+                )
             )
         )
         skeleton_redirect_instruction = (
-            "如果正文已经有购买过程、价格和孩子接受度，只保留其中一个观察点，其他改成放学、户外、换衣服、书包、妈妈观察这类生活细节；不要新增剩奶、杯子放置或冲泡奶保存动作。"
+            "如果正文已有购买过程或孩子接受度，本轮不要把它们当成硬禁词处理；价格相关表达按旺玥隐性负面处理。"
             if not has_growth_nutrition_drift
             else "本轮不要把问题内容改成放学、户外、书包、杯子放置或冲泡保存动作；只回到“儿童奶粉选择旺玥补充营养、支持成长”这个内核。"
         )
@@ -1312,14 +2248,36 @@ class ContentBatchExecutionService:
                 title_instruction,
                 phrase_instruction,
                 ai_phrase_instruction,
+                common_closure_instruction,
+                temporal_context_instruction,
+                wangyue_age_stage_instruction,
+                odd_phrase_instruction,
+                hard_risk_instruction,
                 adult_self_drinking_instruction,
+                formula_usage_form_instruction,
+                physical_action_carrier_instruction,
+                ingredient_benefit_instruction,
+                supplement_replacement_instruction,
+                post_delete_cleanup_instruction,
+                semantic_odd_instruction,
                 child_self_brewing_instruction,
                 row2_drinking_action_instruction,
                 run_on_instruction,
                 malformed_fragment_instruction,
                 growth_nutrition_drift_instruction,
                 wangyue_logic_drift_instruction,
+                wangyue_context_instruction,
+                child_product_promo_instruction,
+                wangyue_time_event_instruction,
+                wangyue_hidden_negative_instruction,
                 wangyue_product_mention_instruction,
+                scene_motive_instruction,
+                product_action_surface_instruction,
+                product_fact_number_instruction,
+                effect_scope_instruction,
+                decision_chain_instruction,
+                product_effect_proof_instruction,
+                ugc_post_type_instruction,
                 retry_instruction,
                 "rewrite 优先删除问题内容或压缩问题句；不要为了多样化整段重写。只有删除后语义断裂时，才补极短连接。",
                 skeleton_redirect_instruction,
@@ -1334,11 +2292,17 @@ class ContentBatchExecutionService:
         self,
         item: ContentBatchItem,
         review: ProductExperiencePhraseReview,
+        *,
+        mark_rewrite_required: bool | None = None,
     ) -> None:
         quality = dict(item.quality_json or {})
         review_report = dict(quality.get("review_report") or {})
         review_report["product_experience_phrase_review"] = review.model_dump()
-        if review.rewrite_required:
+        if mark_rewrite_required is None and _should_mark_only_product_experience_phrase_review(item.plan_json, review):
+            should_mark_rewrite = False
+        else:
+            should_mark_rewrite = review.rewrite_required if mark_rewrite_required is None else mark_rewrite_required
+        if should_mark_rewrite:
             review_report.update(
                 {
                     "rewrite_required": True,
@@ -1352,7 +2316,144 @@ class ContentBatchExecutionService:
         quality["product_experience_phrase_guard"] = {
             "pass": review.pass_,
             "rewrite_required": review.rewrite_required,
+            "mark_rewrite_required": should_mark_rewrite,
             "reasons": review.reasons,
+        }
+        item.quality_json = quality
+
+    def _mark_product_experience_blocking_failure(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+        *,
+        source: str,
+    ) -> None:
+        self._mark_product_experience_phrase_review(item, review)
+        quality = dict(item.quality_json or {})
+        review_report = dict(quality.get("review_report") or {})
+        blocking_hits = _blocking_product_experience_phrase_hits(review)
+        review_report.update(
+            {
+                "rewrite_required": True,
+                "rewrite_reason": "硬性规则改写失败，需要人工复核",
+                "blocking_failure": {
+                    "source": source,
+                    "reasons": review.reasons,
+                    "hits": blocking_hits,
+                },
+            }
+        )
+        quality["review_report"] = review_report
+        quality["hard_pass"] = False
+        quality["postprocess_blocked"] = {
+            "source": source,
+            "reasons": review.reasons,
+            "hits": blocking_hits,
+        }
+        item.quality_json = quality
+        item.status = "failed"
+        item.error_message = "硬性规则改写后仍命中：" + "、".join(blocking_hits or review.reasons)
+
+    def _mark_royal_friso_structure_review(
+        self,
+        item: ContentBatchItem,
+        review: RoyalFrisoUGCStructureReview,
+    ) -> None:
+        quality = dict(item.quality_json or {})
+        review_report = dict(quality.get("review_report") or {})
+        payload = review.model_dump()
+        review_report["royal_friso_ugc_structure_guard"] = payload
+        if review.rewrite_required:
+            review_report.update(
+                {
+                    "rewrite_required": True,
+                    "rewrite_reason": "皇家UGC结构风险需要改写",
+                }
+            )
+        elif review_report.get("rewrite_reason") == "皇家UGC结构风险需要改写":
+            review_report["rewrite_required"] = False
+            review_report.pop("rewrite_reason", None)
+        quality["review_report"] = review_report
+        quality["royal_friso_ugc_structure_guard"] = payload
+        item.quality_json = quality
+
+    def _mark_royal_friso_structure_blocking_failure(
+        self,
+        item: ContentBatchItem,
+        review: RoyalFrisoUGCStructureReview,
+    ) -> None:
+        self._mark_royal_friso_structure_review(item, review)
+        quality = dict(item.quality_json or {})
+        review_report = dict(quality.get("review_report") or {})
+        payload = review.model_dump()
+        review_report.update(
+            {
+                "rewrite_required": True,
+                "rewrite_reason": "皇家UGC结构风险改写失败，需要人工复核",
+                "blocking_failure": {
+                    "source": "royal_friso_ugc_structure_guard",
+                    "reasons": payload["reasons"],
+                    "hits": payload["hits"],
+                },
+            }
+        )
+        quality["review_report"] = review_report
+        quality["hard_pass"] = False
+        quality["postprocess_blocked"] = {
+            "source": "royal_friso_ugc_structure_guard",
+            "reasons": payload["reasons"],
+            "hits": payload["hits"],
+        }
+        item.quality_json = quality
+        item.status = "failed"
+        item.error_message = "皇家UGC结构风险改写后仍命中：" + "、".join(payload["hits"] or payload["reasons"])
+
+    def _mark_forbidden_term_blocking_failure(self, item: ContentBatchItem, hits: list[str]) -> None:
+        quality = dict(item.quality_json or {})
+        review_report = dict(quality.get("review_report") or {})
+        review_report.update(
+            {
+                "rewrite_required": True,
+                "rewrite_reason": "违禁词自动改写失败，需要人工复核",
+                "blocking_failure": {
+                    "source": "forbidden_terms_guard",
+                    "hits": hits,
+                },
+            }
+        )
+        quality["review_report"] = review_report
+        quality["hard_pass"] = False
+        quality["postprocess_blocked"] = {
+            "source": "forbidden_terms_guard",
+            "reasons": ["forbidden_terms_guard"],
+            "hits": hits,
+        }
+        item.quality_json = quality
+        item.status = "failed"
+        item.error_message = "违禁词自动改写后仍命中：" + "、".join(hits)
+
+    def _mark_ai_flavor_review(self, item: ContentBatchItem, review: AIFlavorReview) -> None:
+        quality = dict(item.quality_json or {})
+        review_report = dict(quality.get("review_report") or {})
+        review_report["ai_flavor_review"] = review.model_dump()
+        if review.rewrite_required:
+            review_report.update(
+                {
+                    "rewrite_required": True,
+                    "rewrite_reason": "AI 味 / 解释腔 / 标题卖点前置仍需处理",
+                }
+            )
+        elif str(review_report.get("rewrite_reason") or "").startswith("AI 味 / 解释腔"):
+            review_report["rewrite_required"] = False
+            review_report.pop("rewrite_reason", None)
+        quality["review_report"] = review_report
+        quality["ai_flavor_humanizer"] = {
+            "pass": review.pass_,
+            "rewrite_required": review.rewrite_required,
+            "reasons": review.reasons,
+            "title_hits": review.title_hits,
+            "body_hits": review.body_hits,
+            "rewrite_operations": review.rewrite_operations,
         }
         item.quality_json = quality
 
@@ -1390,6 +2491,292 @@ class ContentBatchExecutionService:
         item.quality_json = quality
         return True
 
+    def _apply_product_experience_phrase_cleanups_once(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+    ) -> ProductExperiencePhraseReview:
+        if review.temporal_context_hits:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key="product_experience_temporal_context_cleanups",
+                title=sanitize_temporal_context(item.title or ""),
+                body=sanitize_temporal_context(item.body or ""),
+            )
+        if "common_ai_closure_phrase" in review.reasons:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key="product_experience_common_ai_closure_cleanups",
+                title=sanitize_common_ai_closure(item.title or ""),
+                body=sanitize_common_ai_closure(item.body or ""),
+            )
+        if "odd_product_experience_phrase" in review.reasons:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key="product_experience_odd_phrase_cleanups",
+                title=sanitize_odd_product_experience_phrases(item.title or ""),
+                body=sanitize_odd_product_experience_phrases(item.body or ""),
+            )
+        if "adult_self_drinking_child_formula" in review.reasons:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key="product_experience_adult_self_drinking_cleanups",
+                title=sanitize_adult_self_drinking_phrases(item.title or ""),
+                body=sanitize_adult_self_drinking_phrases(item.body or ""),
+            )
+        if "formula_dry_powder_ingestion" in review.reasons:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key="product_experience_formula_dry_powder_cleanups",
+                title=sanitize_formula_dry_powder_ingestion(item.title or ""),
+                body=sanitize_formula_dry_powder_ingestion(item.body or ""),
+            )
+        if "formula_usage_form_error" in review.reasons:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key="product_experience_formula_usage_form_cleanups",
+                title=sanitize_wangyue_formula_usage_form(item.title or ""),
+                body=sanitize_wangyue_formula_usage_form(item.body or ""),
+            )
+        if "child_self_brewing_formula" in review.reasons or "child_formula_bottle_context" in review.reasons:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key="product_experience_child_self_brewing_cleanups",
+                title=sanitize_baby_milk_action_phrases(item.title or ""),
+                body=sanitize_baby_milk_action_phrases(item.body or ""),
+            )
+        if "wangyue_growth_nutrition_drift_context" in review.reasons and self._fallback_clean_wangyue_growth_nutrition_drift(item, review):
+            review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+        if "scene_motive_drift" in review.reasons:
+            review = self._apply_scene_motive_drift_cleanup(item, review)
+        if "ugc_post_type_drift" in review.reasons:
+            review = self._apply_ugc_post_type_drift_cleanup(item, review)
+        if "wangyue_missing_product_mention" in review.reasons:
+            review = self._apply_product_permission_missing_product_cleanup(item, review)
+        if "product_action_surface_drift" in review.reasons:
+            review = self._apply_product_action_surface_cleanup(item, review)
+        if "wangyue_portable_form_context" in review.reasons:
+            review = self._apply_usage_record_portable_cleanup(item, review)
+        if (
+            "wangyue_wrong_brand" in review.reasons
+            or "wangyue_portable_form_context" in review.reasons
+            or "wangyue_supplement_replacement_context" in review.reasons
+            or "wangyue_digestive_effect_context" in review.reasons
+            or "wangyue_article_logic_drift_context" in review.reasons
+            or _semantic_wangyue_context_reasons(review)
+        ):
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key="product_experience_wangyue_context_cleanups",
+                title=sanitize_wangyue_context_phrases(item.title or ""),
+                body=sanitize_wangyue_context_phrases(item.body or ""),
+            )
+        if "wangyue_article_logic_drift_context" in review.reasons:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key="product_experience_wangyue_context_cleanups",
+                title=item.title or "",
+                body=_restore_wangyue_selling_context_surface(item.body or "", item.plan_json),
+            )
+        formatted_title = sanitize_product_experience_format(item.title)
+        formatted_body = sanitize_product_experience_format(item.body)
+        if formatted_title != (item.title or "") or formatted_body != (item.body or ""):
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key="product_experience_format_cleanups",
+                title=formatted_title,
+                body=formatted_body,
+            )
+        return review
+
+    def _apply_product_experience_text_cleanup(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+        *,
+        cleanup_key: str,
+        title: str | None,
+        body: str | None,
+    ) -> ProductExperiencePhraseReview:
+        before = {"title": item.title or "", "body": item.body or ""}
+        after = {"title": title or "", "body": body or ""}
+        if after == before:
+            return review
+        item.title = after["title"]
+        item.body = after["body"]
+        post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+        quality = dict(item.quality_json or {})
+        cleanups = list(quality.get(cleanup_key) or [])
+        cleanups.append(
+            {
+                "before": before,
+                "after": after,
+                "pre_review": review.model_dump(),
+                "post_review": post_review.model_dump(),
+            }
+        )
+        quality[cleanup_key] = cleanups
+        item.quality_json = quality
+        return post_review
+
+    def _apply_scene_motive_drift_cleanup(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+    ) -> ProductExperiencePhraseReview:
+        plan = item.plan_json or {}
+        bucket = str(plan.get("scene_motive_bucket") or "")
+        post_type = str(plan.get("post_type") or "")
+        if not bucket or not ("补货" in post_type or "清单" in post_type):
+            return review
+
+        before = {"title": item.title or "", "body": item.body or ""}
+        item.title = _sanitize_scene_motive_drift_text(item.title or "", bucket, review.scene_motive_drift_hits)
+        item.body = _sanitize_scene_motive_drift_text(item.body or "", bucket, review.scene_motive_drift_hits)
+        after = {"title": item.title or "", "body": item.body or ""}
+        if after == before:
+            return review
+
+        post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+        quality = dict(item.quality_json or {})
+        cleanups = list(quality.get("product_experience_scene_motive_cleanups") or [])
+        cleanups.append(
+            {
+                "before": before,
+                "after": after,
+                "pre_review": review.model_dump(),
+                "post_review": post_review.model_dump(),
+            }
+        )
+        quality["product_experience_scene_motive_cleanups"] = cleanups
+        item.quality_json = quality
+        return post_review
+
+    def _apply_product_permission_missing_product_cleanup(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+    ) -> ProductExperiencePhraseReview:
+        plan = item.plan_json or {}
+        post_type = str(plan.get("post_type") or "")
+        product_mode = str(plan.get("product_appearance_mode") or "")
+        if not post_type and not product_mode:
+            return review
+        before = {"title": item.title or "", "body": item.body or ""}
+        item.title = _restore_product_permission_wangyue_surface(item.title or "", post_type=post_type)
+        item.body = _restore_product_permission_wangyue_surface(item.body or "", post_type=post_type)
+        after = {"title": item.title or "", "body": item.body or ""}
+        if after == before:
+            return review
+        post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+        quality = dict(item.quality_json or {})
+        cleanups = list(quality.get("product_experience_missing_product_surface_cleanups") or [])
+        cleanups.append(
+            {
+                "before": before,
+                "after": after,
+                "pre_review": review.model_dump(),
+                "post_review": post_review.model_dump(),
+            }
+        )
+        quality["product_experience_missing_product_surface_cleanups"] = cleanups
+        item.quality_json = quality
+        return post_review
+
+    def _apply_product_action_surface_cleanup(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+    ) -> ProductExperiencePhraseReview:
+        plan = item.plan_json or {}
+        surface = str(plan.get("product_action_surface") or "")
+        if not surface:
+            return review
+        before = {"title": item.title or "", "body": item.body or ""}
+        item.title = _sanitize_product_action_surface_text(item.title or "", surface)
+        item.body = _sanitize_product_action_surface_text(item.body or "", surface)
+        after = {"title": item.title or "", "body": item.body or ""}
+        if after == before:
+            return review
+        post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+        quality = dict(item.quality_json or {})
+        cleanups = list(quality.get("product_experience_action_surface_cleanups") or [])
+        cleanups.append(
+            {
+                "before": before,
+                "after": after,
+                "pre_review": review.model_dump(),
+                "post_review": post_review.model_dump(),
+            }
+        )
+        quality["product_experience_action_surface_cleanups"] = cleanups
+        item.quality_json = quality
+        return post_review
+
+    def _apply_usage_record_portable_cleanup(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+    ) -> ProductExperiencePhraseReview:
+        plan = item.plan_json or {}
+        post_type = str(plan.get("post_type") or "")
+        product_mode = str(plan.get("product_appearance_mode") or "")
+        if "使用记录" not in post_type and "日常动作" not in product_mode:
+            return review
+        before = {"title": item.title or "", "body": item.body or ""}
+        item.title = _sanitize_usage_record_portable_text(item.title or "")
+        item.body = _sanitize_usage_record_portable_text(item.body or "")
+        after = {"title": item.title or "", "body": item.body or ""}
+        if after == before:
+            return review
+        post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+        quality = dict(item.quality_json or {})
+        cleanups = list(quality.get("product_experience_usage_portable_cleanups") or [])
+        cleanups.append(
+            {
+                "before": before,
+                "after": after,
+                "pre_review": review.model_dump(),
+                "post_review": post_review.model_dump(),
+            }
+        )
+        quality["product_experience_usage_portable_cleanups"] = cleanups
+        item.quality_json = quality
+        return post_review
+
+    def _apply_ugc_post_type_drift_cleanup(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperiencePhraseReview,
+    ) -> ProductExperiencePhraseReview:
+        before = {"title": item.title or "", "body": item.body or ""}
+        item.title = _sanitize_ugc_post_type_drift_text(item.title or "")
+        item.body = _sanitize_ugc_post_type_drift_text(item.body or "")
+        post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+        quality = dict(item.quality_json or {})
+        cleanups = list(quality.get("product_experience_ugc_post_type_cleanups") or [])
+        cleanups.append(
+            {
+                "before": before,
+                "after": {"title": item.title or "", "body": item.body or ""},
+                "pre_review": review.model_dump(),
+                "post_review": post_review.model_dump(),
+            }
+        )
+        quality["product_experience_ugc_post_type_cleanups"] = cleanups
+        item.quality_json = quality
+        return post_review
+
     def _mark_mouth_phrase_budget_guard(
         self,
         item: ContentBatchItem,
@@ -1421,6 +2808,11 @@ class ContentBatchExecutionService:
     def _product_experience_phrase_rewrite_rounds(item: ContentBatchItem) -> int:
         quality = item.quality_json or {}
         return len(quality.get("product_experience_phrase_rewrites") or [])
+
+    @staticmethod
+    def _royal_friso_structure_rewrite_rounds(item: ContentBatchItem) -> int:
+        quality = item.quality_json or {}
+        return len(quality.get("royal_friso_ugc_structure_rewrites") or [])
 
     async def _history_items_for_similarity(self, db: AsyncSession, job: ContentBatchJob) -> list[ContentBatchItem]:
         result = await db.execute(
@@ -1472,7 +2864,7 @@ class ContentBatchExecutionService:
     ) -> bool:
         async with self.session_factory() as db:
             item = await self._require_item(db, item_id)
-            if not item.run_id or not item.body:
+            if not item.run_id or not item.body or _is_postprocess_blocked(item):
                 return False
             orchestrator = ContentAgentOrchestrator(
                 db,
@@ -1633,65 +3025,33 @@ class ContentBatchExecutionService:
         return value if isinstance(value, str) and value else None
 
 
-def _article_length_target(plan: dict[str, Any]) -> tuple[str, int, int] | None:
-    corpus = str(plan.get("corpus") or "")
-    explicit = re.search(r"正文\s*(\d{2,3})\s*[-~—到至]\s*(\d{2,3})\s*字", corpus)
-    if explicit:
-        min_chars, max_chars = int(explicit.group(1)), int(explicit.group(2))
-        if min_chars < max_chars:
-            return "自定义", min_chars, max_chars
-    if "篇幅类型：中短文" in corpus:
-        return "中短文", 120, 150
-    if "篇幅类型：短文" in corpus:
-        return "短文", 40, 80
-    return None
-
-
-def _length_rewrite_input(
-    item: ContentBatchItem,
-    *,
-    kind: str,
-    min_chars: int,
-    max_chars: int,
-    before_chars: int,
-    rewrite_round: int,
-) -> dict[str, Any]:
-    if before_chars > max_chars:
-        action = (
-            f"当前正文约{before_chars}个中文字符，偏长；删到{min_chars}-{max_chars}个中文字符。"
-            "优先删重复解释、购买过程、价格纠结、统一收口和功效感强的句子；不要新增内容。"
-        )
-    elif kind == "中短文":
-        action = (
-            f"当前正文只有{before_chars}个中文字符，偏短但不强制扩写；"
-            "除非原文语义不完整，否则保留原文，不要为了凑字数新增生活动作、饭桌、出门、放学或观察细节。"
-        )
-    else:
-        action = (
-            f"当前正文只有{before_chars}个中文字符；把正文调整到{min_chars}-{max_chars}个中文字符，"
-            "保留一个生活瞬间和一句选择理由。"
-        )
-    return {
-        "previous_content": {"title": item.title or "", "body": item.body or ""},
-        "content_type": "article",
-        "output_fields": ["title", "body"],
-        "business_rule": rewrite_business_rule_context(item.plan_json),
-        "selected_keywords": ((item.plan_json or {}).get("unified_generation") or {}).get("selected_keywords") or [],
-        "model_config": dict((item.plan_json or {}).get("model_config") or {}),
-        "rewrite_source": "article_length_guard",
-        "rewrite_round": rewrite_round,
-        "review_report": {
-            "rewrite_required": True,
-            "rewrite_reason": f"{kind}正文长度不在{min_chars}-{max_chars}字",
-        },
-        "rewrite_instructions": [
-            action,
-            f"rewrite 优先删除问题内容，不做多样化扩写；短文偏短时补到{min_chars}字以上即可，不要扩成中长文。",
-            "标题尽量不改；正文单段不换行。",
-            "保持小红书真实用户语气，不写品牌介绍、攻略清单、专业科普或确定功效。",
-            "只输出 JSON：title, body。",
-        ],
+def _max_product_experience_phrase_rewrite_rounds(
+    plan: dict[str, Any] | None,
+    review: ProductExperiencePhraseReview,
+) -> int:
+    if not _light_postprocess_enabled_for_asset(str((plan or {}).get("asset_key") or "")):
+        return MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS
+    one_round_reasons = {
+        "odd_product_experience_phrase",
+        "wangyue_article_logic_drift_context",
     }
+    if set(review.reasons).issubset(one_round_reasons):
+        return 1
+    return MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS
+
+
+def _append_product_experience_review_reason(
+    review: ProductExperiencePhraseReview,
+    reason: str,
+) -> ProductExperiencePhraseReview:
+    if reason in review.reasons:
+        return replace(review, pass_=False, rewrite_required=True)
+    return replace(
+        review,
+        pass_=False,
+        rewrite_required=True,
+        reasons=[*review.reasons, reason],
+    )
 
 
 def _persona_style_rewrite_enabled(plan: dict[str, Any] | None) -> bool:
@@ -1699,6 +3059,217 @@ def _persona_style_rewrite_enabled(plan: dict[str, Any] | None) -> bool:
         return False
     value = (plan or {}).get("persona_style_rewrite_enabled")
     return value is not False
+
+
+def _semantic_odd_product_experience_phrase_hits(review: ProductExperiencePhraseReview) -> list[str]:
+    semantic_phrases = set(SEMANTIC_ODD_PRODUCT_EXPERIENCE_PHRASES)
+    return [hit for hit in review.odd_phrase_hits if hit in semantic_phrases]
+
+
+def _blocking_product_experience_phrase_hits(review: ProductExperiencePhraseReview) -> list[str]:
+    return list(
+        dict.fromkeys(
+            review.wangyue_time_event_context_hits
+            + review.temporal_context_hits
+            + review.wangyue_wrong_brand_hits
+            + review.wangyue_explicit_age_hits
+            + review.wangyue_portable_form_hits
+            + review.formula_dry_powder_ingestion_hits
+            + review.formula_usage_form_hits
+            + review.physical_action_carrier_mismatch_hits
+            + review.product_fact_number_drift_hits
+            + review.effect_scope_drift_hits
+            + review.malformed_fragment_hits
+            + [hit for hit in review.hard_risk_hits if hit.startswith("症状效果证明：")]
+        )
+    )
+
+
+def _has_blocking_product_experience_phrase_review(review: ProductExperiencePhraseReview) -> bool:
+    return bool(_blocking_product_experience_phrase_hits(review))
+
+
+def _is_ai_flavor_title_only_review(review: AIFlavorReview) -> bool:
+    return bool(review.rewrite_required and review.title_hits and not review.body_hits)
+
+
+def _should_review_product_experience_llm_quality(plan: dict[str, Any] | None) -> bool:
+    plan = plan or {}
+    if not should_review_product_experience(plan):
+        return False
+    if plan.get("product_experience_llm_review_enabled") is True:
+        return True
+    asset_key = str(plan.get("asset_key") or "")
+    return "wangyue_painpoint_selling_posttype_matrix" in asset_key or asset_key.startswith("wangyue_")
+
+
+def _should_rewrite_product_experience_llm_quality(
+    plan: dict[str, Any] | None,
+    review: ProductExperienceLLMReview,
+) -> bool:
+    plan = plan or {}
+    if _is_wangyue_mark_only_llm_quality_review(plan, review):
+        return False
+    if _is_overcomplete_decision_chain_only_llm_review(review):
+        return False
+    if _is_soft_wangyue_strong_seeding_llm_review(review):
+        return False
+    if plan.get("product_experience_llm_rewrite_enabled") is True:
+        return review.rewrite_required
+    if _is_wangyue_v183_light_asset(str(plan.get("asset_key") or "")):
+        return review.rewrite_required
+    if _light_postprocess_enabled_for_asset(str(plan.get("asset_key") or "")):
+        return review.severity == "hard"
+    return review.rewrite_required
+
+
+def _should_repair_product_experience_llm_quality(
+    plan: dict[str, Any] | None,
+    review: ProductExperienceLLMReview,
+) -> bool:
+    if _is_wangyue_mark_only_llm_quality_review(plan or {}, review):
+        return False
+    if _should_rewrite_product_experience_llm_quality(plan, review):
+        return True
+    if review.business_usability_tier != "light_fix_usable":
+        return False
+    if _is_overcomplete_decision_chain_only_llm_review(review):
+        return False
+    if _is_soft_wangyue_strong_seeding_llm_review(review):
+        return False
+    return True
+
+
+def _rewrite_removed_required_wangyue_product(
+    before: dict[str, str],
+    after: dict[str, str],
+    plan: dict[str, Any] | None,
+) -> bool:
+    if not should_review_product_experience(plan):
+        return False
+    before_body = str(before.get("body") or "")
+    after_body = str(after.get("body") or "")
+    before_had_wangyue = any(term in before_body for term in ("旺玥", "皇家美素佳儿"))
+    after_has_wangyue = any(term in after_body for term in ("旺玥", "皇家美素佳儿"))
+    return before_had_wangyue and not after_has_wangyue
+
+
+def _is_overcomplete_decision_chain_only_llm_review(review: ProductExperienceLLMReview) -> bool:
+    codes = {issue.code for issue in review.issues}
+    return bool(codes) and codes == {"overcomplete_decision_chain"}
+
+
+def _is_wangyue_mark_only_llm_quality_review(
+    plan: dict[str, Any],
+    review: ProductExperienceLLMReview,
+) -> bool:
+    asset_key = str(plan.get("asset_key") or "")
+    if not asset_key.startswith("wangyue_"):
+        return False
+    codes = {issue.code for issue in review.issues}
+    mark_only_codes = {"claim_risk", "unnatural_product_appearance"}
+    return bool(codes) and codes.issubset(mark_only_codes)
+
+
+def _is_soft_wangyue_strong_seeding_llm_review(review: ProductExperienceLLMReview) -> bool:
+    """Treat dense but useful Wangyue seeding as a distribution signal, not a rewrite trigger."""
+    if review.severity == "hard":
+        return False
+    codes = {issue.code for issue in review.issues}
+    if not codes or not codes.issubset({"overcomplete_decision_chain", "brief_translation_tone"}):
+        return False
+    if "overcomplete_decision_chain" not in codes:
+        return False
+    return (
+        review.product_value_strength >= 4
+        and review.product_appearance_naturalness >= 3
+        and review.human_realness >= 3
+    )
+
+
+def _should_mark_only_product_experience_phrase_review(
+    plan: dict[str, Any] | None,
+    review: ProductExperiencePhraseReview,
+) -> bool:
+    if not review.rewrite_required:
+        return False
+    asset_key = str((plan or {}).get("asset_key") or "")
+    if (
+        asset_key.startswith("wangyue_")
+        and set(review.reasons).issubset(
+            {
+                "product_effect_proof_chain",
+                "wangyue_article_logic_drift_context",
+            }
+        )
+    ):
+        return True
+    if (
+        asset_key.startswith("wangyue_v2_")
+        and set(review.reasons).issubset(
+            {
+                "common_ai_closure_phrase",
+                "hard_ai_closure_phrase",
+                "product_effect_proof_chain",
+                "state_template_phrase",
+                "wangyue_article_logic_drift_context",
+            }
+        )
+    ):
+        return True
+    if not _light_postprocess_enabled_for_asset(asset_key):
+        return False
+    mark_only_reasons = {
+        "product_effect_proof_chain",
+        "complete_selection_price_acceptance_closure_skeleton",
+    }
+    if asset_key.startswith("wangyue_v183_"):
+        mark_only_reasons.add("wangyue_article_logic_drift_context")
+    return bool(review.reasons) and set(review.reasons).issubset(mark_only_reasons)
+
+
+def _light_postprocess_enabled(job: ContentBatchJob) -> bool:
+    strategy = job.strategy_json if isinstance(job.strategy_json, dict) else {}
+    mode = str(
+        strategy.get("postprocess_mode")
+        or strategy.get("quality_postprocess_mode")
+        or strategy.get("review_mode")
+        or ""
+    ).strip()
+    if mode in {"light", "v153_light"}:
+        return True
+    return _light_postprocess_enabled_for_asset(str(job.asset_key or ""))
+
+
+def _light_postprocess_enabled_for_asset(asset_key: str) -> bool:
+    return (
+        asset_key.startswith("wangyue_v152_")
+        or asset_key.startswith("wangyue_v153_")
+        or _is_wangyue_v183_light_asset(asset_key)
+    )
+
+
+def _is_wangyue_v183_light_asset(asset_key: str) -> bool:
+    return asset_key.startswith("wangyue_v183_")
+
+
+def _semantic_wangyue_context_reasons(review: ProductExperiencePhraseReview) -> list[str]:
+    reasons: list[str] = []
+    if "wangyue_portable_form_context" in review.reasons:
+        reasons.append("wangyue_portable_form_context")
+    if "wangyue_supplement_replacement_context" in review.reasons:
+        reasons.append("wangyue_supplement_replacement_context")
+    if "wangyue_article_logic_drift_context" in review.reasons:
+        reasons.append("wangyue_article_logic_drift_context")
+    if "wangyue_explicit_age_context" in review.reasons:
+        reasons.append("wangyue_explicit_age_context")
+    if "wangyue_child_product_promo_context" in review.reasons:
+        reasons.append("wangyue_child_product_promo_context")
+    if "wangyue_time_event_context" in review.reasons:
+        reasons.append("wangyue_time_event_context")
+    if "wangyue_hidden_negative_comparison_context" in review.reasons:
+        reasons.append("wangyue_hidden_negative_comparison_context")
+    return reasons
 
 
 def _persona_style_preset_for_item(item: ContentBatchItem) -> dict[str, str]:
@@ -1810,10 +3381,24 @@ def _compact_len(value: str | None) -> int:
     return len(re.sub(r"\s+", "", str(value or "")))
 
 
+def _title_weighted_len(title: str | None) -> int:
+    total = 0
+    for char in re.sub(r"\s+", "", str(title or "").strip()):
+        if char in ("\u200d", "\ufe0f"):
+            continue
+        total += 2 if EMOJI_PATTERN.fullmatch(char) else 1
+    return total
+
+
 def _should_apply_title_guard(job: ContentBatchJob, items: list[ContentBatchItem]) -> bool:
     if "wangyue" in (job.asset_key or "").lower() or "旺玥" in (job.product_topic or ""):
         return True
     return any("0705旺玥活动" in str((item.plan_json or {}).get("corpus") or "") for item in items)
+
+
+def _has_dangling_title_punctuation(title: str) -> bool:
+    text = str(title or "").strip()
+    return bool(text) and text[-1] in "，、：；,;:"
 
 
 def _title_guard_reasons(title: str, used_titles: set[str], item: ContentBatchItem | None = None) -> list[str]:
@@ -1824,6 +3409,8 @@ def _title_guard_reasons(title: str, used_titles: set[str], item: ContentBatchIt
     reference_titles = _title_reference_norms(item)
     if normalized and normalized in reference_titles:
         reasons.append("copied_reference_title")
+    if _title_weighted_len(title) > 20:
+        reasons.append("title_too_long")
     if _sanitize_generated_title_format(title) != title:
         reasons.append("generated_title_format")
     for phrase in TITLE_GUARD_FORBIDDEN_SUBSTRINGS:
@@ -1833,6 +3420,8 @@ def _title_guard_reasons(title: str, used_titles: set[str], item: ContentBatchIt
         if pattern.search(title):
             reasons.append("ambiguous_age_or_duration")
             break
+    if _has_dangling_title_punctuation(title):
+        reasons.append("dangling_title_punctuation")
     if _is_marketing_claim_title(title):
         reasons.append("marketing_claim_title_pattern")
     if _is_awkward_title(title):
@@ -1881,12 +3470,10 @@ TITLE_NATURAL_POSITIVE_TERMS = (
     "绿叶菜",
     "公园",
     "户外",
-    "翻账单",
     "咳嗽",
     "流鼻涕",
     "中招",
     "请假",
-    "肉疼",
     "头大",
     "纠结",
     "谁懂",
@@ -1958,12 +3545,25 @@ def _sanitize_generated_title_format(title: str | None) -> str:
         return text
     for pattern in TITLE_FORMAT_PATTERNS:
         text = pattern.sub("", text).strip()
-    text = EMOJI_PATTERN.sub("", text).strip()
+    text = _sanitize_title_emojis(text).strip()
     text = re.sub(r"[\u200d\ufe0f]", "", text).strip()
     text = re.sub(r"^\s*(?:标题|title)[:：]\s*", "", text, flags=re.IGNORECASE).strip()
     text = text.strip(" *_`~#")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+def _sanitize_title_emojis(title: str) -> str:
+    kept_allowed = False
+    parts: list[str] = []
+    for char in str(title or ""):
+        if not EMOJI_PATTERN.fullmatch(char):
+            parts.append(char)
+            continue
+        if char in TITLE_SURFACE_ALLOWED_EMOJIS and not kept_allowed:
+            parts.append(char)
+            kept_allowed = True
+    return "".join(parts)
 
 
 def _fallback_title_for_item(
@@ -2030,10 +3630,10 @@ def _title_candidate_groups(
         "儿童奶粉挑到最后",
         "做功课做到头疼",
         "这次奶粉没白挑",
-        "这罐旺玥先记一笔",
+        "这罐旺玥先留意",
         "我家那罐旺玥",
-        "旺玥这罐先记一下",
-        "开罐后先记两句",
+        "旺玥这罐还在喝",
+        "又开一罐旺玥",
         "这罐奶粉有点意外",
         "又开一罐儿童奶粉",
         "这次先不换了",
@@ -2043,17 +3643,17 @@ def _title_candidate_groups(
     if any(phrase in body for phrase in ["少请假", "中招", "保护力", "小病小痛", "流鼻涕", "咳嗽"]):
         candidates.extend(["接触多了才认真看奶粉", "这罐奶粉先不乱换"])
     if any(phrase in body for phrase in ["户外", "出去玩", "疯跑", "活动量", "跑跳"]):
-        candidates.extend(["出去玩多了以后", "活动量大以后才懂", "疯跑回来也要记一笔"])
+        candidates.extend(["出去玩多了以后", "活动量大以后才懂", "疯跑回来也有劲"])
     if any(phrase in body for phrase in ["写写画画", "绘本", "眼脑", "DHA", "看书"]):
         candidates.extend(["写写画画多了以后", "眼脑营养这块我开始看了", "看成分看到眼晕"])
     if any(phrase in body for phrase in ["挑食", "吃饭", "绿叶菜", "追着喂", "营养不够"]):
-        candidates.extend(["挑食这事先记一下", "吃饭这事真会反复", "营养补充这块我认了"])
+        candidates.extend(["挑食这事真会反复", "吃饭这事真会反复", "营养补充这块我认了"])
     if "幼儿园" in scene or "集体" in scene:
         candidates.extend(["上幼儿园后才认真看奶粉", "集体生活以后才懂"])
     if "户外" in scene:
         candidates.extend(["出去玩多了以后", "户外回来照样吃喝"])
     if "挑食" in scene or "饭" in scene or "营养不足" in topic:
-        candidates.extend(["挑食这事先记录一下", "吃饭这事真会反复"])
+        candidates.extend(["挑食这事真会反复", "吃饭这事真会反复"])
     if "选奶" in scene or "纠结" in topic:
         candidates.extend(["选奶粉选到头大", "挑来挑去先这样"])
     if "注意" in topic or "眼脑" in topic:
@@ -2122,7 +3722,7 @@ def _fallback_wangyue_growth_nutrition_body(item: ContentBatchItem) -> str:
     if route_prompt:
         return _join_growth_nutrition_fallback(route_prompt, item)
     variants = (
-        "给孩子选皇家美素佳儿旺玥儿童奶粉，想法挺简单，日常营养这块认真一点，先这样记着。",
+        "给孩子选旺玥儿童奶粉，想法挺简单，日常营养这块认真一点，先这样记着。",
         "我给孩子定旺玥，主要是想把日常营养这件事先顾上，不想来回换来换去，就先这么定了。",
         "儿童奶粉最后选旺玥，是觉得这罐更适合家里现在的想法，先放着观察，别急着下结论。我先记着。",
         "旺玥先放进家里的选择里，别的先不夸太满，日常营养这块先顾住，后面有变化再看。我先记着。",
@@ -2193,6 +3793,240 @@ def _is_wangyue_growth_nutrition_plan(plan: dict[str, Any]) -> bool:
     )
 
 
+def _sanitize_scene_motive_drift_text(text: str, bucket: str, hits: list[str]) -> str:
+    if not text or not hits:
+        return text
+    cleaned = text
+    if any("柜子" in hit or hit in {"收纳柜"} for hit in hits):
+        action = _scene_motive_replacement_action(bucket)
+        surface = _scene_motive_replacement_surface(bucket)
+        for phrase in (
+            "归置到柜子里",
+            "放进厨房柜子里",
+            "放进厨房柜子",
+            "放进柜子里",
+            "放进柜子",
+            "放回柜子里",
+            "放回柜子",
+            "丢进柜子里",
+            "丢进柜子",
+            "塞进柜子里",
+            "塞进柜子",
+            "放柜子",
+            "往柜子里一塞",
+        ):
+            cleaned = cleaned.replace(phrase, action)
+        cleaned = cleaned.replace(f"{action}里", action)
+        cleaned = cleaned.replace("整理柜子", surface)
+        cleaned = cleaned.replace("翻柜子", surface)
+        cleaned = cleaned.replace("收纳柜", "手边")
+        cleaned = cleaned.replace("厨房柜子", "台面边")
+        cleaned = cleaned.replace("柜子里", "手边")
+        cleaned = cleaned.replace("柜子", "手边")
+    if "购物清单" in hits:
+        cleaned = cleaned.replace("购物清单", "手机备忘录")
+    if any(hit in {"快见底", "只剩半罐", "剩半罐", "小半罐", "快没了", "快空了", "见底", "半罐"} for hit in hits):
+        cleaned = cleaned.replace("快见底的旺玥", "旺玥")
+        cleaned = cleaned.replace("快见底的皇家美素佳儿旺玥", "皇家美素佳儿旺玥")
+        cleaned = cleaned.replace("旺玥快见底了", "旺玥也在里面")
+        cleaned = cleaned.replace("皇家美素佳儿旺玥快见底了", "皇家美素佳儿旺玥也在里面")
+        cleaned = cleaned.replace("旺玥那罐也快空了", "旺玥也在旁边")
+        cleaned = cleaned.replace("旺玥也快空了", "旺玥也在旁边")
+        cleaned = cleaned.replace("皇家美素佳儿旺玥也快空了", "皇家美素佳儿旺玥也在旁边")
+        cleaned = cleaned.replace("这罐也快见底了", "旺玥也在旁边")
+        cleaned = cleaned.replace("这罐快见底了", "旺玥也在旁边")
+        cleaned = cleaned.replace("旺玥见底好几天了", "旺玥也顺手带了")
+        cleaned = cleaned.replace("皇家美素佳儿旺玥见底好几天了", "皇家美素佳儿旺玥也顺手带了")
+        cleaned = cleaned.replace("旺玥见底了", "旺玥也在里面")
+        cleaned = cleaned.replace("皇家美素佳儿旺玥见底了", "皇家美素佳儿旺玥也在里面")
+        cleaned = re.sub(r"还有半罐(?:皇家美素佳儿)?旺玥", "还有旺玥", cleaned)
+        cleaned = re.sub(r"半罐(?:皇家美素佳儿)?旺玥", "旺玥", cleaned)
+        cleaned = re.sub(r"(旺玥|皇家美素佳儿旺玥)还?只剩半罐", r"\1也在里面", cleaned)
+        cleaned = re.sub(r"(旺玥|皇家美素佳儿旺玥)还?剩半罐", r"\1也在里面", cleaned)
+        cleaned = re.sub(r"(旺玥|皇家美素佳儿旺玥)还?剩小半罐", r"\1也在里面", cleaned)
+        cleaned = re.sub(r"旁边还有半罐没喝完的", "顺手一起收好", cleaned)
+        cleaned = re.sub(r"还有半罐没喝完的", "也顺手收好", cleaned)
+        cleaned = cleaned.replace("家里库存清一清发现不少东西都见底了", "回家把几样东西先放好")
+        cleaned = cleaned.replace("库存清一清发现不少东西都见底了", "回家把几样东西先放好")
+        cleaned = cleaned.replace("不少东西都见底了", "几样东西都顺手补上了")
+        cleaned = cleaned.replace("都见底了", "都顺手补上了")
+        cleaned = cleaned.replace("见底了", "顺手补上了")
+        cleaned = cleaned.replace("快没了", "该补了")
+        cleaned = cleaned.replace("快空了", "也在旁边")
+    cleaned = cleaned.replace("台面边边上", "台面边上")
+    return cleaned
+
+
+def _scene_motive_replacement_action(bucket: str) -> str:
+    replacements = {
+        "快递到货拆箱": "先放在门口一起收",
+        "月底清单/购物车清理": "记在清单旁",
+        "超市顺手补刚需": "拎回家",
+        "家人提醒快没了": "记在手机备忘录里",
+        "早餐区/厨房台面整理": "留在台面边",
+        "常用位置顺手放好": "放到顺手位置",
+        "临出门发现某样东西没了": "记在备忘录里",
+    }
+    return replacements.get(bucket, "先放在手边")
+
+
+def _scene_motive_replacement_surface(bucket: str) -> str:
+    replacements = {
+        "快递到货拆箱": "拆快递",
+        "月底清单/购物车清理": "翻清单",
+        "超市顺手补刚需": "逛货架",
+        "家人提醒快没了": "记备忘录",
+        "早餐区/厨房台面整理": "收拾台面",
+        "常用位置顺手放好": "理顺手位置",
+        "临出门发现某样东西没了": "翻玄关抽屉",
+    }
+    return replacements.get(bucket, "收拾手边东西")
+
+
+def _restore_product_permission_wangyue_surface(text: str, *, post_type: str) -> str:
+    return text
+
+
+def _restore_wangyue_selling_context_surface(text: str, plan: dict[str, Any] | None) -> str:
+    return text
+
+
+def _sanitize_product_action_surface_text(text: str, surface: str) -> str:
+    if not text:
+        return text
+    cleaned = text
+    cleaned = cleaned.replace("皇家美素佳儿旺玥的杯子", "那杯皇家美素佳儿旺玥")
+    cleaned = cleaned.replace("皇家美素佳儿旺玥杯子", "那杯皇家美素佳儿旺玥")
+    cleaned = cleaned.replace("旺玥的杯子", "那杯旺玥")
+    cleaned = cleaned.replace("旺玥杯子", "那杯旺玥")
+    if surface in {"物件在场", "妈妈顺手挪放"}:
+        for phrase in (
+            "顺手端起来抿了一口",
+            "端起来抿了一口",
+            "端过去抿了一口",
+            "端着杯子喝了两口",
+            "端着杯子喝两口",
+            "端过去喝了一口",
+            "端起来喝了一口",
+            "端过去喝",
+            "他自己端过去喝了几口",
+            "他自己端起来喝了几口",
+            "自己端过去喝了几口",
+            "自己端起来喝了几口",
+            "端过去喝了几口",
+            "端起来喝了几口",
+            "抿了一口",
+            "咕咚几口",
+            "看了一眼了两口",
+            "看了一眼了几口",
+            "喝了几口",
+            "喝几口",
+            "喝两口",
+            "喝完",
+        ):
+            cleaned = cleaned.replace(phrase, "看了一眼")
+        for phrase in ("顺手冲了杯", "顺手冲一杯", "冲了杯旺玥", "冲一杯旺玥", "给他冲了杯"):
+            cleaned = cleaned.replace(phrase, "顺手放好")
+        for old, new in (
+            ("怕他路上想起来要喝又找不到", "怕出门前又找不到"),
+            ("路上想起来要喝又找不到", "出门前又找不到"),
+            ("想起来要喝又找不到", "要用的时候又找不到"),
+            ("路上想起来要喝", "出门前又找"),
+            ("想起来要喝", "想起来要找"),
+            ("喊他喝", "喊他快点"),
+            ("叫他喝", "叫他快点"),
+            ("让他喝", "让他快点"),
+            ("提醒他喝", "提醒他收好"),
+            ("明天早上冲好拿", "明天早上再说"),
+            ("明早冲好拿", "明早再说"),
+            ("冲好拿", "放好"),
+            ("冲好带", "放好"),
+        ):
+            cleaned = cleaned.replace(old, new)
+    elif surface == "孩子轻微使用":
+        for phrase in (
+            "他自己端过去喝了几口",
+            "他自己端起来喝了几口",
+            "自己端过去喝了几口",
+            "自己端起来喝了几口",
+            "端着杯子喝了两口",
+            "端着杯子喝两口",
+            "端过去喝了一口",
+            "端起来喝了一口",
+            "端过去喝了几口",
+            "端起来喝了几口",
+            "咕咚几口",
+            "看了一眼了两口",
+            "看了一眼了几口",
+            "喝了几口",
+            "喝几口",
+            "喝两口",
+        ):
+            cleaned = cleaned.replace(phrase, "抿了一口")
+        for phrase in ("顺手冲了杯", "顺手冲一杯", "冲了杯旺玥", "冲一杯旺玥", "给他冲了杯"):
+            cleaned = cleaned.replace(phrase, "顺手放好")
+    cleaned = cleaned.replace("看了一眼又看了一眼", "看了一眼")
+    cleaned = cleaned.replace("喊他再看了一眼", "喊他快点")
+    cleaned = cleaned.replace("不知道喝没看了一眼", "不知道动没动")
+    cleaned = cleaned.replace("昨天没看了一眼的", "昨天没收的")
+    cleaned = cleaned.replace("没看了一眼的", "没收的")
+    cleaned = cleaned.replace("没看了一眼", "没动")
+    cleaned = cleaned.replace("抿了一口又抿了一口", "抿了一口")
+    return cleaned
+
+
+def _sanitize_ugc_post_type_drift_text(text: str) -> str:
+    if not text:
+        return text
+    cleaned = text
+    replacements = (
+        ("喝了一阵轻复盘", "喝了一阵"),
+        ("一段轻复盘", "最近这段"),
+        ("轻复盘", "这段时间"),
+        ("想问问大家", "先按现在节奏"),
+        ("想问下大家", "先按现在节奏"),
+        ("想听听大家", "先按现在节奏"),
+        ("问问大家", "先按现在节奏"),
+        ("听听大家", "先按现在节奏"),
+        ("大家一般怎么判断", "先按现在节奏"),
+        ("大家怎么判断", "先按现在节奏"),
+        ("怎么判断继续还是停", "先按现在这样"),
+        ("怎么安排的", "怎么调"),
+        ("怎么安排", "怎么调"),
+        ("要不要继续", "先按现在这样"),
+        ("要不要留", "先按现在这样"),
+        ("该继续囤", "先按现在节奏"),
+        ("继续囤", "按现在节奏"),
+        ("再看别的", "后面再调整"),
+        ("有同样情况的妈妈吗", "按我家情况看"),
+        ("有同样情况", "按我家情况"),
+        ("求经验", "先按现在节奏"),
+        ("来聊聊", "先按现在节奏"),
+    )
+    for old, new in replacements:
+        cleaned = cleaned.replace(old, new)
+    cleaned = cleaned.replace("，。", "。").replace("，，", "，").replace("。。", "。")
+    return cleaned
+
+
+def _sanitize_usage_record_portable_text(text: str) -> str:
+    if not text:
+        return text
+    cleaned = text
+    replacements = (
+        ("直接塞进他书包侧兜里了", "就留在桌角了"),
+        ("塞进他书包侧兜里了", "留在桌角了"),
+        ("塞进书包侧兜里了", "留在桌角了"),
+        ("塞进他书包侧兜", "留在桌角"),
+        ("塞进书包侧兜", "留在桌角"),
+        ("放进书包侧兜", "放在桌角"),
+        ("装进书包侧兜", "放在桌角"),
+    )
+    for old, new in replacements:
+        cleaned = cleaned.replace(old, new)
+    return cleaned
+
+
 def _is_bad_body_title_candidate(text: str) -> bool:
     if not text:
         return True
@@ -2202,9 +4036,46 @@ def _is_bad_body_title_candidate(text: str) -> bool:
         return True
     if any(phrase in text for phrase in ("罐身", "粉质", "不结块", "冲起来", "装备", "泡奶")):
         return True
+    if "停课" in text or re.search(r"(?:他们班|班里).{0,6}班里", text):
+        return True
     if any(phrase in text for phrase in ("HMO", "DHA", "OPO", "PS", "磷脂酰丝氨酸", "乳铁蛋白", "免疫球蛋白", "胆碱", "叶黄素", "钙铁锌")):
         return True
     return False
+
+
+def _is_postprocess_blocked(item: ContentBatchItem) -> bool:
+    return bool((item.quality_json or {}).get("postprocess_blocked"))
+
+
+def _generated_article_items(final_output: dict[str, Any]) -> list[dict[str, str]]:
+    raw_items = final_output.get("items") if isinstance(final_output, dict) else None
+    if not isinstance(raw_items, list):
+        return []
+    items: list[dict[str, str]] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        title = str(raw_item.get("title") or raw_item.get("标题") or "").strip()
+        body = str(raw_item.get("body") or raw_item.get("正文") or "").strip()
+        if body:
+            items.append({"title": title, "body": body})
+    return items
+
+
+def _multi_output_execution_groups(items: list[ContentBatchItem]) -> list[list[int]]:
+    groups: list[list[int]] = []
+    grouped: dict[str, list[int]] = {}
+    for item in sorted(items, key=lambda value: int(value.item_no or 0)):
+        group = (item.plan_json or {}).get("multi_output_group") or {}
+        group_id = str(group.get("group_id") or "").strip() if isinstance(group, dict) else ""
+        if not group_id:
+            groups.append([int(item.id)])
+            continue
+        if group_id not in grouped:
+            grouped[group_id] = []
+            groups.append(grouped[group_id])
+        grouped[group_id].append(int(item.id))
+    return groups
 
 
 def _dedupe_titles(candidates: list[str]) -> list[str]:

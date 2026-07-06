@@ -30,6 +30,13 @@ DEFAULT_CONTENT_EMOJI = "少量"
 ARTICLE_RULE_EXAMPLE_SAMPLE_COUNT = 3
 ARTICLE_RULE_MAX_EXAMPLE_SAMPLE_COUNT = 8
 MOUTH_PHRASE_BUDGET_DEFAULT_BASE = 20
+SOURCE_ROW_RULE_OVERRIDE_FIELDS = {
+    "story_spine",
+    "scene_motive_bucket",
+    "selling_description",
+    "selling_kernel",
+    "corpus",
+}
 
 
 class ContentBatchPlanner:
@@ -49,6 +56,7 @@ class ContentBatchPlanner:
         persona_target: str | None = None,
         style: str | None,
         count: int,
+        articles_per_prompt: int = 1,
         keyword_asset_key: str | None = None,
         model_config: dict[str, Any] | None = None,
         model_config_rotation: list[dict[str, Any]] | None = None,
@@ -65,10 +73,13 @@ class ContentBatchPlanner:
                 rule_id=rule_id,
                 source_row_no=source_row_no,
                 keyword_asset_key=keyword_asset_key,
+                articles_per_prompt=articles_per_prompt,
                 model_config=model_config,
                 model_config_rotation=model_config_rotation,
                 created_by=created_by,
             )
+        if articles_per_prompt > 1:
+            raise ValueError("articles_per_prompt is only supported for article_business_rule_set assets")
         if not product_topic:
             raise ValueError(f"missing article_business_rule_set for {asset_key}")
 
@@ -156,6 +167,7 @@ class ContentBatchPlanner:
         rule_id: str | None,
         source_row_no: int | None,
         keyword_asset_key: str | None,
+        articles_per_prompt: int,
         model_config: dict[str, Any] | None,
         model_config_rotation: list[dict[str, Any]] | None,
         created_by: str | None,
@@ -167,11 +179,12 @@ class ContentBatchPlanner:
         if not rules:
             raise ValueError(f"article_business_rule_set is empty for {asset.asset_key}")
         focus_single_rule = bool(rule_id) or source_row_no is not None
+        asset_allows_repeat = _article_business_asset_allows_repeat(asset)
         limit = self._article_business_generation_limit(
             asset,
             rules,
             requested_count=requested_count,
-            allow_repeat=focus_single_rule,
+            allow_repeat=focus_single_rule or asset_allows_repeat,
         )
         product_topic = (
             (asset.content_json or {}).get("activity_name")
@@ -204,6 +217,7 @@ class ContentBatchPlanner:
                 "generation_mode": "unified_content_generate",
                 "keyword_asset_key": resolved_keyword_asset_key,
                 "quality_guard_profile_key": quality_guard_profile_key,
+                "articles_per_prompt": max(1, min(int(articles_per_prompt or 1), 2)),
                 "real_user_pool_asset_key": real_user_pool_asset.asset_key if real_user_pool_asset else None,
                 "real_user_pool_asset_id": real_user_pool_asset.id if real_user_pool_asset else None,
                 "real_user_pool_asset_version": real_user_pool_asset.version_no if real_user_pool_asset else None,
@@ -212,6 +226,7 @@ class ContentBatchPlanner:
                 "title_shape_pool_asset_version": title_shape_pool_asset.version_no if title_shape_pool_asset else None,
                 "rule_id_filter": rule_id,
                 "source_row_no_filter": source_row_no,
+                "allow_repeat_generation": focus_single_rule or asset_allows_repeat,
             },
             diversity_plan_json={},
             created_by=created_by,
@@ -219,7 +234,13 @@ class ContentBatchPlanner:
         self.db.add(job)
         await self.db.flush()
 
-        selected_rules = [rules[index % len(rules)] for index in range(limit)] if focus_single_rule else rules[:limit]
+        normalized_articles_per_prompt = max(1, min(int(articles_per_prompt or 1), 2))
+        selected_rules = _select_article_business_rules_for_generation(
+            rules,
+            limit=limit,
+            allow_repeat=focus_single_rule or asset_allows_repeat,
+            articles_per_prompt=normalized_articles_per_prompt,
+        )
         used_real_user_hashes: set[str] = set()
         used_real_user_route_families: dict[str, int] = {}
         used_title_reference_examples: set[str] = set()
@@ -227,31 +248,50 @@ class ContentBatchPlanner:
             _resolve_mouth_phrase_budget_config(asset),
             item_count=limit,
         )
+        group_counters: dict[str, int] = {}
+        open_groups: dict[str, dict[str, int]] = {}
         for index, rule in enumerate(selected_rules):
+            plan = self._product_experience_plan_from_rule(
+                rule,
+                asset=asset,
+                item_no=index + 1,
+                keyword_asset_key=resolved_keyword_asset_key,
+                quality_guard_profile_key=quality_guard_profile_key,
+                model_config=_rotated_model_config(index + 1, model_config, model_config_rotation),
+                real_user_pool_asset=real_user_pool_asset,
+                real_user_pool_items=real_user_pool_items,
+                real_user_pool_config=real_user_pool_config,
+                title_shape_pool_asset=title_shape_pool_asset,
+                title_shape_pool_items=title_shape_pool_items,
+                used_real_user_hashes=used_real_user_hashes,
+                used_real_user_route_families=used_real_user_route_families,
+                used_title_reference_examples=used_title_reference_examples,
+                mouth_phrase_budget=mouth_phrase_budget_items[index]
+                if index < len(mouth_phrase_budget_items)
+                else None,
+            )
+            if normalized_articles_per_prompt > 1:
+                group_key = _article_multi_output_rule_key(rule)
+                current_group = open_groups.get(group_key)
+                if current_group is None or current_group["member_count"] >= normalized_articles_per_prompt:
+                    group_no = group_counters.get(group_key, 0) + 1
+                    group_counters[group_key] = group_no
+                    current_group = {"group_no": group_no, "member_count": 0}
+                    open_groups[group_key] = current_group
+                current_group["member_count"] += 1
+                plan["multi_output_group"] = {
+                    "enabled": True,
+                    "group_id": f"{group_key}:group{current_group['group_no']}",
+                    "group_key": group_key,
+                    "output_index": current_group["member_count"] - 1,
+                    "requested_count": normalized_articles_per_prompt,
+                }
             self.db.add(
                 ContentBatchItem(
                     batch_id=job.id,
                     item_no=index + 1,
                     status="planned",
-                    plan_json=self._product_experience_plan_from_rule(
-                        rule,
-                        asset=asset,
-                        item_no=index + 1,
-                        keyword_asset_key=resolved_keyword_asset_key,
-                        quality_guard_profile_key=quality_guard_profile_key,
-                        model_config=_rotated_model_config(index + 1, model_config, model_config_rotation),
-                        real_user_pool_asset=real_user_pool_asset,
-                        real_user_pool_items=real_user_pool_items,
-                        real_user_pool_config=real_user_pool_config,
-                        title_shape_pool_asset=title_shape_pool_asset,
-                        title_shape_pool_items=title_shape_pool_items,
-                        used_real_user_hashes=used_real_user_hashes,
-                        used_real_user_route_families=used_real_user_route_families,
-                        used_title_reference_examples=used_title_reference_examples,
-                        mouth_phrase_budget=mouth_phrase_budget_items[index]
-                        if index < len(mouth_phrase_budget_items)
-                        else None,
-                    ),
+                    plan_json=plan,
                 )
             )
         await self.db.flush()
@@ -373,7 +413,6 @@ class ContentBatchPlanner:
             item
             for item in items or []
             if isinstance(item, dict)
-            and item.get("corpus")
             and (item.get("business_rule") or item.get("article_rule"))
         ]
 
@@ -425,6 +464,7 @@ class ContentBatchPlanner:
     ) -> dict[str, Any]:
         asset_content = asset.content_json or {}
         asset_metadata = asset.metadata_json or {}
+        rule, rule_override_meta = _apply_source_row_rule_override(asset, rule, item_no=item_no)
         rule_type = (
             rule.get("rule_type")
             or asset_content.get("rule_type")
@@ -504,6 +544,95 @@ class ContentBatchPlanner:
                 **real_user_meta,
                 "title_reference": real_user_title_meta,
             }
+        field_owner_clean = _is_field_owner_clean_rule(asset, rule)
+        ugc_post_type = (
+            _resolve_string_field("ugc_post_type", asset, rule)
+            if field_owner_clean
+            else _resolve_ugc_post_type(asset, rule, item_no=item_no)
+        )
+        painpoint = _resolve_painpoint(asset, rule, item_no=item_no)
+        selling_point = _resolve_selling_point(asset, rule, item_no=item_no)
+        positive_evidence = _resolve_positive_evidence(asset, rule)
+        selling_description = _resolve_selling_description(asset, rule)
+        selling_point_surface = _resolve_selling_point_surface(asset, rule)
+        ingredient_surface = _resolve_ingredient_surface(asset, rule)
+        benefit_surface = _resolve_benefit_surface(asset, rule)
+        product_appearance_mode = _resolve_product_appearance_mode(asset, rule)
+        product_name = _resolve_product_name(asset, rule)
+        selling_kernel = (
+            None
+            if field_owner_clean
+            else _resolve_selling_kernel(
+                asset,
+                rule,
+                painpoint=painpoint,
+                selling_point=selling_point,
+                positive_evidence=positive_evidence,
+                selling_description=selling_description,
+                selling_point_surface=selling_point_surface,
+                ingredient_surface=ingredient_surface,
+                benefit_surface=benefit_surface,
+            )
+        )
+        expression_mechanism = _resolve_expression_mechanism(asset, rule)
+        life_trigger = (
+            _resolve_string_field("life_trigger", asset, rule)
+            if field_owner_clean
+            else _resolve_life_trigger(asset, rule, item_no=item_no)
+        )
+        product_role = (
+            _resolve_string_field("product_role", asset, rule)
+            if field_owner_clean
+            else _resolve_product_role(asset, rule, item_no=item_no)
+        )
+        product_relation = (
+            _resolve_string_field("product_relation", asset, rule)
+            if field_owner_clean
+            else _resolve_product_relation(
+                asset,
+                rule,
+                product_appearance_mode=product_appearance_mode,
+                product_role=product_role,
+            )
+        )
+        product_density = (
+            _resolve_string_field("product_density", asset, rule)
+            if field_owner_clean
+            else _resolve_product_density(asset, rule)
+        )
+        imperfection = (
+            _resolve_string_field("imperfection", asset, rule)
+            if field_owner_clean
+            else _resolve_imperfection(asset, rule, item_no=item_no)
+        )
+        product_action_surface = _resolve_product_action_surface(asset, rule, item_no=item_no)
+        title_shape_mode = _resolve_title_shape_mode(asset, rule, item_no=item_no)
+        title_emoji_mode = _resolve_title_emoji_mode(asset, rule)
+        scene_motive_bucket = _resolve_scene_motive_bucket(asset, rule, item_no=item_no)
+        structure_slot = _resolve_structure_slot(asset, rule)
+        story_spine = _resolve_story_spine(asset, rule)
+        scene_constraint = _resolve_scene_constraint(asset, rule)
+        product_position_mode = (
+            _resolve_string_field("product_position_mode", asset, rule)
+            if field_owner_clean
+            else _resolve_product_position_mode(
+                asset,
+                rule,
+                item_no=item_no,
+                ugc_post_type=ugc_post_type,
+            )
+        )
+        ending_mode = _resolve_ending_mode(
+            asset,
+            rule,
+            item_no=item_no,
+            ugc_post_type=ugc_post_type,
+        )
+        corpus = _corpus_for_ugc_post_type(
+            rule.get("corpus"),
+            ugc_post_type,
+            product_position_mode=product_position_mode,
+        )
         return {
             "rule_type": rule_type,
             "item_no": item_no,
@@ -519,7 +648,36 @@ class ContentBatchPlanner:
             "business_rule": business_rule,
             "article_rule": rule.get("article_rule"),
             "topic": rule.get("topic"),
-            "corpus": rule.get("corpus"),
+            "product_name": product_name,
+            "post_type": _resolve_post_type(asset, rule),
+            "product_appearance_mode": product_appearance_mode,
+            "ugc_post_type": ugc_post_type,
+            "painpoint": painpoint,
+            "selling_point": selling_point,
+            "positive_evidence": positive_evidence,
+            "selling_description": selling_description,
+            "selling_point_surface": selling_point_surface,
+            "ingredient_surface": ingredient_surface,
+            "benefit_surface": benefit_surface,
+            "selling_kernel": selling_kernel,
+            "expression_mechanism": expression_mechanism,
+            "expression_reference_paths": _resolve_string_list_field("expression_reference_paths", asset, rule),
+            "expression_reference_phrases": _resolve_string_list_field("expression_reference_phrases", asset, rule),
+            "life_trigger": life_trigger,
+            "product_role": product_role,
+            "product_relation": product_relation,
+            "product_density": product_density,
+            "imperfection": imperfection,
+            "product_action_surface": product_action_surface,
+            "title_shape_mode": title_shape_mode,
+            "title_emoji_mode": title_emoji_mode,
+            "scene_motive_bucket": scene_motive_bucket,
+            "structure_slot": structure_slot,
+            "story_spine": story_spine,
+            "scene_constraint": scene_constraint,
+            "product_position_mode": product_position_mode,
+            "ending_mode": ending_mode,
+            "corpus": corpus,
             "examples": selected_examples,
             "supplements": [],
             **example_meta,
@@ -534,6 +692,7 @@ class ContentBatchPlanner:
             "real_user_pool": real_user_meta,
             "mouth_phrase_budget": _mouth_phrase_budget_for_rule(rule, mouth_phrase_budget),
             "source_row_no": rule.get("source_row_no"),
+            **rule_override_meta,
             "output_fields": ["title", "body"],
             "brief_constraints": {
                 "word_count": asset_content.get("word_count")
@@ -620,6 +779,10 @@ class ContentBatchPlanner:
             route_prompt_exclude_terms=_string_list(real_user_pool_config.get("route_prompt_exclude_terms")),
             detail_prompt_include_terms=_string_list(real_user_pool_config.get("detail_prompt_include_terms")),
             detail_prompt_exclude_terms=_string_list(real_user_pool_config.get("detail_prompt_exclude_terms")),
+            layer_source_keyword_include=_string_list_map(real_user_pool_config.get("layer_source_keyword_include")),
+            layer_source_keyword_exclude=_string_list_map(real_user_pool_config.get("layer_source_keyword_exclude")),
+            prompt_family_include=_string_list(real_user_pool_config.get("prompt_family_include")),
+            prompt_family_exclude=_string_list(real_user_pool_config.get("prompt_family_exclude")),
             prompt_family_stack_avoid=_string_list(real_user_pool_config.get("prompt_family_stack_avoid")),
             used_dedupe_hashes=used_real_user_hashes,
             used_route_families=used_real_user_route_families,
@@ -878,6 +1041,18 @@ def _string_list(value: Any) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
+def _string_list_map(value: Any) -> dict[str, list[str]]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, list[str]] = {}
+    for raw_key, raw_terms in value.items():
+        key = str(raw_key or "").strip()
+        terms = _string_list(raw_terms)
+        if key and terms:
+            result[key] = terms
+    return result
+
+
 def _resolve_real_user_pool_asset_key(asset: AssetRegistry) -> str | None:
     asset_content = asset.content_json or {}
     asset_metadata = asset.metadata_json or {}
@@ -897,6 +1072,45 @@ def _resolve_real_user_pool_config(asset: AssetRegistry) -> dict[str, Any]:
         if isinstance(value, dict):
             config.update(value)
     return config
+
+
+def _apply_source_row_rule_override(
+    asset: AssetRegistry,
+    rule: dict[str, Any],
+    *,
+    item_no: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    overrides = (asset.content_json or {}).get("source_row_rule_overrides")
+    if not isinstance(overrides, dict):
+        return rule, {}
+
+    source_row_no = _int_or_none(rule.get("source_row_no"))
+    if source_row_no is None:
+        return rule, {}
+
+    override_key = str(source_row_no)
+    variants = overrides.get(override_key)
+    if isinstance(variants, dict):
+        variants = [variants]
+    if not isinstance(variants, list):
+        return rule, {}
+
+    valid_variants = [variant for variant in variants if isinstance(variant, dict)]
+    if not valid_variants:
+        return rule, {}
+
+    variant_index = (max(1, item_no) - 1) % len(valid_variants)
+    variant = valid_variants[variant_index]
+    resolved_rule = dict(rule)
+    for field in SOURCE_ROW_RULE_OVERRIDE_FIELDS:
+        if field in variant:
+            resolved_rule[field] = variant[field]
+
+    variant_key = str(variant.get("variant_key") or variant.get("key") or variant_index + 1).strip()
+    return resolved_rule, {
+        "source_row_rule_override_key": override_key,
+        "source_row_rule_variant_key": variant_key,
+    }
 
 
 def _real_user_pool_config_for_rule(config: dict[str, Any], rule: dict[str, Any]) -> dict[str, Any]:
@@ -1244,6 +1458,590 @@ def _resolve_keyword_selection(asset: AssetRegistry | None) -> dict[str, Any]:
 def _resolve_generation_requirements(asset: AssetRegistry | None) -> str | None:
     for source in ((asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
         normalized = str(source.get("generation_requirements") or "").strip()
+        if normalized:
+            return normalized
+    return None
+
+
+def _resolve_post_type(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("post_type", asset, rule)
+
+
+def _resolve_product_appearance_mode(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("product_appearance_mode", asset, rule)
+
+
+def _resolve_product_name(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    explicit = _resolve_string_field("product_name", asset, rule)
+    if explicit:
+        return explicit
+    text = " ".join(
+        str(part or "")
+        for part in (
+            getattr(asset, "asset_key", None),
+            getattr(asset, "display_name", None),
+            rule,
+        )
+    )
+    if "wangyue" in text.lower() or "旺玥" in text:
+        return "旺玥"
+    return None
+
+
+def _corpus_for_ugc_post_type(
+    corpus: str | None,
+    ugc_post_type: str | None,
+    *,
+    product_position_mode: str | None = None,
+) -> str | None:
+    base = str(corpus or "").strip()
+    guards: list[str] = []
+    if str(ugc_post_type or "") == "轻复盘型":
+        guards.append(
+            "本篇是阶段性回看，不写成求问帖、攻略或购买替换决策；"
+            "围绕一段使用后的观察、取舍或家里安排展开；"
+            "不要在标题或正文里直接写“轻复盘”这个内部类型词。"
+        )
+    if str(product_position_mode or "") in {
+        "先抛问题后出现",
+        "同龄对照后出现",
+        "纠结标准后出现",
+        "反馈背景后出现",
+        "后段才说到产品",
+        "中段回看时出现",
+        "观察之后出现",
+        "后段作为当前安排",
+        "取舍之后轻带",
+        "结尾前轻轻落到产品",
+    }:
+        guards.append(
+            "本篇 planner 指定产品不要前置：上面的前置产品表述只作为背景，不要照搬为正文开头。"
+            "正文第一句不要出现产品名或品牌名；"
+            "先写问题、同龄对照、正餐安排、家里消耗、开罐记录或阶段观察，第二句之后再让产品出现。"
+        )
+    if not guards:
+        return corpus
+    guard_text = "\n\n".join(guards)
+    return f"{base}\n\n{guard_text}" if base else guard_text
+
+
+def _resolve_title_shape_mode(asset: AssetRegistry | None, rule: dict[str, Any] | None, *, item_no: int) -> str | None:
+    explicit = _resolve_string_field("title_shape_mode", asset, rule)
+    if explicit:
+        return explicit
+    modes = _resolve_title_shape_modes(asset, rule)
+    if modes:
+        return modes[(max(1, item_no) - 1) % len(modes)]
+    post_type = _resolve_post_type(asset, rule)
+    product_appearance_mode = _resolve_product_appearance_mode(asset, rule)
+    if not post_type and not product_appearance_mode:
+        return None
+    normalized_post_type = str(post_type or "")
+    if "补货" in normalized_post_type or "清单" in normalized_post_type:
+        modes = ["物件名短标题", "动作短标题", "清单/库存标签", "开罐/到货记录", "轻吐槽碎片"]
+    elif "求问" in normalized_post_type and "复盘" in normalized_post_type:
+        modes = ["普通短问题", "使用阶段短标题", "纠结碎片", "记录短标题", "消耗记录短标题"]
+    elif "求问" in normalized_post_type or "复盘" in normalized_post_type:
+        modes = ["普通短问题", "品类/品牌名短标题", "纠结碎片", "使用阶段短标题"]
+    elif "使用记录" in normalized_post_type or "记录" in normalized_post_type:
+        modes = ["时间/场景碎片", "动作短标题", "物件在场短标题", "轻吐槽碎片"]
+    else:
+        modes = ["名词短标题", "动作短标题", "普通短问题", "时间/场景碎片", "轻吐槽碎片"]
+    return modes[(max(1, item_no) - 1) % len(modes)]
+
+
+def _resolve_title_shape_modes(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> list[str]:
+    for source in (rule or {}, (asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        if not isinstance(source, dict):
+            continue
+        value = source.get("title_shape_modes")
+        if isinstance(value, list):
+            modes = [str(item or "").strip() for item in value if str(item or "").strip()]
+            if modes:
+                return modes
+        if isinstance(value, str):
+            modes = [
+                item.strip()
+                for item in re.split(r"[,，、/|｜\n]+", value)
+                if item.strip()
+            ]
+            if modes:
+                return modes
+    return []
+
+
+def _resolve_title_emoji_mode(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("title_emoji_mode", asset, rule)
+
+
+def _resolve_scene_motive_bucket(asset: AssetRegistry | None, rule: dict[str, Any] | None, *, item_no: int) -> str | None:
+    explicit = _resolve_string_field("scene_motive_bucket", asset, rule)
+    if explicit:
+        return explicit
+    buckets = _resolve_scene_motive_buckets(asset, rule)
+    if buckets:
+        return buckets[(max(1, item_no) - 1) % len(buckets)]
+    post_type = _resolve_post_type(asset, rule)
+    product_appearance_mode = _resolve_product_appearance_mode(asset, rule)
+    if not post_type and not product_appearance_mode:
+        return None
+    normalized_post_type = str(post_type or "")
+    if "补货" in normalized_post_type or "清单" in normalized_post_type:
+        buckets = [
+            "快递到货拆箱",
+            "月底清单/购物车清理",
+            "超市顺手补刚需",
+            "家人提醒快没了",
+            "早餐区/厨房台面整理",
+            "常用位置顺手放好",
+            "库存盘点",
+            "临出门发现某样东西没了",
+        ]
+    elif "求问" in normalized_post_type and "复盘" in normalized_post_type:
+        buckets = [
+            "喝到几岁",
+            "喝了一阵轻复盘",
+            "儿童奶粉和正餐怎么平衡",
+            "同龄家庭怎么安排",
+            "消耗速度有点纠结",
+            "4段和儿童奶粉怎么选",
+            "饭量波动时要不要继续",
+            "开罐记录",
+        ]
+    elif "求问" in normalized_post_type or "复盘" in normalized_post_type:
+        buckets = [
+            "喝到几岁",
+            "开罐记录",
+            "儿童奶粉和正餐怎么平衡",
+            "同龄家庭怎么安排",
+            "喝了一阵轻复盘",
+            "4段和儿童奶粉怎么选",
+            "饭量波动时要不要继续",
+            "消耗速度有点纠结",
+        ]
+    elif "使用记录" in normalized_post_type or "记录" in normalized_post_type:
+        buckets = [
+            "早上赶时间",
+            "晚饭后收拾桌子",
+            "放学回家玄关旁",
+            "周末在家磨蹭",
+            "出门前检查东西",
+            "早餐旁边那杯",
+            "写作业间隙",
+            "新开一听记录",
+        ]
+    else:
+        buckets = [
+            "早上赶时间",
+            "晚饭后收拾",
+            "家里库存",
+            "同龄求问",
+            "顺手记录",
+        ]
+    return buckets[(max(1, item_no) - 1) % len(buckets)]
+
+
+def _resolve_scene_motive_buckets(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> list[str]:
+    for source in (rule or {}, (asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        if not isinstance(source, dict):
+            continue
+        value = source.get("scene_motive_buckets")
+        if isinstance(value, list):
+            buckets = [str(item or "").strip() for item in value if str(item or "").strip()]
+            if buckets:
+                return buckets
+        if isinstance(value, str):
+            buckets = [
+                item.strip()
+                for item in re.split(r"[,，、/|｜\n]+", value)
+                if item.strip()
+            ]
+            if buckets:
+                return buckets
+    return []
+
+
+def _resolve_structure_slot(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("structure_slot", asset, rule)
+
+
+def _resolve_story_spine(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("story_spine", asset, rule)
+
+
+def _resolve_scene_constraint(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("scene_constraint", asset, rule)
+
+
+def _resolve_positive_evidence(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("positive_evidence", asset, rule)
+
+
+def _resolve_selling_description(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("selling_description", asset, rule)
+
+
+def _resolve_selling_point_surface(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("selling_point_surface", asset, rule)
+
+
+def _resolve_ingredient_surface(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("ingredient_surface", asset, rule)
+
+
+def _resolve_benefit_surface(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("benefit_surface", asset, rule)
+
+
+def _resolve_selling_kernel(
+    asset: AssetRegistry | None,
+    rule: dict[str, Any] | None,
+    *,
+    painpoint: str | None,
+    selling_point: str | None,
+    positive_evidence: str | None,
+    selling_description: str | None,
+    selling_point_surface: str | None,
+    ingredient_surface: str | None,
+    benefit_surface: str | None,
+) -> str | None:
+    explicit = _resolve_string_field("selling_kernel", asset, rule)
+    if explicit:
+        return explicit
+    parts: list[str] = []
+    for label, value in [
+        ("痛点", painpoint),
+        ("卖点", selling_point),
+        ("正向证据", positive_evidence),
+        ("卖点描述", selling_description),
+        ("卖点表达", selling_point_surface),
+        ("成分承接", ingredient_surface),
+        ("好处表达", benefit_surface),
+    ]:
+        text = str(value or "").strip().rstrip("。；;，, ")
+        if text:
+            parts.append(f"{label}：{text}")
+    return "；".join(parts) if parts else None
+
+
+def _resolve_expression_mechanism(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    return _resolve_string_field("expression_mechanism", asset, rule)
+
+
+def _is_field_owner_clean_rule(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> bool:
+    asset_key = str(getattr(asset, "asset_key", "") or "").lower()
+    corpus = str((rule or {}).get("corpus") or "")
+    return (
+        "field_owner_cleanup" in asset_key
+        or "selling_description" in asset_key
+        or "product_relation_dedupe" in asset_key
+        or "selling_kernel_dedupe" in asset_key
+        or "prompt_corpus_dedupe" in asset_key
+        or "不提供新的痛点、卖点、成分、正向变化或产品动作" in corpus
+        or "本篇的痛点、卖点和产品价值以本篇信息和卖点描述为准" in corpus
+        or "产品入场和产品价值按上方字段" in corpus
+    )
+
+
+def _resolve_product_position_mode(
+    asset: AssetRegistry | None,
+    rule: dict[str, Any] | None,
+    *,
+    item_no: int,
+    ugc_post_type: str | None = None,
+) -> str | None:
+    explicit = _resolve_string_field("product_position_mode", asset, rule)
+    if explicit:
+        return explicit
+    modes = _resolve_string_list_field("product_position_modes", asset, rule)
+    if modes:
+        return modes[(max(1, item_no) - 1) % len(modes)]
+    post_type = str(_resolve_post_type(asset, rule) or "")
+    product_appearance_mode = str(_resolve_product_appearance_mode(asset, rule) or "")
+    if not post_type and not product_appearance_mode:
+        return None
+    if "补货" in post_type or "清单" in post_type:
+        modes = [
+            "清单项中出现",
+            "中段跟其他刚需并列",
+            "后段才补一句",
+            "拆箱核对时出现",
+            "放回常用位置时出现",
+            "清单里轻带",
+        ]
+    elif "求问" in post_type or "复盘" in post_type:
+        if str(ugc_post_type or "") == "轻复盘型":
+            modes = [
+                "中段回看时出现",
+                "观察之后出现",
+                "后段作为当前安排",
+                "取舍之后轻带",
+                "结尾前轻轻落到产品",
+            ]
+        else:
+            modes = [
+                "先抛问题后出现",
+                "同龄对照后出现",
+                "纠结标准后出现",
+                "反馈背景后出现",
+                "后段才说到产品",
+            ]
+    elif "使用记录" in post_type or "记录" in post_type or "日常动作" in product_appearance_mode:
+        modes = [
+            "开头生活现场里顺带出现",
+            "中段桌面物件里出现",
+            "后段收拾动作里出现",
+            "只在一个动作里轻带",
+        ]
+    else:
+        modes = ["中段自然出现", "后段轻带", "清单项中出现"]
+    return modes[(max(1, item_no) - 1) % len(modes)]
+
+
+def _resolve_ending_mode(
+    asset: AssetRegistry | None,
+    rule: dict[str, Any] | None,
+    *,
+    item_no: int,
+    ugc_post_type: str | None = None,
+) -> str | None:
+    explicit = _resolve_string_field("ending_mode", asset, rule)
+    if explicit:
+        return explicit
+    modes = _resolve_string_list_field("ending_modes", asset, rule)
+    if modes:
+        return modes[(max(1, item_no) - 1) % len(modes)]
+    post_type = str(_resolve_post_type(asset, rule) or "")
+    if not post_type:
+        return None
+    if "补货" in post_type or "清单" in post_type:
+        modes = [
+            "放回位置",
+            "漏买小遗憾",
+            "普通收尾不总结",
+            "家里乱但先补上",
+            "家里习惯轻带",
+            "下次再看",
+            "收纳未完成",
+            "顺路带回",
+            "家人提醒收口",
+            "东西先归位",
+        ]
+    elif "求问" in post_type or "复盘" in post_type:
+        if str(ugc_post_type or "") == "轻复盘型":
+            modes = ["先看反馈", "暂时安排", "后面再看", "取舍收口", "普通记录"]
+        else:
+            modes = ["问别人经验", "保留不确定", "同龄对照", "具体场景求经验", "不急着下结论"]
+    elif "使用记录" in post_type or "记录" in post_type:
+        modes = ["乱着出门", "先收一半", "普通收尾", "没总结", "具体现场收尾"]
+    else:
+        modes = ["普通收尾不总结", "后面再看", "具体现场收尾"]
+    return modes[(max(1, item_no) - 1) % len(modes)]
+
+
+def _resolve_product_action_surface(asset: AssetRegistry | None, rule: dict[str, Any] | None, *, item_no: int) -> str | None:
+    explicit = _resolve_string_field("product_action_surface", asset, rule)
+    if explicit:
+        return explicit
+    surfaces = _resolve_product_action_surfaces(asset, rule)
+    if surfaces:
+        return surfaces[(max(1, item_no) - 1) % len(surfaces)]
+    post_type = _resolve_post_type(asset, rule)
+    product_appearance_mode = _resolve_product_appearance_mode(asset, rule)
+    normalized_post_type = str(post_type or "")
+    normalized_product_mode = str(product_appearance_mode or "")
+    if "使用记录" not in normalized_post_type and "日常动作" not in normalized_product_mode:
+        return None
+    surfaces = [
+        "物件在场",
+        "物件在场",
+        "物件在场",
+        "物件在场",
+        "物件在场",
+        "妈妈顺手挪放",
+        "妈妈顺手挪放",
+        "孩子轻微使用",
+        "孩子轻微使用",
+        "完整喝奶动作",
+    ]
+    return surfaces[(max(1, item_no) - 1) % len(surfaces)]
+
+
+def _resolve_product_action_surfaces(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> list[str]:
+    for source in (rule or {}, (asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        if not isinstance(source, dict):
+            continue
+        value = source.get("product_action_surfaces")
+        if isinstance(value, list):
+            surfaces = [str(item or "").strip() for item in value if str(item or "").strip()]
+            if surfaces:
+                return surfaces
+        if isinstance(value, str):
+            surfaces = [
+                item.strip()
+                for item in re.split(r"[,，、/|｜\n]+", value)
+                if item.strip()
+            ]
+            if surfaces:
+                return surfaces
+    return []
+
+
+def _resolve_ugc_post_type(asset: AssetRegistry | None, rule: dict[str, Any] | None, *, item_no: int) -> str | None:
+    explicit = _resolve_string_field("ugc_post_type", asset, rule)
+    if explicit:
+        return explicit
+    post_type = str(_resolve_post_type(asset, rule) or "")
+    if "补货" in post_type or "清单" in post_type:
+        return "复购/囤货型"
+    if "求问" in post_type and "复盘" in post_type:
+        types = ["求建议后的反馈型", "轻复盘型", "求建议后的反馈型", "轻复盘型", "轻复盘型"]
+        return types[(max(1, item_no) - 1) % len(types)]
+    if "求问" in post_type:
+        return "求建议后的反馈型"
+    if "复盘" in post_type:
+        return "轻复盘型"
+    if "使用记录" in post_type or "记录" in post_type:
+        return "日常使用记录型"
+    return None
+
+
+def _resolve_painpoint(asset: AssetRegistry | None, rule: dict[str, Any] | None, *, item_no: int) -> str | None:
+    explicit = _resolve_string_field("painpoint", asset, rule)
+    if explicit:
+        return explicit
+    painpoints = _resolve_string_list_field("painpoints", asset, rule)
+    if painpoints:
+        return painpoints[(max(1, item_no) - 1) % len(painpoints)]
+    return None
+
+
+def _resolve_selling_point(asset: AssetRegistry | None, rule: dict[str, Any] | None, *, item_no: int) -> str | None:
+    explicit = _resolve_string_field("selling_point", asset, rule)
+    if explicit:
+        return explicit
+    selling_points = _resolve_string_list_field("selling_points", asset, rule)
+    if selling_points:
+        return selling_points[(max(1, item_no) - 1) % len(selling_points)]
+    return None
+
+
+def _resolve_life_trigger(asset: AssetRegistry | None, rule: dict[str, Any] | None, *, item_no: int) -> str | None:
+    explicit = _resolve_string_field("life_trigger", asset, rule)
+    if explicit:
+        return explicit
+    triggers = _resolve_string_list_field("life_triggers", asset, rule)
+    if triggers:
+        return triggers[(max(1, item_no) - 1) % len(triggers)]
+    post_type = str(_resolve_post_type(asset, rule) or "")
+    if "补货" in post_type or "清单" in post_type:
+        triggers = ["家里快没了", "月底清清单", "顺路买刚需", "家人随口提醒", "收拾台面时归位"]
+    elif "求问" in post_type and "复盘" in post_type:
+        triggers = ["喝到几岁有点拿不准", "喝了一阵后回看", "正餐和奶粉怎么平衡", "同龄群聊后自己整理", "家里消耗速度复盘"]
+    elif "求问" in post_type or "复盘" in post_type:
+        triggers = ["喝到几岁有点拿不准", "新开一听后看家里安排", "正餐和奶粉怎么平衡", "同龄家庭怎么安排", "家里消耗速度有点纠结"]
+    elif "使用记录" in post_type or "记录" in post_type:
+        triggers = ["早上赶时间", "饭后收拾桌子", "放学回来一地东西", "在家磨蹭", "出门前检查东西"]
+    else:
+        return None
+    return triggers[(max(1, item_no) - 1) % len(triggers)]
+
+
+def _resolve_product_role(asset: AssetRegistry | None, rule: dict[str, Any] | None, *, item_no: int) -> str | None:
+    explicit = _resolve_string_field("product_role", asset, rule)
+    if explicit:
+        return explicit
+    post_type = str(_resolve_post_type(asset, rule) or "")
+    if "补货" in post_type or "清单" in post_type:
+        return "库存物件/补货清单一项"
+    if "求问" in post_type and "复盘" in post_type:
+        roles = ["讨论对象/求建议对象", "观察对象/反馈对象", "讨论对象/求建议对象", "观察对象/反馈对象", "观察对象/反馈对象"]
+        return roles[(max(1, item_no) - 1) % len(roles)]
+    if "求问" in post_type:
+        return "讨论对象/求建议对象"
+    if "复盘" in post_type:
+        return "观察对象/反馈对象"
+    if "使用记录" in post_type or "记录" in post_type:
+        return "低浓度在场物件"
+    return None
+
+
+def _resolve_product_relation(
+    asset: AssetRegistry | None,
+    rule: dict[str, Any] | None,
+    *,
+    product_appearance_mode: str | None,
+    product_role: str | None,
+) -> str | None:
+    explicit = _resolve_string_field("product_relation", asset, rule)
+    if explicit:
+        return explicit
+    parts: list[str] = []
+    appearance = str(product_appearance_mode or "").strip().rstrip("。；;，, ")
+    role = str(product_role or "").strip().rstrip("。；;，, ")
+    if appearance:
+        parts.append(f"出现方式：{appearance}")
+    if role:
+        parts.append(f"角色：{role}")
+    return "；".join(parts) if parts else None
+
+
+def _resolve_product_density(asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    explicit = _resolve_string_field("product_density", asset, rule)
+    if explicit:
+        return explicit
+    post_type = str(_resolve_post_type(asset, rule) or "")
+    if "补货" in post_type or "清单" in post_type:
+        return "中低"
+    if "求问" in post_type or "复盘" in post_type:
+        return "中"
+    if "使用记录" in post_type or "记录" in post_type:
+        return "低"
+    return None
+
+
+def _resolve_imperfection(asset: AssetRegistry | None, rule: dict[str, Any] | None, *, item_no: int) -> str | None:
+    explicit = _resolve_string_field("imperfection", asset, rule)
+    if explicit:
+        return explicit
+    imperfections = _resolve_string_list_field("imperfections", asset, rule)
+    if imperfections:
+        return imperfections[(max(1, item_no) - 1) % len(imperfections)]
+    post_type = str(_resolve_post_type(asset, rule) or "")
+    if "补货" in post_type or "清单" in post_type:
+        imperfections = ["总有东西忘买", "家里还是很乱", "只是刚需补上", "东西总堆在一起"]
+    elif "求问" in post_type or "复盘" in post_type:
+        if "wangyue" in str(getattr(asset, "asset_key", "") or "").lower() or "旺玥" in str(rule or ""):
+            imperfections = ["饭桌还是会乱一阵", "孩子当天也有小脾气", "家里安排没那么整齐", "还有一堆琐事要处理"]
+        else:
+            imperfections = ["不确定是不是每家都适合", "我也还在摸索", "价格和习惯都要算一下", "不是标准答案"]
+    elif "使用记录" in post_type or "记录" in post_type:
+        imperfections = ["当天还是一地乱", "孩子也没完全按计划来", "杯子还放在桌边", "没什么漂亮总结"]
+    else:
+        return None
+    return imperfections[(max(1, item_no) - 1) % len(imperfections)]
+
+
+def _resolve_string_list_field(field_name: str, asset: AssetRegistry | None, rule: dict[str, Any] | None) -> list[str]:
+    for source in (rule or {}, (asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        if not isinstance(source, dict):
+            continue
+        value = source.get(field_name)
+        if isinstance(value, list):
+            items = [str(item or "").strip() for item in value if str(item or "").strip()]
+            if items:
+                return items
+        if isinstance(value, str):
+            items = [item.strip() for item in re.split(r"[,，、/|｜\n]+", value) if item.strip()]
+            if items:
+                return items
+    return []
+
+
+def _resolve_string_field(field_name: str, asset: AssetRegistry | None, rule: dict[str, Any] | None) -> str | None:
+    for source in (rule or {}, (asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        value = source.get(field_name) if isinstance(source, dict) else None
+        normalized = str(value or "").strip()
         if normalized:
             return normalized
     return None
@@ -1608,3 +2406,53 @@ def _is_usable_synthetic_title_example(title: str) -> bool:
 def _normalize_keyword_asset_key(value: Any) -> str | None:
     normalized = str(value or "").strip()
     return normalized or None
+
+
+def _article_multi_output_rule_key(rule: dict[str, Any]) -> str:
+    rule_id = str(rule.get("rule_id") or "").strip()
+    source_row_no = _int_or_none(rule.get("source_row_no"))
+    if rule_id:
+        return f"rule:{rule_id}"
+    if source_row_no is not None:
+        return f"row:{source_row_no}"
+    text = re.sub(r"\s+", "", str(rule.get("business_rule") or rule.get("topic") or "default"))
+    return "rule_text:" + (text[:40] or "default")
+
+
+def _select_article_business_rules_for_generation(
+    rules: list[dict[str, Any]],
+    *,
+    limit: int,
+    allow_repeat: bool,
+    articles_per_prompt: int,
+) -> list[dict[str, Any]]:
+    if not rules or limit <= 0:
+        return []
+    output_count = max(1, min(int(articles_per_prompt or 1), 2))
+    if output_count <= 1:
+        return [rules[index % len(rules)] for index in range(limit)] if allow_repeat else rules[:limit]
+
+    group_count = math.ceil(limit / output_count)
+    base_rules = (
+        [rules[index % len(rules)] for index in range(group_count)]
+        if allow_repeat
+        else rules[:group_count]
+    )
+    selected: list[dict[str, Any]] = []
+    for rule in base_rules:
+        for _ in range(output_count):
+            if len(selected) >= limit:
+                break
+            selected.append(rule)
+    return selected
+
+
+def _article_business_asset_allows_repeat(asset: AssetRegistry) -> bool:
+    metadata = asset.metadata_json or {}
+    content = asset.content_json or {}
+    return bool(
+        metadata.get("allow_repeat_generation")
+        or metadata.get("allow_rule_repeat")
+        or content.get("allow_repeat_generation")
+        or content.get("allow_rule_repeat")
+    )

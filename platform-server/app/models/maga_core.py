@@ -30,6 +30,11 @@ from app.models.llm_model_route import LLMModelRoute
 from app.models.llm_provider_config import LLMProviderConfig
 from app.models.expert_config import ExpertConfig
 from app.models.agent import Agent
+from app.models.sys_menu import SysMenu
+from app.models.sys_role import SysRole
+from app.models.sys_role_menu import SysRoleMenu
+from app.models.sys_user import SysUser
+from app.models.sys_user_role import SysUserRole
 
 
 class ContentBrief(Base):
@@ -101,3 +106,14 @@ MAGA_CORE_MODELS = (
 )
 
 MAGA_CORE_TABLE_NAMES = tuple(model.__tablename__ for model in MAGA_CORE_MODELS)
+
+MAGA_AUTH_MODELS = (
+    SysUser,
+    SysRole,
+    SysMenu,
+    SysUserRole,
+    SysRoleMenu,
+)
+
+MAGA_STARTUP_MODELS = MAGA_CORE_MODELS + MAGA_AUTH_MODELS
+MAGA_STARTUP_TABLE_NAMES = tuple(model.__tablename__ for model in MAGA_STARTUP_MODELS)

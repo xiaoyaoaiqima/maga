@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 
-REMOVED_STRATEGY_MESSAGE = "旧关键词策略系统已下线，请使用业务规则包和系统提示词关键词链路。"
+REMOVED_STRATEGY_MESSAGE = "旧关键词策略系统已下线，请使用业务规则包和表达扩散语料链路。"
 
 
 async def fetch_strategy_combinations(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:

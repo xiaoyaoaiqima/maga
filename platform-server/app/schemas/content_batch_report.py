@@ -176,6 +176,12 @@ class ContentBatchStartRequest(BaseSchema):
     persona_target: str | None = Field(default=None, max_length=255)
     style: str | None = Field(default=None, max_length=255)
     count: int = Field(default=10, ge=1, le=ARTICLE_BATCH_MAX_COUNT)
+    articles_per_prompt: int = Field(
+        default=1,
+        ge=1,
+        le=2,
+        description="每次 content.generate 调用生成几篇文章；当前仅文章业务规则链路支持 1 或 2。",
+    )
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     generation_model_config: ContentBatchModelConfig = Field(
         default_factory=ContentBatchModelConfig,

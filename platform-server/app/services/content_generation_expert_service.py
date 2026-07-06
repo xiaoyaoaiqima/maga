@@ -55,7 +55,7 @@ CONTENT_FLOW_EXPERT_SPECS: tuple[ContentFlowExpertSpec, ...] = (
         stage="生文",
         capability=CONTENT_GENERATE_CAPABILITY,
         content_type="article",
-        description="帖子内容生成；接收业务规则包和系统提示词关键词。",
+        description="帖子内容生成；接收业务规则包和表达扩散语料。",
         prompt_template=_fallback_prompt_template("article"),
         model_config={"temperature": 0.8, "max_tokens": 2048},
         variables=("business_rule", "keyword_corpus", "generation_requirements", "selected_keywords_json"),
@@ -67,7 +67,7 @@ CONTENT_FLOW_EXPERT_SPECS: tuple[ContentFlowExpertSpec, ...] = (
         stage="生评论",
         capability=CONTENT_GENERATE_CAPABILITY,
         content_type="comment",
-        description="评论业务规则生成；接收业务规则（业务规则）和系统提示词关键词。",
+        description="评论业务规则生成；接收业务规则（业务规则）和表达扩散语料。",
         prompt_template=_fallback_prompt_template("comment"),
         model_config={"temperature": 0.85, "max_tokens": 512},
         variables=("business_rule", "keyword_corpus", "generation_requirements", "selected_keywords_json"),
@@ -90,7 +90,7 @@ CONTENT_FLOW_EXPERT_SPECS: tuple[ContentFlowExpertSpec, ...] = (
             "【必须删除或自然替换的违禁词】\n{{ forbidden_hits }}\n\n"
             "【指定替换映射】\n{{ forbidden_replacements }}\n\n"
             "【业务规则】\n{{ business_rule }}\n\n"
-            "【本次自动选中的系统关键词语料】\n{{ selected_keywords_json }}\n\n"
+            "【本次自动选中的表达扩散语料】\n{{ selected_keywords_json }}\n\n"
             "【改写指令】\n{{ rewrite_instructions }}\n\n"
             "【输出要求】\n{{ output_requirements }}"
         ),

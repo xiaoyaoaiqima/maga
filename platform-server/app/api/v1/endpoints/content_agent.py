@@ -207,6 +207,7 @@ async def start_batch_generation(
             persona_target=request.persona_target,
             style=request.style,
             count=request.count,
+            articles_per_prompt=request.articles_per_prompt,
             keyword_asset_key=request.keyword_asset_key,
             model_config=model_config,
             model_config_rotation=await _model_config_rotation_with_maga_defaults(

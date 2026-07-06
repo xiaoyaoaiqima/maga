@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.models.base import Base
 from app.models.maga_assets import AssetRegistry
 from app.models.content_agent import ContentBatchJob, ContentBatchItem
-from app.services.content_batch_planner import ContentBatchPlanner, _resolve_real_user_pool_config, _rotated_model_config
+from app.services.content_batch_planner import (
+    ContentBatchPlanner,
+    _resolve_real_user_pool_config,
+    _rotated_model_config,
+    _select_article_business_rules_for_generation,
+)
 
 
 def test_article_business_generation_limit_prefers_requested_count():
@@ -24,6 +29,25 @@ def test_article_business_generation_limit_prefers_requested_count():
     limit = service._product_experience_generation_limit(asset, rules, requested_count=1000)
 
     assert limit == 1000
+
+
+def test_article_business_rule_multi_output_selects_same_rule_pairs():
+    rules = [{"rule_id": f"post_rule_{index:03d}"} for index in range(1, 5)]
+
+    selected = _select_article_business_rules_for_generation(
+        rules,
+        limit=5,
+        allow_repeat=False,
+        articles_per_prompt=2,
+    )
+
+    assert [rule["rule_id"] for rule in selected] == [
+        "post_rule_001",
+        "post_rule_001",
+        "post_rule_002",
+        "post_rule_002",
+        "post_rule_003",
+    ]
 
 
 def test_article_business_rule_plan_samples_three_examples_from_pool():
@@ -102,6 +126,653 @@ def test_article_business_rule_plan_uses_asset_model_config_with_request_overrid
     assert default_plan["model_config"]["max_tokens"] == 2048
     assert override_plan["model_config"]["temperature"] == 0.7
     assert override_plan["model_config"]["max_tokens"] == 2048
+
+
+def test_article_business_rule_plan_carries_product_permission_slots():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_001",
+        "business_rule": "使用记录｜产品是日常动作的一部分",
+        "post_type": "使用记录",
+        "product_appearance_mode": "产品是日常动作的一部分",
+        "painpoint": "营养不足",
+        "selling_point": "日常营养补充",
+        "positive_evidence": "饭奶状态稳、日常营养不断档",
+        "selling_point_surface": "像妈妈说营养配得全，不用东补西补。",
+        "ingredient_surface": "钙铁锌、多种关键营养作为日常营养依据。",
+        "benefit_surface": "饭菜不稳时营养补充更完整。",
+        "expression_mechanism": "把卖点落在妈妈的日常安排判断里。",
+        "corpus": "围绕旺玥日常使用记录来写，不要写成种草。",
+        "examples": ["又开一听新的旺玥奶粉。"],
+        "source_row_no": 1,
+        "title_emoji_mode": "TITLE_EMOJI_LIGHT",
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_product_permission_3x10_20260623",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert plan["post_type"] == "使用记录"
+    assert plan["product_name"] == "旺玥"
+    assert plan["product_appearance_mode"] == "产品是日常动作的一部分"
+    assert plan["painpoint"] == "营养不足"
+    assert plan["selling_point"] == "日常营养补充"
+    assert plan["positive_evidence"] == "饭奶状态稳、日常营养不断档"
+    assert plan["selling_point_surface"] == "像妈妈说营养配得全，不用东补西补。"
+    assert plan["ingredient_surface"] == "钙铁锌、多种关键营养作为日常营养依据。"
+    assert plan["benefit_surface"] == "饭菜不稳时营养补充更完整。"
+    assert (
+        plan["selling_kernel"]
+        == "痛点：营养不足；卖点：日常营养补充；正向证据：饭奶状态稳、日常营养不断档；"
+        "卖点表达：像妈妈说营养配得全，不用东补西补；成分承接：钙铁锌、多种关键营养作为日常营养依据；"
+        "好处表达：饭菜不稳时营养补充更完整"
+    )
+    assert plan["expression_mechanism"] == "把卖点落在妈妈的日常安排判断里。"
+    assert plan["ugc_post_type"] == "日常使用记录型"
+    assert plan["life_trigger"] == "早上赶时间"
+    assert plan["product_role"] == "低浓度在场物件"
+    assert plan["product_relation"] == "出现方式：产品是日常动作的一部分；角色：低浓度在场物件"
+    assert plan["product_density"] == "低"
+    assert plan["imperfection"] == "当天还是一地乱"
+    assert plan["product_action_surface"] == "物件在场"
+    assert plan["title_shape_mode"] == "时间/场景碎片"
+    assert plan["title_emoji_mode"] == "TITLE_EMOJI_LIGHT"
+    assert plan["scene_motive_bucket"] == "早上赶时间"
+    assert plan["product_position_mode"] == "开头生活现场里顺带出现"
+    assert plan["ending_mode"] == "乱着出门"
+
+
+def test_wangyue_field_owner_cleanup_rule_does_not_backfill_legacy_slots():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_004",
+        "business_rule": "V235-04｜日常营养种草｜家庭清单｜营养不足",
+        "corpus": (
+            "## 表达路径\n"
+            "本段只提供真人发帖节奏和表达松散度；不提供新的痛点、卖点、成分、正向变化或产品动作。\n"
+            "具体生活入口看正文取景槽位，产品依据、成分、正向变化和边界只按本篇信息。"
+        ),
+        "post_type": "家庭清单",
+        "product_appearance_mode": "旺玥作为家里会继续留的一罐儿童奶粉出现。",
+        "painpoint": "营养不足",
+        "selling_point": "营养丰富",
+        "positive_evidence": "餐桌波动后的基础营养补充、家庭营养安排或孩子日常状态，选一类。",
+        "ingredient_surface": "钙铁锌承接日常营养补充。",
+        "scene_motive_bucket": "吃饭波动和家庭营养安排",
+        "examples": ["家里常备那几样里，旺玥算是会继续留的。"],
+        "source_row_no": 4,
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_v235_field_owner_cleanup_article_rules",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=4,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert plan["ugc_post_type"] is None
+    assert plan["life_trigger"] is None
+    assert plan["product_role"] is None
+    assert plan["product_density"] is None
+    assert plan["imperfection"] is None
+    assert plan["product_position_mode"] is None
+    assert plan["product_relation"] is None
+
+
+def test_wangyue_selling_description_rule_does_not_backfill_legacy_slots():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_004",
+        "business_rule": "V236-04｜日常营养种草｜家庭清单｜营养不足",
+        "corpus": (
+            "## 表达纹理\n"
+            "本段只给发帖节奏、语气松散度和生活毛边；"
+            "本篇的痛点、卖点和产品价值以本篇信息和卖点描述为准。"
+        ),
+        "post_type": "家庭清单",
+        "product_appearance_mode": "旺玥作为家里会继续留的一罐儿童奶粉出现。",
+        "painpoint": "营养不足",
+        "selling_point": "营养丰富",
+        "selling_description": "饭菜有波动时，旺玥的价值落在基础营养更好接住。",
+        "scene_motive_bucket": "吃饭波动和家庭营养安排",
+        "examples": ["家里常备那几样里，旺玥算是会继续留的。"],
+        "source_row_no": 4,
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_v236_selling_description_article_rules",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=4,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert plan["selling_description"] == "饭菜有波动时，旺玥的价值落在基础营养更好接住。"
+    assert plan["product_name"] == "旺玥"
+    assert plan["ugc_post_type"] is None
+    assert plan["life_trigger"] is None
+    assert plan["product_role"] is None
+    assert plan["product_density"] is None
+    assert plan["imperfection"] is None
+    assert plan["product_position_mode"] is None
+    assert plan["product_relation"] is None
+
+
+def test_article_business_rule_plan_applies_source_row_rule_override_by_item_no():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_018",
+        "business_rule": "活动后状态观察",
+        "painpoint": "精力不足",
+        "selling_point": "乳铁蛋白/HMO配置",
+        "story_spine": "原始主线",
+        "scene_motive_bucket": "原始场景",
+        "selling_description": "原始卖点描述",
+        "selling_kernel": "原始种草内核",
+        "corpus": "原始表达纹理",
+        "source_row_no": 18,
+        "product_name": "旺玥",
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_v380_row18_distributed_variants_article_rules",
+        content_json={
+            "rule_type": "business_rule",
+            "source_row_rule_overrides": {
+                "18": [
+                    {
+                        "variant_key": "after_talk",
+                        "story_spine": "活动后的话头还没断",
+                        "scene_motive_bucket": "活动后的话头还没断",
+                        "selling_description": "旺玥承接活动后状态观察",
+                        "selling_kernel": "痛点：精力不足；卖点描述：活动后状态还在线",
+                        "corpus": "从孩子活动后的话头写起。",
+                    },
+                    {
+                        "variant_key": "doorway_pause",
+                        "story_spine": "进门收尾动作被孩子状态打断",
+                        "scene_motive_bucket": "进门收尾动作被孩子状态打断",
+                        "selling_description": "旺玥从家里一直喝的背景出现",
+                        "selling_kernel": "痛点：精力不足；卖点描述：回家后精神头还在",
+                        "corpus": "从进门后的收尾动作写起。",
+                    },
+                ]
+            },
+        },
+        metadata_json={},
+    )
+
+    first = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+    second = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=2,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert first["story_spine"] == "活动后的话头还没断"
+    assert first["scene_motive_bucket"] == "活动后的话头还没断"
+    assert first["selling_description"] == "旺玥承接活动后状态观察"
+    assert first["selling_kernel"] == "痛点：精力不足；卖点描述：活动后状态还在线"
+    assert first["corpus"] == "从孩子活动后的话头写起。"
+    assert first["source_row_rule_override_key"] == "18"
+    assert first["source_row_rule_variant_key"] == "after_talk"
+    assert second["story_spine"] == "进门收尾动作被孩子状态打断"
+    assert second["scene_motive_bucket"] == "进门收尾动作被孩子状态打断"
+    assert second["selling_description"] == "旺玥从家里一直喝的背景出现"
+    assert second["selling_kernel"] == "痛点：精力不足；卖点描述：回家后精神头还在"
+    assert second["corpus"] == "从进门后的收尾动作写起。"
+    assert second["source_row_rule_override_key"] == "18"
+    assert second["source_row_rule_variant_key"] == "doorway_pause"
+
+
+def test_article_business_rule_override_does_not_apply_to_other_rows():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_019",
+        "business_rule": "补货回看",
+        "story_spine": "row19原始主线",
+        "scene_motive_bucket": "row19原始场景",
+        "selling_description": "row19原始卖点描述",
+        "corpus": "row19原始表达纹理",
+        "source_row_no": 19,
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_v380_row18_distributed_variants_article_rules",
+        content_json={
+            "rule_type": "business_rule",
+            "source_row_rule_overrides": {
+                "18": [{"variant_key": "row18_only", "story_spine": "row18变体主线"}]
+            },
+        },
+        metadata_json={},
+    )
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert plan["story_spine"] == "row19原始主线"
+    assert plan["scene_motive_bucket"] == "row19原始场景"
+    assert plan["selling_description"] == "row19原始卖点描述"
+    assert plan["corpus"] == "row19原始表达纹理"
+    assert "source_row_rule_override_key" not in plan
+    assert "source_row_rule_variant_key" not in plan
+
+
+def test_article_business_rule_override_ignores_disallowed_product_fact_fields():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_018",
+        "business_rule": "活动后状态观察",
+        "story_spine": "原始主线",
+        "source_row_no": 18,
+        "product_name": "旺玥",
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_v380_row18_distributed_variants_article_rules",
+        content_json={
+            "rule_type": "business_rule",
+            "source_row_rule_overrides": {
+                "18": [
+                    {
+                        "variant_key": "unsafe_fact_override",
+                        "story_spine": "允许覆盖的主线",
+                        "product_name": "错误产品名",
+                        "painpoint": "错误痛点",
+                    }
+                ]
+            },
+        },
+        metadata_json={},
+    )
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert plan["story_spine"] == "允许覆盖的主线"
+    assert plan["product_name"] == "旺玥"
+    assert plan["painpoint"] is None
+    assert plan["source_row_rule_variant_key"] == "unsafe_fact_override"
+
+
+def test_article_business_rule_plan_carries_expression_reference_fields():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_001",
+        "business_rule": "V244｜半例文机制探针",
+        "corpus": "围绕旺玥自然记录来写。",
+        "post_type": "使用反馈",
+        "product_appearance_mode": "旺玥作为家里正在喝的一罐出现。",
+        "painpoint": "容易中招",
+        "selling_point": "进阶保护力",
+        "expression_reference_paths": ["先写生活小状态，再让旺玥出现，最后落一个具体反馈。"],
+        "expression_reference_phrases": ["今天顺手记一笔", "这段时间看下来还挺稳"],
+        "examples": ["旧 examples 只作资产留痕。"],
+        "source_row_no": 1,
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_v244_hybrid_reference_probe_article_rules",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert plan["expression_reference_paths"] == ["先写生活小状态，再让旺玥出现，最后落一个具体反馈。"]
+    assert plan["expression_reference_phrases"] == ["今天顺手记一笔", "这段时间看下来还挺稳"]
+    assert plan["examples"] == ["旧 examples 只作资产留痕。"]
+
+
+def test_article_business_rule_plan_rotates_product_action_surface_for_usage_record():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_product_permission_3x10_20260623",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+    rule = {
+        "rule_id": "business_rule_001",
+        "business_rule": "使用记录｜产品是日常动作的一部分",
+        "post_type": "使用记录",
+        "product_appearance_mode": "产品是日常动作的一部分",
+        "corpus": "围绕旺玥日常使用记录来写，不要写成种草。",
+        "examples": ["桌上那杯旺玥照常放着。"],
+        "source_row_no": 1,
+    }
+
+    surfaces = [
+        service._product_experience_plan_from_rule(
+            rule,
+            asset=asset,
+            item_no=item_no,
+            keyword_asset_key="wangyue_article_generation_keywords",
+            quality_guard_profile_key=None,
+            model_config=None,
+        )["product_action_surface"]
+        for item_no in range(1, 11)
+    ]
+
+    assert surfaces == [
+        "物件在场",
+        "物件在场",
+        "物件在场",
+        "物件在场",
+        "物件在场",
+        "妈妈顺手挪放",
+        "妈妈顺手挪放",
+        "孩子轻微使用",
+        "孩子轻微使用",
+        "完整喝奶动作",
+    ]
+
+
+def test_article_business_rule_plan_rotates_life_trigger_and_imperfection_by_post_type():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_product_permission_3x10_20260623",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+    rule = {
+        "rule_id": "business_rule_003",
+        "business_rule": "求问/轻复盘｜产品是明确讨论对象但不装日记",
+        "post_type": "求问/轻复盘",
+        "product_appearance_mode": "产品是明确讨论对象但不装日记",
+        "corpus": "围绕旺玥阶段性安排来写，不要写成种草。",
+        "examples": ["喝到几岁有点拿不准。"],
+        "source_row_no": 3,
+    }
+
+    first = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+    second = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=2,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert first["ugc_post_type"] == "求建议后的反馈型"
+    assert first["product_role"] == "讨论对象/求建议对象"
+    assert first["product_density"] == "中"
+    assert first["life_trigger"] == "喝到几岁有点拿不准"
+    assert second["ugc_post_type"] == "轻复盘型"
+    assert second["product_role"] == "观察对象/反馈对象"
+    assert second["life_trigger"] == "喝了一阵后回看"
+    assert second["title_shape_mode"] == "使用阶段短标题"
+    assert first["product_position_mode"] == "先抛问题后出现"
+    assert second["product_position_mode"] == "观察之后出现"
+    assert "睡前" not in first["corpus"]
+    assert "睡前" not in second["corpus"]
+    assert first["ending_mode"] == "问别人经验"
+    assert second["ending_mode"] == "暂时安排"
+    assert "正文第一句不要出现产品名或品牌名" in first["corpus"]
+    assert "正文第一句不要出现产品名或品牌名" in second["corpus"]
+    assert "本篇 planner 指定为轻复盘型" not in first["corpus"]
+    assert "本篇是阶段性回看" in second["corpus"]
+    assert "继续囤、再看别的" not in second["corpus"]
+    assert "暂时先怎么做" not in second["corpus"]
+    assert first["imperfection"] == "饭桌还是会乱一阵"
+    assert second["imperfection"] == "孩子当天也有小脾气"
+
+
+def test_article_business_rule_plan_does_not_default_to_unevidenced_sleep_cup_scene():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_product_permission_3x10_20260623",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+    rule = {
+        "rule_id": "business_rule_003",
+        "business_rule": "求问/轻复盘｜产品是明确讨论对象但不装日记",
+        "post_type": "求问/轻复盘",
+        "product_appearance_mode": "产品是明确讨论对象但不装日记",
+        "corpus": "围绕旺玥阶段性安排来写，不要写成种草。",
+    }
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=8,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert plan["scene_motive_bucket"] == "开罐记录"
+    assert "睡前" not in plan["life_trigger"]
+    assert "睡前" not in plan["scene_motive_bucket"]
+    assert "睡前" not in plan["corpus"]
+
+
+def test_article_business_rule_plan_rotates_product_position_and_ending_for_restock():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_product_permission_3x10_20260623",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+    rule = {
+        "rule_id": "business_rule_002",
+        "business_rule": "补货/家务清单｜产品是家里库存物件",
+        "post_type": "补货/家务清单",
+        "product_appearance_mode": "产品是家里库存物件",
+        "corpus": "围绕家里补货清单写，不要写成种草。",
+        "examples": ["柜子里旺玥快没了。"],
+        "source_row_no": 2,
+    }
+
+    plans = [
+        service._product_experience_plan_from_rule(
+            rule,
+            asset=asset,
+            item_no=item_no,
+            keyword_asset_key="wangyue_article_generation_keywords",
+            quality_guard_profile_key=None,
+            model_config=None,
+        )
+        for item_no in range(1, 11)
+    ]
+
+    assert [plan["product_position_mode"] for plan in plans[:6]] == [
+        "清单项中出现",
+        "中段跟其他刚需并列",
+        "后段才补一句",
+        "拆箱核对时出现",
+        "放回常用位置时出现",
+        "账单里轻带",
+    ]
+    assert [plan["ending_mode"] for plan in plans] == [
+        "放回位置",
+        "漏买小遗憾",
+        "普通收尾不总结",
+        "家里乱但先补上",
+        "预算轻带",
+        "下次再看",
+        "收纳未完成",
+        "顺路带回",
+        "家人提醒收口",
+        "东西先归位",
+    ]
+    assert [plan["ending_mode"] for plan in plans].count("预算轻带") == 1
+
+
+def test_article_business_rule_plan_rotates_title_shape_by_post_type():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_product_permission_3x10_20260623",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+    rule = {
+        "rule_id": "business_rule_002",
+        "business_rule": "补货/家务清单｜产品是家里库存物件",
+        "post_type": "补货/家务清单",
+        "product_appearance_mode": "产品是家里库存物件",
+        "corpus": "围绕家里补货清单写，不要写成种草。",
+        "examples": ["柜子里旺玥快没了。"],
+        "source_row_no": 2,
+    }
+
+    first = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+    second = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=2,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert first["title_shape_mode"] == "物件名短标题"
+    assert second["title_shape_mode"] == "动作短标题"
+
+
+def test_article_business_rule_plan_rotates_scene_motive_by_post_type():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_product_permission_3x10_20260623",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+    rule = {
+        "rule_id": "business_rule_002",
+        "business_rule": "补货/家务清单｜产品是家里库存物件",
+        "post_type": "补货/家务清单",
+        "product_appearance_mode": "产品是家里库存物件",
+        "corpus": "围绕家里补货清单写，不要写成种草。",
+        "examples": ["柜子里旺玥快没了。"],
+        "source_row_no": 2,
+    }
+
+    first = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+    second = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=2,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert first["scene_motive_bucket"] == "快递到货拆箱"
+    assert second["scene_motive_bucket"] == "月底账单/购物车清理"
+
+
+def test_article_business_rule_plan_uses_non_cabinet_restock_bucket():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_product_permission_3x10_20260623",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+    rule = {
+        "rule_id": "business_rule_002",
+        "business_rule": "补货/家务清单｜产品是家里库存物件",
+        "post_type": "补货/家务清单",
+        "product_appearance_mode": "产品是家里库存物件",
+        "corpus": "围绕家里补货清单写，不要写成种草。",
+        "examples": ["柜子里旺玥快没了。"],
+        "source_row_no": 2,
+    }
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=6,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert plan["scene_motive_bucket"] == "常用位置顺手放好"
 
 
 def test_article_business_rule_plan_merges_content_path_control_from_asset_and_rule():
@@ -705,6 +1376,111 @@ def test_wangyue_real_user_pool_source_row_override_can_disable_route_layer():
     assert all(item["example_layer"] != "route" for item in plan["real_user_examples"])
 
 
+def test_wangyue_real_user_pool_source_row_override_can_filter_layer_source_keyword():
+    service = ContentBatchPlanner(None)
+    rule = {
+        "rule_id": "business_rule_003",
+        "source_row_no": 3,
+        "business_rule": "注意力不集中，眼脑营养观察",
+        "topic": "注意力不集中，眼脑营养观察",
+        "corpus": "眼脑相关营养只是旺玥的一个轻挂卖点，不要写成正文主剧情。",
+        "examples": [],
+    }
+    asset = AssetRegistry(
+        id=10,
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_article_business_rules",
+        version_no=1,
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+    pool_asset = AssetRegistry(
+        id=20,
+        asset_type="real_user_example_pool",
+        asset_key="wangyue_child_growth_xhs_real_user_pool",
+        version_no=1,
+    )
+    pool_items = [
+        {
+            "source_type": "note",
+            "text": "说白了就是普通妈妈的碎碎念。",
+            "title": "轻业务",
+            "source_keyword": "row3_light_business_texture_curated",
+            "tags": ["营养"],
+            "risk_tags": [],
+            "quality_score": 20,
+            "dedupe_hash": "texture-curated",
+            "example_layer": "texture",
+            "prompt_text": "说白了就是普通妈妈的碎碎念。",
+            "prompt_text_source": "manual_curation_from_real_daily_texture",
+            "layer_reason": "row3_light_business_texture:low_business_semantics",
+        },
+        {
+            "source_type": "note",
+            "text": "当妈以后才发现，小孩每天也有自己的小世界。",
+            "title": "轻业务",
+            "source_keyword": "row3_light_business_texture_curated",
+            "tags": ["营养"],
+            "risk_tags": [],
+            "quality_score": 20,
+            "dedupe_hash": "opening-curated",
+            "example_layer": "opening_texture",
+            "prompt_text": "当妈以后才发现，小孩每天也有自己的小世界。",
+            "prompt_text_source": "manual_curation_from_real_daily_texture",
+            "layer_reason": "row3_light_business_texture:low_business_semantics",
+        },
+        {
+            "source_type": "note",
+            "text": "除了贵点没毛病。",
+            "title": "旧纹理",
+            "source_keyword": "wangyue_old_texture_pool",
+            "tags": ["营养"],
+            "risk_tags": [],
+            "quality_score": 99,
+            "dedupe_hash": "texture-old",
+            "example_layer": "texture",
+        },
+    ]
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+        real_user_pool_asset=pool_asset,
+        real_user_pool_items=pool_items,
+        real_user_pool_config={
+            "texture_count": 1,
+            "opening_or_ending_count": 1,
+            "comment_count": 0,
+            "source_row_overrides": {
+                "3": {
+                    "route_count": 0,
+                    "texture_count": 1,
+                    "opening_or_ending_count": 1,
+                    "layer_source_keyword_include": {
+                        "texture": ["row3_light_business_texture_curated"],
+                        "opening_texture": ["row3_light_business_texture_curated"],
+                        "ending": ["row3_light_business_texture_curated"],
+                    },
+                }
+            },
+        },
+    )
+
+    assert [item["dedupe_hash"] for item in plan["real_user_examples"]] == [
+        "opening-curated",
+        "texture-curated",
+    ]
+    assert plan["real_user_pool"]["layer_source_keyword_include"] == {
+        "ending": ["row3_light_business_texture_curated"],
+        "opening_texture": ["row3_light_business_texture_curated"],
+        "texture": ["row3_light_business_texture_curated"],
+    }
+
+
 def test_wangyue_real_user_pool_source_row_override_can_disable_all_layers():
     service = ContentBatchPlanner(None)
     rule = {
@@ -1101,7 +1877,7 @@ def test_article_business_rule_plan_avoids_stacked_title_prompt_family_when_poss
         real_user_pool_config=asset.content_json["real_user_pool_sampling"],
     )
 
-    assert plan["real_user_pool"]["prompt_family_counts"] == {"selection_process": 1}
+    assert plan["real_user_pool"]["prompt_family_counts"] == {"selection_process": 1, "product_decision": 1}
     assert plan["title_reference_examples"] == ["随手记一下"]
 
 
@@ -1169,8 +1945,106 @@ def test_article_business_rule_plan_keeps_stacked_title_prompt_family_when_no_al
         real_user_pool_config=asset.content_json["real_user_pool_sampling"],
     )
 
-    assert plan["real_user_pool"]["prompt_family_counts"] == {"selection_process": 1}
+    assert plan["real_user_pool"]["prompt_family_counts"] == {"selection_process": 1, "product_decision": 1}
     assert plan["title_reference_examples"] == ["选奶记录"]
+
+
+def test_article_business_rule_plan_passes_prompt_family_filters_to_real_user_selection():
+    service = ContentBatchPlanner(None)
+    rule = {
+        "rule_id": "business_rule_003",
+        "source_row_no": 3,
+        "business_rule": "注意力不集中，眼脑营养观察",
+        "topic": "注意力不集中，眼脑营养观察",
+        "corpus": "眼脑相关营养只是旺玥的一个轻挂卖点。",
+        "examples": [],
+    }
+    asset = AssetRegistry(
+        id=10,
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_article_business_rules",
+        version_no=1,
+        content_json={
+            "rule_type": "business_rule",
+            "real_user_pool_asset_key": "wangyue_child_growth_xhs_real_user_pool",
+            "real_user_pool_sampling": {
+                "route_count": 0,
+                "texture_count": 2,
+                "comment_count": 0,
+                "prompt_family_include": ["pure_voice", "mom_observation"],
+                "prompt_family_exclude": ["product_decision", "price_complaint", "milk_action", "result_claim"],
+            },
+        },
+        metadata_json={},
+    )
+    real_user_pool_asset = AssetRegistry(
+        id=20,
+        asset_type="real_user_example_pool",
+        asset_key="wangyue_child_growth_xhs_real_user_pool",
+        version_no=1,
+        content_json={},
+        metadata_json={},
+    )
+    real_user_items = [
+        {
+            "source_type": "note",
+            "example_layer": "texture",
+            "dedupe_hash": "texture-pure",
+            "prompt_text": "不拔高，就当一条普通记录。",
+            "text": "不拔高，就当一条普通记录。",
+            "tags": ["母婴奶粉"],
+            "risk_tags": [],
+            "quality_score": 20,
+            "layer_reason": "curated_texture",
+        },
+        {
+            "source_type": "note",
+            "example_layer": "texture",
+            "dedupe_hash": "texture-observation",
+            "prompt_text": "当妈以后才发现，小孩每天也有自己的小世界。",
+            "text": "当妈以后才发现，小孩每天也有自己的小世界。",
+            "tags": ["母婴奶粉"],
+            "risk_tags": [],
+            "quality_score": 15,
+            "layer_reason": "curated_texture",
+        },
+        {
+            "source_type": "note",
+            "example_layer": "texture",
+            "dedupe_hash": "texture-product",
+            "prompt_text": "除了贵没毛病，选奶粉这事我还是纠结了很久。",
+            "text": "除了贵没毛病，选奶粉这事我还是纠结了很久。",
+            "tags": ["选奶", "价格"],
+            "risk_tags": [],
+            "quality_score": 30,
+            "layer_reason": "curated_texture",
+        },
+    ]
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="wangyue_article_generation_keywords",
+        quality_guard_profile_key=None,
+        model_config=None,
+        real_user_pool_asset=real_user_pool_asset,
+        real_user_pool_items=real_user_items,
+        real_user_pool_config=asset.content_json["real_user_pool_sampling"],
+    )
+
+    assert [item["dedupe_hash"] for item in plan["real_user_examples"]] == [
+        "texture-pure",
+        "texture-observation",
+    ]
+    assert plan["real_user_pool"]["prompt_family_include"] == ["mom_observation", "pure_voice"]
+    assert plan["real_user_pool"]["prompt_family_exclude"] == [
+        "milk_action",
+        "price_complaint",
+        "product_decision",
+        "result_claim",
+    ]
+    assert plan["real_user_pool"]["prompt_family_counts"] == {"pure_voice": 1, "mom_observation": 1}
 
 
 def test_wangyue_growth_rule_filters_drinking_synthetic_title_examples():
@@ -1974,3 +2848,127 @@ async def test_content_batch_planner_accepts_article_business_rule_set_focus_rul
     assert all(item.plan_json["quality_guard_profile_key"] == "a2_sentiment_post_202606" for item in items)
     assert job.diversity_plan_json == {}
     assert all("diversity_slot" not in item.plan_json for item in items)
+
+
+@pytest.mark.asyncio
+async def test_article_business_rule_plan_repeats_rows_when_asset_allows_repeat():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[AssetRegistry.__table__, ContentBatchJob.__table__, ContentBatchItem.__table__],
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type="article_business_rule_set",
+                asset_key="wangyue_repeatable_rules",
+                display_name="旺玥可重复生文规则",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "rule_type": "article_business",
+                    "activity_name": "旺玥活动",
+                    "allow_repeat_generation": True,
+                    "items": [
+                        {
+                            "rule_id": "post_rule_001",
+                            "business_rule": "保护力",
+                            "corpus": "写旺玥保护力相关短帖。",
+                            "source_row_no": 1,
+                        },
+                        {
+                            "rule_id": "post_rule_002",
+                            "business_rule": "成长营养",
+                            "corpus": "写旺玥成长营养相关短帖。",
+                            "source_row_no": 2,
+                        },
+                    ],
+                },
+            )
+        )
+        await session.commit()
+
+        job = await ContentBatchPlanner(session).create_batch_plan(
+            asset_key="wangyue_repeatable_rules",
+            product_topic=None,
+            target_audience=None,
+            style=None,
+            count=5,
+            created_by="test",
+        )
+        await session.commit()
+        items = (
+            await session.execute(
+                select(ContentBatchItem).where(ContentBatchItem.batch_id == job.id).order_by(ContentBatchItem.item_no)
+            )
+        ).scalars().all()
+
+    assert job.count == 5
+    assert job.strategy_json["allow_repeat_generation"] is True
+    assert [item.plan_json["rule_id"] for item in items] == [
+        "post_rule_001",
+        "post_rule_002",
+        "post_rule_001",
+        "post_rule_002",
+        "post_rule_001",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_article_business_rule_plan_accepts_structured_rules_without_corpus():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[AssetRegistry.__table__, ContentBatchJob.__table__, ContentBatchItem.__table__],
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type="article_business_rule_set",
+                asset_key="wangyue_structured_rules",
+                display_name="旺玥结构化规则",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "rule_type": "article_business",
+                    "activity_name": "旺玥活动",
+                    "items": [
+                        {
+                            "rule_id": "business_rule_001",
+                            "business_rule": "V236-01｜进阶保护力种草｜使用反馈｜容易中招",
+                            "painpoint": "容易中招",
+                            "selling_description": "喝到现在孩子状态挺稳",
+                            "source_row_no": 1,
+                        }
+                    ],
+                },
+            )
+        )
+        await session.commit()
+
+        job = await ContentBatchPlanner(session).create_batch_plan(
+            asset_key="wangyue_structured_rules",
+            product_topic=None,
+            target_audience=None,
+            style=None,
+            count=1,
+            created_by="test",
+        )
+        await session.commit()
+        items = (
+            await session.execute(
+                select(ContentBatchItem).where(ContentBatchItem.batch_id == job.id).order_by(ContentBatchItem.item_no)
+            )
+        ).scalars().all()
+
+    assert job.count == 1
+    assert items[0].plan_json["rule_id"] == "business_rule_001"
+    assert items[0].plan_json["painpoint"] == "容易中招"

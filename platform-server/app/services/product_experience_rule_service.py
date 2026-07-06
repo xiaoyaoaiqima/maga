@@ -75,6 +75,7 @@ async def import_product_experience_rule_set(
         "business_rule_package": True,
         "activity_name": activity_name,
         "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
+        "allow_repeat_generation": True,
         "items": items,
     }
     if word_count:
@@ -117,6 +118,7 @@ async def import_product_experience_rule_set(
             "activity_name": activity_name,
             "word_count": word_count,
             "default_generation_count": DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT,
+            "allow_repeat_generation": True,
             "warnings": warnings,
         },
         created_by=created_by,
@@ -303,13 +305,190 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
     corpus = (row.get("规则语料") or row.get("语料") or row.get("corpus") or "").strip()
     if not raw_rule or not corpus:
         return None
-    has_canonical_examples = "示例" in row
-    examples = (
-        _line_examples(row.get("示例"))
-        if has_canonical_examples
-        else _line_examples(row.get("参考示例")) or _examples_from_corpus(corpus)
+    explicit_post_type = (
+        row.get("帖子类型")
+        or row.get("内容类型")
+        or row.get("post_type")
+        or ""
+    ).strip()
+    explicit_product_appearance_mode = (
+        row.get("产品出现方式")
+        or row.get("产品出现模式")
+        or row.get("product_appearance_mode")
+        or ""
+    ).strip()
+    inferred_post_type, inferred_product_mode = (
+        _infer_product_permission_fields(raw_rule)
+        if not explicit_post_type
+        else (None, None)
     )
-    if not has_canonical_examples:
+    post_type = (
+        explicit_post_type
+        or inferred_post_type
+        or ""
+    ).strip()
+    product_appearance_mode = (
+        explicit_product_appearance_mode
+        or inferred_product_mode
+        or ""
+    ).strip()
+    painpoint = (
+        row.get("痛点")
+        or row.get("核心痛点")
+        or row.get("painpoint")
+        or ""
+    ).strip()
+    selling_point = (
+        row.get("卖点方向")
+        or row.get("产品卖点")
+        or row.get("产品依据")
+        or row.get("selling_point")
+        or row.get("product_basis")
+        or ""
+    ).strip()
+    positive_evidence = (
+        row.get("主正向证据")
+        or row.get("正向证据")
+        or row.get("效果证明")
+        or row.get("positive_evidence")
+        or ""
+    ).strip()
+    selling_point_surface = (
+        row.get("卖点表达口吻")
+        or row.get("卖点表述")
+        or row.get("卖点表达")
+        or row.get("selling_point_surface")
+        or ""
+    ).strip()
+    ingredient_surface = (
+        row.get("成分承接")
+        or row.get("成分表达")
+        or row.get("ingredient_surface")
+        or ""
+    ).strip()
+    benefit_surface = (
+        row.get("好处表达")
+        or row.get("效果表达")
+        or row.get("benefit_surface")
+        or ""
+    ).strip()
+    selling_description = (
+        row.get("卖点描述")
+        or row.get("selling_description")
+        or ""
+    ).strip()
+    selling_kernel = (
+        row.get("种草内核")
+        or row.get("selling_kernel")
+        or _build_selling_kernel(
+            painpoint=painpoint,
+            selling_point=selling_point,
+            positive_evidence=positive_evidence,
+            selling_description=selling_description,
+            selling_point_surface=selling_point_surface,
+            ingredient_surface=ingredient_surface,
+            benefit_surface=benefit_surface,
+        )
+        or ""
+    ).strip()
+    expression_mechanism = (
+        row.get("表达机制")
+        or row.get("写法机制")
+        or row.get("expression_mechanism")
+        or ""
+    ).strip()
+    ugc_post_type = (
+        row.get("UGC类型")
+        or row.get("帖子大类")
+        or row.get("ugc_post_type")
+        or ""
+    ).strip()
+    life_trigger = (
+        row.get("生活动机")
+        or row.get("发帖动机")
+        or row.get("life_trigger")
+        or ""
+    ).strip()
+    product_role = (
+        row.get("产品角色")
+        or row.get("product_role")
+        or ""
+    ).strip()
+    product_relation = (
+        row.get("产品关系")
+        or row.get("product_relation")
+        or _build_product_relation(
+            product_appearance_mode=product_appearance_mode,
+            product_role=product_role,
+        )
+        or ""
+    ).strip()
+    product_density = (
+        row.get("产品浓度")
+        or row.get("product_density")
+        or ""
+    ).strip()
+    imperfection = (
+        row.get("不完美感")
+        or row.get("取舍")
+        or row.get("imperfection")
+        or ""
+    ).strip()
+    product_action_surface = (
+        row.get("产品动作表面")
+        or row.get("产品露出方式")
+        or row.get("product_action_surface")
+        or ""
+    ).strip()
+    title_shape_mode = (
+        row.get("标题形态")
+        or row.get("标题模式")
+        or row.get("title_shape_mode")
+        or ""
+    ).strip()
+    title_emoji_mode = (
+        row.get("标题emoji")
+        or row.get("标题 Emoji")
+        or row.get("title_emoji_mode")
+        or ""
+    ).strip()
+    scene_motive_bucket = (
+        row.get("scene_motive_bucket")
+        or row.get("正文场景")
+        or row.get("场景动机")
+        or row.get("场景桶")
+        or ""
+    ).strip()
+    structure_slot = (
+        row.get("结构槽位")
+        or row.get("structure_slot")
+        or ""
+    ).strip()
+    story_spine = (
+        row.get("叙事主线")
+        or row.get("内容主线")
+        or row.get("story_spine")
+        or ""
+    ).strip()
+    scene_constraint = (
+        row.get("场景约束")
+        or row.get("scene_constraint")
+        or ""
+    ).strip()
+    product_position_mode = (
+        row.get("产品出现位置")
+        or row.get("产品位置")
+        or row.get("product_position_mode")
+        or ""
+    ).strip()
+    ending_mode = (
+        row.get("收尾方式")
+        or row.get("结尾方式")
+        or row.get("ending_mode")
+        or ""
+    ).strip()
+    examples = _line_examples(row.get("示例")) if "示例" in row else _examples_from_corpus(corpus)
+    if "补充参考" in row:
         examples.extend(_line_examples(row.get("补充参考")))
     return {
         "rule_id": f"business_rule_{index:03d}",
@@ -319,7 +498,82 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         "examples": examples,
         "supplements": [],
         "source_row_no": index,
+        **({"post_type": post_type} if post_type else {}),
+        **({"product_appearance_mode": product_appearance_mode} if product_appearance_mode else {}),
+        **({"painpoint": painpoint} if painpoint else {}),
+        **({"selling_point": selling_point} if selling_point else {}),
+        **({"positive_evidence": positive_evidence} if positive_evidence else {}),
+        **({"selling_point_surface": selling_point_surface} if selling_point_surface else {}),
+        **({"ingredient_surface": ingredient_surface} if ingredient_surface else {}),
+        **({"benefit_surface": benefit_surface} if benefit_surface else {}),
+        **({"selling_description": selling_description} if selling_description else {}),
+        **({"selling_kernel": selling_kernel} if selling_kernel else {}),
+        **({"expression_mechanism": expression_mechanism} if expression_mechanism else {}),
+        **({"ugc_post_type": ugc_post_type} if ugc_post_type else {}),
+        **({"life_trigger": life_trigger} if life_trigger else {}),
+        **({"product_role": product_role} if product_role else {}),
+        **({"product_relation": product_relation} if product_relation else {}),
+        **({"product_density": product_density} if product_density else {}),
+        **({"imperfection": imperfection} if imperfection else {}),
+        **({"product_action_surface": product_action_surface} if product_action_surface else {}),
+        **({"title_shape_mode": title_shape_mode} if title_shape_mode else {}),
+        **({"title_emoji_mode": title_emoji_mode} if title_emoji_mode else {}),
+        **({"scene_motive_bucket": scene_motive_bucket} if scene_motive_bucket else {}),
+        **({"structure_slot": structure_slot} if structure_slot else {}),
+        **({"story_spine": story_spine} if story_spine else {}),
+        **({"scene_constraint": scene_constraint} if scene_constraint else {}),
+        **({"product_position_mode": product_position_mode} if product_position_mode else {}),
+        **({"ending_mode": ending_mode} if ending_mode else {}),
     }
+
+
+def _build_selling_kernel(
+    *,
+    painpoint: str,
+    selling_point: str,
+    positive_evidence: str,
+    selling_description: str,
+    selling_point_surface: str,
+    ingredient_surface: str,
+    benefit_surface: str,
+) -> str | None:
+    parts: list[str] = []
+    for label, value in [
+        ("痛点", painpoint),
+        ("卖点", selling_point),
+        ("正向证据", positive_evidence),
+        ("卖点描述", selling_description),
+        ("卖点表达", selling_point_surface),
+        ("成分承接", ingredient_surface),
+        ("好处表达", benefit_surface),
+    ]:
+        text = str(value or "").strip().rstrip("。；;，, ")
+        if text:
+            parts.append(f"{label}：{text}")
+    return "；".join(parts) if parts else None
+
+
+def _build_product_relation(*, product_appearance_mode: str, product_role: str) -> str | None:
+    parts: list[str] = []
+    appearance = str(product_appearance_mode or "").strip().rstrip("。；;，, ")
+    role = str(product_role or "").strip().rstrip("。；;，, ")
+    if appearance:
+        parts.append(f"出现方式：{appearance}")
+    if role:
+        parts.append(f"角色：{role}")
+    return "；".join(parts) if parts else None
+
+
+def _infer_product_permission_fields(raw_rule: str) -> tuple[str | None, str | None]:
+    text = str(raw_rule or "").strip()
+    if not text:
+        return None, None
+    for delimiter in ("｜", "|"):
+        if delimiter not in text:
+            continue
+        post_type, product_mode = [part.strip() for part in text.split(delimiter, 1)]
+        return post_type or None, product_mode or None
+    return None, None
 
 
 def _examples_from_corpus(corpus: str) -> list[str]:

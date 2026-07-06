@@ -1,5 +1,6 @@
 import pytest
 import pytest_asyncio
+from unittest.mock import patch
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models.base import Base
@@ -9,7 +10,10 @@ from app.services.unified_content_generation_service import (
     DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
     SYSTEM_KEYWORD_ASSET_TYPE,
     UnifiedContentGenerationService,
+    _apply_article_slot_coherence,
+    _article_output_format_requirement,
     _business_rule_text,
+    _comment_prompt_text,
     _normalize_model_config,
 )
 
@@ -25,6 +29,111 @@ async def unified_session_factory():
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     yield session_factory
     await engine.dispose()
+
+
+def test_article_output_format_supports_explicit_two_items_mode():
+    single = _article_output_format_requirement("article", ["title", "body"], {})
+    multi = _article_output_format_requirement("article", ["title", "body"], {"multi_output_count": 2})
+
+    assert "字段只能包含 title 和 body" in single
+    assert "字段只能包含 items" in multi
+    assert "items 必须正好 2 个" in multi
+
+
+def test_wangyue_v2_minimal_prompt_skips_legacy_wangyue_layers():
+    from app.services.unified_content_generation_service import (
+        _generation_requirements,
+        _keyword_corpus_text,
+        _wangyue_v2_minimal_article_prompt,
+    )
+
+    business_rule = {
+        "asset_key": "wangyue_v2_core_storyline_article_rules",
+        "keyword_asset_key": "wangyue_v2_minimal_generation_keywords",
+        "product_name": "旺玥",
+        "post_type": "妈妈日记型",
+        "product_appearance_mode": "精力不足｜精神状态变化",
+        "product_position_mode": "中段自然出现",
+        "title_shape_mode": "名词短标题",
+        "scene_motive_bucket": "早上赶时间",
+        "corpus": (
+            "任务：写一篇小红书妈妈UGC正向种草笔记。\n\n"
+            "这篇要写的事：\n"
+            "给孩子喝了一阵子旺玥奶粉，发现孩子精神头比以前好多了。\n\n"
+            "硬边界：\n"
+            "- 旺玥是3岁以上儿童喝的。\n\n"
+            "写法：\n"
+            "- 标题不超过20字。\n"
+            "- 正文120-180字左右。"
+        ),
+    }
+    selected_keywords = [
+        {
+            "category_code": "article_generation_requirement",
+            "category_name": "帖子生成要求",
+            "keyword_code": "v2_minimal_article_boundary",
+            "keyword_name": "v2最小写法边界",
+            "corpus": ["标题不超过20字。", "正文120-180字左右。"],
+        },
+        {
+            "category_code": "perturbation_rule",
+            "category_name": "扰动规则",
+            "keyword_code": "v2_quantum_diversity",
+            "keyword_name": "v2发散提醒",
+            "corpus": ["生成同质化内容是原罪。"],
+        },
+    ]
+
+    requirements = _generation_requirements("article", ["title", "body"], business_rule, selected_keywords)
+    keyword_corpus = _keyword_corpus_text(
+        selected_keywords,
+        content_type="article",
+        output_fields=["title", "body"],
+        business_rule=business_rule,
+    )
+    rule_text = _business_rule_text(business_rule, content_type="article")
+
+    assert "标题不超过20字" in requirements
+    assert "正文120-180字左右" in requirements
+    assert "产品事实：旺玥" not in requirements
+    assert "产品出现边界" not in requirements
+    assert "产品表达边界" not in requirements
+    assert "产品出现位置" not in requirements
+    assert "时间边界" not in requirements
+    assert "标题硬边界" not in requirements
+    assert "低权重表达扰动" not in keyword_corpus
+    assert "产品事实、成分、正向反馈、产品动作" not in keyword_corpus
+    assert "正文事实只按“这篇要写的事”" in keyword_corpus
+    assert "产品叙事推进" not in rule_text
+    assert "产品进入含义" not in rule_text
+    assert "这篇要写的事" in rule_text
+    prompt = _wangyue_v2_minimal_article_prompt(
+        {
+            "generation_requirements": requirements,
+            "business_rule": rule_text,
+            "output_format_requirement": "一次生成 2 篇。只输出 JSON 对象，字段只能包含 items；items 必须正好 2 个。",
+        },
+        selected_keywords=selected_keywords,
+    )
+    assert prompt.startswith("任务：写一篇小红书妈妈UGC正向种草笔记。")
+    assert prompt.count("【生成要求】") == 1
+    assert prompt.index("写法：") < prompt.index("【生成要求】")
+    assert "你是小红书妈妈UGC写手" not in prompt
+    assert "只按给定" not in prompt
+    assert "【业务规则】" not in prompt
+    assert "【输出格式】" not in prompt
+    assert "【发散提醒】" not in prompt
+    assert "表达扩散语料" not in prompt
+    assert "系统关键词语料" not in prompt
+    assert "产品事实：旺玥" not in prompt
+    assert "产品出现边界" not in prompt
+    assert "产品表达边界" not in prompt
+    assert "产品出现位置" not in prompt
+    assert "产品叙事推进" not in prompt
+    assert "低权重表达扰动" not in prompt
+    assert "生成同质化内容是原罪" in prompt
+    assert '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。' in prompt
+    assert "items 必须正好 2 个。" in prompt
 
 
 @pytest.mark.asyncio
@@ -88,17 +197,30 @@ async def test_unified_generation_selects_one_sub_keyword_per_category(unified_s
     assert all(len(item["corpus"]) == 1 for item in selected)
     assert snapshot.input_snapshot["content_type"] == "comment"
     prompt = snapshot.input_snapshot["rendered_prompt"]
-    assert prompt.startswith("【生成要求】\n生成一条小红书母婴社区真实用户评论")
+    assert prompt.startswith("你是一位妈妈，在小红书母婴评论区回复别人关于源悦奶粉的帖子。")
     assert prompt.count("【生成要求】") == 1
-    assert prompt.index("【生成要求】") < prompt.index("【系统关键词语料】")
-    assert prompt.index("【系统关键词语料】") < prompt.index("【业务规则】")
-    assert prompt.index("- 扰动规则 / 长短扰动") < prompt.index("- 人设 / 经验妈妈")
-    assert "整体适应" in snapshot.input_snapshot["rendered_prompt"]
-    assert "经验妈妈" in snapshot.input_snapshot["rendered_prompt"]
-    assert "生成一条小红书母婴社区真实用户评论" in snapshot.input_snapshot["rendered_prompt"]
+    assert prompt.index("注意：") < prompt.index("以下参考示例仅供参考")
+    assert prompt.index("以下参考示例仅供参考") < prompt.index("【生成要求】")
+    assert "【参考表达】" not in prompt
+    assert "【本条要求】" not in prompt
+    assert "【业务规则】" not in prompt
+    assert "业务规则" not in prompt
+    assert "参考表达边界：以下只用于调语气、节奏和生活毛边" not in prompt
+    assert "具体信息只按本条要求和参考示例已经给出的范围，不新增事实" not in prompt
+    assert "产品事实、成分、正向反馈、产品动作和正文事件只按业务规则里的本篇信息和叙事主线" not in prompt
+    assert "不要照搬语料，也不要把语料扩成新的事实、固定结构、现实季节或疾病大环境" not in prompt
+    assert "表达扩散语料" not in prompt
+    assert "扰动规则 / 长短扰动" not in prompt
+    assert "人设 / 经验妈妈" not in prompt
+    assert "长短扰动语料" not in prompt
+    assert "经验妈妈语料" not in prompt
+    assert "整体适应" not in snapshot.input_snapshot["rendered_prompt"]
+    assert "经验妈妈" not in snapshot.input_snapshot["rendered_prompt"]
+    assert "像妈妈在评论区聊刚开始喝源悦的观察" in snapshot.input_snapshot["rendered_prompt"]
+    assert "评论内容不用很丰富，简单表达含义和情绪即可" in snapshot.input_snapshot["rendered_prompt"]
     assert "只输出评论正文，不要标题、编号、解释" in snapshot.input_snapshot["rendered_prompt"]
     assert "标题要像真人随手起的小红书标题" not in snapshot.input_snapshot["rendered_prompt"]
-    assert "先看业务规则里的参考示例，再换一种自然说法输出" in snapshot.input_snapshot["rendered_prompt"]
+    assert "先看业务规则里的参考示例" not in snapshot.input_snapshot["rendered_prompt"]
     assert "小红书母婴评论生成要求：" not in snapshot.input_snapshot["rendered_prompt"]
     assert "字数按业务规则或系统关键词要求控制" not in snapshot.input_snapshot["rendered_prompt"]
     assert "具体业务信息只跟随【业务规则】" not in snapshot.input_snapshot["rendered_prompt"]
@@ -124,6 +246,141 @@ def test_model_config_keeps_timeout_and_retry_controls():
     assert "ignored" not in config
 
 
+def test_comment_prompt_can_render_json_string_array_output_contract():
+    prompt = _comment_prompt_text(
+        {
+            "business_rule": "有货-到货分享",
+            "corpus": "像妈妈看到 a2 到货后顺手接一句。",
+            "examples": ["a2终于到货了", "我也买到了新货了"],
+            "output_format_mode": "json_string_array",
+            "expansion_count": 20,
+        }
+    )
+
+    assert "生成 20 条评论。" in prompt
+    assert "只输出 JSON 字符串数组，不要标题、编号、解释。" in prompt
+    assert "只输出评论正文，不要标题、编号、解释。" not in prompt
+
+
+def test_a2_comment_prompt_generalizes_competitor_names_in_examples():
+    prompt = _comment_prompt_text(
+        {
+            "asset_key": "a2_sentiment_comment_activity",
+            "business_rule": "转奶-泛化竞品",
+            "corpus": "转奶前看报告。",
+            "examples": ["之前喝爱他美，现在看a2报告。", "也问过雀巢每批检。"],
+        }
+    )
+
+    assert "不要直接说其他奶粉品牌名" in prompt
+    assert "爱他美" not in prompt
+    assert "雀巢" not in prompt
+    assert "之前的奶粉" in prompt
+    assert "其他品牌" in prompt
+
+
+def test_keyword_selection_skips_disabled_categories_before_subkeywords():
+    from app.services.unified_content_generation_service import _select_keyword_bundle
+
+    selected = _select_keyword_bundle(
+        {
+            "categories": [
+                {
+                    "category_code": "article_speaking_style",
+                    "category_name": "帖子说话方式",
+                    "enabled": False,
+                    "applicable_content_types": ["article"],
+                    "sub_keywords": [
+                        {
+                            "keyword_code": "routine_log",
+                            "keyword_name": "松散流水式",
+                            "enabled": True,
+                            "corpus": ["句子可以像随手写一样松散。"],
+                        }
+                    ],
+                },
+                {
+                    "category_code": "persona",
+                    "category_name": "生活身份机制",
+                    "enabled": True,
+                    "applicable_content_types": ["article"],
+                    "sub_keywords": [
+                        {
+                            "keyword_code": "wangyue_group_attention_v288",
+                            "keyword_name": "群消息牵动注意",
+                            "enabled": True,
+                            "corpus": ["可借班级群、身边妈妈聊天带来的注意力变化。"],
+                        }
+                    ],
+                },
+            ]
+        },
+        content_type="article",
+        item_no=1,
+    )
+
+    assert [item["category_code"] for item in selected] == ["persona"]
+    assert selected[0]["keyword_code"] == "wangyue_group_attention_v288"
+
+
+def test_wangyue_slot_coherence_strips_purchase_closure_before_life_action_ending():
+    business_rule = {
+        "asset_key": "wangyue_v336_protection_entry_cleanup_article_rules",
+        "business_rule": "V236-14｜精力状态营养种草｜复购/长期使用｜精力不足",
+        "product_name": "旺玥",
+        "story_spine": "从外出后或回家路上的精神状态起笔。",
+        "product_appearance_mode": "家里一直喝旺玥，这次又补了一罐。",
+        "selling_description": "活动后还能有精神玩一会儿，日常营养也配得比较全，这点让我愿意继续买。",
+        "selling_kernel": "痛点：精力不足；卖点：营养丰富；卖点描述：活动后还能有精神玩一会儿，日常营养也配得比较全，这点让我愿意继续买。",
+    }
+    keywords = [
+        {
+            "category_code": "article_real_ending_texture",
+            "category_name": "真人自然结尾",
+            "keyword_code": "ending_child_small_reaction_v332",
+            "keyword_name": "孩子小反应",
+            "corpus": ["真人自然结尾（低权重）：可以停在孩子一个小反应、半句话或动作上。"],
+        }
+    ]
+
+    patched_rule, patched_keywords, coherence = _apply_article_slot_coherence(
+        content_type="article",
+        business_rule=business_rule,
+        selected_keywords=keywords,
+    )
+
+    assert patched_keywords == keywords
+    assert patched_rule["selling_description"] == "活动后还能有精神玩一会儿，日常营养也配得比较全。"
+    assert "愿意继续买" not in patched_rule["selling_kernel"]
+    assert patched_rule["slot_coherence_note"].startswith("已在生文前移除购买决策收口")
+    assert coherence["actions"][0]["field"] == "selling_description"
+
+
+def test_wangyue_slot_coherence_keeps_purchase_closure_without_action_ending():
+    business_rule = {
+        "asset_key": "wangyue_v336_protection_entry_cleanup_article_rules",
+        "business_rule": "V236-14｜精力状态营养种草｜复购/长期使用｜精力不足",
+        "product_name": "旺玥",
+        "selling_description": "活动后还能有精神玩一会儿，日常营养也配得比较全，这点让我愿意继续买。",
+    }
+    keywords = [
+        {
+            "category_code": "article_real_sentence_texture",
+            "keyword_code": "sentence_texture_plain_not_expert_v330",
+            "corpus": ["真人句子松散度。"],
+        }
+    ]
+
+    patched_rule, _, coherence = _apply_article_slot_coherence(
+        content_type="article",
+        business_rule=business_rule,
+        selected_keywords=keywords,
+    )
+
+    assert patched_rule["selling_description"] == business_rule["selling_description"]
+    assert coherence["actions"] == []
+
+
 def test_business_rule_text_renders_only_supplied_examples_with_usage_boundary():
     text = _business_rule_text(
         {
@@ -136,17 +393,32 @@ def test_business_rule_text_renders_only_supplied_examples_with_usage_boundary()
         }
     )
 
-    assert "规则内示例使用边界：以下示例是弱参考，只借短句质感和真人毛边，可以完全不用" in text
-    assert "不能决定正文路线" in text
-    assert "以写作规则为准" in text
-    assert "不要照搬示例里的原句、数字、配比、问句、结构、事实主张或固定句式骨架" in text
-    assert "不要把多个示例细节拼成一篇" in text
-    assert "如果示例让内容变窄或重复，就忽略示例" in text
+    assert "规则内示例边界：以下示例是低权重短句纹理，可以完全不用" in text
+    assert "只借语气毛边，不借事实、顺序、因果链或固定句式骨架" in text
     assert "规则内短句纹理（弱参考，可不用）" in text
     assert "抽中示例1" in text
     assert "抽中示例2" in text
     assert "抽中示例3" in text
     assert "example_pool_count" not in text
+
+
+def test_comment_business_rule_text_uses_direct_requirement_without_internal_labels():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "会员权益-积分老客",
+            "corpus": "像妈妈顺手提一句老客积分能换礼，礼品只在奶粉、礼盒、小车车、小自行车范围内。",
+            "examples": ["我刚看积分还能换礼，老客这点还挺实在"],
+        },
+        content_type="comment",
+    )
+
+    assert text.startswith("像妈妈顺手提一句老客积分能换礼")
+    assert "会员权益-积分老客" not in text
+    assert "业务规则" not in text
+    assert "业务语料" not in text
+    assert "参考示例只学习真人语气和评论形态" in text
+    assert "我刚看积分还能换礼，老客这点还挺实在" in text
 
 
 def test_article_business_rule_text_renders_corpus_directly():
@@ -164,6 +436,211 @@ def test_article_business_rule_text_renders_corpus_directly():
     assert "- 业务规则：" not in text
     assert "- 业务语料：" not in text
     assert "请病假的时间会有，但真的不多。" in text
+
+
+def test_article_business_rule_text_renders_structured_context_before_corpus():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "V155-01｜保护力关注种草｜使用反馈｜容易中招",
+            "product_name": "旺玥",
+            "post_type": "使用反馈",
+            "ugc_post_type": "使用反馈",
+            "painpoint": "容易中招",
+            "selling_point": "乳铁蛋白/HMO",
+            "positive_evidence": "少请假、户外回来不蔫",
+            "selling_point_surface": "像妈妈说看中保护力支持，喝下来这段时间状态稳。",
+            "ingredient_surface": "乳铁蛋白、HMO只承接保护力相关观察。",
+            "benefit_surface": "少请假、少中招、精神头在线里选一个方向。",
+            "expression_mechanism": "从自家状态或一直留下来的理由进入。",
+            "product_appearance_mode": "旺玥作为正在喝的保护力选择出现",
+            "corpus": "写作规则：先让保护力关注在生活画面里成立。",
+        },
+        content_type="article",
+    )
+
+    assert text.startswith("本篇信息：\n- 产品名：旺玥\n- 痛点：容易中招")
+    assert "- 帖子类型：使用反馈" not in text
+    assert "- UGC类型：使用反馈" not in text
+    assert "- 痛点：容易中招" in text
+    assert "- 卖点：乳铁蛋白/HMO" not in text
+    assert "正向证据：少请假、户外回来不蔫" in text
+    assert "好处表达：少请假、少中招、精神头在线里选一个方向" not in text
+    assert "产品叙事推进：" in text
+    assert "旺玥作为正在喝的保护力选择出现" in text
+    assert "产品进入含义：旺玥作为正在喝的保护力选择出现" in text
+    assert "这是语义任务，不是正文句子" in text
+    assert "不要硬塞产品名" in text
+    assert "- 产品入场关系：" not in text
+    assert "种草内核" not in text
+    assert "卖点表达参考" not in text
+    assert "表达边界：" not in text
+    assert "- 表达口吻：像妈妈说看中保护力支持" not in text
+    assert "- 表达机制：从自家状态或一直留下来的理由进入" not in text
+    assert "成分承接：乳铁蛋白、HMO只承接保护力相关观察" not in text
+    assert "只借表达方向，不照抄词句" not in text
+    assert "UGC类型=使用反馈" not in text
+    assert text.index("本篇信息") < text.index("写作规则")
+
+
+def test_article_business_rule_text_renders_selling_description_without_old_surfaces():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "V236-01｜卖点描述池",
+            "post_type": "家庭清单",
+            "painpoint": "营养不足",
+            "selling_point": "营养丰富",
+            "selling_description": "饭菜有波动时，旺玥的价值落在基础营养更好接住，钙铁锌可以自然提一嘴。",
+            "product_appearance_mode": "旺玥作为家里会继续留的一罐儿童奶粉出现",
+            "corpus": "写作规则：像妈妈随口记录。",
+        },
+        content_type="article",
+    )
+
+    assert "本篇信息：" in text
+    assert "- 痛点：营养不足" in text
+    assert "产品叙事推进：" in text
+    assert "饭菜有波动时，旺玥的价值落在基础营养更好接住" in text
+    assert "产品价值任务：" not in text
+    assert "正向证据：" not in text
+    assert "成分承接：" not in text
+    assert "好处表达：" not in text
+
+
+def test_wangyue_article_business_rule_text_renders_structured_context_without_corpus():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v305_prompt_corpus_dedupe_article_rules",
+            "business_rule": "V236-02｜进阶保护力种草｜选奶复盘｜容易中招",
+            "product_name": "旺玥",
+            "painpoint": "容易中招",
+            "selling_description": "当时挑儿童奶粉时看中旺玥对保护力的支持，也留意了乳铁蛋白和HMO；喝到现在孩子状态挺稳。",
+            "product_appearance_mode": "最后选择了旺玥。",
+        },
+        content_type="article",
+    )
+
+    assert "本篇信息：" in text
+    assert "- 产品名：旺玥" in text
+    assert "- 痛点：容易中招" in text
+    assert "产品叙事推进：" in text
+    assert "主线内产品信息：最后选择了旺玥；当时挑儿童奶粉时看中旺玥" in text
+    assert "产品进入含义：最后选择了旺玥" not in text
+    assert "产品价值含义：当时挑儿童奶粉时看中旺玥" not in text
+    assert "不要拆成产品进入、成分和反馈的并列清单" in text
+    assert "按“最后选择了旺玥”进入" not in text
+    assert "产品入场关系：" not in text
+    assert "产品价值任务：" not in text
+    assert "当时挑儿童奶粉时看中旺玥" in text
+    assert "使用方式：这是语义任务，不是正文句子" in text
+    assert "## 本篇表达路径" not in text
+    assert "表达纹理" not in text
+
+
+def test_wangyue_article_business_rule_renames_texture_layer():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "V236-01｜卖点描述池",
+            "post_type": "家庭清单",
+            "painpoint": "营养不足",
+            "selling_point": "营养丰富",
+            "selling_description": "饭菜有波动时，旺玥的价值落在基础营养更好接住。",
+            "product_appearance_mode": "旺玥作为家里会继续留的一罐儿童奶粉出现",
+            "corpus": "\n".join(
+                [
+                    "## 表达纹理",
+                    "本段只给发帖节奏、语气松散度和生活毛边；本篇的痛点、卖点和产品价值以本篇信息和卖点描述为准。",
+                    "- 规则内示例边界：以下示例是低权重短句纹理，可以完全不用；只借语气毛边，不借事实、顺序、因果链或固定句式骨架。",
+                    "- 规则内短句纹理（弱参考，可不用）：",
+                    "  - 家里常备那几样里，旺玥算是会继续留的。",
+                ]
+            ),
+        },
+        content_type="article",
+    )
+
+    assert "## 本篇表达路径" in text
+    assert "只借本篇表达路径里的行文节奏" in text
+    assert "产品逻辑按本篇信息和产品叙事推进" in text
+    assert "短句可不用；不借事实、顺序和固定句式" in text
+    assert "本篇短句口气（可不用）" in text
+    assert "## 表达纹理" not in text
+    assert "低权重短句纹理" not in text
+    assert "本段只给发帖节奏、语气松散度和生活毛边" not in text
+
+
+def test_wangyue_article_examples_render_as_expression_reference():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "V236-01｜卖点描述池",
+            "post_type": "家庭清单",
+            "painpoint": "营养不足",
+            "selling_point": "营养丰富",
+            "product_appearance_mode": "旺玥作为家里会继续留的一罐儿童奶粉出现",
+            "corpus": "写作规则：像妈妈随口记录。",
+            "examples": ["家里这罐旺玥算是会继续留的。"],
+        },
+        content_type="article",
+    )
+
+    assert "表达参考：以下内容可以不用；只借说话方式，不照搬事实和句式。" in text
+    assert "参考短句：" in text
+    assert "家里这罐旺玥算是会继续留的" in text
+    assert "规则内示例边界" not in text
+    assert "短句纹理" not in text
+
+
+def test_wangyue_article_long_examples_render_as_reference_content():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "V243｜full ref probe",
+            "post_type": "使用反馈",
+            "painpoint": "容易中招",
+            "selling_point": "保护力",
+            "product_appearance_mode": "旺玥作为正在喝的保护力选择出现",
+            "corpus": "写作规则：像妈妈随口记录。",
+            "examples": ["幼儿园班级群里一开始接龙请假，我就跟着紧张。每天送孩子上学，看她和小伙伴们贴贴抱抱，我心里就七上八下的。"],
+        },
+        content_type="article",
+    )
+
+    assert "表达参考：以下内容可以不用；只借说话方式，不照搬事实和句式。" in text
+    assert "参考内容：" in text
+    assert "参考短句：" not in text
+    assert "规则内示例边界" not in text
+
+
+def test_wangyue_article_expression_reference_fields_replace_examples():
+    text = _business_rule_text(
+        {
+            "rule_type": "business_rule",
+            "business_rule": "V244｜hybrid expression probe",
+            "post_type": "使用反馈",
+            "painpoint": "容易中招",
+            "selling_point": "保护力",
+            "product_appearance_mode": "旺玥作为正在喝的保护力选择出现",
+            "corpus": "写作规则：像妈妈随口记录。",
+            "expression_reference_paths": [
+                "先从妈妈当天注意到的小状态写起，中间自然提到旺玥，再落一个具体正向观察。"
+            ],
+            "expression_reference_phrases": ["今天就顺手记一下", "这段时间看下来还挺稳"],
+            "examples": ["旧短句不应该再渲染"],
+        },
+        content_type="article",
+    )
+
+    assert "本篇节奏（可不用；" in text
+    assert "本篇短句口气（可不用；" in text
+    assert "本篇节奏边界" not in text
+    assert "今天就顺手记一下" in text
+    assert "旧短句不应该再渲染" not in text
+    assert "参考短句：" not in text
+    assert "参考内容：" not in text
 
 
 def test_article_business_rule_text_renders_real_user_pool_separately():
@@ -377,12 +854,13 @@ def test_generation_requirements_render_mouth_phrase_budget_as_light_control():
     assert "批量口癖控制" in text
     assert "真人表达，不是禁词" in text
     assert "本篇口癖预算优先级高于示例和说话方式" in text
-    assert "最近" in text
-    assert "除上面列出的可用口癖外，本篇不要使用其他批量高频口头禅" in text
+    assert "最近" not in text
+    assert "本篇不要主动套用批量高频口头禅" in text
     assert "省心" not in text
     assert "踏实" not in text
     assert "不知道是不是心理作用" not in text
-    assert "输出 JSON 对象" not in text
+    assert "只输出 JSON 对象" not in text
+    assert "不要写“标题：”“正文：”“### 标题”“### 正文”" not in text
 
 
 def test_generation_requirements_render_content_path_control_before_title_rule():
@@ -408,8 +886,716 @@ def test_generation_requirements_render_content_path_control_before_title_rule()
     assert "先确定生活入口" in text
     assert "选奶、喝奶接受、状态证明、妈妈收口四段" in text
     assert "喝奶接受度、导购选择过程" in text
+    assert "只输出 JSON 对象" not in text
     assert "最多展开 1 个产品相关环节" in text
-    assert text.index("内容路径控制") < text.index("标题要像真人随手起的小红书标题")
+    assert text.index("内容路径控制") < text.index("标题硬边界")
+    assert "最多不超过20字，emoji 按 2 字计" in text
+    assert "不要硬截读不通的正文半句" in text
+    assert text.count("标题硬边界") == 1
+    assert "从正文里挑一个自然短句" not in text
+
+
+def test_generation_requirements_render_product_appearance_permission_before_content_path():
+    from app.services.unified_content_generation_service import _generation_requirements, _keyword_corpus_text
+
+    business_rule = {
+        "post_type": "补货/家务清单",
+        "product_appearance_mode": "产品是家里库存物件",
+        "title_shape_mode": "清单/库存标签",
+        "scene_motive_bucket": "快递到货拆箱",
+        "content_path_control": {
+            "enabled": True,
+            "instruction": "先写生活入口，再轻带产品。",
+        },
+    }
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        business_rule,
+        [],
+    )
+
+    assert "产品出现许可" in text
+    assert "帖子类型=补货/家务清单" in text
+    assert "产品出现方式=产品是家里库存物件" in text
+    assert "不要超出业务规则给定的产品内容" in text
+    assert "不要写成选奶、换奶、看中产品、推荐购买" in text
+    assert "不是种草/不是跟风" in text
+    assert text.index("产品出现许可") < text.index("内容路径控制")
+    assert text.index("内容路径控制") < text.index("正文取景")
+    assert text.index("正文取景") < text.index("标题形态")
+    assert "从“快递到货拆箱”找一个生活画面进入" in text
+    assert "写门口快递、拆纸箱、核对快递、包装袋" in text
+    assert "不写翻柜子、快见底或购物清单" in text
+    assert "除非本篇入口明确是库存盘点，否则不要默认写整理柜子、翻柜子、快见底、购物清单、纸巾洗衣液袜子这一套" not in text
+    assert "标题形态和松散感放在表达扩散语料里低权重参考" in text
+    assert "写成家务清单或补东西语境" not in text
+    assert "补货”“又要买了”“月底清单" not in text
+    assert "不要让标题形成产品到孩子状态、睡眠、成长、保护力或妈妈安心的因果" not in text
+    assert text.index("产品出现许可") < text.index("标题规则")
+    assert text.count("标题规则") == 1
+    assert "标题要像真人随手起的小红书标题" not in text
+    keyword_text = _keyword_corpus_text([], content_type="article", output_fields=["title", "body"], business_rule=business_rule)
+    assert "低权重表达扰动 / 主链路不变" in keyword_text
+    assert "标题形态可写成家务清单或补东西语境" in keyword_text
+    assert "不要默认回到整理柜子、翻柜子、快见底、购物清单这一套" in keyword_text
+
+
+def test_generation_requirements_do_not_render_wangyue_copyable_scene_bucket():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "asset_key": "wangyue_v209_benefit_bridge_article_rules",
+            "post_type": "使用反馈",
+            "painpoint": "容易中招",
+            "selling_point": "进阶保护力",
+            "scene_motive_bucket": "集体活动后自家观察",
+            "corpus": "旺玥",
+        },
+        [],
+    )
+
+    assert "从“集体活动后自家观察”找一个生活画面进入" not in text
+    assert "接触多后的自家状态观察" not in text
+    assert "正文入口：先从一个普通生活现场起笔" not in text
+    assert "生活入口只负责让帖子像真人生活，不负责证明卖点" not in text
+    assert "入口可以参考系统关键词，也可以自然发散" not in text
+    assert "不照搬内部槽位词" not in text
+    assert "不要照搬这个观察来源标签" not in text
+    assert "集体活动" not in text
+    assert "活动后" not in text
+    assert "标题硬边界" in text
+
+    imported_text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "asset_key": "wangyue_v209_benefit_bridge_article_rules",
+            "post_type": "使用反馈",
+            "painpoint": "容易中招",
+            "selling_point": "进阶保护力",
+            "scene_motive_bucket": "接触多后的自家观察",
+            "corpus": "旺玥",
+        },
+        [],
+    )
+
+    assert "从“接触多后的自家观察”找一个生活画面进入" not in imported_text
+    assert "接触多后的自家状态观察" not in imported_text
+    assert "正文入口：先从一个普通生活现场起笔" not in imported_text
+    assert "标题硬边界" in imported_text
+
+
+def test_generation_requirements_allow_selection_review_product_basis():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "选奶/儿童奶粉选择复盘",
+            "product_appearance_mode": "旺玥作为选择依据出现",
+            "title_shape_mode": "纠结/看成分/简单记录",
+        },
+        [],
+    )
+
+    assert "产品出现边界" in text
+    assert "正文要自然出现本篇指定产品名" in text
+    assert "正文必须明确写出旺玥" not in text
+    assert "另起一套产品关系" not in text
+    assert "具体产品内容只按业务规则给定方向出现" not in text
+    assert "只能写成选择时的具体依据或后来没换的原因" not in text
+    assert "不要写成喝后确定改善孩子状态、保护力、注意力、身高或成长结果" not in text
+    assert "不要写成选奶、换奶、看中卖点、推荐购买" not in text
+
+
+def test_generation_requirements_render_matrix_post_type_product_permissions():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    light_review = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "轻测评/配方关注",
+            "product_appearance_mode": "旺玥作为配方观察对象出现",
+        },
+        [],
+    )
+    assert "产品出现边界" in light_review
+    assert "正文要自然出现本篇指定产品名" in light_review
+    assert "正文必须明确写出旺玥" not in light_review
+    assert "另起一套产品关系" not in light_review
+    assert "被轻轻观察的配方/选择对象" not in light_review
+    assert "可以从被问起选择产品的原因、对产品成分的印象、简单对比或家里正在喝的情况进入" not in light_review
+    assert "必须有一个具体看配方" not in light_review
+    assert "不必每次安排看配方动作" not in light_review
+    assert "不能只写“先放进选择里”“先顾住日常营养”这种空结论" not in light_review
+    assert "产品信息只能贴着这个入口顺手出现" not in light_review
+    assert "不要把它翻译成妈妈的选品总结" not in light_review
+    assert "在轻测评/配方关注这类低解释义务内容里，不要写成品牌讲解稿、参数清单、测评模板、攻略答案或满分推荐" not in light_review
+    assert "记住成分点" not in light_review
+    assert "多看一眼" not in light_review
+    problem_solution = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "问题解决/放学后状态",
+            "product_appearance_mode": "旺玥作为其中一个调整方式出现",
+        },
+        [],
+    )
+    assert "产品可以回答一个小处理问题，比如日常营养补充这项怎么安排" not in problem_solution
+    assert "但不能成为整个生活困扰的答案" not in problem_solution
+    assert "具体产品内容只按业务规则给定方向出现" not in problem_solution
+    assert "不要写成产品解决挑食、精力、保护力、注意力或成长问题" not in problem_solution
+    assert "不要用“不能光靠奶粉/光靠这个不行/每家不一样/还在观察/不指望一罐奶粉/先喝着观察/兜底/补漏”式防守句" not in problem_solution
+    seeded_problem_solution = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "强种草问题解决/吃饭不稳",
+            "ugc_post_type": "问题种草型",
+            "product_appearance_mode": "旺玥作为日常营养补充的答案出现",
+        },
+        [],
+    )
+    assert "产品可以成为小问题的答案" not in seeded_problem_solution
+    assert "怎么安排日常营养补充" not in seeded_problem_solution
+    assert "但不能成为整个生活困扰的万能答案" not in seeded_problem_solution
+    assert "具体产品内容只按业务规则给定方向出现" not in seeded_problem_solution
+    assert "不要写成旺玥解决挑食、精力不足、容易中招、注意力不集中或成长发育问题" not in seeded_problem_solution
+    assert "不完美感写在生活问题仍有反复" not in seeded_problem_solution
+    feedback = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "使用反馈/继续观察",
+            "product_appearance_mode": "旺玥作为观察中的当前安排出现",
+        },
+        [],
+    )
+    assert "产品出现边界" in feedback
+    assert "当前还在保留的安排" not in feedback
+    assert "允许正面反馈" not in feedback
+    assert "不能把孩子状态变化归因给产品" not in feedback
+    family_list = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "家庭清单/阶段用品",
+            "product_appearance_mode": "旺玥作为学龄前清单项出现",
+        },
+        [],
+    )
+    assert "产品出现边界" in family_list
+    assert "和其他家庭安排或清单项并列" not in family_list
+    assert "不能站成正文C位" not in family_list
+    assert "不要写成一天作息表、教程、打卡清单或带话题标签" not in family_list
+    assert "标题也不要直接写“清单/攻略/几件事”" not in family_list
+
+
+def test_generation_requirements_blocks_unverified_temporal_context():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "使用反馈/阶段观察",
+            "product_appearance_mode": "旺玥作为当前安排出现",
+            "scene_motive_bucket": "入园后接触人多",
+        },
+        [],
+    )
+
+    assert "时间边界：可以有真实生活时间口吻" in text
+    assert "不要依赖当前季节、天气、公共疾病或季节性活动节点成立" in text
+    assert "换季、流感、感冒季" not in text
+    assert "最近、现在、昨天、前两天、刚拆快递、刚补货、家里还剩半罐" not in text
+
+
+def test_generation_requirements_render_product_action_surface_for_usage_record():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "使用记录",
+            "product_appearance_mode": "产品是日常动作的一部分",
+            "product_action_surface": "物件在场",
+            "scene_motive_bucket": "早上赶时间",
+        },
+        [],
+    )
+
+    assert "产品动作表面：本篇按“物件在场”写" in text
+    assert "不要写孩子端起来喝、喝两口、喝完、主动喝" in text
+    assert text.index("产品出现许可") < text.index("产品动作表面")
+    assert text.index("产品动作表面") < text.index("正文取景")
+
+
+def test_generation_requirements_render_ugc_strategy_before_action_surface():
+    from app.services.unified_content_generation_service import _generation_requirements, _keyword_corpus_text
+
+    business_rule = {
+        "asset_key": "wangyue_painpoint_selling_posttype_matrix_v33_20260624",
+        "post_type": "使用记录",
+        "product_appearance_mode": "产品是日常动作的一部分",
+        "ugc_post_type": "日常使用记录型",
+        "painpoint": "容易中招",
+        "selling_point": "保护力营养关注",
+        "positive_evidence": "少请假、户外回来不蔫",
+        "life_trigger": "早上赶时间",
+        "product_role": "低浓度在场物件",
+        "product_density": "低",
+        "imperfection": "当天还是一地乱",
+        "structure_slot": "先反馈后补产品",
+        "product_action_surface": "物件在场",
+        "scene_motive_bucket": "早上赶时间",
+        "scene_constraint": "围绕身边反馈或集体活动后的自家状态观察；生活入口只交代观察来源",
+        "product_position_mode": "中段桌面物件里出现",
+        "ending_mode": "没总结",
+    }
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        business_rule,
+        [],
+    )
+
+    assert "字段使用" not in text
+    assert "产品表达边界" in text
+    assert "产品事实、成分和正向反馈只按业务规则里的产品信息" in text
+    assert "表达扩散语料只调语气和节奏" in text
+    assert "不新增痛点、卖点、成分、效果证明或产品动作" not in text
+    assert "正文入口：先从一个普通生活现场起笔" not in text
+    assert "生活入口只负责让帖子像真人生活，不负责证明卖点" not in text
+    assert "具体产品逻辑只按业务规则里的本篇信息写" not in text
+    assert "痛点 -> 卖点 -> 对应成分" not in text
+    assert "进阶保护力才可写乳铁蛋白/免疫球蛋白/HMO" not in text
+    assert "痛点、卖点、成分和正向证据只按业务规则里的本篇信息写" not in text
+    assert "UGC类型策略" not in text
+    assert "UGC类型=日常使用记录型" not in text
+    assert "核心痛点=容易中招" not in text
+    assert "卖点方向=保护力营养关注" not in text
+    assert "主正向证据=少请假、户外回来不蔫" not in text
+    assert "帖子类型决定发帖原因和产品参与深度" not in text
+    assert "不要从通用写作要求里另补一套产品逻辑" not in text
+    assert "产品表达不写成参数清单或夸张承诺" not in text
+    assert "正文只展开一个产品关系" not in text
+    assert "旺玥价值要写到位" in text
+    assert "不用防守式弱化" in text
+    assert "不要自行新增业务规则外的选择理由或效果证明" in text
+    assert "结构关系：生活观察在前，产品在后作为背景或原因之一" not in text
+    assert "结构槽位：先反馈后补产品" not in text
+    assert "结构槽只规定信息顺序和关系，不提供可复制素材" not in text
+    assert "场景约束：围绕身边反馈或集体活动后的自家状态观察" not in text
+    assert "不要列举包、路上、随身、容器携带或可复制物件清单" not in text
+    assert "产品出现位置：本篇按“中段桌面物件里出现”处理" in text
+    assert "先写人和场景，中段作为桌面/台面/餐边柜旁物件出现" in text
+    assert "末句收法" not in text
+    assert "允许没漂亮结尾，停在具体动作或反馈上" not in text
+    assert "收尾方式：本篇按“没总结”结束" not in text
+    assert "产品出现许可" not in text
+    assert "产品出现边界" in text
+    assert text.index("产品出现边界") < text.index("产品表达边界")
+    assert text.index("产品表达边界") < text.index("产品出现位置")
+    assert text.index("产品出现位置") < text.index("产品动作表面")
+    keyword_text = _keyword_corpus_text([], content_type="article", output_fields=["title", "body"], business_rule=business_rule)
+    assert "结构关系可生活观察在前、产品在后作为背景或原因之一" in keyword_text
+    assert "正文入口按本篇痛点和发帖动机自然起笔" in keyword_text
+    assert "正文入口可从" not in keyword_text
+    assert "生活现场余味" not in keyword_text
+    assert "收尾方式" not in keyword_text
+    assert "不要为了收尾机械追加省心" not in keyword_text
+
+
+def test_wangyue_end_reply_boundary_guides_to_fact_action_or_observation():
+    from app.services.unified_content_generation_service import _keyword_corpus_text
+
+    keyword_text = _keyword_corpus_text(
+        [],
+        content_type="article",
+        output_fields=["title", "body"],
+        business_rule={
+            "asset_key": "wangyue_v254_expression_phrase_source_cleanup_article_rules",
+            "product_name": "旺玥",
+            "post_type": "对比选择",
+            "painpoint": "注意力不集中",
+            "product_appearance_mode": "对比后选择了旺玥。",
+            "ending_mode": "END_REPLY_BOUNDARY",
+            "corpus": "旺玥",
+        },
+    )
+
+    assert "收尾落在正文里的一个事实补充、生活动作或具体观察上" not in keyword_text
+    assert "自家情况回应" not in keyword_text
+    assert "收尾保留问答或聊天现场的余味" not in keyword_text
+
+
+def test_generation_requirements_render_wangyue_internal_ending_mode_only():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "asset_key": "wangyue_v342_single_flow_cleanup_article_rules",
+            "product_name": "旺玥",
+            "ending_mode": "END_FEEDBACK_STOP",
+        },
+        [],
+    )
+    legacy_text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v33_20260624",
+            "ending_mode": "没总结",
+        },
+        [],
+    )
+
+    assert "末句收法：最后一句停在本篇已有具体状态或正向反馈上" in text
+    assert "不再补省心、选对、没选错、推荐或“最好的证明”式总结" in text
+    assert "末句收法" not in legacy_text
+
+
+def test_generation_requirements_render_product_chain_budget_for_wangyue_problem_solution():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v33_20260624",
+            "post_type": "问题解决/放学后状态",
+            "product_appearance_mode": "旺玥作为其中一个调整方式出现",
+            "ugc_post_type": "问题解决型",
+            "painpoint": "精力不足",
+            "selling_point": "日常营养补充",
+        },
+        [],
+    )
+
+    assert "产品表达边界" in text
+    assert "旺玥价值要写到位" in text
+    assert "正文厚度" not in text
+    assert "发帖原因和生活现场成立" not in text
+    assert "生活余波不负责证明卖点" not in text
+    assert "产品链路预算" not in text
+    assert "批量分布提醒" not in text
+    assert "不是单篇削弱种草力的硬规则" not in text
+    assert "不要自行新增业务规则外的选择理由或效果证明" in text
+    assert "不要自动扩成完整广告闭环" not in text
+    assert "生活困扰→选购/对比/看成分→价格/预算→孩子接受/好喝→继续喝/复购→妈妈安心/省心" not in text
+    assert "先按帖子类型判断产品链路强度" not in text
+    assert "生活问题处理记录" not in text
+    assert "产品可以回答一个小处理问题" not in text
+    assert "但不能成为整个生活困扰的答案" not in text
+    assert "不要用“不能光靠奶粉/光靠这个不行/每家孩子不一样/还在观察/不指望一罐奶粉/先喝着观察/兜底/补漏”这类防守句" not in text
+    assert "不完美感写在生活问题仍有反复，不要通过否定产品价值来证明真实" not in text
+    assert "具体产品内容只按业务规则给定方向出现" not in text
+    assert "涉及精力不足时，产品只能回答日常营养支持" not in text
+    assert "不要从困扰接到旺玥后，再补孩子接受度、继续喝/没换或妈妈松口气" not in text
+    assert "不要用“每家孩子不一样/不能光靠奶粉/还在观察”来制造真实感" not in text
+    assert "标题按生活问题记录型判断" not in text
+
+
+def test_generation_requirements_render_product_chain_budget_for_seeded_problem_solution():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v33_20260624",
+            "post_type": "强种草问题解决/吃饭不稳",
+            "product_appearance_mode": "旺玥作为日常营养补充的答案出现",
+            "ugc_post_type": "问题种草型",
+            "painpoint": "营养不足",
+            "selling_point": "日常营养补充",
+        },
+        [],
+    )
+
+    assert "强种草/问题解决复盘" not in text
+    assert "产品可以成为小问题的答案" not in text
+    assert "怎么选儿童奶粉、怎么安排日常营养补充、为什么把旺玥留下来" not in text
+    assert "但不能成为整个生活困扰的万能答案" not in text
+    assert "具体产品内容只按业务规则给定方向出现" not in text
+    assert "不要写成旺玥解决挑食、精力不足、容易中招、注意力不集中或成长发育问题" not in text
+    assert "不要写成“不能光靠奶粉/光靠这个不行/不指望一罐奶粉/还在观察/先喝着观察/兜底/补漏”" not in text
+    assert "标题按问题种草/复盘型判断" not in text
+
+
+def test_generation_requirements_render_product_chain_budget_for_wangyue_repurchase():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v33_20260624",
+            "post_type": "复购/长期使用",
+            "product_appearance_mode": "旺玥作为长期保留、补货对象出现",
+            "ugc_post_type": "复购/囤货型",
+            "product_role": "补货对象",
+        },
+        [],
+    )
+
+    assert "产品表达边界" in text
+    assert "旺玥价值要写到位" in text
+    assert "产品链路预算" not in text
+    assert "复购/长期使用" not in text
+    assert "允许写复购动作、消耗、口感/接受度和一个留下来的理由" not in text
+    assert "不要同篇再补完整选择过程、孩子接受度、状态变化和妈妈安心收口" not in text
+    assert "强种草、选奶复盘、复购或长期使用可以写得更完整" not in text
+    assert "标题按复购型判断" not in text
+
+
+def test_generation_requirements_product_chain_budget_uses_type_specific_selection_scale():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v33_20260624",
+            "post_type": "对比选择/选奶标准",
+            "product_appearance_mode": "旺玥作为选择依据出现",
+            "ugc_post_type": "对比选择型",
+            "painpoint": "注意力不集中",
+            "selling_point": "眼脑营养关注",
+        },
+        [],
+    )
+
+    assert "选择/对比复盘" not in text
+    assert "产品可以作为妈妈选儿童奶粉时看过的依据出现" not in text
+    assert "具体产品内容只按业务规则给定方向出现" not in text
+    assert "旺玥这里不要写价格、预算、贵不贵或值不值" not in text
+    assert "产品出现边界" in text
+    assert "另起一套产品关系" not in text
+    assert "选奶链可以成立，使用反馈链不要同时成立" not in text
+    assert "标题按选择/对比型判断" not in text
+    assert "可以出现选奶、配方、4段、儿童奶粉这类主题词" not in text
+
+
+def test_generation_requirements_product_chain_budget_prioritizes_family_list_over_restock_word():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v33_20260624",
+            "post_type": "家庭清单/隐形家务补货",
+            "product_appearance_mode": "旺玥作为学龄前清单项出现",
+            "ugc_post_type": "家庭清单型",
+            "painpoint": "成长发育需求",
+            "selling_point": "3-6岁4段阶段营养",
+        },
+        [],
+    )
+
+    assert "家庭清单/隐形家务" not in text
+    assert "产品出现边界" in text
+    assert "正文要自然出现本篇指定产品名" in text
+    assert "正文必须明确写出旺玥" not in text
+    assert "即使标题或场景里有补货，也按清单型处理" not in text
+    assert "不要升级成复购复盘" not in text
+    assert "本篇是复购/长期使用" not in text
+    assert "标题按清单型判断" not in text
+
+
+def test_generation_requirements_product_chain_budget_is_scoped_to_wangyue_articles():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    unrelated_article = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "asset_key": "generic_article_rules",
+            "post_type": "问题解决/普通分享",
+            "ugc_post_type": "问题解决型",
+            "painpoint": "出门忘东西",
+        },
+        [],
+    )
+    comment = _generation_requirements(
+        "comment",
+        ["comment"],
+        {
+            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v33_20260624",
+            "ugc_post_type": "问题解决型",
+            "painpoint": "精力不足",
+        },
+        [],
+    )
+
+    assert "产品链路预算" not in unrelated_article
+    assert "产品链路预算" not in comment
+
+
+def test_generation_requirements_demotes_front_loaded_product_examples_for_late_position():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "求问/轻复盘",
+            "product_appearance_mode": "产品是明确讨论对象但不装日记",
+            "ugc_post_type": "求建议后的反馈型",
+            "product_position_mode": "先抛问题后出现",
+        },
+        [],
+    )
+
+    assert "产品出现位置：本篇按“先抛问题后出现”处理" in text
+    assert "不要一上来就说产品" in text
+    assert "只能当背景信息，不要照搬成正文第一句" in text
+    assert "正文第一句不要出现产品名或品牌名" in text
+    assert "旺玥" not in text
+
+
+def test_generation_requirements_skips_disabled_product_position():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "使用反馈",
+            "product_appearance_mode": "旺玥作为正在喝的保护力选择出现，只保留一个自家状态",
+            "product_position_mode": "PRODUCT_POSITION_DISABLED",
+        },
+        [],
+    )
+
+    assert "产品出现位置" not in text
+    assert "PRODUCT_POSITION_DISABLED" not in text
+
+
+def test_generation_requirements_render_light_recap_anti_question_hint():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "求问/轻复盘",
+            "product_appearance_mode": "产品是明确讨论对象但不装日记",
+            "ugc_post_type": "轻复盘型",
+            "life_trigger": "喝了一阵后回看",
+            "product_role": "观察对象/反馈对象",
+            "product_density": "中",
+            "imperfection": "我也还在摸索",
+        },
+        [],
+    )
+
+    assert "字段使用" in text
+    assert "UGC类型=轻复盘型" not in text
+    assert "不要在标题或正文里直接写“轻复盘”" in text
+    assert "不要写成测评模板、推荐购买、求建议帖或购买替换决策" in text
+    assert "想问大家/求经验/怎么判断/怎么安排/继续囤/再看别的" not in text
+
+
+def test_generation_requirements_title_shape_uses_evidence_backed_stage_examples():
+    from app.services.unified_content_generation_service import _generation_requirements, _keyword_corpus_text
+
+    business_rule = {
+        "post_type": "求问/轻复盘",
+        "product_appearance_mode": "产品是明确讨论对象但不装日记",
+        "title_shape_mode": "使用阶段短标题",
+    }
+    text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        business_rule,
+        [],
+    )
+
+    assert "使用阶段或当前安排" not in text
+    assert "又开一听" not in text
+    assert "睡前那杯" not in text
+    keyword_text = _keyword_corpus_text([], content_type="article", output_fields=["title", "body"], business_rule=business_rule)
+    assert "标题形态可写成使用阶段或当前安排" in keyword_text
+
+
+def test_generation_requirements_title_shape_controls_emoji_surface():
+    from app.services.unified_content_generation_service import _generation_requirements
+
+    emoji_text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "复购/长期使用",
+            "product_appearance_mode": "旺玥作为补货对象出现",
+            "title_shape_mode": "TITLE_OBJECT_ACTION",
+            "title_emoji_mode": "TITLE_EMOJI_LIGHT",
+        },
+        [],
+    )
+    plain_text = _generation_requirements(
+        "article",
+        ["title", "body"],
+        {
+            "post_type": "使用反馈",
+            "product_appearance_mode": "保护力理由加一个状态反馈",
+            "title_shape_mode": "TITLE_SCENE_FRAGMENT",
+            "title_emoji_mode": "TITLE_EMOJI_NONE",
+        },
+        [],
+    )
+
+    assert "标题可以不用 emoji" not in emoji_text
+    assert "标题最多加 1 个普通生活口气 emoji" not in emoji_text
+    assert "最多不超过20字，emoji 按 2 字计" in emoji_text
+    assert "优先 4-12 字" not in emoji_text
+    assert "不主动交代完整背景" not in emoji_text
+    assert emoji_text.count("标题硬边界") == 1
+    assert "标题要像真人随手起的小红书标题" not in emoji_text
+    assert "😂/🥲/🙃/🤏/🙂" not in emoji_text
+    assert "不要使用 😅/✨/🔥/✅/💯/👍/🍼" not in emoji_text
+    assert "优先用 😂" not in emoji_text
+    assert "优先用 😅" not in emoji_text
+    assert "正文不要加 emoji" not in emoji_text
+    assert "本篇标题不加 emoji" in plain_text
+    assert "TITLE_OBJECT_ACTION" not in emoji_text
+    assert "TITLE_SCENE_FRAGMENT" not in plain_text
+
+
+def test_wangyue_product_value_task_drops_duplicate_entry_prefix():
+    from app.services.unified_content_generation_service import (
+        _article_selling_surface_context_line,
+        _drop_product_relation_prefix,
+    )
+
+    text = _article_selling_surface_context_line(
+        {
+            "product_appearance_mode": "三岁后给孩子选了旺玥。",
+            "selling_description": "三岁后选了旺玥；更看重钙铁锌和多种关键营养配得全。",
+        }
+    )
+
+    assert "三岁后选了旺玥；" not in text
+    assert "更看重钙铁锌和多种关键营养配得全" in text
+    assert (
+        _drop_product_relation_prefix(
+            "当时挑儿童奶粉时看中旺玥对保护力的支持，也留意了乳铁蛋白和HMO；喝到现在孩子状态挺稳。",
+            "最后选择了旺玥。",
+        )
+        == "当时挑儿童奶粉时看中旺玥对保护力的支持，也留意了乳铁蛋白和HMO；喝到现在孩子状态挺稳。"
+    )
 
 
 @pytest.mark.asyncio
@@ -461,14 +1647,27 @@ async def test_unified_article_generation_renders_article_requirement_before_bus
     selected = snapshot.input_snapshot["selected_keywords"]
     assert selected[0]["category_code"] == "article_generation_requirement"
     assert selected[0]["keyword_name"] == "业务内核发散"
-    assert prompt.startswith("你是小红书母婴内容生成 expert。\n请根据业务规则和系统内置关键词语料，生成一篇自然种草内容。\n\n【生成要求】")
-    assert "标题要像真人随手起的小红书标题" in prompt
-    assert "不要总结正文卖点" in prompt
-    assert prompt.index("标题要像真人随手起的小红书标题") < prompt.index(requirement)
+    assert prompt.startswith("你是小红书母婴内容生成 expert。\n根据生成要求、业务规则和表达扩散语料生成内容。\n\n【生成要求】")
+    assert "标题硬边界" in prompt
+    assert "最多不超过20字，emoji 按 2 字计" in prompt
+    assert "从正文里挑一个自然短句" not in prompt
+    assert prompt.index("标题硬边界") < prompt.index(requirement)
     assert prompt.index(requirement) < prompt.index("【业务规则】")
-    assert prompt.index("【业务规则】") < prompt.index("【系统关键词语料】")
-    assert "业务内核发散" not in prompt[prompt.index("【系统关键词语料】") :]
-    assert "规则内示例边界：以下示例是低权重短句纹理，可以完全不用" in prompt
+    assert prompt.index("【业务规则】") < prompt.index("【表达扩散语料】")
+    assert "表达扩散语料使用边界：以下只用于调语气、节奏、生活毛边和标题松散感" in prompt
+    assert "产品事实、成分、正向反馈、产品动作和正文事件只按业务规则里的本篇信息和叙事主线" in prompt
+    assert "不要照搬语料，也不要把语料扩成新的事实、第二个生活入口、第二个收尾现场" in prompt
+    assert "业务内核发散" not in prompt[prompt.index("【表达扩散语料】") :]
+    assert prompt.rstrip().endswith(
+        "【输出格式】\n"
+        "只输出 JSON 对象，字段只能包含 title 和 body；"
+        "不要输出 Markdown 标题、编号、解释、前后缀；"
+        "不要写“标题：”“正文：”“### 标题”“### 正文”；"
+        "正文内容放在 body 字段里，标题内容放在 title 字段里。"
+    )
+    assert "表达参考：以下内容可以不用；只借说话方式，不照搬事实和句式" in prompt
+    assert "参考短句" in prompt
+    assert "规则内示例边界：以下示例是低权重短句纹理，可以完全不用" not in prompt
 
 
 @pytest.mark.asyncio
@@ -521,6 +1720,8 @@ async def test_unified_article_generation_renders_mouth_phrase_budget_before_key
 
     prompt = snapshot.input_snapshot["rendered_prompt"]
     assert prompt.index("批量口癖控制") < prompt.index(requirement)
+    assert prompt.index(requirement) < prompt.index("【输出格式】")
+    assert prompt.rstrip().endswith("正文内容放在 body 字段里，标题内容放在 title 字段里。")
 
 
 @pytest.mark.asyncio
@@ -562,7 +1763,8 @@ async def test_unified_comment_generation_does_not_add_a2_business_boundaries(un
     )
 
     prompt = snapshot.input_snapshot["rendered_prompt"]
-    assert "生成一条小红书母婴社区真实用户评论" in prompt
+    assert "你是一位妈妈，在小红书母婴评论区回复别人关于a2奶粉的帖子" in prompt
+    assert "评论内容不用很丰富，简单表达含义和情绪即可" in prompt
     assert "只输出评论正文，不要标题、编号、解释" in prompt
     assert "A2评论不要为了凑组合关键词强行补信息" not in prompt
     assert "不要自行补具体检测数值" not in prompt
@@ -625,7 +1827,7 @@ async def test_unified_generation_splits_article_and_comment_instructions(unifie
     assert "帖子格式控制" not in article_prompt
     assert "- 业务规则：" not in article_prompt
     assert "- 业务语料：" not in article_prompt
-    assert "正文按业务规则控制篇幅和表达" in article_prompt
+    assert "标题硬边界" in article_prompt
 
 
 @pytest.mark.asyncio
@@ -705,7 +1907,7 @@ async def test_unified_generation_uses_keyword_asset_key_from_business_rule(unif
     assert snapshot.input_snapshot["keyword_asset"]["source"] == "asset_registry"
     assert snapshot.input_snapshot["selected_keywords"][0]["keyword_name"] == "剧情妈妈"
     assert "默认妈妈语料" not in snapshot.input_snapshot["rendered_prompt"]
-    assert "剧情妈妈语料" in snapshot.input_snapshot["rendered_prompt"]
+    assert "剧情妈妈语料" not in snapshot.input_snapshot["rendered_prompt"]
 
 
 @pytest.mark.asyncio
@@ -786,7 +1988,8 @@ async def test_unified_generation_handles_extensible_keyword_categories(unified_
 
     selected = snapshot.input_snapshot["selected_keywords"]
     assert [item["category_code"] for item in selected] == ["persona", "rhythm"]
-    assert "短句语料" in snapshot.input_snapshot["rendered_prompt"]
+    assert selected[1]["keyword_name"] == "短句"
+    assert "短句语料" not in snapshot.input_snapshot["rendered_prompt"]
     assert "长文结构语料" not in snapshot.input_snapshot["rendered_prompt"]
     assert "不应出现语料" not in snapshot.input_snapshot["rendered_prompt"]
 
@@ -825,7 +2028,7 @@ async def test_unified_generation_respects_fixed_keyword_selection(unified_sessi
     selected = snapshot.input_snapshot["selected_keywords"]
     assert selected[0]["keyword_code"] == "persona_2"
     assert selected[0]["keyword_name"] == "观察妈妈"
-    assert "观察妈妈语料" in snapshot.input_snapshot["rendered_prompt"]
+    assert "观察妈妈语料" not in snapshot.input_snapshot["rendered_prompt"]
 
 
 @pytest.mark.asyncio
@@ -973,8 +2176,166 @@ async def test_unified_generation_uses_a2_asset_keyword_selection_for_sentiment_
     assert "喝奶后状态" not in prompt
 
 
+def test_wangyue_keyword_corpus_filters_article_speaking_style_slot():
+    from app.services.unified_content_generation_service import _keyword_corpus_text
+
+    selected_keywords = [
+        {
+            "category_code": "article_speaking_style",
+            "category_name": "帖子说话方式",
+            "keyword_code": "routine_log",
+            "keyword_name": "日常流水账式",
+            "corpus": ["像记录一天里的喝奶、吃饭、上学、睡前这些小安排，句子可以松散一点。"],
+        },
+        {
+            "category_code": "writing_method",
+            "category_name": "写作手法",
+            "keyword_code": "scene_detail",
+            "keyword_name": "场景细节法",
+            "corpus": ["用一个自然小细节承接业务规则。"],
+        },
+        {
+            "category_code": "persona",
+            "category_name": "人设",
+            "keyword_code": "working_rush_mom",
+            "keyword_name": "职场赶时间妈妈",
+            "corpus": ["只借时间被工作和带娃挤压的节奏，不新增产品事实。"],
+        },
+    ]
+
+    wangyue_text = _keyword_corpus_text(
+        selected_keywords,
+        content_type="article",
+        output_fields=["title", "body"],
+        business_rule={"asset_key": "wangyue_article_business_rules", "corpus": "旺玥"},
+    )
+    generic_text = _keyword_corpus_text(
+        selected_keywords,
+        content_type="article",
+        output_fields=["title", "body"],
+        business_rule={"corpus": "普通文章"},
+    )
+
+    assert "帖子说话方式" not in wangyue_text
+    assert "日常流水账式" not in wangyue_text
+    assert "喝奶、吃饭、上学" not in wangyue_text
+    assert "场景细节法" in wangyue_text
+    assert "人设 / 职场赶时间妈妈" in wangyue_text
+    assert "只借时间被工作和带娃挤压的节奏" in wangyue_text
+    assert "日常流水账式" in generic_text
+
+
+def test_wangyue_keyword_corpus_contract_keeps_expression_layer_low_weight():
+    from app.services.unified_content_generation_service import _keyword_corpus_text
+
+    selected_keywords = [
+        {
+            "category_code": "article_generation_requirement",
+            "category_name": "生成要求补充",
+            "keyword_code": "wangyue_value_with_life_v288",
+            "keyword_name": "价值和生活同在",
+            "corpus": ["生活现场从本篇痛点自然生发，不固定压在产品使用流程或同一类家务动作上。"],
+        },
+        {
+            "category_code": "perturbation_rule",
+            "category_name": "扰动规则",
+            "keyword_code": "random_thinking_shift",
+            "keyword_name": "随机发散",
+            "corpus": ["同一批里让发帖切入、妈妈想法和收尾语气分散。"],
+        },
+        {
+            "category_code": "article_format_control",
+            "category_name": "帖子格式控制",
+            "keyword_code": "article_compact_clean",
+            "keyword_name": "短帖干净",
+            "corpus": ["正文篇幅和段落优先服从业务规则；整体表达干净紧凑。"],
+        },
+        {
+            "category_code": "article_speaking_style",
+            "category_name": "帖子说话方式",
+            "keyword_code": "routine_log",
+            "keyword_name": "松散流水式",
+            "corpus": ["句子可以像随手写一样松散，有跳跃和省略。"],
+        },
+        {
+            "category_code": "persona",
+            "category_name": "生活身份机制",
+            "keyword_code": "wangyue_group_attention_v288",
+            "keyword_name": "群消息牵动注意",
+            "corpus": ["可借班级群、身边妈妈聊天带来的注意力变化，再回到自家观察。"],
+        },
+    ]
+
+    text = _keyword_corpus_text(
+        selected_keywords,
+        content_type="article",
+        output_fields=["title", "body"],
+        business_rule={"asset_key": "wangyue_v309_keyword_role_narrowing_article_rules", "corpus": "旺玥"},
+    )
+
+    assert "表达扩散语料使用边界" in text
+    assert "产品事实、成分、正向反馈、产品动作和正文事件只按业务规则里的本篇信息和叙事主线" in text
+    assert "扰动规则 / 随机发散" in text
+    assert "同一批里让发帖切入、妈妈想法和收尾语气分散" in text
+    assert "生活身份机制 / 群消息牵动注意" in text
+    assert "班级群、身边妈妈聊天" in text
+    assert "生成要求补充" not in text
+    assert "生活现场从本篇痛点自然生发" not in text
+    assert "帖子格式控制" not in text
+    assert "正文篇幅和段落优先服从业务规则" not in text
+    assert "帖子说话方式" not in text
+    assert "松散流水式" not in text
+    assert "正文同时有旺玥的正向价值" not in text
+    assert "字段名、槽位名、内部分类" not in text
+    assert "随机性服务生活感，不新增产品事实或孩子状态" not in text
+
+
+def test_wangyue_keyword_corpus_binds_scene_and_ending_texture_to_story_spine():
+    from app.services.unified_content_generation_service import _keyword_corpus_text
+
+    selected_keywords = [
+        {
+            "category_code": "persona",
+            "category_name": "生活身份机制",
+            "keyword_code": "housework_list",
+            "keyword_name": "家务脑内清单",
+            "corpus": ["可借真实帖子里家务、常备带来的生活压力。"],
+        },
+        {
+            "category_code": "article_real_ending_texture",
+            "category_name": "真人自然结尾",
+            "keyword_code": "ending_return_current_scene",
+            "keyword_name": "回到当前现场",
+            "corpus": ["结尾回到正文已经出现的那个现场或动作。"],
+        },
+        {
+            "category_code": "perturbation_rule",
+            "category_name": "扰动规则",
+            "keyword_code": "random_thinking_shift",
+            "keyword_name": "随机发散",
+            "corpus": ["同一批里让发帖切入、妈妈想法和收尾语气分散。"],
+        },
+    ]
+
+    text = _keyword_corpus_text(
+        selected_keywords,
+        content_type="article",
+        output_fields=["title", "body"],
+        business_rule={
+            "asset_key": "wangyue_v337_row14_purchase_tail_cleanup_article_rules",
+            "story_spine": "从外出后或回家路上的精神状态起笔。",
+        },
+    )
+
+    assert "使用边界：只借生活感和说话角度；正文事件仍从叙事主线出，不新增第二个入口。" in text
+    assert "使用边界：只借收尾方式；结尾回到叙事主线已有现场，不新增第二个结尾。" in text
+    assert "扰动规则 / 随机发散" in text
+    perturbation_section = text.split("- 扰动规则 / 随机发散", 1)[1].split("\n- 生活身份机制", 1)[0]
+    assert "使用边界：只借生活感和说话角度" not in perturbation_section
+
+
 @pytest.mark.asyncio
-async def test_unified_generation_uses_expert_template_and_model_config(unified_session_factory):
+async def test_unified_generation_keeps_expert_model_config_but_uses_comment_prompt_builder(unified_session_factory):
     async with unified_session_factory() as session:
         session.add(
             ExpertConfig(
@@ -1008,7 +2369,71 @@ async def test_unified_generation_uses_expert_template_and_model_config(unified_
         "temperature": 0.6,
         "max_tokens": 128,
     }
-    assert snapshot.input_snapshot["rendered_prompt"].startswith("业务=")
+    assert snapshot.input_snapshot["rendered_prompt"].startswith("你是一位妈妈，在小红书母婴评论区回复别人关于这款奶粉的帖子。")
+    assert "业务=" not in snapshot.input_snapshot["rendered_prompt"]
+    assert "问问大家" in snapshot.input_snapshot["rendered_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_comment_prompt_slot_randomizes_corpus_inside_fixed_slot(unified_session_factory):
+    business_rule = {
+        "rule_type": "business_rule",
+        "business_rule": "互动提问",
+        "corpus": "问问大家",
+        "prompt_slots": {
+            "说话风格": [
+                "适当加几个网络热词，不要过度。",
+                "像评论区接楼，短一点，顺手补一句。",
+            ]
+        },
+    }
+    async with unified_session_factory() as session:
+        service = UnifiedContentGenerationService(session)
+        with patch(
+            "app.services.unified_content_generation_service._random_choice_index",
+            side_effect=[0, 1],
+        ):
+            first = await service.build_snapshot(
+                content_type="comment",
+                business_rule=business_rule,
+                item_no=1,
+                output_fields=["comment"],
+            )
+            second = await service.build_snapshot(
+                content_type="comment",
+                business_rule=business_rule,
+                item_no=1,
+                output_fields=["comment"],
+            )
+
+    assert first.input_snapshot["selected_prompt_slots"] == [
+        {
+            "slot_name": "说话风格",
+            "text": "适当加几个网络热词，不要过度。",
+            "selected_index": 0,
+            "candidate_count": 2,
+        }
+    ]
+    assert second.input_snapshot["selected_prompt_slots"][0]["text"] == "像评论区接楼，短一点，顺手补一句。"
+    assert "说话风格：适当加几个网络热词，不要过度。" in first.input_snapshot["rendered_prompt"]
+    assert "说话风格：像评论区接楼，短一点，顺手补一句。" in second.input_snapshot["rendered_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_comment_style_slot_rejects_business_terms(unified_session_factory):
+    async with unified_session_factory() as session:
+        with pytest.raises(ValueError, match="说话风格槽位不能包含业务元素"):
+            await UnifiedContentGenerationService(session).build_snapshot(
+                content_type="comment",
+                business_rule={
+                    "rule_type": "business_rule",
+                    "business_rule": "互动提问",
+                    "corpus": "问问大家",
+                    "prompt_slots": {"说话风格": ["像一直喝a2的妈妈，补一句经验。"]},
+                },
+                item_no=1,
+                output_fields=["comment"],
+            )
 
 
 def _category(category_code: str, category_name: str, keyword_names: list[str]) -> dict:

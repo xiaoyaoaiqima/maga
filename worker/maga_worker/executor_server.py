@@ -461,7 +461,7 @@ def _empty_content_from_unified_input(input_payload: dict[str, Any]) -> dict[str
     return {"title": "", "body": ""}
 
 
-def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -> dict[str, str]:
+def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -> dict[str, Any]:
     output_fields = input_payload.get("output_fields") or []
     if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
         comment = _normalize_comment_text(raw)
@@ -470,13 +470,53 @@ def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -
         return {"comment": comment}
 
     parsed = _parse_json_object(raw)
-    title = str(parsed.get("title") or parsed.get("标题") or "").strip()
-    body = str(parsed.get("body") or parsed.get("正文") or "").strip()
+    multi_items = _article_items_from_parsed_json(parsed)
+    if multi_items:
+        first = multi_items[0]
+        return {"title": first["title"], "body": first["body"], "items": multi_items}
+
+    title = _clean_generated_article_text(parsed.get("title") or parsed.get("标题"))
+    body = _clean_generated_article_text(parsed.get("body") or parsed.get("正文"))
     if not title or not body:
         title, body = _title_body_from_text(raw)
+    title = _clean_generated_article_text(title)
+    body = _clean_generated_article_text(body)
     if not body:
         raise ValueError("content.generate produced empty body")
     return {"title": title or "源悦真实体验分享", "body": body}
+
+
+def _article_items_from_parsed_json(parsed: dict[str, Any]) -> list[dict[str, str]]:
+    raw_items = parsed.get("items") or parsed.get("文章列表") or parsed.get("内容列表")
+    if not isinstance(raw_items, list):
+        return []
+    items: list[dict[str, str]] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        title = _clean_generated_article_text(raw_item.get("title") or raw_item.get("标题"))
+        body = _clean_generated_article_text(raw_item.get("body") or raw_item.get("正文"))
+        if body:
+            items.append({"title": title or "源悦真实体验分享", "body": body})
+    return items
+
+
+def _clean_generated_article_text(value: Any) -> str:
+    text = str(value or "").strip()
+    text = _strip_topic_tags(text)
+    text = re.sub(r"[ \t\r\f\v]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    return text.strip()
+
+
+def _strip_topic_tags(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = re.sub(r"#[^\s#，。！？、；;]{1,40}\[话题\]#?", "", text)
+    cleaned = re.sub(r"#[^\s#，。！？、；;]{1,40}#", "", cleaned)
+    cleaned = re.sub(r"(?:\s*#[^\s#，。！？、；;]{1,40})+\s*$", "", cleaned)
+    cleaned = re.sub(r"\[[^\[\]]{1,12}话题[^\[\]]{0,12}\]", "", cleaned)
+    return cleaned.strip()
 
 
 def _parse_json_object(raw: str) -> dict[str, Any]:

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -54,6 +54,205 @@ SKELETON_PARTS: dict[str, tuple[str, ...]] = {
         "先这样",
         "继续喝着",
         "不用额外操心",
+    ),
+}
+
+DECISION_CHAIN_PARTS: dict[str, tuple[str, ...]] = {
+    "life_problem": (
+        "入园",
+        "接触",
+        "中招",
+        "请假",
+        "咳",
+        "打喷嚏",
+        "挑食",
+        "吃饭",
+        "绿叶菜",
+        "饭量",
+        "营养跟不上",
+        "营养缺口",
+        "没电",
+        "喊累",
+        "犯困",
+        "活动量",
+        "拼图",
+        "画画",
+        "桌面时间",
+        "衣服鞋子",
+        "学龄前",
+    ),
+    "selection_process": (
+        "纠结",
+        "犹豫",
+        "做功课",
+        "攻略",
+        "对比",
+        "看了一圈",
+        "看了几款",
+        "翻配方",
+        "翻成分",
+        "选奶",
+        "换奶",
+        "最终选",
+        "当初选",
+        "留下来",
+        "记住的点",
+        "选择依据",
+    ),
+    "product_basis": (
+        "乳铁蛋白",
+        "HMO",
+        "DHA",
+        "燕窝酸",
+        "钙铁锌",
+        "保护力",
+        "眼脑",
+        "4段",
+        "四段",
+        "阶段",
+        "配方",
+        "成分",
+        "营养",
+    ),
+    "price_purchase": (
+        "价格",
+        "贵",
+        "不便宜",
+        "不算便宜",
+        "比价",
+        "下单",
+        "购物车",
+        "补货",
+        "续上",
+        "回购",
+        "囤",
+    ),
+    "kid_acceptance": (
+        "接受",
+        "不抗拒",
+        "不排斥",
+        "愿意喝",
+        "好喝",
+        "口味",
+        "喝得还行",
+        "喝着还行",
+        "喝完",
+        "咕咚",
+    ),
+    "continuity_closure": (
+        "没换",
+        "不换",
+        "继续喝",
+        "继续买",
+        "继续备",
+        "一直喝",
+        "一直用",
+        "一直备",
+        "保留",
+        "留了下来",
+        "留下来",
+        "留下了",
+        "没踩坑",
+        "值得",
+        "心里有底",
+        "有个底",
+        "保底",
+        "省心",
+        "踏实",
+        "安心",
+        "少折腾",
+        "不折腾",
+        "懒得再",
+        "不用总",
+        "不用老",
+    ),
+}
+
+DECISION_CHAIN_LIMITS_BY_TYPE: tuple[tuple[str, int], ...] = (
+    ("家庭清单", 2),
+    ("复购", 4),
+    ("长期使用", 4),
+    ("使用反馈", 3),
+    ("问题解决", 2),
+    ("轻测评", 2),
+    ("对比选择", 3),
+    ("选奶复盘", 3),
+    ("阶段选择复盘", 3),
+)
+
+PRODUCT_EFFECT_PROOF_CHAIN_PARTS: dict[str, tuple[str, ...]] = {
+    "product_action": (
+        "每天早上",
+        "早晚一杯",
+        "早晚两杯",
+        "每天喝一杯",
+        "每天喝",
+        "每天一杯",
+        "每天两杯",
+        "冲一杯",
+        "冲了杯",
+        "泡一杯",
+        "泡了杯",
+        "递过去",
+        "递给他",
+        "递给她",
+        "拿杯子",
+        "端着杯子",
+        "喝完",
+        "喝了",
+        "喝下来",
+    ),
+    "kid_acceptance": (
+        "愿意喝",
+        "肯喝",
+        "爱喝",
+        "接受",
+        "不抗拒",
+        "不排斥",
+        "没说不要",
+        "没嫌弃",
+        "顺口",
+        "好喝",
+        "自己拿杯子",
+        "自己拿着杯子",
+    ),
+    "effect_observation": (
+        "精神",
+        "状态",
+        "精力",
+        "活力",
+        "有劲",
+        "不喊累",
+        "去玩一会儿",
+        "状态变好",
+        "注意力",
+        "专注",
+        "长肉",
+        "有肉",
+        "长高",
+        "长个",
+        "身高",
+        "体质",
+        "不生病",
+        "少请假",
+        "保护力提升",
+        "免疫力提高",
+    ),
+    "caregiver_closure": (
+        "踏实",
+        "省心",
+        "安心",
+        "不那么慌",
+        "没那么慌",
+        "心里不慌",
+        "兜住",
+        "心里稳",
+        "固定下来",
+        "没换",
+        "继续喝",
+        "暂时没别的办法",
+        "没别的办法",
+        "就这样",
     ),
 }
 
@@ -299,12 +498,6 @@ WANGYUE_ARTICLE_LOGIC_DRIFT_PHRASES = (
     "直接下单",
     "下单了",
     "大路灯",
-    "护眼",
-    "用眼过渡",
-    "用眼过度",
-    "眼睛都快冒星星",
-    "眼睛还亮亮",
-    "眼睛亮亮",
     "脸色都亮堂",
     "脸色亮堂",
     "奶香清淡",
@@ -312,40 +505,55 @@ WANGYUE_ARTICLE_LOGIC_DRIFT_PHRASES = (
     "泡了杯",
     "给他泡了杯",
     "给她泡了杯",
+    "每天早上",
+    "早上一杯",
+    "早上那杯",
+    "早晚一杯",
+    "早晚两杯",
+    "每天一杯",
+    "每天两杯",
+    "每天冲一杯",
+    "每天喝一杯",
+    "每天喝",
+    "每周开一罐",
+    "每天早晚",
+    "每天早晚自己拿杯子要喝",
+    "每天早晚愿意喝",
+    "每回都喝光",
+    "每次都喝光",
+    "每次喝都挺乐意",
+    "催我泡",
+    "自己端杯子催我泡",
+    "自己把罐子放回柜子",
+    "抱着空罐子啃",
+    "睡前自己咕咚喝完一杯",
+    "咕咚咕咚",
+    "舔杯口",
+    "舔舔嘴",
+    "倒进密封罐",
+    "密封罐",
+    "钙铁锌味",
     "没怎么咳嗽",
     "咳嗽",
     "吭吭唧唧",
-    "换成了皇家美素佳儿旺玥",
-    "换成了旺玥",
-    "给孩子选了皇家美素佳儿旺玥",
-    "给他选了皇家美素佳儿旺玥",
-    "给她选了皇家美素佳儿旺玥",
-    "给孩子选了旺玥",
-    "给他选了旺玥",
-    "给她选了旺玥",
-    "给选了皇家美素佳儿旺玥",
-    "给选了旺玥",
     "小脑瓜",
     "用脑太多",
     "脑子转得快",
-    "奶粉罐",
     "家里那款",
     "家里那罐",
     "家里一直备着",
-    "正好家里有",
-    "家里有皇家美素佳儿旺玥",
+    "家里一直喝皇家旺玥",
+    "家里一直喝旺玥",
+    "我家一直喝皇家旺玥",
+    "我家一直喝旺玥",
     "把皇家美素佳儿旺玥放在家里",
     "把旺玥放在家里",
     "放在家里",
     "一直备着",
     "一直喝着",
+    "常用位置",
     "平时那杯",
     "给着",
-    "给娃试了",
-    "给娃加了",
-    "给他喝",
-    "给她喝",
-    "给孩子喝上",
     "下午点心",
     "补点眼脑营养",
     "顺手补补眼脑营养",
@@ -353,19 +561,13 @@ WANGYUE_ARTICLE_LOGIC_DRIFT_PHRASES = (
     "先这么喝着看看",
     "你们娃也会这样吗",
     "翻了一圈",
-    "天天喝",
     "让她喝上",
     "让他喝上",
-    "眼睛有点累",
-    "眼睛累",
     "翻出绘本",
     "看绘本",
     "绘本",
     "动画片",
     "动画",
-    "揉眼睛",
-    "用眼",
-    "视力",
     "学习效果",
     "不结块",
     "粉质",
@@ -380,6 +582,141 @@ WANGYUE_ARTICLE_LOGIC_DRIFT_PHRASES = (
     "日常里顺手就给",
     "顺手就给了",
     "顺手给了",
+    "小陪伴",
+    "朋友提过",
+    "朋友推荐",
+    "朋友说",
+    "身边同龄娃",
+    "同龄娃很多",
+    "身边有人提过",
+    "被提过",
+    "我家现在喝皇家旺玥",
+    "我家现在喝旺玥",
+    "家里现在喝皇家旺玥",
+    "家里现在喝旺玥",
+    "上周到的",
+    "刚到的",
+    "还没怎么动",
+    "没怎么动",
+    "之前那罐空了",
+    "那罐空了",
+    "上一罐空了",
+    "前一罐空了",
+    "空了好一阵",
+    "空了一阵",
+    "空了好几天",
+    "空了几天",
+    "很多都在喝4段",
+    "很多都在喝四段",
+    "别人家孩子喝4段",
+    "别人家孩子喝四段",
+    "长挺好",
+    "长得挺好",
+    "长得好",
+    "学校也能喝",
+    "住校也能喝",
+    "住校喝",
+    "带娃出门总得带点东西",
+    "带娃出门",
+    "桌面物件",
+    "两罐半",
+    "大半罐",
+    "还剩大半罐",
+    "配方侧重成长",
+    "配方有点不一样",
+    "两个配方",
+    "都行",
+    "有点不一样",
+    "侧重成长",
+    "分段更细致",
+    "分段更细",
+    "更适合日常搭配",
+    "适合日常搭配",
+    "孩子要喝",
+    "娃要喝",
+    "该买还是得买",
+    "没办法，该买",
+    "就属它最贵",
+    "它最贵",
+    "掏钱挺爽快",
+    "掏钱掏得挺爽快",
+    "涨价",
+    "只能这样",
+    "3岁以上4段儿童奶粉",
+    "3周岁以上专用4段儿童奶粉",
+    "3岁以上4段",
+)
+
+WANGYUE_STRONG_STORY_ALLOWED_PHRASES = (
+    "朋友提过",
+    "朋友推荐",
+    "朋友说",
+    "身边同龄娃",
+    "同龄娃很多",
+    "身边有人提过",
+    "被提过",
+    "我家现在喝皇家旺玥",
+    "我家现在喝旺玥",
+    "家里现在喝皇家旺玥",
+    "家里现在喝旺玥",
+    "家里一直喝皇家旺玥",
+    "家里一直喝旺玥",
+    "我家一直喝皇家旺玥",
+    "我家一直喝旺玥",
+    "家里一直备着",
+    "一直备着",
+    "一直喝着",
+    "让她喝上",
+    "让他喝上",
+    "很多都在喝4段",
+    "很多都在喝四段",
+    "别人家孩子喝4段",
+    "别人家孩子喝四段",
+    "长挺好",
+    "长得挺好",
+    "长得好",
+    "配方侧重成长",
+    "配方有点不一样",
+    "两个配方",
+    "都行",
+    "有点不一样",
+    "侧重成长",
+    "分段更细致",
+    "分段更细",
+    "更适合日常搭配",
+    "适合日常搭配",
+    "孩子要喝",
+    "娃要喝",
+    "该买还是得买",
+    "没办法，该买",
+)
+
+WANGYUE_PRODUCT_HISTORY_ALLOWED_PHRASES = (
+    "我家现在喝皇家旺玥",
+    "我家现在喝旺玥",
+    "家里现在喝皇家旺玥",
+    "家里现在喝旺玥",
+    "家里一直喝皇家旺玥",
+    "家里一直喝旺玥",
+    "我家一直喝皇家旺玥",
+    "我家一直喝旺玥",
+    "家里一直备着",
+    "一直备着",
+    "一直喝着",
+)
+
+WANGYUE_PURCHASE_ACTION_PHRASES = (
+    "购物车",
+    "放进购物车",
+    "直接下单",
+    "下单了",
+)
+
+WANGYUE_SENSORY_EXPERIENCE_PHRASES = (
+    "冲出来",
+    "奶香清淡",
+    "粉质",
+    "不结块",
 )
 
 WANGYUE_ROW2_EYE_BRAIN_DRIFT_PHRASES = (
@@ -502,6 +839,11 @@ HARD_AI_CLOSURE_PHRASES = (
 )
 
 COMMON_AI_CLOSURE_PHRASES = (
+    "先喝着再看吧",
+    "先喝着再看",
+    "后面再看看",
+    "后面再看吧",
+    "后面再看",
     "希望能一直这样省心",
     "一直这样省心",
     "继续观察看看，先这样喂着吧",
@@ -509,7 +851,10 @@ COMMON_AI_CLOSURE_PHRASES = (
     "继续观察着",
     "继续观察吧",
     "继续观察",
+    "后续再观察着看吧",
+    "后续再观察着",
     "后续再观察看看",
+    "观察着看吧",
     "先这样喝着看看",
     "先这样喝着",
     "先这样喂着吧",
@@ -529,6 +874,11 @@ COMMON_AI_CLOSURE_PHRASES = (
 )
 
 COMMON_AI_CLOSURE_REPLACEMENTS = (
+    ("先喝着再看吧", ""),
+    ("先喝着再看", ""),
+    ("后面再看看", ""),
+    ("后面再看吧", ""),
+    ("后面再看", ""),
     ("希望能一直这样省心", "希望后面少折腾点"),
     ("一直这样省心", "后面少折腾点"),
     ("继续观察看看，先这样喂着吧", ""),
@@ -536,7 +886,10 @@ COMMON_AI_CLOSURE_REPLACEMENTS = (
     ("继续观察着", ""),
     ("继续观察吧", ""),
     ("继续观察", ""),
+    ("后续再观察着看吧", ""),
+    ("后续再观察着", ""),
     ("后续再观察看看", ""),
+    ("观察着看吧", ""),
     ("先这样喝着看看", ""),
     ("先这样喝着", ""),
     ("先这样喂着吧", ""),
@@ -547,7 +900,7 @@ COMMON_AI_CLOSURE_REPLACEMENTS = (
     ("我也算松了口气", ""),
     ("松了口气", ""),
     ("暂时满意", ""),
-    ("先这样记录一下", "记一笔"),
+    ("先这样记录一下", ""),
     ("欢迎留言聊聊", ""),
     ("欢迎留言", ""),
     ("留言聊聊", ""),
@@ -604,19 +957,12 @@ ODD_PHRASE_REPLACEMENTS = (
     ("营养师朋友", "朋友"),
     ("营养师", "朋友"),
     ("皇家美美佳儿", "皇家美素佳儿"),
-    ("主要是看里面保护力这块", "主要是看皇家美素佳儿旺玥的保护力这块"),
-    ("主要看里面保护力这块", "主要看皇家美素佳儿旺玥的保护力这块"),
-    ("看里面保护力这块", "看皇家美素佳儿旺玥的保护力这块"),
-    ("看里面营养全面", "看皇家美素佳儿旺玥营养全面"),
-    ("换了皇家美素佳儿旺玥", "选了皇家美素佳儿旺玥"),
-    ("换了旺玥", "选了旺玥"),
-    ("换成旺玥", "选了旺玥"),
-    ("换到旺玥", "选了旺玥"),
+    ("主要是看里面保护力这块", "主要是看旺玥的保护力这块"),
+    ("主要看里面保护力这块", "主要看旺玥的保护力这块"),
+    ("看里面保护力这块", "看旺玥的保护力这块"),
+    ("看里面营养全面", "看旺玥营养全面"),
     ("羊奶粉钱", "这罐奶粉钱"),
     ("羊奶粉", "奶粉"),
-    ("流感多的时候", "请假多的时候"),
-    ("流感", "小状况"),
-    ("手足口", "班里请假"),
     ("P磷脂酰丝氨酸S", "磷脂酰丝氨酸"),
     ("P磷脂酰丝氨酸", "磷脂酰丝氨酸"),
     ("保护力也顺", "状态也顺"),
@@ -651,21 +997,9 @@ ODD_PHRASE_REPLACEMENTS = (
     ("最近季", "最近"),
     ("日常喝着顺手", "日常里还算合适"),
     ("日常喝喝顺手", "日常里还算合适"),
-    ("家里一直备着皇家美素佳儿旺玥", "家里一直是皇家美素佳儿旺玥"),
-    ("正好家里有皇家美素佳儿旺玥", "正好留意到皇家美素佳儿旺玥"),
-    ("家里有皇家美素佳儿旺玥", "留意到皇家美素佳儿旺玥"),
-    ("把皇家美素佳儿旺玥放在家里", "留意到皇家美素佳儿旺玥"),
-    ("把旺玥放在家里", "留意到旺玥"),
-    ("一直备着", "一直关注"),
-    ("一直喝着", "一直关注"),
     ("平时那杯皇家美素佳儿旺玥", "皇家美素佳儿旺玥"),
     ("平时那杯旺玥", "旺玥"),
     ("给着", "用着"),
-    ("给娃试了", "留意到"),
-    ("给娃加了", "留意到"),
-    ("给他喝", "留意到"),
-    ("给她喝", "留意到"),
-    ("给孩子喝上", "留意到"),
     ("下午点心", "日常安排"),
     ("补点眼脑营养", "关注眼脑营养"),
     ("顺手补补眼脑营养", "顺带关注眼脑营养"),
@@ -674,8 +1008,6 @@ ODD_PHRASE_REPLACEMENTS = (
     ("你们娃也会这样吗？", ""),
     ("你们娃也会这样吗", ""),
     ("翻了一圈", "想了一下"),
-    ("家里备着皇家美素佳儿旺玥", "皇家美素佳儿旺玥"),
-    ("家里备着旺玥", "旺玥"),
     ("家里就备上了", "后来就关注到旺玥"),
     ("家里那款皇家美素佳儿旺玥", "皇家美素佳儿旺玥"),
     ("家里那款旺玥", "旺玥"),
@@ -706,18 +1038,37 @@ ODD_PHRASE_REPLACEMENTS = (
     ("我俩都行", "孩子喝着还行"),
     ("奶粉奶粉罐", "奶粉罐"),
     ("没白做功課", "没白做功课"),
-    ("谁懂这种当妈的轻松感", "这种小变化我会记一下"),
-    ("谁懂这种我的踏实感", "这种小变化我会记一下"),
-    ("谁懂啊，当妈的心里就这点小算盘", "这种小变化我会记一下"),
+    ("谁懂这种当妈的轻松感", "这种小变化我会留意"),
+    ("谁懂这种我的踏实感", "这种小变化我会留意"),
+    ("谁懂啊，当妈的心里就这点小算盘", "这种小变化我会留意"),
     ("你家娃在忙啥？", ""),
     ("你家娃在忙啥", ""),
-    ("当妈的心里稳当多了", "先记一笔"),
+    ("当妈的心里稳当多了", "先留意着"),
     ("吸管一插自己抱着喝", "自己拿着杯子喝"),
     ("吸管一插", "杯子一拿"),
     ("丢过去", "递过去"),
 )
 
-ODD_PHRASES = tuple(source for source, _replacement in ODD_PHRASE_REPLACEMENTS)
+SEMANTIC_ODD_PRODUCT_EXPERIENCE_PHRASES = (
+    "手足口停课",
+    "手足口",
+    "流感多的时候",
+    "流感",
+    "停课",
+    "顺手记一下",
+    "随手记一下",
+    "先记一下",
+    "我记一下",
+    "记一下今天的小观察",
+    "先记一笔",
+    "这罐先记一下",
+    "这事先记一下",
+    "先记录一下",
+    "记一段",
+    "记录一段",
+)
+
+ODD_PHRASES = tuple(source for source, _replacement in ODD_PHRASE_REPLACEMENTS) + SEMANTIC_ODD_PRODUCT_EXPERIENCE_PHRASES
 
 STRONG_REAL_PHRASES = (
     "没再半夜闹腾",
@@ -750,6 +1101,15 @@ HARD_RISK_PHRASES = (
     "专注力变好",
     "体检身高追上来",
     "身高追上来两厘米",
+    "体检后也发现",
+    "体检后发现",
+    "体检单上",
+    "体检完医生",
+    "体检后医生",
+    "医生说",
+    "医生建议",
+    "医生提醒",
+    "医生让",
     "长高两厘米",
     "长高2厘米",
     "高了两厘米",
@@ -757,11 +1117,16 @@ HARD_RISK_PHRASES = (
     "全靠它",
     "全靠旺玥",
     "没白养",
-    "没白选",
     "保护力确实",
     "赶紧把旺玥安排上",
     "赶紧安排上",
     "临时补救",
+)
+
+WANGYUE_META_AD_RISK_PHRASES = (
+    "不是种草",
+    "不算种草",
+    "非种草",
 )
 
 ADULT_SELF_DRINKING_PHRASES = (
@@ -848,6 +1213,10 @@ CHILD_SELF_BREWING_PHRASES = (
     "翻柜子，找出一罐旺玥",
     "孩子自己倒水舀粉",
     "娃自己倒水舀粉",
+    "孩子每天自己倒奶粉",
+    "娃每天自己倒奶粉",
+    "每天自己倒奶粉",
+    "自己倒奶粉",
     "自己倒水舀奶粉",
     "自己倒水舀粉",
     "自己舀粉冲奶",
@@ -988,12 +1357,27 @@ WANGYUE_EXPLICIT_AGE_PHRASES = (
     "断奶",
     "辅食",
     "半岁",
+    "三岁前",
+    "3岁前",
+    "三岁以前",
+    "3岁以前",
+    "不到三岁",
+    "不到3岁",
+    "未满三岁",
+    "未满3岁",
     "三岁后",
     "3岁后",
     "三岁",
     "3岁",
     "两岁",
+    "二岁",
     "2岁",
+    "两岁多",
+    "二岁多",
+    "2岁多",
+    "两岁半",
+    "二岁半",
+    "2岁半",
     "一岁后",
     "宝宝一岁多",
     "宝宝1岁多",
@@ -1006,14 +1390,11 @@ WANGYUE_EXPLICIT_AGE_PHRASES = (
 )
 
 WANGYUE_PORTABLE_FORM_PHRASES = (
-    "书包侧袋",
-    "书包侧兜",
     "塞书包",
     "塞进背包",
     "背包里塞",
     "书包里放旺玥",
     "书包里放一盒旺玥",
-    "书包里",
     "书包有奶",
     "塞一罐旺玥到书包里",
     "塞一袋旺玥",
@@ -1025,15 +1406,9 @@ WANGYUE_PORTABLE_FORM_PHRASES = (
     "便携装",
     "出门揣",
     "揣两小袋",
-    "两小袋",
-    "小袋",
     "玩累了直接冲",
-    "直接冲",
     "分装",
     "两条旺玥",
-    "两条",
-    "小双肩包",
-    "出门背的小双肩包",
     "包里除了水杯纸巾",
     "包里除了水杯零食",
     "辅食机都塞包里",
@@ -1047,6 +1422,11 @@ WANGYUE_PORTABLE_FORM_PHRASES = (
     "包里会多放一罐奶粉",
     "多放一罐奶粉",
     "包里光是奶粉和水壶",
+    "保温杯里装了旺玥",
+    "保温杯装了旺玥",
+    "保温杯里装旺玥",
+    "保温杯装旺玥",
+    "保温杯里都是旺玥",
     "我最烦一罐罐分开带",
     "一罐全包",
     "出门前顺手抓一罐",
@@ -1066,19 +1446,14 @@ WANGYUE_PORTABLE_FORM_PHRASES = (
     "塞了旺玥",
     "开盖即饮",
     "即饮",
-    "随身包",
-    "外出随身包",
     "奶粉条",
     "小条装",
-    "几袋",
     "三根",
     "奶粉盒",
     "水壶里都是这个",
-    "水壶里",
     "奶粉袋",
     "倒进奶粉袋",
     "带两小包",
-    "两小包",
     "小包冲奶",
     "这小包",
     "兑点温水摇匀",
@@ -1091,6 +1466,9 @@ WANGYUE_PORTABLE_FORM_PHRASES = (
     "搁在茶几上",
     "放在茶几上",
     "路过就喝几口",
+    "坐花坛边喝完",
+    "花坛边喝完",
+    "玩累了坐花坛边喝完",
     "抱着罐子",
     "抱着奶粉罐",
 )
@@ -1098,10 +1476,17 @@ WANGYUE_PORTABLE_FORM_PHRASES = (
 WANGYUE_DIGESTIVE_EFFECT_PHRASES = (
     "不是胀气就是不爱喝",
     "胀气",
+    "肚子不适应",
+    "肚子咕噜",
+    "肚子咕噜咕噜",
     "肚子软软的",
     "小肚子",
+    "大便也规律",
+    "大便规律",
     "便便也规律",
     "便便规律",
+    "哭闹",
+    "半夜翻来翻去",
     "没闹过肚肚",
     "闹过肚肚",
     "闹肚子",
@@ -1120,7 +1505,7 @@ CHILD_SELF_BREWING_PATTERNS = (
     re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;，,]{{0,12}}自己冲(?:旺玥|奶|奶粉)"),
     re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;，,]{{0,12}}自己泡(?:旺玥|奶|奶粉)"),
     re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;，,]{{0,12}}自己[^。！？；;，,]{{0,12}}(?:冲|泡)(?:旺玥|奶|奶粉)"),
-    re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,24}}(?:找出|摸出|翻出|抱过来|拿过来)[^。！？；;]{{0,12}}(?:旺玥|奶粉|奶粉罐|罐子)"),
+    re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;，,]{{0,16}}(?:找出|摸出|翻出|抱过来|拿过来)[^。！？；;，,]{{0,12}}(?:旺玥|奶粉|奶粉罐|罐子)"),
     re.compile(r"自己[^。！？；;，,]{0,8}主动去(?:冲|泡)"),
     re.compile(r"(?:现在|每天|早晚|一天[^。！？；;，,]{0,4}|到点|平时)[^。！？；;，,]{0,8}自己(?:冲|泡)一杯"),
     re.compile(r"(?:每天|早晚|一天[^。！？；;，,]{0,4}|到点|平时)[^。！？；;，,]{0,8}一杯[^。！？；;，,]{0,4}自己(?:冲|泡)"),
@@ -1131,18 +1516,76 @@ CHILD_SELF_BREWING_PATTERNS = (
     re.compile(r"自己(?:拿勺子)?(?:舀|挖)了?[一二两三0-9]+勺[^。！？；;，,]{0,8}(?:冲|泡|喝)"),
     re.compile(r"(?:摸出|翻出|拿出)[^。！？；;，,]{0,8}(?:旺玥|奶粉|罐)[^。！？；;，,]{0,8}自己(?:舀|挖|冲|泡)"),
     re.compile(r"(?:打开|开了|开)[^。！？；;，,]{0,8}(?:罐子|奶粉罐)[^。！？；;，,]{0,12}(?:娃|孩子|宝贝|宝宝|小朋友|儿子|闺女|他|她)?自己抱着喝"),
+    re.compile(r"自己[^。！？；;，,]{0,12}把(?:旺玥|奶粉|罐子|奶粉罐)?[^。！？；;，,]{0,8}放回(?:柜子|厨房|桌上)"),
+    re.compile(r"抱着(?:空)?(?:罐子|奶粉罐)[^。！？；;，,]{0,8}(?:啃|玩|抱)"),
 )
 
-TEMPORAL_CONTEXT_PHRASES = (
+FORMULA_DRY_POWDER_INGESTION_PATTERNS = (
+    re.compile(r"[^。！？；;]*?(?:舀|挖)(?:了?[一二两三0-9]+勺|粉|奶粉)[^。！？；;]{0,16}(?:放|塞|喂|送)[^。！？；;]{0,8}(?:嘴(?:里|边)?|口(?:中|里))[^。！？；;]*"),
+    re.compile(r"[^。！？；;]*?(?:把|拿)[^。！？；;]{0,8}(?:粉|奶粉|旺玥)[^。！？；;]{0,12}(?:放|塞|喂|送)[^。！？；;]{0,8}(?:嘴(?:里|边)?|口(?:中|里))[^。！？；;]*"),
+    re.compile(r"[^。！？；;]*?(?:干吃|偷着干吃|直接吃粉|吃奶粉粉|尝奶粉粉|尝粉|尝了点粉)[^。！？；;]*"),
+)
+
+WANGYUE_PORTABLE_FORM_PATTERNS = (
+    re.compile(r"(?:书包侧袋|书包侧兜|书包里|侧袋|侧兜)[^。！？；;，,]{0,18}(?:旺玥|皇家美素佳儿|奶粉|奶粉盒|奶粉条|小条装|便携装|一盒|一袋|一包|分装|兑温水|兑点温水|冲|泡)"),
+    re.compile(r"(?:旺玥|皇家美素佳儿|奶粉|奶粉盒|奶粉条|小条装|便携装|一盒|一袋|一包|分装)[^。！？；;，,]{0,18}(?:书包侧袋|书包侧兜|书包里|侧袋|侧兜)"),
+    re.compile(r"(?:保温杯|水壶)[^。！？；;]{0,12}(?:装|放|倒|兑|泡|冲)[^。！？；;]{0,12}(?:旺玥|奶粉|奶)"),
+    re.compile(r"(?:出门|外出|随身|背包|包里|小双肩包)[^。！？；;]{0,18}(?:旺玥|奶粉|奶粉条|小条装|便携装|小袋|两条|几袋|分装|兑温水|直接冲|随时能泡)"),
+    re.compile(r"(?:旺玥|奶粉|奶粉条|小条装|便携装|小袋|两条|几袋|分装)[^。！？；;]{0,18}(?:出门|外出|随身|背包|包里|小双肩包)"),
+    re.compile(r"(?:翻了翻|翻看|翻找|翻|摸|掏|找)[^。！？；;]{0,8}(?:包|背包|书包|妈妈包|手提包)[。！？；;，,\s]{0,3}(?:看到|看见|发现|翻到|翻出|摸到|拿出)?[^。！？；;]{0,16}(?:旺玥|皇家美素佳儿|奶粉|这罐|那罐)"),
+    re.compile(r"(?:包里|背包里|书包里|妈妈包里|手提包里)[^。！？；;]{0,12}(?:看到|看见|发现|翻到|翻出|摸到|拿出|有|放着|装着)[^。！？；;]{0,16}(?:旺玥|皇家美素佳儿|奶粉|这罐|那罐)"),
+    re.compile(r"(?:旺玥|皇家美素佳儿|奶粉|这罐|那罐)[^。！？；;]{0,16}(?:在|放在|塞在|装在|躺在)?[^。！？；;]{0,8}(?:包里|背包里|书包里|妈妈包里|手提包里)"),
+)
+
+WANGYUE_PORTABLE_CONTEXT_TERMS = (
+    "书包侧袋",
+    "书包侧兜",
+    "书包里",
+    "外出随身包",
+    "随身包",
+    "小双肩包",
+    "保温杯",
+    "水壶",
+)
+
+WANGYUE_SUPPLEMENT_REPLACEMENT_PATTERNS = (
+    re.compile(r"(?:不用|不用再|不用另外|不用额外|不用专门|不用特意|懒得再|省了|少买|替代|代替)[^。！？；;]{0,16}(?:营养片|维生素|补剂|钙片|DHA胶囊)"),
+    re.compile(r"(?:营养片|维生素|补剂|钙片|DHA胶囊)[^。！？；;]{0,16}(?:不用|不用再|不用另外|不用额外|不用专门|不用特意|懒得再|省了|少买|替代|代替)"),
+)
+
+WANGYUE_CHILD_PRODUCT_PROMO_PATTERNS = (
+    re.compile(r"(?:你也来一杯|要不要来一杯)"),
+    re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,30}}(?:你也来一杯|要不要来一杯)"),
+    re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,30}}我家也有[^。！？；;]{{0,20}}(?:旺玥|奶|一杯|喝)"),
+    re.compile(r"(?:跟人家说|跟旁边(?:的)?(?:小朋友|小孩|孩子)说|跟(?:别的|其他)(?:小朋友|小孩|孩子)说)[^。！？；;]{0,30}(?:我家也有|你也来一杯|要不要来一杯)"),
+    re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,24}}(?:推荐|安利)[^。！？；;]{{0,20}}(?:旺玥|奶粉|这款|这个奶)"),
+)
+
+CURRENT_TEMPORAL_ANCHORS = (
+    "最近",
+    "现在",
+    "今天",
+    "这几天",
+    "这两天",
+    "这阵",
+    "这阵子",
+    "这段时间",
+    "这波",
+    "眼下",
+    "目前",
+    "当下",
+)
+
+SEASON_WEATHER_TERMS = (
     "风大的季节",
+    "季节",
     "换季",
-    "双十一",
     "降温",
     "春天",
-    "寒假",
-    "春节",
-    "过年",
-    "暑假",
+    "春季",
+    "夏季",
+    "秋季",
+    "冬季",
     "冬天",
     "入冬",
     "入夏",
@@ -1150,40 +1593,185 @@ TEMPORAL_CONTEXT_PHRASES = (
     "天冷",
     "秋天",
     "入秋",
-    "开学",
-    "放假",
-    "学期",
     "感冒季",
+    "流感",
     "天气忽冷忽热",
     "天气一变",
-    "小班",
-    "中班",
-    "大班",
 )
 
-TEMPORAL_CONTEXT_REPLACEMENTS = (
-    ("风大的季节", "这阵"),
-    ("换季", "这阵"),
-    ("双十一", "之前"),
-    ("降温", "这阵"),
-    ("春天", "最近"),
-    ("寒假", "这段时间"),
-    ("暑假", "这段时间"),
-    ("冬天", "最近"),
-    ("入夏", "最近"),
-    ("夏天", "最近"),
-    ("天冷", "最近"),
-    ("秋天", "最近"),
-    ("入秋", "最近"),
-    ("开学", "最近"),
-    ("放假", "这段时间"),
-    ("学期", "段时间"),
-    ("感冒季", "这阵"),
-    ("天气忽冷忽热", "最近"),
-    ("天气一变", "这阵"),
-    ("小班", "上学"),
-    ("中班", "上学"),
-    ("大班", "上学"),
+CURRENT_TEMPORAL_CONTEXT_PATTERNS = (
+    re.compile(
+        rf"(?:{'|'.join(map(re.escape, CURRENT_TEMPORAL_ANCHORS))})"
+        rf"[^。！？；;，,\r\n]{{0,8}}(?:{'|'.join(map(re.escape, SEASON_WEATHER_TERMS))})"
+    ),
+    re.compile(
+        rf"(?:{'|'.join(map(re.escape, SEASON_WEATHER_TERMS))})"
+        rf"[^。！？；;，,\r\n]{{0,8}}(?:{'|'.join(map(re.escape, CURRENT_TEMPORAL_ANCHORS))})"
+    ),
+    re.compile(
+        r"(?:今年(?:春天|夏天|秋天|冬天)|这次(?:换季|降温))"
+    ),
+)
+
+CURRENT_TEMPORAL_CONTEXT_REPLACEMENTS = (
+    (re.compile(r"(?:最近|现在|这阵子?|这段时间|这波)(?:换季|降温)(?:这几天|这两天)?"), "平时"),
+    (re.compile(r"(?:换季|降温)(?:这几天|这两天)"), "平时"),
+    (re.compile(r"(?:最近|现在|这阵子?|这段时间|这波)(?:入夏|入冬|入秋)"), "平时"),
+    (re.compile(r"(?:最近|现在|这阵子?|这段时间|这波)(?:春天|夏天|秋天|冬天|寒假|暑假|春节|过年)"), "平时"),
+    (re.compile(r"(?:最近|现在|这阵子?|这段时间|这波)天冷(?:这几天|这两天)?"), "平时"),
+    (re.compile(r"(?:最近|现在|这阵子?|这段时间|这波)天气(?:忽冷忽热|一变|好|不错)"), "外面能跑一跑"),
+    (re.compile(r"今年(?:春天|夏天|秋天|冬天|寒假|暑假|春节|过年)"), "日常"),
+    (re.compile(r"这次(?:换季|降温|开学|放假)"), "平时"),
+)
+
+
+WANGYUE_TIME_EVENT_CONTEXT_PHRASES = (
+    "春游",
+    "秋游",
+    "踏青",
+    "中招季",
+    "流感",
+    "感冒季",
+    "风大的季节",
+    "季节",
+    "换季",
+    "入冬",
+    "入夏",
+    "入秋",
+    "降温",
+    "春季",
+    "夏季",
+    "秋季",
+    "冬季",
+    "春天",
+    "夏天",
+    "秋天",
+    "冬天",
+    "天冷",
+    "天气忽冷忽热",
+    "天气一变",
+)
+
+WANGYUE_HIDDEN_NEGATIVE_COMPARISON_PHRASES = (
+    "普通牛奶粉",
+    "普通奶粉",
+    "比普通牛奶贵",
+    "比普通奶粉贵",
+    "比普通款贵",
+    "价格比普通牛奶",
+    "价格比普通奶粉",
+    "价格比普通款",
+    "价格不是最低",
+    "价格不低",
+    "价格不算低",
+    "价格不算便宜",
+    "价格不便宜",
+    "价格偏高",
+    "价格略高",
+    "价格贵不少",
+    "贵不少",
+    "不算便宜",
+    "确实不便宜",
+    "值不值那个价",
+    "不值那个价",
+    "贵就贵点",
+    "贵也认了",
+    "肉疼但值",
+    "除了贵点没毛病",
+)
+
+WANGYUE_INGREDIENT_BENEFIT_MISMATCH_PATTERNS = (
+    re.compile(
+        r"(?:乳铁蛋白|免疫球蛋白|HMO)[^。！？；;\r\n]{0,18}"
+        r"(?:是|就是|让|能让|所以|功劳|带来|撑起|长|对|支持|帮助|助力|有助于|友好)"
+        r"[^。！？；;\r\n]{0,28}"
+        r"(?:抱起来沉|抱着沉|沉一点|背上有肉|衣服撑|撑起来|长肉|跑跳有劲|身形结实|小身板|体格)"
+    ),
+    re.compile(
+        r"(?:抱起来沉|抱着沉|沉一点|背上有肉|衣服撑|撑起来|长肉|跑跳有劲|身形结实|小身板|体格)"
+        r"[^。！？；;\r\n]{0,18}"
+        r"(?:因为|靠|全靠|主要是|功劳|来自)"
+        r"[^。！？；;\r\n]{0,18}"
+        r"(?:乳铁蛋白|免疫球蛋白|HMO)"
+    ),
+)
+
+WANGYUE_PROTECTION_INGREDIENT_TERMS = ("乳铁蛋白", "免疫球蛋白", "HMO")
+WANGYUE_GROWTH_BODY_TERMS = (
+    "抱起来沉",
+    "抱着沉",
+    "沉一点",
+    "背上有肉",
+    "衣服撑",
+    "撑起来",
+    "长肉",
+    "跑跳有劲",
+    "身形结实",
+    "小身板",
+    "体格",
+)
+WANGYUE_GROWTH_BRIDGE_TERMS = (
+    "阶段营养",
+    "整体营养",
+    "营养配置",
+    "日常营养",
+    "营养丰富",
+    "关键营养",
+    "基础营养",
+    "钙铁锌",
+    "30多种",
+    "三十多种",
+)
+
+WANGYUE_FORMULA_USAGE_FORM_PHRASES = (
+    "倒入密封盒",
+    "倒进密封盒",
+    "装进密封盒",
+    "倒入密封罐",
+    "倒进密封罐",
+    "装进密封罐",
+    "牛奶里加点旺玥",
+    "牛奶里加旺玥",
+    "旺玥加进牛奶",
+    "旺玥加到牛奶",
+    "加一顿旺玥",
+    "加一杯旺玥",
+    "冰箱看到那盒奶粉",
+    "冰箱里的奶粉",
+    "那盒奶粉",
+    "自己记得要喝",
+    "自己记得去喝",
+    "自己记得喝",
+    "自己去拿奶杯",
+    "自己拿奶杯",
+)
+
+WANGYUE_FORMULA_USAGE_FORM_PATTERNS = (
+    re.compile(r"(?:倒入|倒进|装进)[^。！？；;，,\r\n]{0,8}(?:密封盒|密封罐|奶粉盒)"),
+    re.compile(r"(?:冰箱|冷藏)[^。！？；;，,\r\n]{0,16}(?:奶粉|旺玥|那盒|这盒)"),
+    re.compile(r"(?:那盒|这盒)[^。！？；;，,\r\n]{0,8}(?:奶粉|旺玥)"),
+    re.compile(r"(?:牛奶|酸奶|粥|饭|汤)[^。！？；;，,\r\n]{0,10}(?:加|放|兑)[^。！？；;，,\r\n]{0,10}(?:旺玥|奶粉)"),
+    re.compile(r"(?:旺玥|奶粉)[^。！？；;，,\r\n]{0,10}(?:加进|加到|兑进|兑到)[^。！？；;，,\r\n]{0,10}(?:牛奶|酸奶|粥|饭|汤)"),
+    re.compile(r"(?:每天|固定|饭菜|早餐|晚饭|下午)[^。！？；;，,\r\n]{0,16}(?:加|补)[一二两三0-9]?(?:顿|杯)[^。！？；;，,\r\n]{0,8}(?:旺玥|奶粉)"),
+    re.compile(r"(?:每天|早晚|固定|睡前)[^。！？；;，,\r\n]{0,12}(?:喝|要喝|记得要喝|记得喝|一杯|安排)"),
+    re.compile(r"自己[^。！？；;，,\r\n]{0,8}(?:记得要喝|记得去喝|记得喝|去拿奶杯|拿奶杯)"),
+    re.compile(r"(?:开罐|新罐|奶粉|旺玥|罐子)[^。！？；;\r\n]{0,40}(?:抱走|抱着走|抱回去)"),
+)
+
+WANGYUE_PRODUCT_FACT_NUMBER_PATTERNS = (
+    re.compile(r"(?:十几种|十多种|二十多种|20多种|几十种)[^。！？；;，,\r\n]{0,8}(?:关键营养|营养)"),
+    re.compile(r"(?:关键营养|营养)[^。！？；;，,\r\n]{0,8}(?:十几种|十多种|二十多种|20多种|几十种)"),
+)
+
+WANGYUE_SLEEP_EFFECT_SCOPE_PATTERNS = (
+    re.compile(
+        r"(?:旺玥|奶粉|喝完|喝了)[^。！？；;\r\n]{0,28}"
+        r"(?:爬上床[^。！？；;\r\n]{0,6}睡|入睡|睡着|睡得|睡沉|睡到|整夜|一整夜|安稳|不闹腾)"
+    ),
+    re.compile(
+        r"(?:入睡|睡着|睡得|睡沉|睡到|整夜|一整夜|安稳|不闹腾)[^。！？；;\r\n]{0,28}"
+        r"(?:旺玥|奶粉|喝完|喝了)"
+    ),
 )
 
 
@@ -1202,18 +1790,33 @@ class ProductExperiencePhraseReview:
     adult_self_drinking_hits: list[str]
     child_self_brewing_hits: list[str]
     child_formula_bottle_hits: list[str]
+    ugc_post_type_drift_hits: list[str]
     wangyue_wrong_brand_hits: list[str]
     wangyue_explicit_age_hits: list[str]
     wangyue_portable_form_hits: list[str]
+    wangyue_supplement_replacement_hits: list[str]
     wangyue_digestive_effect_hits: list[str]
     wangyue_growth_nutrition_drift_hits: list[str]
     wangyue_article_logic_drift_hits: list[str]
     wangyue_row2_drinking_action_hits: list[str]
+    wangyue_child_product_promo_hits: list[str]
+    wangyue_time_event_context_hits: list[str]
+    wangyue_hidden_negative_comparison_hits: list[str]
+    physical_action_carrier_mismatch_hits: list[str]
+    product_fact_number_drift_hits: list[str]
+    effect_scope_drift_hits: list[str]
+    scene_motive_drift_hits: list[str]
+    product_action_surface_hits: list[str]
+    decision_chain_hits: dict[str, list[str]]
+    product_effect_proof_chain_hits: dict[str, list[str]]
     temporal_context_hits: list[str]
     run_on_fragment_hits: list[str]
     malformed_fragment_hits: list[str]
     body_chars: int
     length_target: tuple[str, int, int] | None = None
+    formula_dry_powder_ingestion_hits: list[str] = field(default_factory=list)
+    ingredient_benefit_mismatch_hits: list[str] = field(default_factory=list)
+    formula_usage_form_hits: list[str] = field(default_factory=list)
 
     def model_dump(self) -> dict[str, Any]:
         return {
@@ -1228,15 +1831,30 @@ class ProductExperiencePhraseReview:
             "strong_real_expression_hits": self.strong_real_expression_hits,
             "hard_risk_hits": self.hard_risk_hits,
             "adult_self_drinking_hits": self.adult_self_drinking_hits,
+            "formula_dry_powder_ingestion_hits": self.formula_dry_powder_ingestion_hits,
+            "ingredient_benefit_mismatch_hits": self.ingredient_benefit_mismatch_hits,
+            "formula_usage_form_hits": self.formula_usage_form_hits,
             "child_self_brewing_hits": self.child_self_brewing_hits,
             "child_formula_bottle_hits": self.child_formula_bottle_hits,
+            "ugc_post_type_drift_hits": self.ugc_post_type_drift_hits,
             "wangyue_wrong_brand_hits": self.wangyue_wrong_brand_hits,
             "wangyue_explicit_age_hits": self.wangyue_explicit_age_hits,
             "wangyue_portable_form_hits": self.wangyue_portable_form_hits,
+            "wangyue_supplement_replacement_hits": self.wangyue_supplement_replacement_hits,
             "wangyue_digestive_effect_hits": self.wangyue_digestive_effect_hits,
             "wangyue_growth_nutrition_drift_hits": self.wangyue_growth_nutrition_drift_hits,
             "wangyue_article_logic_drift_hits": self.wangyue_article_logic_drift_hits,
             "wangyue_row2_drinking_action_hits": self.wangyue_row2_drinking_action_hits,
+            "wangyue_child_product_promo_hits": self.wangyue_child_product_promo_hits,
+            "wangyue_time_event_context_hits": self.wangyue_time_event_context_hits,
+            "wangyue_hidden_negative_comparison_hits": self.wangyue_hidden_negative_comparison_hits,
+            "physical_action_carrier_mismatch_hits": self.physical_action_carrier_mismatch_hits,
+            "product_fact_number_drift_hits": self.product_fact_number_drift_hits,
+            "effect_scope_drift_hits": self.effect_scope_drift_hits,
+            "scene_motive_drift_hits": self.scene_motive_drift_hits,
+            "product_action_surface_hits": self.product_action_surface_hits,
+            "decision_chain_hits": self.decision_chain_hits,
+            "product_effect_proof_chain_hits": self.product_effect_proof_chain_hits,
             "temporal_context_hits": self.temporal_context_hits,
             "run_on_fragment_hits": self.run_on_fragment_hits,
             "malformed_fragment_hits": self.malformed_fragment_hits,
@@ -1277,23 +1895,41 @@ def review_product_experience_phrase(
     state_template_hits = _hits_prefer_longer(text, STATE_TEMPLATE_PHRASES)
     odd_phrase_hits = _hits_prefer_longer(text, ODD_PHRASES)
     strong_real_hits = _hits(text, STRONG_REAL_PHRASES)
-    hard_risk_hits = _hard_risk_hits(text)
+    hard_risk_hits = _hard_risk_hits(text, is_wangyue=is_wangyue)
     adult_self_drinking_hits = _hits_prefer_longer(text, ADULT_SELF_DRINKING_PHRASES)
+    formula_dry_powder_ingestion_hits = _formula_dry_powder_ingestion_hits(text)
+    ingredient_benefit_mismatch_hits = _wangyue_ingredient_benefit_mismatch_hits(text) if is_wangyue else []
+    formula_usage_form_hits = _wangyue_formula_usage_form_hits(text) if is_wangyue else []
     child_self_brewing_hits = _merge_hits(
         _hits_prefer_longer(text, CHILD_SELF_BREWING_PHRASES),
         _child_self_brewing_regex_hits(text),
     )
     child_formula_bottle_hits = _hits_prefer_longer(text, CHILD_FORMULA_BOTTLE_PHRASES)
+    ugc_post_type_drift_hits = _ugc_post_type_drift_hits(text, plan)
     wangyue_wrong_brand_hits = _hits_prefer_longer(text, WANGYUE_WRONG_BRAND_PHRASES) if is_wangyue else []
     wangyue_explicit_age_hits = (
-        _merge_hits(
-            _hits_prefer_longer(text, WANGYUE_EXPLICIT_AGE_PHRASES),
-            _wangyue_explicit_age_regex_hits(text),
+        _filter_allowed_wangyue_age_hits(
+            _merge_hits(
+                _hits_prefer_longer(text, WANGYUE_EXPLICIT_AGE_PHRASES),
+                _wangyue_explicit_age_regex_hits(text),
+            ),
+            text=text,
+            plan=plan,
         )
         if is_wangyue
         else []
     )
-    wangyue_portable_form_hits = _hits_prefer_longer(text, WANGYUE_PORTABLE_FORM_PHRASES) if is_wangyue else []
+    wangyue_portable_form_hits = (
+        _merge_hits(
+            _hits_prefer_longer(text, WANGYUE_PORTABLE_FORM_PHRASES),
+            _wangyue_portable_form_regex_hits(text),
+        )
+        if is_wangyue
+        else []
+    )
+    wangyue_supplement_replacement_hits = (
+        _wangyue_supplement_replacement_hits(text) if is_wangyue else []
+    )
     wangyue_digestive_effect_hits = _hits_prefer_longer(text, WANGYUE_DIGESTIVE_EFFECT_PHRASES) if is_wangyue else []
     wangyue_missing_product_mention = is_wangyue and not any(
         term in text for term in ("旺玥", "皇家美素佳儿")
@@ -1306,10 +1942,51 @@ def review_product_experience_phrase(
     wangyue_article_logic_drift_hits = (
         _hits_prefer_longer(text, WANGYUE_ARTICLE_LOGIC_DRIFT_PHRASES) if is_wangyue else []
     )
+    if is_wangyue:
+        wangyue_article_logic_drift_hits = [
+            hit for hit in wangyue_article_logic_drift_hits if hit not in WANGYUE_PRODUCT_HISTORY_ALLOWED_PHRASES
+        ]
+    if _allows_stronger_wangyue_product_story(plan):
+        wangyue_article_logic_drift_hits = [
+            hit for hit in wangyue_article_logic_drift_hits if hit not in WANGYUE_STRONG_STORY_ALLOWED_PHRASES
+        ]
+    if _allows_wangyue_purchase_action_context(plan):
+        wangyue_article_logic_drift_hits = [
+            hit for hit in wangyue_article_logic_drift_hits if hit not in WANGYUE_PURCHASE_ACTION_PHRASES
+        ]
+    if _allows_wangyue_sensory_experience_context(plan):
+        wangyue_article_logic_drift_hits = [
+            hit for hit in wangyue_article_logic_drift_hits if hit not in WANGYUE_SENSORY_EXPERIENCE_PHRASES
+        ]
+    if _allows_wangyue_eye_brain_selection_context(plan):
+        wangyue_article_logic_drift_hits = [
+            hit for hit in wangyue_article_logic_drift_hits if hit not in {"用眼", "绘本", "看绘本"}
+        ]
+    if _is_product_permission_usage_record_plan(plan):
+        wangyue_article_logic_drift_hits = [
+            hit for hit in wangyue_article_logic_drift_hits if hit not in {"动画", "动画片"}
+        ]
+        if "泡了杯茶" in text:
+            wangyue_article_logic_drift_hits = [
+                hit for hit in wangyue_article_logic_drift_hits if hit != "泡了杯"
+            ]
     if _is_wangyue_row2_energy_plan(plan):
         wangyue_article_logic_drift_hits = _merge_hits(
             wangyue_article_logic_drift_hits,
             _hits_prefer_longer(text, WANGYUE_ROW2_EYE_BRAIN_DRIFT_PHRASES),
+        )
+    if is_wangyue:
+        wangyue_article_logic_drift_hits = _merge_hits(
+            wangyue_article_logic_drift_hits,
+            _wangyue_eye_health_product_link_hits(text),
+        )
+        wangyue_article_logic_drift_hits = _merge_hits(
+            wangyue_article_logic_drift_hits,
+            _wangyue_selling_point_drift_hits(text, plan),
+        )
+        wangyue_article_logic_drift_hits = _merge_hits(
+            wangyue_article_logic_drift_hits,
+            _wangyue_temporal_effect_mismatch_hits(text),
         )
     wangyue_row2_drinking_action_hits = (
         _merge_hits(
@@ -1319,17 +1996,50 @@ def review_product_experience_phrase(
         if _is_wangyue_row2_energy_plan(plan)
         else []
     )
-    temporal_context_hits = _hits_prefer_longer(text, TEMPORAL_CONTEXT_PHRASES)
+    wangyue_child_product_promo_hits = _wangyue_child_product_promo_regex_hits(text) if is_wangyue else []
+    wangyue_time_event_context_hits = (
+        _hits_prefer_longer(text, WANGYUE_TIME_EVENT_CONTEXT_PHRASES)
+        if is_wangyue
+        else []
+    )
+    if wangyue_time_event_context_hits:
+        allowed_context = f"{plan.get('scene_motive_bucket') or ''} {plan.get('life_trigger') or ''}"
+        wangyue_time_event_context_hits = [
+            hit for hit in wangyue_time_event_context_hits if hit not in allowed_context
+        ]
+        wangyue_time_event_context_hits = _filter_allowed_wangyue_time_event_hits(
+            wangyue_time_event_context_hits,
+            text=text,
+        )
+    if wangyue_time_event_context_hits and _is_product_permission_inventory_plan(plan):
+        weekend_hits = {"周末", "周六", "周日"}
+        if any(term in text for term in ("超市", "买菜", "顺手补", "补了几样", "刚需")):
+            wangyue_time_event_context_hits = [
+                hit for hit in wangyue_time_event_context_hits if hit not in weekend_hits
+            ]
+    wangyue_hidden_negative_comparison_hits = (
+        _wangyue_hidden_negative_comparison_hits(text) if is_wangyue else []
+    )
+    physical_action_carrier_mismatch_hits = (
+        _physical_action_carrier_mismatch_hits(text) if is_wangyue else []
+    )
+    product_fact_number_drift_hits = _wangyue_product_fact_number_drift_hits(text) if is_wangyue else []
+    effect_scope_drift_hits = _wangyue_effect_scope_drift_hits(text, plan) if is_wangyue else []
+    scene_motive_drift_hits = _scene_motive_drift_hits(text, plan)
+    product_action_surface_hits = _product_action_surface_hits(text, plan)
+    decision_chain_hits = _decision_chain_hits(body_text, plan)
+    product_effect_proof_chain_hits = _product_effect_proof_chain_hits(text, plan)
+    temporal_context_hits = _current_temporal_context_hits(text)
     run_on_fragment_hits = _long_unpunctuated_segment_hits(body_text)
-    malformed_fragment_hits = _malformed_fragment_hits(body_text)
+    malformed_fragment_hits = _malformed_fragment_hits(text)
     body_chars = _compact_len(body_text)
     length_target = _article_length_target(plan)
 
     reasons: list[str] = []
     if not body_text.strip():
         reasons.append("empty_body")
-    if len(skeleton_parts) >= 3:
-        reasons.append("complete_selection_price_acceptance_closure_skeleton")
+    # 链路节点密度是批量分布信号，不是单篇硬改写理由。
+    # skeleton_hits 仍保留在报告里，用于观察“选购/接受/状态/收口”比例。
     if _hits(text, HARD_AI_CLOSURE_PHRASES):
         reasons.append("hard_ai_closure_phrase")
     if _hits(text, COMMON_AI_CLOSURE_PHRASES):
@@ -1342,16 +2052,26 @@ def review_product_experience_phrase(
         reasons.append("hard_risk_expression")
     if adult_self_drinking_hits:
         reasons.append("adult_self_drinking_child_formula")
+    if formula_dry_powder_ingestion_hits:
+        reasons.append("formula_dry_powder_ingestion")
+    if ingredient_benefit_mismatch_hits:
+        reasons.append("ingredient_benefit_mismatch")
+    if formula_usage_form_hits:
+        reasons.append("formula_usage_form_error")
     if child_self_brewing_hits:
         reasons.append("child_self_brewing_formula")
     if child_formula_bottle_hits:
         reasons.append("child_formula_bottle_context")
+    if ugc_post_type_drift_hits:
+        reasons.append("ugc_post_type_drift")
     if wangyue_wrong_brand_hits:
         reasons.append("wangyue_wrong_brand")
     if wangyue_explicit_age_hits:
         reasons.append("wangyue_explicit_age_context")
     if wangyue_portable_form_hits:
         reasons.append("wangyue_portable_form_context")
+    if wangyue_supplement_replacement_hits:
+        reasons.append("wangyue_supplement_replacement_context")
     if wangyue_digestive_effect_hits:
         reasons.append("wangyue_digestive_effect_context")
     if wangyue_missing_product_mention:
@@ -1362,6 +2082,24 @@ def review_product_experience_phrase(
         reasons.append("wangyue_article_logic_drift_context")
     if wangyue_row2_drinking_action_hits:
         reasons.append("wangyue_row2_drinking_action_context")
+    if wangyue_child_product_promo_hits:
+        reasons.append("wangyue_child_product_promo_context")
+    if wangyue_time_event_context_hits:
+        reasons.append("wangyue_time_event_context")
+    if wangyue_hidden_negative_comparison_hits:
+        reasons.append("wangyue_hidden_negative_comparison_context")
+    if physical_action_carrier_mismatch_hits:
+        reasons.append("physical_action_carrier_mismatch")
+    if product_fact_number_drift_hits:
+        reasons.append("product_fact_number_drift")
+    if effect_scope_drift_hits:
+        reasons.append("effect_scope_drift")
+    if scene_motive_drift_hits:
+        reasons.append("scene_motive_drift")
+    if product_action_surface_hits:
+        reasons.append("product_action_surface_drift")
+    if product_effect_proof_chain_hits:
+        reasons.append("product_effect_proof_chain")
     if temporal_context_hits:
         reasons.append("explicit_temporal_context")
     if run_on_fragment_hits:
@@ -1382,15 +2120,30 @@ def review_product_experience_phrase(
         strong_real_expression_hits=strong_real_hits,
         hard_risk_hits=hard_risk_hits,
         adult_self_drinking_hits=adult_self_drinking_hits,
+        formula_dry_powder_ingestion_hits=formula_dry_powder_ingestion_hits,
+        ingredient_benefit_mismatch_hits=ingredient_benefit_mismatch_hits,
+        formula_usage_form_hits=formula_usage_form_hits,
         child_self_brewing_hits=child_self_brewing_hits,
         child_formula_bottle_hits=child_formula_bottle_hits,
+        ugc_post_type_drift_hits=ugc_post_type_drift_hits,
         wangyue_wrong_brand_hits=wangyue_wrong_brand_hits,
         wangyue_explicit_age_hits=wangyue_explicit_age_hits,
         wangyue_portable_form_hits=wangyue_portable_form_hits,
+        wangyue_supplement_replacement_hits=wangyue_supplement_replacement_hits,
         wangyue_digestive_effect_hits=wangyue_digestive_effect_hits,
         wangyue_growth_nutrition_drift_hits=wangyue_growth_nutrition_drift_hits,
         wangyue_article_logic_drift_hits=wangyue_article_logic_drift_hits,
         wangyue_row2_drinking_action_hits=wangyue_row2_drinking_action_hits,
+        wangyue_child_product_promo_hits=wangyue_child_product_promo_hits,
+        wangyue_time_event_context_hits=wangyue_time_event_context_hits,
+        wangyue_hidden_negative_comparison_hits=wangyue_hidden_negative_comparison_hits,
+        physical_action_carrier_mismatch_hits=physical_action_carrier_mismatch_hits,
+        product_fact_number_drift_hits=product_fact_number_drift_hits,
+        effect_scope_drift_hits=effect_scope_drift_hits,
+        scene_motive_drift_hits=scene_motive_drift_hits,
+        product_action_surface_hits=product_action_surface_hits,
+        decision_chain_hits=decision_chain_hits,
+        product_effect_proof_chain_hits=product_effect_proof_chain_hits,
         temporal_context_hits=temporal_context_hits,
         run_on_fragment_hits=run_on_fragment_hits,
         malformed_fragment_hits=malformed_fragment_hits,
@@ -1401,12 +2154,14 @@ def review_product_experience_phrase(
 
 def sanitize_temporal_context(value: str | None) -> str:
     text = str(value or "")
-    for source, replacement in TEMPORAL_CONTEXT_REPLACEMENTS:
-        text = text.replace(source, replacement)
+    for pattern, replacement in CURRENT_TEMPORAL_CONTEXT_REPLACEMENTS:
+        text = pattern.sub(replacement, text)
     text = text.replace("最近这阵", "最近")
     text = text.replace("最近后", "最近")
     text = text.replace("这阵后", "这阵子")
     text = text.replace("这段时间后", "这段时间")
+    text = text.replace("平时后", "平时")
+    text = text.replace("日常后", "日常")
     text = text.replace("这阵这阵", "这阵")
     text = text.replace("这段时间这段时间", "这段时间")
     text = text.replace("这段时间段时间", "这段时间")
@@ -1414,6 +2169,61 @@ def sanitize_temporal_context(value: str | None) -> str:
     text = text.replace("上上学", "上学")
     text = text.replace("一最近", "一有状况")
     text = text.replace("一这阵", "一有状况")
+    text = re.sub(r"[，,]\s*[，,]", "，", text)
+    return text.strip(" ，,")
+
+
+def sanitize_wangyue_time_event_context(value: str | None) -> str:
+    text = str(value or "")
+    replacements = (
+        ("户外踏青", "户外活动"),
+        ("春游", "户外活动"),
+        ("秋游", "户外活动"),
+        ("踏青", "户外活动"),
+        ("流感多的时候", "接触人多的时候"),
+        ("流感季", "接触人多的时候"),
+        ("感冒季", "接触人多的时候"),
+        ("天气忽冷忽热", "外面活动多"),
+        ("天气一变", "外面活动多"),
+        ("风大的季节", "外面活动多的时候"),
+        ("每次换季", "有段时间"),
+        ("最近换季", "最近"),
+        ("现在换季", "最近"),
+        ("这阵子换季", "这阵子"),
+        ("这段时间换季", "这段时间"),
+        ("换季那阵子", "前阵子"),
+        ("换季那几天", "前几天"),
+        ("换季时", "平时"),
+        ("换季", "平时"),
+        ("降温", "外面活动多"),
+        ("入冬", "平时"),
+        ("入夏", "平时"),
+        ("入秋", "平时"),
+        ("春季", "平时"),
+        ("夏季", "平时"),
+        ("秋季", "平时"),
+        ("冬季", "平时"),
+        ("春天", "平时"),
+        ("夏天", "平时"),
+        ("秋天", "平时"),
+        ("冬天", "平时"),
+        ("天冷", "外面活动多"),
+        ("流感", "小状况"),
+        ("季节", "时候"),
+    )
+    for old, new in replacements:
+        text = text.replace(old, new)
+    text = sanitize_temporal_context(text)
+    text = text.replace("一平时就", "一有状况就")
+    text = text.replace("一平时", "一有状况")
+    text = text.replace("每到平时", "有段时间")
+    text = text.replace("每逢平时", "有段时间")
+    text = text.replace("每次平时", "有段时间")
+    text = text.replace("平时时", "平时")
+    text = text.replace("平时那阵子", "前阵子")
+    text = text.replace("平时那几天", "前几天")
+    text = text.replace("时候性", "")
+    text = text.replace("户外户外活动", "户外活动")
     text = re.sub(r"[，,]\s*[，,]", "，", text)
     return text.strip(" ，,")
 
@@ -1429,7 +2239,7 @@ def sanitize_product_experience_format(value: str | None) -> str:
     text = text.replace("，，", "，")
     text = text.replace("。。", "。")
     text = text.replace("我我", "我")
-    return text.strip(" ，,。；;")
+    return text.strip(" ，,；;")
 
 
 def sanitize_common_ai_closure(value: str | None) -> str:
@@ -1464,6 +2274,43 @@ def sanitize_odd_product_experience_phrases(value: str | None) -> str:
     text = text.replace("，，", "，")
     text = text.replace("。。", "。")
     text = re.sub(r"[\u200d\ufe0f]", "", text)
+    text = re.sub(r"\s+", "", text)
+    return text.strip(" ，,。；;")
+
+
+def sanitize_formula_dry_powder_ingestion(value: str | None) -> str:
+    text = str(value or "")
+    if not text:
+        return text
+    for pattern in FORMULA_DRY_POWDER_INGESTION_PATTERNS:
+        text = pattern.sub("", text)
+    text = text.replace("，。", "。")
+    text = text.replace("，，", "，")
+    text = text.replace("。。", "。")
+    text = re.sub(r"^[，,。；;\s]+", "", text)
+    text = re.sub(r"[，,；;\s]+$", "", text)
+    text = re.sub(r"\s+", "", text)
+    return text.strip(" ，,。；;")
+
+
+def sanitize_wangyue_formula_usage_form(value: str | None) -> str:
+    text = str(value or "")
+    if not text:
+        return text
+    text = re.sub(r"(现在|家里|后来|这段时间)?旺玥每天一杯", r"\1喝旺玥", text)
+    text = re.sub(r"(现在|家里|后来|这段时间)?每天一杯旺玥", r"\1喝旺玥", text)
+    text = re.sub(r"(现在|家里|后来|这段时间)?旺玥每天喝一杯", r"\1喝旺玥", text)
+    text = re.sub(r"(现在|家里|后来|这段时间)?每天喝一杯旺玥", r"\1喝旺玥", text)
+    for pattern in WANGYUE_FORMULA_USAGE_FORM_PATTERNS:
+        text = pattern.sub("", text)
+    for phrase in sorted(WANGYUE_FORMULA_USAGE_FORM_PHRASES, key=len, reverse=True):
+        text = text.replace(phrase, "")
+    text = text.replace("，。", "。")
+    text = text.replace("。，", "。")
+    text = text.replace("，，", "，")
+    text = text.replace("。。", "。")
+    text = re.sub(r"^[，,。；;\s]+", "", text)
+    text = re.sub(r"[，,；;\s]+$", "", text)
     text = re.sub(r"\s+", "", text)
     return text.strip(" ，,。；;")
 
@@ -1645,10 +2492,10 @@ def sanitize_wangyue_context_phrases(value: str | None) -> str:
     text = text.replace("源悦", "旺玥")
     text = text.replace("旺玥小安素", "旺玥儿童奶粉")
     text = text.replace("小安素", "儿童奶粉")
-    text = text.replace("主要是看里面保护力这块", "主要是看皇家美素佳儿旺玥的保护力这块")
-    text = text.replace("主要看里面保护力这块", "主要看皇家美素佳儿旺玥的保护力这块")
-    text = text.replace("看里面保护力这块", "看皇家美素佳儿旺玥的保护力这块")
-    text = text.replace("看里面营养全面", "看皇家美素佳儿旺玥营养全面")
+    text = text.replace("主要是看里面保护力这块", "主要是看旺玥的保护力这块")
+    text = text.replace("主要看里面保护力这块", "主要看旺玥的保护力这块")
+    text = text.replace("看里面保护力这块", "看旺玥的保护力这块")
+    text = text.replace("看里面营养全面", "看旺玥营养全面")
     text = text.replace("给娃挑个口粮", "给娃挑奶粉")
     text = text.replace("给娃挑口粮", "给娃挑奶粉")
     text = text.replace("选口粮", "选奶粉")
@@ -1672,7 +2519,7 @@ def sanitize_wangyue_context_phrases(value: str | None) -> str:
     text = text.replace("眼睛不酸", "状态还可以")
     text = text.replace("脸色都亮堂", "状态还可以")
     text = text.replace("脸色亮堂", "状态还可以")
-    text = text.replace("冲出来奶香清淡，娃不挑", "选奶粉这事我记一下")
+    text = text.replace("冲出来奶香清淡，娃不挑", "奶香清淡，孩子接受度不错")
     text = text.replace("冲出来奶香清淡，", "")
     text = text.replace("冲出来奶香清淡", "")
     text = re.sub(
@@ -1685,36 +2532,30 @@ def sanitize_wangyue_context_phrases(value: str | None) -> str:
         "这段时间状态看着还行。",
         text,
     )
-    text = text.replace("换成了皇家美素佳儿旺玥", "后来留意到皇家美素佳儿旺玥")
-    text = text.replace("换成了旺玥", "后来留意到旺玥")
-    text = text.replace("给孩子选了皇家美素佳儿旺玥", "后来留意到皇家美素佳儿旺玥")
-    text = text.replace("给他选了皇家美素佳儿旺玥", "后来留意到皇家美素佳儿旺玥")
-    text = text.replace("给她选了皇家美素佳儿旺玥", "后来留意到皇家美素佳儿旺玥")
-    text = text.replace("给孩子选了旺玥", "后来留意到旺玥")
-    text = text.replace("给他选了旺玥", "后来留意到旺玥")
-    text = text.replace("给她选了旺玥", "后来留意到旺玥")
-    text = text.replace("给选了皇家美素佳儿旺玥", "后来留意到皇家美素佳儿旺玥")
-    text = text.replace("给选了旺玥", "后来留意到旺玥")
     text = text.replace("小脑瓜", "状态")
     text = text.replace("用脑太多", "信息量太多")
     text = text.replace("脑子转得快", "反应挺快")
     text = re.sub(r"[^。！？；;，,]*?(?:开罐|冲泡|冲出来|奶香|粉质|不结块|煮粥)[^。！？；;]*[。！？；;]?", "", text)
-    text = text.replace("从断奶开始", "孩子大点后")
-    text = text.replace("两岁后", "孩子大点后")
-    text = text.replace("2岁后", "孩子大点后")
-    for phrase in WANGYUE_EXPLICIT_AGE_PHRASES:
-        text = text.replace(phrase, "孩子")
-    text = text.replace("孩子开始", "孩子大点开始")
-    text = text.replace("孩子之后", "孩子大点之后")
-
+    text = text.replace("出门恨不得把辅食机都塞包里", "有时会觉得营养安排挺琐碎")
+    text = text.replace("辅食机都塞包里", "营养安排也跟着琐碎")
+    text = re.sub(
+        r"，?(?:我就在|我在|就在|在)(?:书包侧袋|书包侧兜|书包里)[^。！？；;]*?(?:一盒旺玥|旺玥|奶粉盒|旺玥小条装)[^。！？；;]*",
+        "",
+        text,
+    )
     text = re.sub(
         r"(?:书包侧袋|书包侧兜|书包里|塞书包)[^。！？；;]*?(?:一盒旺玥|旺玥|奶粉盒|旺玥小条装)[^。！？；;]*",
-        "家里那罐旺玥",
+        "",
         text,
     )
     text = re.sub(
         r"塞[^。！？；;]*?(?:一罐旺玥|旺玥|奶粉)[^。！？；;]*?书包[^。！？；;]*",
-        "家里那罐旺玥照常在喝",
+        "",
+        text,
+    )
+    text = re.sub(
+        r"[^。！？；;]*?塞[^。！？；;]*?(?:旺玥|奶粉)[^。！？；;]*?(?:兑温水|兑点温水|能喝)[^。！？；;]*",
+        "",
         text,
     )
     text = text.replace("娃自己路上喝掉", "回家后照常喝完")
@@ -1722,6 +2563,14 @@ def sanitize_wangyue_context_phrases(value: str | None) -> str:
     text = text.replace("自己路上喝掉", "回家后照常喝完")
     text = text.replace("路上喝掉", "回家后喝完")
     text = text.replace("路上喝", "在家喝")
+    text = text.replace("保温杯里装了旺玥", "")
+    text = text.replace("保温杯装了旺玥", "")
+    text = text.replace("保温杯里装旺玥", "")
+    text = text.replace("保温杯装旺玥", "")
+    text = text.replace("保温杯里都是旺玥", "")
+    text = text.replace("玩累了坐花坛边喝完", "玩累了歇一会儿")
+    text = text.replace("坐花坛边喝完", "歇了一会儿")
+    text = text.replace("花坛边喝完", "歇了一会儿")
     text = text.replace("书包有奶", "家里那款奶粉")
     text = text.replace("抱着奶粉罐", "看着奶粉罐")
     text = text.replace("抱着罐子", "看着罐子")
@@ -1729,56 +2578,53 @@ def sanitize_wangyue_context_phrases(value: str | None) -> str:
     text = text.replace("便携装", "这罐奶粉")
     text = re.sub(
         r"出门[^。！？；;]*?(?:揣|带)[^。！？；;]*?(?:小袋|旺玥|奶粉)[^。！？；;]*?(?:直接冲|随时能泡|能泡)[^。！？；;]*",
-        "日常喝旺玥这件事先照常安排",
+        "",
         text,
     )
-    text = text.replace("玩累了直接冲", "回家后照常喝")
-    text = text.replace("直接冲", "照常喝")
-    text = text.replace("揣两小袋", "家里备着")
-    text = text.replace("两小袋", "一些")
-    text = text.replace("小袋", "奶粉")
-    text = text.replace("分装", "奶粉")
-    text = text.replace("两条旺玥", "一杯旺玥")
-    text = text.replace("两条", "一杯")
-    text = text.replace("出门背的小双肩包", "家里的餐边柜")
-    text = text.replace("小双肩包", "餐边柜")
-    text = text.replace("外出随身包", "餐边柜")
-    text = text.replace("随身包", "餐边柜")
-    text = text.replace("包里除了水杯纸巾，还塞了旺玥", "家里那罐旺玥照常在喝")
-    text = text.replace("包里除了水杯纸巾", "家里那罐旺玥")
-    text = text.replace("包里除了水杯零食", "家里那罐旺玥")
-    text = text.replace("出门恨不得把辅食机都塞包里", "有时会觉得营养安排挺琐碎")
-    text = text.replace("辅食机都塞包里", "营养安排也跟着琐碎")
-    text = text.replace("塞进背包", "放在家里")
-    text = text.replace("背包里塞", "家里备着")
-    text = text.replace("塞包里", "放在家里")
-    text = text.replace("放一包皇家美素佳儿旺玥", "家里备着皇家美素佳儿旺玥")
-    text = text.replace("放一包旺玥", "家里备着旺玥")
+    text = text.replace("玩累了直接冲", "玩累了歇一会儿")
+    text = text.replace("揣两小袋", "")
+    text = text.replace("两小袋", "")
+    text = text.replace("小袋", "")
+    text = text.replace("分装", "")
+    text = text.replace("两条旺玥", "旺玥")
+    text = text.replace("两条", "")
+    text = text.replace("出门背的小双肩包", "")
+    text = text.replace("小双肩包", "")
+    text = text.replace("外出随身包", "")
+    text = text.replace("随身包", "")
+    text = text.replace("包里除了水杯纸巾，还塞了旺玥", "")
+    text = text.replace("包里除了水杯纸巾", "")
+    text = text.replace("包里除了水杯零食", "")
+    text = text.replace("塞进背包", "")
+    text = text.replace("背包里塞", "")
+    text = text.replace("塞包里", "")
+    text = text.replace("放一包皇家美素佳儿旺玥", "皇家美素佳儿旺玥")
+    text = text.replace("放一包旺玥", "旺玥")
     text = text.replace("一包皇家美素佳儿旺玥", "一罐皇家美素佳儿旺玥")
     text = text.replace("一包旺玥", "一罐旺玥")
-    text = text.replace("带娃出门，包里一定会塞一袋旺玥", "家里那罐旺玥一直在喝")
-    text = text.replace("包里一定会塞一袋旺玥", "家里那罐旺玥一直在喝")
-    text = text.replace("包里一定会塞", "家里一直备着")
-    text = text.replace("塞一袋旺玥", "喝着旺玥")
-    text = text.replace("出门前塞几包在包里，随时能泡", "家里备着，日常喝着")
-    text = text.replace("塞几包在包里", "家里备着")
-    text = text.replace("塞几包", "家里备着")
-    text = text.replace("随时能泡", "日常喝着")
-    text = text.replace("几包", "一些")
+    text = text.replace("带娃出门，包里一定会塞一袋旺玥", "")
+    text = text.replace("包里一定会塞一袋旺玥", "")
+    text = text.replace("包里一定会塞", "")
+    text = text.replace("塞一袋旺玥", "旺玥")
+    text = text.replace("出门前塞几包在包里，随时能泡", "")
+    text = text.replace("塞几包在包里", "")
+    text = text.replace("塞几包", "")
+    text = text.replace("随时能泡", "")
+    text = text.replace("几包", "")
     text = text.replace("一袋旺玥", "一罐旺玥")
-    text = text.replace("现在出门包里会多放一罐奶粉", "现在家里那罐奶粉照常喝")
-    text = text.replace("出门包里会多放一罐奶粉", "家里那罐奶粉照常喝")
-    text = text.replace("包里会多放一罐奶粉", "家里那罐奶粉照常喝")
-    text = text.replace("多放一罐奶粉", "家里那罐奶粉")
-    text = text.replace("包里光是奶粉和水壶就塞满了", "家里那罐奶粉照常喝着")
-    text = text.replace("包里光是奶粉和水壶", "家里那罐奶粉")
+    text = text.replace("现在出门包里会多放一罐奶粉", "")
+    text = text.replace("出门包里会多放一罐奶粉", "")
+    text = text.replace("包里会多放一罐奶粉", "")
+    text = text.replace("多放一罐奶粉", "")
+    text = text.replace("包里光是奶粉和水壶就塞满了", "")
+    text = text.replace("包里光是奶粉和水壶", "")
     text = text.replace("我最烦一罐罐分开带", "我不想东补西补")
     text = text.replace("一罐全包", "日常营养补充省点事")
-    text = text.replace("出门前顺手抓一罐", "家里那罐照常喝")
-    text = text.replace("出门前顺手带一罐", "家里那罐照常喝")
+    text = text.replace("出门前顺手抓一罐", "")
+    text = text.replace("出门前顺手带一罐", "")
     text = text.replace("顺手抓一罐", "选这一罐")
-    text = text.replace("顺手带一罐", "家里那罐照常喝")
-    text = text.replace("带一罐旺玥", "家里喝旺玥")
+    text = text.replace("顺手带一罐", "")
+    text = text.replace("带一罐旺玥", "旺玥")
     text = text.replace("抓一罐", "选一罐")
     text = text.replace("出门包里", "家里")
     text = text.replace("出门太急忘了带旺玥", "出门太急漏了点小事")
@@ -1788,17 +2634,18 @@ def sanitize_wangyue_context_phrases(value: str | None) -> str:
     text = text.replace("忘带奶粉", "漏了这杯奶")
     text = text.replace("带旺玥", "选旺玥")
     text = text.replace("带奶粉", "选奶粉")
-    text = text.replace("塞了旺玥", "喝着旺玥")
+    text = text.replace("塞了旺玥", "")
     text = text.replace("奶粉条", "奶粉")
     text = text.replace("小条装", "奶粉")
-    text = text.replace("水壶里都是这个", "在家喝这杯奶")
-    text = text.replace("水壶里", "杯子里")
+    text = text.replace("水壶里都是这个", "")
+    text = text.replace("水壶里", "")
     text = re.sub(r"奶量从\s*\d+\s*ml\s*慢慢喝到\s*\d+\s*ml", "奶量慢慢上来", text, flags=re.IGNORECASE)
     text = re.sub(r"\d+\s*ml", "一杯", text, flags=re.IGNORECASE)
+    text = re.sub(r"每天[一二两三0-9]+杯", "", text)
     text = text.replace("倒进奶粉袋", "放在家里")
     text = text.replace("奶粉袋", "奶粉罐")
     text = text.replace("带两小包冲奶刚好，", "在家冲好喝着顺，")
-    text = text.replace("带两小包", "家里那罐")
+    text = text.replace("带两小包", "家里奶粉")
     text = text.replace("两小包冲奶", "在家冲奶")
     text = text.replace("两小包", "一罐")
     text = text.replace("小包冲奶", "在家冲奶")
@@ -1807,22 +2654,22 @@ def sanitize_wangyue_context_phrases(value: str | None) -> str:
     text = text.replace("即饮", "日常喝奶")
     text = re.sub(r"干掉了[一二两三0-9]+根", "喝完一杯", text)
     text = text.replace("几袋", "一些")
-    text = text.replace("塞奶粉盒兑点温水摇匀", "家里那罐旺玥照常冲好")
-    text = text.replace("兑点温水摇匀", "照常冲好")
-    text = text.replace("兑温水", "照常冲好")
-    text = text.replace("当顺手的水喝下去", "照常喝下去")
-    text = text.replace("当顺手的水喝", "照常喝")
-    text = text.replace("水喝下去", "奶喝下去")
-    text = text.replace("当水奶喝着", "照常喝着")
-    text = text.replace("当水奶喝", "照常喝")
+    text = text.replace("塞奶粉盒兑点温水摇匀", "")
+    text = text.replace("兑点温水摇匀", "")
+    text = text.replace("兑温水", "")
+    text = text.replace("当顺手的水喝下去", "")
+    text = text.replace("当顺手的水喝", "")
+    text = text.replace("水喝下去", "")
+    text = text.replace("当水奶喝着", "")
+    text = text.replace("当水奶喝", "")
     text = text.replace("水奶", "奶粉")
-    text = text.replace("当水喝", "照常喝")
-    text = text.replace("旺玥我搁在茶几上", "旺玥这罐放在家里")
-    text = text.replace("搁在茶几上", "放在家里")
-    text = text.replace("放在茶几上", "放在家里")
-    text = text.replace("他路过就喝几口", "他喝着还算顺")
-    text = text.replace("她路过就喝几口", "她喝着还算顺")
-    text = text.replace("路过就喝几口", "喝着还算顺")
+    text = text.replace("当水喝", "")
+    text = text.replace("旺玥我搁在茶几上", "旺玥")
+    text = text.replace("搁在茶几上", "")
+    text = text.replace("放在茶几上", "")
+    text = text.replace("他路过就喝几口", "")
+    text = text.replace("她路过就喝几口", "")
+    text = text.replace("路过就喝几口", "")
     text = text.replace("一盒旺玥", "一罐旺玥")
     text = text.replace("奶粉盒", "奶粉罐")
     text = text.replace("不是胀气就是不爱喝", "喝奶一直不算顺")
@@ -1844,8 +2691,8 @@ def sanitize_wangyue_context_phrases(value: str | None) -> str:
     text = text.replace("肠胃", "喝奶")
     text = text.replace("脾胃", "喝奶")
     text = text.replace("消化", "接受度")
-
     text = text.replace("孩子孩子", "孩子")
+    text = re.sub(r"(?:^|[。！？；;，,])清早往(?=$|[。！？；;，,])", "", text)
     text = text.replace("，。", "。")
     text = text.replace("，，", "，")
     text = text.replace("。。", "。")
@@ -1866,6 +2713,121 @@ def _hits_prefer_longer(text: str, phrases: tuple[str, ...]) -> list[str]:
     return hits
 
 
+def _current_temporal_context_hits(text: str) -> list[str]:
+    hits: list[tuple[int, str]] = []
+    for pattern in CURRENT_TEMPORAL_CONTEXT_PATTERNS:
+        for match in pattern.finditer(text or ""):
+            if _is_allowed_past_season_reference(match.group(0)):
+                continue
+            hits.append((match.start(), match.group(0)))
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _filter_allowed_wangyue_time_event_hits(hits: list[str], *, text: str) -> list[str]:
+    if not hits:
+        return []
+    filtered: list[str] = []
+    for hit in hits:
+        if _is_allowed_past_season_reference(text):
+            continue
+        filtered.append(hit)
+    return filtered
+
+
+def _is_allowed_past_season_reference(text: str) -> bool:
+    return bool(
+        re.search(
+            r"(?:去年|前年|去年的|前年的|上个|上一个)"
+            r"(?:春天|夏天|秋天|冬天|春季|夏季|秋季|冬季)",
+            str(text or ""),
+        )
+    )
+
+
+TEMPORAL_EFFECT_SPAN_MARKERS = (
+    "最近",
+    "这几天",
+    "这阵",
+    "这段时间",
+    "这一阵",
+    "前阵子",
+    "上周",
+    "这周",
+    "这学期",
+    "一阵",
+    "一段时间",
+    "一直",
+    "比之前",
+    "喝了一阵",
+    "喝了段时间",
+)
+
+WANGYUE_TEMPORAL_EFFECT_MISMATCH_PATTERNS = (
+    re.compile(r"(?:今天|昨天|上午|下午|今晚|这次|刚才|刚刚)[^。！？；;\r\n]{0,16}(?:没怎么|没咋|不怎么|少)[^。！？；;\r\n]{0,4}请假"),
+    re.compile(r"(?:今天|昨天|上午|下午|今晚|这次|刚才|刚刚)[^。！？；;\r\n]{0,20}(?:全勤|没跟着中招|没怎么中招|没咋中招|少中招|中招少)"),
+    re.compile(r"(?:今天|昨天|上午|下午|今晚|这次|刚才|刚刚)[^。！？；;\r\n]{0,20}(?:长高|长肉|重了好些|扎扎实实长肉)"),
+    re.compile(r"(?:刚开|刚拆|刚换|刚开始|这次换)[^。！？；;\r\n]{0,18}(?:状态在线|状态稳|状态稳定|稳了不少|跑跳有劲)"),
+)
+
+
+def _wangyue_temporal_effect_mismatch_hits(text: str) -> list[str]:
+    hits: list[tuple[int, str]] = []
+    for pattern in WANGYUE_TEMPORAL_EFFECT_MISMATCH_PATTERNS:
+        for match in pattern.finditer(text or ""):
+            sentence_start = max(
+                str(text or "").rfind("。", 0, match.start()),
+                str(text or "").rfind("！", 0, match.start()),
+                str(text or "").rfind("？", 0, match.start()),
+                str(text or "").rfind("\n", 0, match.start()),
+            ) + 1
+            sentence_end_candidates = [
+                index
+                for index in (
+                    str(text or "").find("。", match.end()),
+                    str(text or "").find("！", match.end()),
+                    str(text or "").find("？", match.end()),
+                    str(text or "").find("\n", match.end()),
+                )
+                if index != -1
+            ]
+            sentence_end = min(sentence_end_candidates) if sentence_end_candidates else len(str(text or ""))
+            sentence = str(text or "")[sentence_start:sentence_end]
+            if any(marker in sentence for marker in TEMPORAL_EFFECT_SPAN_MARKERS):
+                continue
+            hits.append((match.start(), match.group(0)))
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _wangyue_school_absence_event_hits(text: str) -> list[str]:
+    patterns = (
+        re.compile(r"(?:班里|班上|他们班|她们班|幼儿园)[^。！？；;，,\r\n]{0,18}(?:请假|中招|倒了一片)"),
+        re.compile(r"(?:请假|中招|倒了一片)[^。！？；;，,\r\n]{0,12}(?:不少|多了|好几个|一堆|一大半|一条接一条)"),
+    )
+    hits: list[tuple[int, str]] = []
+    for pattern in patterns:
+        for match in pattern.finditer(text or ""):
+            hits.append((match.start(), match.group(0)))
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
 def _merge_hits(*groups: list[str]) -> list[str]:
     hits: list[str] = []
     for group in groups:
@@ -1875,12 +2837,515 @@ def _merge_hits(*groups: list[str]) -> list[str]:
     return hits
 
 
-def _hard_risk_hits(text: str) -> list[str]:
+def _formula_dry_powder_ingestion_hits(text: str) -> list[str]:
+    hits: list[tuple[int, str]] = []
+    for pattern in FORMULA_DRY_POWDER_INGESTION_PATTERNS:
+        for match in pattern.finditer(text or ""):
+            hit = match.group(0).strip(" ，,。；;\n")
+            if hit:
+                hits.append((match.start(), hit))
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _wangyue_formula_usage_form_hits(text: str) -> list[str]:
+    hits: list[tuple[int, str]] = []
+    value = text or ""
+    for phrase in WANGYUE_FORMULA_USAGE_FORM_PHRASES:
+        start = 0
+        while True:
+            index = value.find(phrase, start)
+            if index < 0:
+                break
+            hits.append((index, phrase))
+            start = index + len(phrase)
+    for pattern in WANGYUE_FORMULA_USAGE_FORM_PATTERNS:
+        for match in pattern.finditer(value):
+            hit = match.group(0).strip(" ，,。；;\n")
+            if hit:
+                hits.append((match.start(), hit))
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _physical_action_carrier_mismatch_hits(text: str) -> list[str]:
+    """Find physically awkward action/carrier pairs, without banning ingredient talk."""
+    patterns = (
+        re.compile(
+            r"(?:旺玥|皇家美素佳儿旺玥)(?:的)?(?:杯子|水杯|保温杯|奶瓶)"
+        ),
+        re.compile(
+            r"(?:喝东西|喝的东西)[^。！？；;，,\r\n]{0,8}(?:袋子|包装袋)"
+        ),
+        re.compile(
+            r"(?:翻|翻看|翻到|翻了翻|顺手翻)[^。！？；;，,\r\n]{0,12}"
+            r"(?:那罐|这罐|一罐|奶粉罐|罐子|罐身|桌上那罐|手边那罐)[^。！？；;，,\r\n]{0,12}"
+            r"(?:配方表|成分表|营养表)"
+        ),
+        re.compile(
+            r"(?:那罐|这罐|一罐|奶粉罐|罐子|罐身|桌上那罐|手边那罐)[^。！？；;，,\r\n]{0,12}"
+            r"(?:配方表|成分表|营养表)[^。！？；;，,\r\n]{0,8}"
+            r"(?:翻|翻看|翻到|翻了翻)"
+        ),
+        re.compile(
+            r"(?:旺玥|奶粉|那罐|这罐|一罐|手边有罐|桌上有罐)[^。！？；;\r\n]{0,24}"
+            r"(?:拿起来|顺手拿起|拿起)[^。！？；;，,\r\n]{0,8}"
+            r"(?:翻|翻看|翻到|翻了翻)[^。！？；;，,\r\n]{0,8}"
+            r"(?:配方表|成分表|营养表)"
+        ),
+        re.compile(
+            r"(?:旺玥|奶粉|那罐|这罐|一罐|手边有罐|桌上有罐)[^。！？；;\r\n]{0,24}"
+            r"(?:拿起来|顺手拿起|拿起)[^。！？；;，,\r\n]{0,8}"
+            r"(?:看|扫|瞄)[^。！？；;，,\r\n]{0,8}"
+            r"(?:配方表|成分表|营养表)"
+        ),
+        re.compile(
+            r"(?:顺手)?(?:把|将)?(?:旺玥|皇家美素佳儿旺玥)[^。！？；;，,\r\n]{0,8}"
+            r"(?:递过去|递给(?:他|她|孩子|娃)|递到(?:他|她|孩子|娃)(?:手里|面前))"
+        ),
+    )
+    hits: list[tuple[int, str]] = []
+    for pattern in patterns:
+        for match in pattern.finditer(text or ""):
+            hit = match.group(0).strip(" ，,。；;\n")
+            if hit:
+                hits.append((match.start(), hit))
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _wangyue_product_fact_number_drift_hits(text: str) -> list[str]:
+    hits: list[tuple[int, str]] = []
+    value = text or ""
+    for pattern in WANGYUE_PRODUCT_FACT_NUMBER_PATTERNS:
+        for match in pattern.finditer(value):
+            hit = match.group(0).strip(" ，,。；;\n")
+            if hit:
+                hits.append((match.start(), hit))
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _wangyue_effect_scope_drift_hits(text: str, plan: dict[str, Any]) -> list[str]:
+    """Catch product effect drifting into sleep/rest when the row is not about sleep."""
+    context = " ".join(
+        str(plan.get(key) or "")
+        for key in ("painpoint", "selling_point", "selling_description", "story_spine", "scene_motive_bucket")
+    )
+    if any(marker in context for marker in ("睡眠", "睡觉", "入睡", "睡前")):
+        return []
+    hits: list[tuple[int, str]] = []
+    value = text or ""
+    for pattern in WANGYUE_SLEEP_EFFECT_SCOPE_PATTERNS:
+        for match in pattern.finditer(value):
+            hit = match.group(0).strip(" ，,。；;\n")
+            if hit:
+                hits.append((match.start(), hit))
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _wangyue_ingredient_benefit_mismatch_hits(text: str) -> list[str]:
+    hits: list[tuple[int, str]] = []
+    for pattern in WANGYUE_INGREDIENT_BENEFIT_MISMATCH_PATTERNS:
+        for match in pattern.finditer(text or ""):
+            hit = match.group(0).strip(" ，,。；;\n")
+            if hit:
+                hits.append((match.start(), hit))
+    value = text or ""
+    for ingredient in WANGYUE_PROTECTION_INGREDIENT_TERMS:
+        start = 0
+        while True:
+            ingredient_index = value.find(ingredient, start)
+            if ingredient_index < 0:
+                break
+            window_start = max(0, ingredient_index - 48)
+            window_end = min(len(value), ingredient_index + len(ingredient) + 64)
+            window = value[window_start:window_end]
+            if not any(bridge in window for bridge in WANGYUE_GROWTH_BRIDGE_TERMS):
+                for growth_term in WANGYUE_GROWTH_BODY_TERMS:
+                    if growth_term in window:
+                        hit = window.strip(" ，,。；;\n")
+                        if hit:
+                            hits.append((window_start, hit))
+                        break
+            start = ingredient_index + len(ingredient)
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _hard_risk_hits(text: str, *, is_wangyue: bool = False) -> list[str]:
     hits = _hits(text, HARD_RISK_PHRASES)
+    if is_wangyue:
+        hits = _merge_hits(
+            hits,
+            _hits(text, WANGYUE_META_AD_RISK_PHRASES),
+            _wangyue_temporary_remedy_chain_hits(text),
+            _wangyue_symptom_effect_proof_hits(text),
+        )
     if "临时补救" not in hits:
         return hits
     if re.search(r"(?:不是|不算|别写成|不能当|不要当|不靠).{0,8}临时补救", text):
         return [hit for hit in hits if hit != "临时补救"]
+    return hits
+
+
+def _wangyue_symptom_effect_proof_hits(text: str) -> list[str]:
+    """Catch symptom-disappearance proof framed as kid quotes or direct outcomes."""
+    patterns = (
+        re.compile(
+            r"(?:孩子|娃|他|她|小家伙)[^。！？；;\r\n]{0,18}"
+            r"(?:说|突然说|跟我说|念叨)[^。！？；;\r\n]{0,24}"
+            r"(?:没咳嗽|没怎么咳嗽|不咳嗽|没打喷嚏|没流鼻涕|没发烧|没感冒)"
+        ),
+        re.compile(
+            r"(?:我今天|今天我|这几天|这段时间)[^。！？；;\r\n]{0,12}"
+            r"(?:没咳嗽|没怎么咳嗽|不咳嗽|没打喷嚏|没流鼻涕|没发烧|没感冒)"
+        ),
+    )
+    hits: list[tuple[int, str]] = []
+    for pattern in patterns:
+        for match in pattern.finditer(text or ""):
+            hit = match.group(0).strip(" ，,。；;\n")
+            if hit:
+                hits.append((match.start(), f"症状效果证明：{hit}"))
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _wangyue_hidden_negative_comparison_hits(text: str) -> list[str]:
+    hits = _hits_prefer_longer(text, WANGYUE_HIDDEN_NEGATIVE_COMPARISON_PHRASES)
+    patterns = (
+        r"(?:价格|价位|预算)?比.{0,8}(?:普通牛奶粉|普通奶粉|普通牛奶|普通款).{0,8}(?:贵|高)",
+        r"(?:普通牛奶粉|普通奶粉|普通牛奶|普通款).{0,12}(?:贵|高)",
+        r"(?:价格|价位|预算).{0,8}(?:不是最低|不低|不算低|不便宜|不算便宜|偏高|略高|贵)",
+        r"(?:旺玥|这罐|这款|这个).{0,12}(?:贵|不便宜|不算便宜|偏高|略高)",
+        r"(?:贵|不便宜|肉疼).{0,8}(?:但|不过).{0,12}(?:值|认了|继续|能接受)",
+    )
+    for pattern in patterns:
+        hits = _merge_hits(hits, [match.group(0) for match in re.finditer(pattern, text)])
+    return hits
+
+
+def _scene_motive_drift_hits(text: str, plan: dict[str, Any]) -> list[str]:
+    post_type = str(plan.get("post_type") or "")
+    bucket = str(plan.get("scene_motive_bucket") or "")
+    if not bucket or not ("补货" in post_type or "清单" in post_type):
+        return []
+    hits: list[str] = []
+    if bucket != "库存盘点":
+        hits = _merge_hits(
+            hits,
+            _hits_prefer_longer(
+                text,
+                (
+                    "整理柜子",
+                    "翻柜子",
+                    "收纳柜",
+                    "厨房柜子",
+                    "柜子里",
+                    "放进柜子",
+                    "放柜子",
+                    "柜子",
+                    "购物清单",
+                ),
+            ),
+        )
+    if bucket not in {"库存盘点", "家人提醒快没了", "临出门发现某样东西没了"}:
+        hits = _merge_hits(
+            hits,
+            _hits_prefer_longer(
+                text,
+                ("快见底", "只剩半罐", "剩半罐", "小半罐", "快没了", "快空了", "见底", "半罐"),
+            ),
+        )
+    return hits
+
+
+def _is_product_permission_usage_record_plan(plan: dict[str, Any]) -> bool:
+    post_type = str(plan.get("post_type") or "")
+    product_mode = str(plan.get("product_appearance_mode") or "")
+    return bool(plan.get("product_action_surface")) and (
+        "使用记录" in post_type or "日常动作" in product_mode
+    )
+
+
+def _is_product_permission_inventory_plan(plan: dict[str, Any]) -> bool:
+    post_type = str(plan.get("post_type") or "")
+    product_mode = str(plan.get("product_appearance_mode") or "")
+    return "补货" in post_type or "清单" in post_type or "库存物件" in product_mode
+
+
+def _allows_stronger_wangyue_product_story(plan: dict[str, Any]) -> bool:
+    context = " ".join(
+        str(plan.get(key) or "")
+        for key in (
+            "post_type",
+            "ugc_post_type",
+            "product_appearance_mode",
+            "product_role",
+            "business_rule",
+            "life_trigger",
+            "scene_motive_bucket",
+        )
+    )
+    return any(
+        marker in context
+        for marker in (
+            "使用反馈",
+            "复购",
+            "长期",
+            "固定喝",
+            "效果复盘",
+            "效果证明",
+            "对比",
+            "选择",
+            "求问",
+            "踩坑",
+            "换用",
+            "预算",
+            "取舍",
+            "种草",
+            "产品关系",
+            "产品履历",
+            "家庭耗材",
+        )
+    )
+
+
+def _product_action_surface_hits(text: str, plan: dict[str, Any]) -> list[str]:
+    post_type = str(plan.get("post_type") or "")
+    product_mode = str(plan.get("product_appearance_mode") or "")
+    surface = str(plan.get("product_action_surface") or "")
+    if not surface:
+        return []
+    if "使用记录" not in post_type and "日常动作" not in product_mode:
+        return []
+    active_drinking = (
+        "自己端起来喝",
+        "自己端过去喝",
+        "端起来喝",
+        "端过去喝",
+        "端着杯子喝了两口",
+        "端着杯子喝两口",
+        "端过去喝了一口",
+        "端起旺玥",
+        "端着那杯旺玥",
+        "主动喝",
+        "喝两口",
+        "喝几口",
+        "喝了几口",
+        "咕咚几口",
+        "看了一眼了两口",
+        "看了一眼了几口",
+        "喝完",
+        "喝上了",
+        "喝上",
+        "抿了一口",
+        "喝一口",
+    )
+    brewing = (
+        "顺手冲了杯",
+        "顺手冲一杯",
+        "冲了杯旺玥",
+        "冲一杯旺玥",
+        "给他冲了杯",
+        "给他冲一杯",
+        "弄一杯旺玥",
+        "泡了一杯旺玥",
+    )
+    planned_drinking = (
+        "喊他喝",
+        "叫他喝",
+        "让他喝",
+        "提醒他喝",
+        "想起来要喝",
+        "要喝又找不到",
+        "冲好拿",
+        "冲好带",
+    )
+    if surface in {"物件在场", "妈妈顺手挪放"}:
+        return _merge_hits(
+            _hits_prefer_longer(text, active_drinking),
+            _hits_prefer_longer(text, brewing),
+            _hits_prefer_longer(text, planned_drinking),
+        )
+    if surface == "孩子轻微使用":
+        return _merge_hits(
+            _hits_prefer_longer(
+                text,
+                (
+                    "自己端起来喝",
+                    "自己端过去喝",
+                    "端起来喝两口",
+                    "端过去喝几口",
+                    "喝两口",
+                    "喝几口",
+                    "喝了几口",
+                    "喝完",
+                    "喝上了",
+                ),
+            ),
+            _hits_prefer_longer(text, brewing),
+        )
+    return []
+
+
+def _product_effect_proof_chain_hits(text: str, plan: dict[str, Any]) -> dict[str, list[str]]:
+    if not _is_wangyue_plan(plan):
+        return {}
+    if not any(term in text for term in ("旺玥", "皇家美素佳儿", "儿童奶粉", "奶粉")):
+        return {}
+    hits = {
+        part: _hits_prefer_longer(text, phrases)
+        for part, phrases in PRODUCT_EFFECT_PROOF_CHAIN_PARTS.items()
+        if _hits_prefer_longer(text, phrases)
+    }
+    if "product_action" not in hits:
+        return {}
+    if "caregiver_closure" in hits and (
+        "effect_observation" in hits or "kid_acceptance" in hits
+    ):
+        return hits
+    if "kid_acceptance" in hits and "effect_observation" in hits:
+        return hits
+    return {}
+
+
+def _decision_chain_hits(text: str, plan: dict[str, Any]) -> dict[str, list[str]]:
+    if not _is_wangyue_painpoint_selling_plan(plan):
+        return {}
+    hits = {
+        part: _hits_prefer_longer(text, phrases)
+        for part, phrases in DECISION_CHAIN_PARTS.items()
+        if _hits_prefer_longer(text, phrases)
+    }
+    if len(hits) <= _decision_chain_limit(plan):
+        return {}
+    return hits
+
+
+def _decision_chain_limit(plan: dict[str, Any]) -> int:
+    marker_text = " ".join(
+        str(plan.get(key) or "")
+        for key in ("ugc_post_type", "post_type", "product_appearance_mode", "business_rule")
+    )
+    for marker, limit in DECISION_CHAIN_LIMITS_BY_TYPE:
+        if marker in marker_text:
+            return limit
+    return 3
+
+
+def _ugc_post_type_drift_hits(text: str, plan: dict[str, Any]) -> list[str]:
+    if str(plan.get("ugc_post_type") or "") != "轻复盘型":
+        return []
+    return _hits_prefer_longer(
+        text,
+        (
+            "想问问大家",
+            "想问下大家",
+            "想听听大家",
+            "问问大家",
+            "听听大家",
+            "大家怎么判断",
+            "大家一般怎么判断",
+            "怎么安排的",
+            "怎么安排",
+            "有同样情况",
+            "求经验",
+            "来聊聊",
+            "怎么判断继续还是停",
+            "要不要继续",
+            "要不要留",
+            "该继续囤",
+            "继续囤",
+            "再看别的",
+            "轻复盘",
+        ),
+    )
+
+
+def _wangyue_temporary_remedy_chain_hits(text: str) -> list[str]:
+    symptom_pattern = re.compile(
+        r"(?:哈啾|打喷嚏|喷嚏|流鼻涕|咳嗽|不舒服|发烧|发热|发烫|低烧|感冒|生病|闹肚子|肚子不舒服|小喷嚏不断|喷嚏不断|小脸红|手心[^。！？；;]{0,6}热)"
+    )
+    remedy_pattern = re.compile(
+        r"(?:"
+        r"(?:旺玥|皇家美素佳儿旺玥)[^。！？；;]{0,18}(?:换上|换上了|换成|换成了|换了|选了|安排上|安排上了|补上|补上了|补一杯|喝上|喝上了)|"
+        r"(?:选了|换成|换成了|换了|安排上|安排上了|补上|补上了|喝上|喝上了)[^。！？；;]{0,18}(?:旺玥|皇家美素佳儿旺玥)|"
+        r"(?:把|给|帮)[^。！？；;]{0,24}(?:旺玥|皇家美素佳儿旺玥)[^。！？；;]{0,18}(?:换上|换上了|换成|换成了|换了|选了|安排上|安排上了|补上|补上了|补一杯|喝上|喝上了)|"
+        r"(?:把|给|帮)[^。！？；;]{0,24}(?:奶粉|牛奶|儿童奶粉)[^。！？；;]{0,18}(?:换上|换上了|换成|换成了|换了|选了)[^。！？；;]{0,18}(?:旺玥|皇家美素佳儿旺玥)|"
+        r"(?:赶紧|赶快|立马|马上|回家|回来|才)[^。！？；;]{0,28}(?:旺玥|皇家美素佳儿旺玥)|"
+        r"(?:赶紧|赶快|立马|马上|回家|回来|才)[^。！？；;]{0,18}(?:喝|泡|冲|补|安排|换)[^。！？；;]{0,18}(?:旺玥|皇家美素佳儿旺玥)"
+        r")"
+    )
+    hits: list[str] = []
+    for remedy_match in remedy_pattern.finditer(text):
+        start = max(0, remedy_match.start() - 160)
+        end = min(len(text), remedy_match.end() + 80)
+        window = text[start:end]
+        symptom_match = symptom_pattern.search(window)
+        if not symptom_match:
+            continue
+        symptom_start = start + symptom_match.start()
+        evidence_start = min(symptom_start, remedy_match.start())
+        sentence_start = max(
+            text.rfind("。", 0, evidence_start),
+            text.rfind("！", 0, evidence_start),
+            text.rfind("？", 0, evidence_start),
+            text.rfind("；", 0, evidence_start),
+            text.rfind(";", 0, evidence_start),
+        )
+        hit_start = start if sentence_start < start else sentence_start + 1
+        sentence_end_candidates = [
+            pos for pos in (
+                text.find("。", remedy_match.end()),
+                text.find("！", remedy_match.end()),
+                text.find("？", remedy_match.end()),
+                text.find("；", remedy_match.end()),
+                text.find(";", remedy_match.end()),
+            )
+            if pos != -1
+        ]
+        hit_end = min(sentence_end_candidates) if sentence_end_candidates else end
+        hit = text[hit_start:hit_end].strip(" ，,。；;")
+        if hit and hit not in hits:
+            hits.append(hit)
     return hits
 
 
@@ -1911,6 +3376,16 @@ def _wangyue_row2_drinking_action_regex_hits(text: str) -> list[str]:
     return hits
 
 
+def _wangyue_child_product_promo_regex_hits(text: str) -> list[str]:
+    hits: list[str] = []
+    for pattern in WANGYUE_CHILD_PRODUCT_PROMO_PATTERNS:
+        for match in pattern.finditer(text):
+            hit = match.group(0).strip(" ，,。；;")
+            if hit and hit not in hits:
+                hits.append(hit)
+    return hits
+
+
 def _child_self_brewing_regex_hits(text: str) -> list[str]:
     hits: list[str] = []
     for pattern in CHILD_SELF_BREWING_PATTERNS:
@@ -1921,19 +3396,153 @@ def _child_self_brewing_regex_hits(text: str) -> list[str]:
     return hits
 
 
+def _wangyue_portable_form_regex_hits(text: str) -> list[str]:
+    hits: list[str] = []
+    for pattern in WANGYUE_PORTABLE_FORM_PATTERNS:
+        for match in pattern.finditer(text):
+            hit = match.group(0).strip(" ，,。；;")
+            if hit and hit not in hits:
+                hits.append(hit)
+            for term in WANGYUE_PORTABLE_CONTEXT_TERMS:
+                if term in hit and term not in hits:
+                    hits.append(term)
+    return hits
+
+
+def _wangyue_supplement_replacement_hits(text: str) -> list[str]:
+    hits: list[str] = []
+    for pattern in WANGYUE_SUPPLEMENT_REPLACEMENT_PATTERNS:
+        for match in pattern.finditer(text):
+            hit = match.group(0).strip(" ，,。；;")
+            if hit and hit not in hits:
+                hits.append(hit)
+    return hits
+
+
 def _wangyue_explicit_age_regex_hits(text: str) -> list[str]:
     hits: list[str] = []
-    age_token = r"(?:[1-9]\d?|[一二三四五六七八九十两])\s*[岁歲](?:多|半|后)?"
+    age_token = r"(?:[1-9]\d?|[一二三四五六七八九十两])\s*[岁歲](?:多|半|后|前|以前|以后)?"
     patterns = (
+        re.compile(r"(?:不到|未满)\s*(?:三|3)\s*[岁歲]"),
         re.compile(rf"(?:宝宝|娃|孩子|小孩|男孩|女孩|儿子|女儿|闺女)?{age_token}(?:宝宝|娃|孩子|儿童)?"),
-        re.compile(r"(?:几岁|幾歲)(?:宝宝|娃|孩子|儿童)?"),
     )
     for pattern in patterns:
         for match in pattern.finditer(text):
             hit = match.group(0).strip()
             if hit and hit not in hits:
                 hits.append(hit)
+    for hit in _wangyue_under_three_month_age_hits(text):
+        if hit not in hits:
+            hits.append(hit)
     return hits
+
+
+def _wangyue_under_three_month_age_hits(text: str) -> list[str]:
+    hits: list[str] = []
+    pattern = re.compile(r"([0-9]{1,2}|[一二两三四五六七八九十]{1,4})\s*个?多?月")
+    child_terms = ("宝宝", "娃", "孩子", "小孩", "男孩", "女孩", "儿子", "女儿", "闺女")
+    age_context_terms = (*child_terms, "月龄", "断奶", "辅食", "大了", "大", "龄")
+    duration_prefixes = ("喝了", "用了", "补了", "吃了", "试了", "买了", "囤了", "过了", "这", "上", "前", "最近")
+    for match in pattern.finditer(text):
+        months = _parse_age_month_value(match.group(1))
+        if months is None or months >= 36:
+            continue
+        start, end = match.span()
+        before = text[max(0, start - 4) : start]
+        if any(before.endswith(prefix) for prefix in duration_prefixes):
+            continue
+        window = text[max(0, start - 8) : min(len(text), end + 10)]
+        if not any(term in window for term in age_context_terms):
+            continue
+        hit = match.group(0).strip()
+        if hit and hit not in hits:
+            hits.append(hit)
+    return hits
+
+
+def _parse_age_month_value(value: str) -> int | None:
+    value = str(value or "").strip()
+    if not value:
+        return None
+    if value.isdigit():
+        return int(value)
+    digits = {
+        "一": 1,
+        "二": 2,
+        "两": 2,
+        "三": 3,
+        "四": 4,
+        "五": 5,
+        "六": 6,
+        "七": 7,
+        "八": 8,
+        "九": 9,
+    }
+    if value == "十":
+        return 10
+    if "十" in value:
+        left, _, right = value.partition("十")
+        tens = digits.get(left, 1) if left else 1
+        ones = digits.get(right, 0) if right else 0
+        return tens * 10 + ones
+    return digits.get(value)
+
+
+def _filter_allowed_wangyue_age_hits(hits: list[str], *, text: str, plan: dict[str, Any]) -> list[str]:
+    if not hits:
+        return []
+    context = f"{text} {plan.get('corpus') or ''} {plan.get('life_trigger') or ''} {plan.get('business_rule') or ''}"
+    allowed_context = any(
+        marker in context
+        for marker in (
+            "3岁以上",
+            "三岁以上",
+            "3周岁以上",
+            "三周岁以上",
+            "3-6岁",
+            "3～6岁",
+            "3到6岁",
+            "学龄前",
+            "4段",
+            "四段",
+        )
+    )
+    filtered: list[str] = []
+    for hit in hits:
+        if _is_allowed_wangyue_three_plus_context_hit(hit, text=context):
+            continue
+        if _is_allowed_wangyue_target_age_hit(hit, allowed_context=allowed_context):
+            continue
+        filtered.append(hit)
+    return filtered
+
+
+def _is_allowed_wangyue_three_plus_context_hit(hit: str, *, text: str) -> bool:
+    normalized = str(hit or "").replace("歲", "岁")
+    if any(term in normalized for term in ("三岁半", "3岁半", "三岁多", "3岁多", "四岁", "4岁", "五岁", "5岁", "六岁", "6岁")):
+        return True
+    if normalized not in {"三岁", "3岁"}:
+        return False
+    return bool(
+        re.search(r"(?:三|3)\s*岁\s*(?:半|多|后|以后|以上)", text)
+        or re.search(r"过了\s*(?:三|3)\s*岁", text)
+        or re.search(r"(?:刚满|满了|满|到了|到|一进)\s*(?:三|3)\s*岁", text)
+    )
+
+
+def _is_allowed_wangyue_target_age_hit(hit: str, *, allowed_context: bool) -> bool:
+    normalized = str(hit or "").replace("歲", "岁")
+    if any(term in normalized for term in ("断奶", "辅食", "半岁", "一岁", "1岁", "两岁", "二岁", "2岁", "个月", "个多月")):
+        return False
+    if any(term in normalized for term in ("三岁前", "3岁前", "三岁以前", "3岁以前", "不到三岁", "不到3岁", "未满三岁", "未满3岁")):
+        return False
+    if any(term in normalized for term in ("七岁", "7岁", "八岁", "8岁", "九岁", "9岁")):
+        return False
+    if any(term in normalized for term in ("三岁后", "3岁后", "三岁以后", "3岁以后")):
+        return True
+    if any(term in normalized for term in ("三岁", "3岁", "四岁", "4岁", "五岁", "5岁", "六岁", "6岁")):
+        return allowed_context
+    return False
 
 
 def _long_unpunctuated_segment_hits(text: str, *, threshold: int = 90) -> list[str]:
@@ -1948,12 +3557,52 @@ def _long_unpunctuated_segment_hits(text: str, *, threshold: int = 90) -> list[s
 def _malformed_fragment_hits(text: str) -> list[str]:
     text = str(text or "")
     hits: list[str] = []
+    if re.search(r'["“](?:title|body)["”]\s*[:：]', text, flags=re.IGNORECASE):
+        hits.append("JSON字段残留")
+    if text.lstrip().startswith(("{", "[")):
+        hits.append("JSON结构残留")
+    if "```json" in text or "```" in text:
+        hits.append("Markdown代码块残留")
     if text.count("“") != text.count("”"):
         hits.append("中文引号不成对")
     if text.count("「") != text.count("」"):
         hits.append("中文引号不成对")
     if "中文引号不成对" in hits and re.search(r"[“「][^”」。！？；;]{18,}[。！？；;]", text):
         hits.append("半截对话")
+    if "没看了一眼" in text:
+        hits.append("没看了一眼")
+    for phrase in (
+        "家里挺旺玥",
+        "完营养",
+        "得挺利索",
+        "现在，日常营养",
+        "现在,日常营养",
+        "娃快孩子了",
+        "娃快孩子",
+        "孩子快孩子了",
+        "孩子快孩子",
+        "娃刚满孩子",
+        "孩子刚满孩子",
+        "孩子半娃",
+        "娃半娃",
+        "娃快这个阶段了",
+        "孩子快这个阶段了",
+        "就是着",
+        "跟着时候",
+        "时候小变化",
+    ):
+        if phrase in text:
+            hits.append(phrase)
+    for match in re.finditer(r"(?:^|[，,。.!！？?；;\n\r])(得挺顺)", text):
+        hits.append(match.group(1))
+    tail = text.rstrip(" ，,。.!！？?；;\n\r")
+    tail_match = re.search(
+        r"(?:^|[，,。.!！？?；;\n\r])([^，,。.!！？?；;\n\r]{0,16}"
+        r"(?:暂时|主要|主要是|因为|但是|不过|而且|所以|然后|只是|可能|感觉|其实|比如|就是|也算))$",
+        tail,
+    )
+    if tail_match:
+        hits.append(f"尾部残句：{tail_match.group(1)}")
     return hits
 
 
@@ -1964,17 +3613,228 @@ def _has_state_template_pattern(state_hits: list[str], ai_hits: list[str]) -> bo
     return bool(state_hits and closure_hits.intersection(ai_hits))
 
 
+def _allows_wangyue_eye_brain_selection_context(plan: dict[str, Any]) -> bool:
+    if not _is_wangyue_plan(plan):
+        return False
+    context = " ".join(
+        str(plan.get(key) or "")
+        for key in (
+            "painpoint",
+            "post_type",
+            "ugc_post_type",
+            "product_role",
+            "business_rule",
+            "topic",
+            "corpus",
+        )
+    )
+    return "注意力不集中" in context or ("眼脑" in context and "选择" in context)
+
+
+def _allows_wangyue_purchase_action_context(plan: dict[str, Any]) -> bool:
+    if not _is_wangyue_plan(plan):
+        return False
+    context = _wangyue_plan_context(plan)
+    return any(
+        marker in context
+        for marker in (
+            "选奶",
+            "选择",
+            "对比",
+            "复购",
+            "补货",
+            "囤货",
+            "清单",
+            "库存",
+            "预算",
+            "取舍",
+            "购物车",
+            "下单",
+        )
+    )
+
+
+def _allows_wangyue_sensory_experience_context(plan: dict[str, Any]) -> bool:
+    if not _is_wangyue_plan(plan):
+        return False
+    context = _wangyue_plan_context(plan)
+    return any(
+        marker in context
+        for marker in (
+            "选奶",
+            "选择",
+            "对比",
+            "使用反馈",
+            "轻测评",
+            "测评",
+            "复购",
+            "长期",
+            "固定喝",
+            "口感",
+            "接受度",
+            "产品履历",
+        )
+    )
+
+
+def _wangyue_plan_context(plan: dict[str, Any]) -> str:
+    return " ".join(
+        str(plan.get(key) or "")
+        for key in (
+            "painpoint",
+            "post_type",
+            "ugc_post_type",
+            "product_appearance_mode",
+            "product_role",
+            "business_rule",
+            "topic",
+            "life_trigger",
+            "scene_motive_bucket",
+            "corpus",
+        )
+    )
+
+
+def _wangyue_eye_health_product_link_hits(text: str) -> list[str]:
+    sentences = [part.strip() for part in re.split(r"[。！？!?；;\n]", str(text or "")) if part.strip()]
+    product_markers = (
+        "旺玥",
+        "皇家美素佳儿",
+        "选奶",
+        "儿童奶粉",
+        "奶粉",
+        "DHA",
+        "燕窝酸",
+        "眼脑营养",
+        "眼脑",
+        "配方",
+        "口粮",
+        "它",
+        "这款",
+        "这罐",
+        "里面",
+        "冲出来",
+        "奶香",
+        "粉质",
+    )
+    eye_health_terms = (
+        "近视",
+        "视力",
+        "护眼",
+        "用眼过渡",
+        "用眼过度",
+        "眼睛有点累",
+        "眼睛累",
+        "眼睛酸",
+        "眼睛不酸了",
+        "眼睛不酸",
+        "揉眼睛",
+        "眼睛都快冒星星",
+        "眼睛还亮亮",
+        "眼睛亮亮",
+    )
+    hits: list[str] = []
+    for sentence in sentences:
+        if not any(marker in sentence for marker in product_markers):
+            continue
+        hits.extend(term for term in eye_health_terms if term in sentence)
+    return _merge_hits(hits)
+
+
+def _wangyue_selling_point_drift_hits(text: str, plan: dict[str, Any]) -> list[str]:
+    if not any(term in text for term in ("旺玥", "皇家美素佳儿")):
+        return []
+    selling_context = _wangyue_primary_selling_context(plan) or _wangyue_selling_context(plan)
+    hits: list[str] = []
+    if "眼脑" in selling_context:
+        expected_terms = ("DHA", "燕窝酸", "眼脑", "用眼用脑", "用脑", "桌面时间")
+        if not any(term in text for term in expected_terms):
+            hits.append("眼脑营养缺失")
+            hits.extend(term for term in ("日常营养", "支持成长", "阶段营养", "成长营养", "保护力") if term in text)
+    elif any(term in selling_context for term in ("钙铁锌", "营养丰富", "日常营养配置", "整体营养配置", "营养配置", "日常营养", "营养不足", "成长发育需求", "同品牌延续")):
+        expected_terms = ("钙铁锌", "日常营养", "营养配置", "营养", "阶段", "同品牌", "续过来", "延续", "4段")
+        if not any(term in text for term in expected_terms):
+            hits.append("日常营养配置缺失")
+            hits.extend(term for term in ("保护力", "眼脑", "DHA", "燕窝酸") if term in text)
+    elif "保护力" in selling_context:
+        expected_terms = ("保护力", "乳铁蛋白", "HMO", "免疫球蛋白")
+        if not any(term in text for term in expected_terms):
+            hits.append("保护力营养缺失")
+            hits.extend(term for term in ("日常营养", "眼脑", "DHA", "燕窝酸", "支持成长") if term in text)
+    elif "4段" in selling_context or "阶段营养" in selling_context:
+        expected_terms = ("3岁", "三岁", "3周岁", "三周岁", "3-6", "4段", "学龄前", "阶段")
+        if not any(term in text for term in expected_terms):
+            hits.append("4段阶段营养缺失")
+            hits.extend(term for term in ("日常营养", "保护力", "眼脑", "DHA", "燕窝酸") if term in text)
+    return _merge_hits(hits)
+
+
+def _wangyue_primary_selling_context(plan: dict[str, Any]) -> str:
+    """Use structured intent first; display labels can contain stale kernel names."""
+    parts: list[str] = []
+    for source in (plan, plan.get("business_rule") if isinstance(plan.get("business_rule"), dict) else {}):
+        for key in ("selling_point", "painpoint"):
+            value = source.get(key) if isinstance(source, dict) else None
+            if isinstance(value, str) and value.strip():
+                parts.append(value.strip())
+    return " ".join(parts)
+
+
+def _wangyue_selling_context(plan: dict[str, Any]) -> str:
+    """Read only planner intent fields; avoid treating full rule corpus as selling context."""
+    parts: list[str] = []
+    for key in ("selling_point", "product_role", "product_appearance_mode", "topic", "rule_name"):
+        value = plan.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+
+    business_rule = plan.get("business_rule")
+    if isinstance(business_rule, dict):
+        for key in (
+            "selling_point",
+            "product_role",
+            "product_appearance_mode",
+            "topic",
+            "business_rule",
+            "painpoint",
+            "post_type",
+            "ugc_post_type",
+        ):
+            value = business_rule.get(key)
+            if isinstance(value, str):
+                parts.append(value)
+    elif isinstance(business_rule, str):
+        parts.append(business_rule)
+
+    if not parts:
+        corpus = plan.get("corpus")
+        if isinstance(corpus, str):
+            parts.append(corpus)
+    return " ".join(parts)
+
+
 def _is_wangyue_plan(plan: dict[str, Any]) -> bool:
     corpus = str(plan.get("corpus") or "")
     return str(plan.get("asset_key") or "").startswith("wangyue_") or "旺玥" in corpus
 
 
+def _is_wangyue_painpoint_selling_plan(plan: dict[str, Any]) -> bool:
+    if not _is_wangyue_plan(plan):
+        return False
+    asset_key = str(plan.get("asset_key") or "")
+    corpus = str(plan.get("corpus") or "")
+    return asset_key.startswith("wangyue_painpoint_selling_posttype_matrix") or (
+        "0705旺玥活动" in corpus and "核心痛点" in corpus and "卖点方向" in corpus
+    )
+
+
 def _is_wangyue_growth_nutrition_plan(plan: dict[str, Any]) -> bool:
     if not _is_wangyue_plan(plan):
         return False
+    asset_key = str(plan.get("asset_key") or "")
     row_no = plan.get("source_row_no")
     try:
-        if row_no is not None and int(row_no) == 4:
+        if asset_key == "wangyue_article_business_rules" and row_no is not None and int(row_no) == 4:
             return True
     except (TypeError, ValueError):
         pass
@@ -1991,6 +3851,10 @@ def _is_wangyue_growth_nutrition_plan(plan: dict[str, Any]) -> bool:
 
 def _is_wangyue_row2_energy_plan(plan: dict[str, Any]) -> bool:
     if not _is_wangyue_plan(plan):
+        return False
+    post_type = str(plan.get("post_type") or "")
+    product_appearance_mode = str(plan.get("product_appearance_mode") or "")
+    if post_type or product_appearance_mode:
         return False
     row_no = plan.get("source_row_no")
     try:

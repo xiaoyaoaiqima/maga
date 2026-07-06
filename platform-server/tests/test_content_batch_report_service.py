@@ -15,7 +15,10 @@ from app.models.content_agent import (
     ContentFeedback,
 )
 from app.models.maga_assets import AssetRegistry
-from app.services.content_batch_report_service import ContentBatchReportService
+from app.services.content_batch_report_service import (
+    ContentBatchReportService,
+    _article_pool_item_exportable,
+)
 from app.schemas.content_batch_report import ContentBatchReportItem
 
 
@@ -57,18 +60,98 @@ def test_summary_reports_repeated_closure_clusters_only_near_body_end():
             body="先这么观察着，后面应该还会继续喝。",
             body_chars=18,
         ),
+        ContentBatchReportItem(
+            item_id=6,
+            item_no=6,
+            status="generated",
+            body="队友说当初选得还行，我也觉得判断没错。",
+            body_chars=20,
+        ),
     ]
 
     stats = service._summary(items).closure_cluster_stats
     clusters = {cluster["cluster_code"]: cluster for cluster in stats["clusters"]}
 
-    assert stats["total_checked"] == 5
-    assert stats["closing_hit_count"] == 4
+    assert stats["total_checked"] == 6
+    assert stats["closing_hit_count"] == 5
     assert clusters["peace_of_mind"]["count"] == 2
     assert clusters["peace_of_mind"]["warning"] is True
     assert [hit["item_no"] for hit in clusters["peace_of_mind"]["hits"]] == [2, 3]
     assert clusters["worth_it"]["count"] == 1
     assert clusters["keep_drinking"]["count"] == 1
+    assert clusters["right_choice"]["count"] == 1
+    assert clusters["right_choice"]["hits"][0]["phrases"] == ["判断没错", "选得还行"]
+
+
+def test_article_pool_export_uses_final_postprocess_state():
+    item = ContentBatchReportItem(
+        item_id=1,
+        item_no=1,
+        status="generated",
+        title="日常记录",
+        body="正文",
+        hard_pass=True,
+        rewrite_required=False,
+        quality={
+            "hard_pass": True,
+            "review_report": {"rewrite_required": False},
+            "product_experience_llm_quality_failures": [
+                {"error_message": "LLM review did not return a JSON object"}
+            ],
+        },
+    )
+
+    assert _article_pool_item_exportable(item) is False
+
+
+def test_article_pool_export_allows_wangyue_v2_llm_review_unavailable_mark_only():
+    item = ContentBatchReportItem(
+        item_id=1,
+        item_no=1,
+        status="generated",
+        title="日常记录",
+        body="正文",
+        hard_pass=True,
+        rewrite_required=False,
+        quality={
+            "hard_pass": True,
+            "review_report": {"rewrite_required": False},
+            "product_experience_llm_quality_review_unavailable_mark_only": True,
+            "product_experience_llm_quality_failures": [
+                {"error_message": "LLM review did not return a JSON object"}
+            ],
+        },
+    )
+
+    assert _article_pool_item_exportable(item) is True
+
+
+def test_article_pool_export_allows_mark_only_phrase_review():
+    item = ContentBatchReportItem(
+        item_id=1,
+        item_no=1,
+        status="generated",
+        title="日常记录",
+        body="正文",
+        hard_pass=True,
+        rewrite_required=False,
+        quality={
+            "hard_pass": True,
+            "review_report": {"rewrite_required": False},
+            "product_experience_phrase_guard": {
+                "pass": False,
+                "rewrite_required": True,
+                "mark_rewrite_required": False,
+                "reasons": ["wangyue_article_logic_drift_context"],
+            },
+            "product_experience_llm_quality_review": {
+                "pass": True,
+                "rewrite_required": False,
+            },
+        },
+    )
+
+    assert _article_pool_item_exportable(item) is True
 
 
 def test_summary_reports_complete_content_path_skeleton():
@@ -390,7 +473,7 @@ async def test_report_marks_rewrite_required_item_as_not_hard_pass():
         await session.commit()
 
     async with session_factory() as session:
-        report = await ContentBatchReportService(session).get_batch_report(job.id)
+        report = await ContentBatchReportService(session).get_batch_report(job.id, include_details=True)
 
     assert report.items[0].hard_pass is False
     assert report.items[0].rewrite_required is True
@@ -398,6 +481,98 @@ async def test_report_marks_rewrite_required_item_as_not_hard_pass():
     assert report.summary.remaining_rewrite_required_count == 1
 
     await engine.dispose()
+
+
+def test_report_surfaces_business_usability_tier_from_llm_quality_review():
+    service = ContentBatchReportService(db=None)
+    item = ContentBatchItem(
+        id=1,
+        batch_id=1,
+        item_no=1,
+        status="generated",
+        title="最近喝奶这事",
+        body="家里旺玥一直在喝，孩子这阵状态挺稳。",
+        quality_json={
+            "hard_pass": True,
+            "review_report": {"rewrite_required": False},
+            "product_experience_llm_quality_review": {
+                "business_usability_tier": "light_fix_usable",
+                "business_usability_reason": "标题一般但种草内核成立",
+            },
+        },
+    )
+
+    report_item = service._report_item(item, [], include_details=False)
+    summary = service._summary([report_item])
+
+    assert report_item.business_usability_tier == "light_fix_usable"
+    assert report_item.business_usability_reason == "标题一般但种草内核成立"
+    assert summary.business_usability_stats == {
+        "counts": {"direct_pool": 0, "light_fix_usable": 1, "hold_out": 0},
+        "item_nos_by_tier": {"light_fix_usable": [1]},
+    }
+    assert report_item.quality["product_experience_llm_quality_review"]["business_usability_tier"] == "light_fix_usable"
+
+
+def test_business_usability_stats_excludes_final_postprocess_failures():
+    service = ContentBatchReportService(db=None)
+    items = [
+        ContentBatchReportItem(
+            item_id=1,
+            item_no=1,
+            status="generated",
+            title="可用",
+            body="家里旺玥一直在喝，孩子状态挺稳。",
+            hard_pass=True,
+            rewrite_required=False,
+            business_usability_tier="direct_pool",
+            quality={
+                "hard_pass": True,
+                "review_report": {"rewrite_required": False},
+                "product_experience_llm_quality_review": {
+                    "pass": True,
+                    "rewrite_required": False,
+                    "business_usability_tier": "direct_pool",
+                },
+            },
+        ),
+        ContentBatchReportItem(
+            item_id=2,
+            item_no=2,
+            status="generated",
+            title="禁词未清",
+            body="担心体质跟不上，后来选了旺玥。",
+            hard_pass=False,
+            rewrite_required=True,
+            rewrite_reason="业务规则口癖骨架或长度仍需人工处理",
+            business_usability_tier="direct_pool",
+            quality={
+                "hard_pass": True,
+                "review_report": {
+                    "rewrite_required": True,
+                    "rewrite_reason": "业务规则口癖骨架或长度仍需人工处理",
+                },
+                "product_experience_llm_quality_review": {
+                    "pass": True,
+                    "rewrite_required": False,
+                    "business_usability_tier": "direct_pool",
+                },
+            },
+        ),
+    ]
+
+    stats = service._summary(items).business_usability_stats
+
+    assert stats["counts"]["direct_pool"] == 1
+    assert stats["item_nos_by_tier"]["direct_pool"] == [1]
+    assert stats["excluded_by_final_postprocess"] == [
+        {
+            "item_no": 2,
+            "business_usability_tier": "direct_pool",
+            "rewrite_reason": "业务规则口癖骨架或长度仍需人工处理",
+            "reasons": ["业务规则口癖骨架或长度仍需人工处理"],
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -591,7 +766,7 @@ async def test_batch_report_returns_operator_summary_items_and_runtime_artifacts
         )
         await session.commit()
 
-        report = await ContentBatchReportService(session).get_batch_report(job.id)
+        report = await ContentBatchReportService(session).get_batch_report(job.id, include_details=True)
 
     assert report.batch_id == job.id
     assert report.batch_code == "batch_report_test"

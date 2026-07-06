@@ -102,7 +102,7 @@ class SystemPromptKeywordAssetResponse(BaseModel):
 
 class SystemPromptKeywordUpdate(BaseModel):
     asset_key: str = Field(default="default_content_generation_keywords", min_length=1)
-    display_name: str | None = "系统提示词关键词"
+    display_name: str | None = "表达扩散语料"
     selection_policy: dict[str, Any] | None = None
     categories: list[dict[str, Any]] = Field(default_factory=list)
     created_by: str | None = "maga-operator"

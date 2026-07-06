@@ -187,8 +187,8 @@ class ContentGenerationPreflightService:
             checks.append(
                 _fail(
                     "system_keywords",
-                    "系统提示词关键词",
-                    "没有可用于当前内容类型的启用关键词语料。",
+                    "表达扩散语料",
+                    "没有可用于当前内容类型的启用表达扩散语料。",
                     detail,
                 )
             )
@@ -196,8 +196,8 @@ class ContentGenerationPreflightService:
             checks.append(
                 _warning(
                     "system_keywords",
-                    "系统提示词关键词",
-                    "未保存正式关键词资产，本次会使用系统内置种子。",
+                    "表达扩散语料",
+                    "未保存正式表达扩散语料资产，本次会使用系统内置种子。",
                     detail,
                 )
             )
@@ -205,8 +205,8 @@ class ContentGenerationPreflightService:
             checks.append(
                 _pass(
                     "system_keywords",
-                    "系统提示词关键词",
-                    f"可自动选择 {len(selected)} 类关键词。",
+                    "表达扩散语料",
+                    f"可自动选择 {len(selected)} 类表达扩散语料。",
                     detail,
                 )
             )

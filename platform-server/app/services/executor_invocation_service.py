@@ -229,6 +229,27 @@ def _mock_unified_content_generation(input_payload: dict[str, Any]) -> dict[str,
     target = business_rule.get("target_audience") or "妈妈"
     persona = _selected_keyword_name(selected, "persona") or "真实妈妈"
     method = _selected_keyword_name(selected, "writing_method") or "自然表达"
+    multi_output_count = _mock_article_multi_output_count(input_payload)
+    if multi_output_count > 1:
+        items = [
+            {
+                "title": f"{topic}，{persona}的真实分享{i}",
+                "body": (
+                    f"围绕{topic}，写给{target}，第{i}篇用{persona}的口吻承接业务规则，"
+                    f"再用{method}把具体感受讲清楚。整体表达保持自然克制。"
+                ),
+            }
+            for i in range(1, multi_output_count + 1)
+        ]
+        return {
+            "items": items,
+            "runtime_result": {
+                "mode": "content_fake",
+                "fake": True,
+                "reason": "mock_executor",
+                "expert_config_code": ((input_payload.get("expert") or {}).get("expert_config_code")),
+            },
+        }
     return {
         "title": f"{topic}，{persona}的真实分享",
         "body": f"围绕{topic}，写给{target}，用{persona}的口吻承接业务规则，再用{method}把具体感受讲清楚。整体表达保持自然克制，不夸大、不照搬示例。",
@@ -239,6 +260,22 @@ def _mock_unified_content_generation(input_payload: dict[str, Any]) -> dict[str,
             "expert_config_code": ((input_payload.get("expert") or {}).get("expert_config_code")),
         },
     }
+
+
+def _mock_article_multi_output_count(input_payload: dict[str, Any]) -> int:
+    business_rule = input_payload.get("business_rule") or {}
+    for key in ("multi_output_count", "article_output_count", "items_per_prompt"):
+        try:
+            value = int(business_rule.get(key) or input_payload.get(key) or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if value > 1:
+            return max(1, min(value, 2))
+    rendered_prompt = str(input_payload.get("rendered_prompt") or "")
+    match = re.search(r"一次生成\s*(\\d+)\\s*篇", rendered_prompt)
+    if match:
+        return max(1, min(int(match.group(1)), 2))
+    return 1
 
 
 def _mock_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:
@@ -795,13 +832,21 @@ def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -
         return {"comment": comment}
 
     parsed = _parse_json_object(raw)
-    title = str(parsed.get("title") or parsed.get("标题") or "").strip()
-    body = str(parsed.get("body") or parsed.get("正文") or "").strip()
+    multi_items = _article_items_from_parsed_json(parsed)
+    if multi_items:
+        first = multi_items[0]
+        return {"title": first["title"], "body": first["body"], "items": multi_items}
+
+    title = _clean_generated_article_text(parsed.get("title") or parsed.get("标题"))
+    body = _clean_generated_article_text(parsed.get("body") or parsed.get("正文"))
     if not title or not body:
         title, body = _loose_title_body_from_text(raw) or _title_body_from_text(raw)
+    title, body = _flatten_nested_article_json(title, body)
+    title = _clean_generated_article_text(title)
+    body = _clean_generated_article_text(body)
     if not body:
         raise ValueError("content.generate produced empty body")
-    return {"title": title or "源悦真实体验分享", "body": body}
+    return {"title": title or "今天这点变化", "body": body}
 
 
 def _rewrite_previous_content(input_payload: dict[str, Any]) -> dict[str, str]:
@@ -876,7 +921,7 @@ def _rewrite_prompt(
         parts.append("业务规则：\n" + json.dumps(business_rule, ensure_ascii=False, indent=2))
     selected_keywords = input_payload.get("selected_keywords")
     if selected_keywords:
-        parts.append("已选系统关键词：\n" + json.dumps(selected_keywords, ensure_ascii=False, indent=2))
+        parts.append("已选表达扩散语料：\n" + json.dumps(selected_keywords, ensure_ascii=False, indent=2))
     return "\n\n".join(parts)
 
 
@@ -900,6 +945,7 @@ def _normalize_rewrite_output(
     body = str(parsed.get("body") or parsed.get("正文") or "").strip()
     if not title or not body:
         title, body = _loose_title_body_from_text(raw) or _title_body_from_text(raw)
+    title, body = _flatten_nested_article_json(title, body)
     if not body:
         previous = _rewrite_previous_content(input_payload)
         body = previous.get("body") or ""
@@ -907,6 +953,54 @@ def _normalize_rewrite_output(
         raise ValueError("content.rewrite produced empty body")
     title = title or (_rewrite_previous_content(input_payload).get("title") or "改写后标题")
     return {"title": title, "body": body, "final": {"title": title, "body": body}}
+
+
+def _flatten_nested_article_json(title: str, body: str) -> tuple[str, str]:
+    """Recover when a model puts the full article JSON inside the body field."""
+    body_text = str(body or "").strip()
+    if not body_text:
+        return str(title or "").strip(), body_text
+    nested = _parse_json_object(body_text)
+    if not nested:
+        return str(title or "").strip(), body_text
+    nested_body = str(nested.get("body") or nested.get("正文") or "").strip()
+    if not nested_body:
+        return str(title or "").strip(), body_text
+    nested_title = str(nested.get("title") or nested.get("标题") or "").strip()
+    return nested_title or str(title or "").strip(), nested_body
+
+
+def _article_items_from_parsed_json(parsed: dict[str, Any]) -> list[dict[str, str]]:
+    raw_items = parsed.get("items") or parsed.get("文章列表") or parsed.get("内容列表")
+    if not isinstance(raw_items, list):
+        return []
+    items: list[dict[str, str]] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        title = _clean_generated_article_text(raw_item.get("title") or raw_item.get("标题"))
+        body = _clean_generated_article_text(raw_item.get("body") or raw_item.get("正文"))
+        if body:
+            items.append({"title": title or "今天这点变化", "body": body})
+    return items
+
+
+def _clean_generated_article_text(value: Any) -> str:
+    text = str(value or "").strip()
+    text = _strip_topic_tags(text)
+    text = re.sub(r"[ \t\r\f\v]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    return text.strip()
+
+
+def _strip_topic_tags(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = re.sub(r"#[^\s#，。！？、；;]{1,40}\[话题\]#?", "", text)
+    cleaned = re.sub(r"#[^\s#，。！？、；;]{1,40}#", "", cleaned)
+    cleaned = re.sub(r"(?:\s*#[^\s#，。！？、；;]{1,40})+\s*$", "", cleaned)
+    cleaned = re.sub(r"\[[^\[\]]{1,12}话题[^\[\]]{0,12}\]", "", cleaned)
+    return cleaned.strip()
 
 
 def _parse_json_object(raw: str) -> dict[str, Any]:
@@ -981,7 +1075,7 @@ def _fallback_rendered_prompt(input_payload: dict[str, Any]) -> str:
         f"内容类型：{input_payload.get('content_type') or ''}",
         f"输出字段：{input_payload.get('output_fields') or []}",
         "业务规则：\n" + json.dumps(input_payload.get("business_rule") or {}, ensure_ascii=False, indent=2),
-        "系统关键词：\n" + json.dumps(input_payload.get("selected_keywords") or [], ensure_ascii=False, indent=2),
+        "表达扩散语料：\n" + json.dumps(input_payload.get("selected_keywords") or [], ensure_ascii=False, indent=2),
     ]
     return "\n\n".join(parts)
 

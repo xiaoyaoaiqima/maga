@@ -144,6 +144,12 @@ class Settings(BaseSettings):
 
     INTERNAL_SERVICE_BASE_URL: str = ""
 
+    # MAGA-owned external acquisition config.
+    # Keep provider keys single-source: do not add alias fallbacks.
+    MAGA_TIKHUB_API_KEY: str = ""
+    MAGA_TIKHUB_BASE_URL: str = "https://api.tikhub.io"
+    MAGA_TIKHUB_TIMEOUT_SECONDS: int = 60
+
     @property
     def MYSQL_DATABASE_URL(self) -> str:
         """Generate MySQL database URL (主库)"""

@@ -62,7 +62,7 @@ CLOSURE_CLUSTER_DEFINITIONS = [
     {
         "code": "right_choice",
         "name": "选对簇",
-        "phrases": ["没选错", "选对了", "还好选了它", "感觉选对了"],
+        "phrases": ["没选错", "选对了", "还好选了它", "感觉选对了", "判断没错", "选得还行", "没白选", "没白喝", "没白挑", "最好的证明"],
     },
     {
         "code": "keep_drinking",
@@ -275,7 +275,7 @@ class ContentBatchReportService:
             return True
         return False
 
-    async def get_batch_report(self, batch_id: int) -> ContentBatchReportResponse:
+    async def get_batch_report(self, batch_id: int, *, include_details: bool = False) -> ContentBatchReportResponse:
         job = await self._require_job(batch_id)
         items = await self._batch_items(batch_id)
         stage_calls = await self._stage_calls_for_items(items)
@@ -292,6 +292,7 @@ class ContentBatchReportService:
                 run=runs_by_id.get(item.run_id or -1),
                 feedback_count=feedback_counts.get(item.id, 0),
                 forbidden_terms=forbidden_terms,
+                include_details=include_details,
             )
             for item in items
         ]
@@ -311,7 +312,7 @@ class ContentBatchReportService:
         )
 
     async def export_batch_report_excel(self, batch_id: int) -> tuple[str, bytes]:
-        report = await self.get_batch_report(batch_id)
+        report = await self.get_batch_report(batch_id, include_details=True)
         workbook = Workbook()
         result_sheet = workbook.active
         result_sheet.title = "生文结果"
@@ -324,7 +325,7 @@ class ContentBatchReportService:
         return filename, output.getvalue()
 
     async def export_article_pool_excel(self, batch_id: int) -> tuple[str, bytes]:
-        report = await self.get_batch_report(batch_id)
+        report = await self.get_batch_report(batch_id, include_details=True)
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "文章池数据"
@@ -651,8 +652,8 @@ class ContentBatchReportService:
                 ContentBatchFeedbackOptimizationSuggestion(
                     suggestion_type="system_keyword",
                     target=_system_keyword_target(category_counter, content_type),
-                    title="补强表达类系统关键词语料",
-                    reason="反馈集中在自然度、广告感、篇幅或语气，适合补系统关键词的语料示例，不应增加很硬的业务规则。",
+                    title="补强表达扩散语料",
+                    reason="反馈集中在自然度、广告感、篇幅或语气，适合补表达扩散语料示例，不应增加很硬的业务规则。",
                     evidence=_evidence_for_categories(evidence_by_category, expression_categories),
                     priority=_suggestion_priority(expression_count, total_feedback_count),
                 )
@@ -688,6 +689,7 @@ class ContentBatchReportService:
         run: ContentAgentRun | None = None,
         feedback_count: int = 0,
         forbidden_terms: list[str] | None = None,
+        include_details: bool = False,
     ) -> ContentBatchReportItem:
         ordered_versions = versions or []
         latest_version = latest_version or (ordered_versions[-1] if ordered_versions else None)
@@ -698,10 +700,12 @@ class ContentBatchReportService:
         generation_stage = self._generation_stage(stage_calls)
         text = f"{item.title or ''}\n{item.body or ''}"
         forbidden_hits = self._forbidden_hits(text, forbidden_terms)
-        rewrite_required = review.get("rewrite_required")
-        hard_pass = quality.get("hard_pass")
-        if rewrite_required is True and hard_pass is True:
-            hard_pass = False
+        final_state = _final_postprocess_state(quality)
+        rewrite_required = final_state["rewrite_required"]
+        hard_pass = final_state["hard_pass"]
+        rewrite_reason = review.get("rewrite_reason") or final_state["rewrite_reason"]
+        business_usability = _business_usability_from_quality(quality)
+        detail_value = include_details
         return ContentBatchReportItem(
             item_id=item.id,
             item_no=item.item_no,
@@ -710,42 +714,125 @@ class ContentBatchReportService:
             run_id=item.run_id,
             title=item.title,
             body=item.body,
-            body_preview=(item.body or "")[:160] if item.body else None,
-            body_chars=len(item.body or ""),
+            body_preview=(item.body or "")[:160] if detail_value and item.body else None,
+            body_chars=len(item.body or "") if detail_value else 0,
             hard_pass=hard_pass,
             rewrite_required=rewrite_required,
-            rewrite_reason=review.get("rewrite_reason"),
-            rewrite_rounds=review.get("rewrite_rounds"),
-            suggestion_count=len(review.get("suggestions") or []),
-            replacement_count=len(review.get("replacement_needed") or []),
+            rewrite_reason=rewrite_reason,
+            business_usability_tier=business_usability.get("tier"),
+            business_usability_reason=business_usability.get("reason"),
+            rewrite_rounds=review.get("rewrite_rounds") if detail_value else None,
+            suggestion_count=len(review.get("suggestions") or []) if detail_value else 0,
+            replacement_count=len(review.get("replacement_needed") or []) if detail_value else 0,
             forbidden_hits=forbidden_hits,
-            final_path=runtime_result.get("final_path"),
-            debug_dir=runtime_result.get("debug_dir"),
-            review_status=latest_version.review_status if latest_version else (quality.get("human_review") or {}).get("review_status"),
-            latest_version_no=latest_version.version_no if latest_version else None,
-            human_feedback_text=latest_version.feedback_text if latest_version else (quality.get("human_review") or {}).get("feedback_text"),
-            feedback_count=feedback_count,
+            final_path=runtime_result.get("final_path") if detail_value else None,
+            debug_dir=runtime_result.get("debug_dir") if detail_value else None,
+            review_status=(
+                latest_version.review_status if latest_version else (quality.get("human_review") or {}).get("review_status")
+            )
+            if detail_value
+            else None,
+            latest_version_no=latest_version.version_no if detail_value and latest_version else None,
+            human_feedback_text=(
+                latest_version.feedback_text if latest_version else (quality.get("human_review") or {}).get("feedback_text")
+            )
+            if detail_value
+            else None,
+            feedback_count=feedback_count if detail_value else 0,
             reject_reasons=self._reject_reasons(item, review, forbidden_hits),
             similarity_warnings=[],
-            version_compare=self._version_compare(latest_version, ordered_versions),
-            runtime_mode=runtime_result.get("mode") or quality.get("executor"),
-            generation_duration_ms=self._stage_duration_ms(generation_stage) if generation_stage else None,
-            total_duration_ms=self._total_duration_ms(run, stage_calls),
-            trace_run_id=item.run_id,
+            version_compare=self._version_compare(latest_version, ordered_versions) if detail_value else None,
+            runtime_mode=runtime_result.get("mode") or quality.get("executor") if detail_value else None,
+            generation_duration_ms=(
+                self._stage_duration_ms(generation_stage) if detail_value and generation_stage else None
+            ),
+            total_duration_ms=self._total_duration_ms(run, stage_calls) if detail_value else None,
+            trace_run_id=item.run_id if detail_value else None,
             trace_stage_calls=[self._stage_trace(stage) for stage in stage_calls],
-            opening_type=diversity.get("opening_type"),
-            structure_type=diversity.get("structure_type"),
-            content_angle=diversity.get("content_angle"),
-            persona_lens=diversity.get("persona_lens"),
-            scene_type=diversity.get("scene_type"),
-            evidence_type=diversity.get("evidence_type"),
-            asset_combo_key=(item.plan_json or {}).get("asset_combo_key"),
-            asset_reuse_reason=(item.plan_json or {}).get("asset_reuse_reason"),
-            generation_snapshot=self._generation_snapshot(item, stage_calls, run, quality),
-            diversity=diversity or None,
-            quality=quality or None,
-            error_message=item.error_message,
+            opening_type=diversity.get("opening_type") if detail_value else None,
+            structure_type=diversity.get("structure_type") if detail_value else None,
+            content_angle=diversity.get("content_angle") if detail_value else None,
+            persona_lens=diversity.get("persona_lens") if detail_value else None,
+            scene_type=diversity.get("scene_type") if detail_value else None,
+            evidence_type=diversity.get("evidence_type") if detail_value else None,
+            asset_combo_key=(item.plan_json or {}).get("asset_combo_key") if detail_value else None,
+            asset_reuse_reason=(item.plan_json or {}).get("asset_reuse_reason") if detail_value else None,
+            generation_snapshot=self._generation_snapshot(item, stage_calls, run, quality) if include_details else None,
+            diversity=(diversity or None) if include_details else None,
+            quality=(quality or None) if include_details else self._quality_summary(quality),
+            error_message=item.error_message if item.status == "failed" else None,
         )
+
+    def _quality_summary(self, quality: dict[str, Any]) -> dict[str, Any] | None:
+        if not quality:
+            return None
+        review = quality.get("review_report") if isinstance(quality.get("review_report"), dict) else {}
+        summary: dict[str, Any] = {
+            "hard_pass": quality.get("hard_pass"),
+            "final_postprocess_state": _final_postprocess_state(quality),
+            "stage_call_count": quality.get("stage_call_count"),
+            "review_report": {
+                "rewrite_required": review.get("rewrite_required"),
+                "rewrite_reason": review.get("rewrite_reason"),
+            },
+        }
+        for key in (
+            "forbidden_terms_review",
+            "mouth_phrase_budget_guard",
+            "product_experience_phrase_review",
+            "product_experience_llm_review",
+            "ai_flavor_review",
+        ):
+            value = review.get(key)
+            if isinstance(value, dict):
+                summary["review_report"][key] = self._review_summary(value)
+        for key in (
+            "product_experience_phrase_guard",
+            "product_experience_llm_quality_review",
+            "ai_flavor_humanizer",
+            "mouth_phrase_budget_guard",
+        ):
+            value = quality.get(key)
+            if isinstance(value, dict):
+                summary[key] = self._review_summary(value)
+        for key in (
+            "product_experience_phrase_rewrites",
+            "product_experience_llm_quality_rewrites",
+            "product_experience_llm_quality_failures",
+            "ai_flavor_humanizer_rewrites",
+            "mouth_phrase_budget_rewrites",
+            "article_length_guard",
+        ):
+            value = quality.get(key)
+            if isinstance(value, list):
+                payload = {"count": len(value)}
+                if key.endswith("_failures"):
+                    payload["last_error"] = _last_failure_error(value)
+                summary[key] = payload
+            elif isinstance(value, dict):
+                summary[key] = self._review_summary(value)
+        return summary
+
+    @staticmethod
+    def _review_summary(value: dict[str, Any]) -> dict[str, Any]:
+        keys = (
+            "pass",
+            "pass_",
+            "rewrite_required",
+            "rewrite_reason",
+            "severity",
+            "reasons",
+            "issues",
+            "final_hits",
+            "initial_hits",
+            "body_chars",
+            "length_target",
+            "mark_rewrite_required",
+            "repair_count",
+            "business_usability_tier",
+            "business_usability_reason",
+        )
+        return {key: value.get(key) for key in keys if key in value}
 
     def _version_compare(
         self,
@@ -1140,7 +1227,7 @@ class ContentBatchReportService:
             total_count=len(items),
             generated_count=len(generated),
             failed_count=sum(1 for item in items if item.status == "failed"),
-            hard_pass_count=sum(1 for item in items if item.hard_pass is True),
+            hard_pass_count=sum(1 for item in generated if item.hard_pass is True),
             rewrite_item_count=sum(1 for item in items if item.rewrite_reason or item.rewrite_rounds),
             remaining_rewrite_required_count=sum(1 for item in items if item.rewrite_required is True),
             forbidden_hit_count=forbidden_hit_count,
@@ -1152,6 +1239,7 @@ class ContentBatchReportService:
             content_path_skeleton_stats=self._content_path_skeleton_stats(generated),
             real_user_pool_stats=self._real_user_pool_stats(items),
             mouth_phrase_budget_stats=self._mouth_phrase_budget_stats(generated),
+            business_usability_stats=self._business_usability_stats(generated),
         )
 
     def _forbidden_hits(self, text: str, business_terms: list[str] | None = None) -> list[str]:
@@ -1426,6 +1514,47 @@ class ContentBatchReportService:
             "over_budget_groups": [item for item in group_stats if item["over_budget"]],
         }
 
+    def _business_usability_stats(self, items: list[ContentBatchReportItem]) -> dict[str, Any]:
+        eligible_items: list[ContentBatchReportItem] = []
+        excluded: list[dict[str, Any]] = []
+        for item in items:
+            tier = str(item.business_usability_tier or "").strip()
+            if not tier:
+                continue
+            final_state = _final_postprocess_state(item.quality) if item.quality else {}
+            final_pass = bool(final_state.get("hard_pass")) and not bool(final_state.get("rewrite_required"))
+            if final_pass:
+                eligible_items.append(item)
+                continue
+            excluded.append(
+                {
+                    "item_no": item.item_no,
+                    "business_usability_tier": tier,
+                    "rewrite_reason": final_state.get("rewrite_reason") or item.rewrite_reason,
+                    "reasons": final_state.get("reasons") or [],
+                }
+            )
+
+        counts = Counter(str(item.business_usability_tier or "").strip() for item in eligible_items)
+        if not counts:
+            return {"excluded_by_final_postprocess": excluded} if excluded else {}
+        tiers = ("direct_pool", "light_fix_usable", "hold_out")
+        stats = {
+            "counts": {tier: counts.get(tier, 0) for tier in tiers},
+            "item_nos_by_tier": {
+                tier: [
+                    item.item_no
+                    for item in eligible_items
+                    if str(item.business_usability_tier or "").strip() == tier
+                ]
+                for tier in tiers
+                if counts.get(tier, 0)
+            },
+        }
+        if excluded:
+            stats["excluded_by_final_postprocess"] = excluded
+        return stats
+
     def _real_user_pool_snapshot(self, item: ContentBatchReportItem) -> dict[str, Any]:
         snapshot = item.generation_snapshot or {}
         business_rule = snapshot.get("business_rule") if isinstance(snapshot.get("business_rule"), dict) else {}
@@ -1570,10 +1699,10 @@ def _batch_content_type(items: list[ContentBatchItem]) -> str:
 
 def _system_keyword_target(category_counter: Counter[str], content_type: str) -> str:
     if category_counter.get("too_long", 0):
-        return "系统关键词 / 评论格式控制" if content_type == "comment" else "系统关键词 / 帖子格式控制"
+        return "表达扩散语料 / 评论格式控制" if content_type == "comment" else "表达扩散语料 / 帖子格式控制"
     if content_type == "comment":
-        return "系统关键词 / 生评论指令"
-    return "系统关键词 / 写作手法"
+        return "表达扩散语料 / 生评论指令"
+    return "表达扩散语料 / 写作手法"
 
 
 def _suggestion_priority(count: int, total: int) -> str:
@@ -1592,6 +1721,7 @@ def _truncate(value: str, limit: int) -> str:
 
 def _write_overview_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
     summary = report.summary
+    business_counts = summary.business_usability_stats.get("counts") or {}
     rows = [
         ("批次ID", report.batch_id),
         ("批次Code", report.batch_code or ""),
@@ -1604,9 +1734,19 @@ def _write_overview_sheet(sheet: Any, report: ContentBatchReportResponse) -> Non
         ("总数", summary.total_count),
         ("已生成", summary.generated_count),
         ("失败", summary.failed_count),
-        ("红线通过", summary.hard_pass_count),
+        ("最终机器通过", summary.hard_pass_count),
         ("自动改写", summary.rewrite_item_count),
         ("仍需处理", summary.remaining_rewrite_required_count),
+        (
+            "业务可用性",
+            (
+                f"直接入池 {business_counts.get('direct_pool', 0)} / "
+                f"轻修可用 {business_counts.get('light_fix_usable', 0)} / "
+                f"暂不入池 {business_counts.get('hold_out', 0)}"
+            )
+            if business_counts
+            else "-",
+        ),
         ("禁用词命中", summary.forbidden_hit_count),
         ("相似提醒", summary.similarity_warning_count),
         ("平均字数", summary.avg_body_chars if summary.avg_body_chars is not None else "-"),
@@ -1628,7 +1768,9 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
         "序号",
         "状态",
         "字数",
-        "红线通过",
+        "最终机器通过",
+        "业务可用性",
+        "业务可用性原因",
         "审核状态",
         "改写轮次",
         "改写原因",
@@ -1656,6 +1798,8 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
                 item.status,
                 item.body_chars,
                 _bool_label(item.hard_pass),
+                _business_usability_label(item.business_usability_tier),
+                item.business_usability_reason or "",
                 item.review_status or "",
                 item.rewrite_rounds or 0,
                 item.rewrite_reason or "",
@@ -1697,6 +1841,8 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
         "S": 26,
         "T": 24,
         "U": 36,
+        "V": 26,
+        "W": 24,
     }
     for column, width in widths.items():
         sheet.column_dimensions[column].width = width
@@ -1743,9 +1889,11 @@ def _article_pool_item_exportable(item: ContentBatchReportItem) -> bool:
         return False
     if not str(item.body or "").strip():
         return False
-    if item.hard_pass is False:
+    if item.hard_pass is not True:
         return False
     if item.rewrite_required is True:
+        return False
+    if item.quality and not _final_postprocess_state(item.quality)["hard_pass"]:
         return False
     return True
 
@@ -1772,6 +1920,141 @@ def _article_pool_context_list(item: ContentBatchReportItem) -> dict[str, str]:
     return build_article_pool_context_list(pseudo_item)
 
 
+def _final_postprocess_state(quality: dict[str, Any] | None) -> dict[str, Any]:
+    quality = quality if isinstance(quality, dict) else {}
+    if not quality:
+        return {
+            "hard_pass": False,
+            "rewrite_required": False,
+            "rewrite_reason": "quality_missing",
+            "reasons": ["quality_missing"],
+        }
+    review_report = quality.get("review_report") if isinstance(quality.get("review_report"), dict) else {}
+    reasons: list[str] = []
+    rewrite_reasons: list[str] = []
+
+    if quality.get("hard_pass") is False:
+        reasons.append("hard_pass_false")
+    if review_report.get("rewrite_required") is True:
+        reason = str(review_report.get("rewrite_reason") or "review_report_rewrite_required")
+        reasons.append(reason)
+        rewrite_reasons.append(reason)
+    if quality.get("postprocess_blocked"):
+        reasons.append("postprocess_blocked")
+        rewrite_reasons.append("postprocess_blocked")
+
+    _append_blocking_review_reason(
+        reasons,
+        rewrite_reasons,
+        "forbidden_terms_review",
+        quality.get("forbidden_terms_review") or review_report.get("forbidden_terms_review"),
+    )
+    _append_blocking_review_reason(
+        reasons,
+        rewrite_reasons,
+        "mouth_phrase_budget_guard",
+        quality.get("mouth_phrase_budget_guard") or review_report.get("mouth_phrase_budget_guard"),
+    )
+    _append_blocking_review_reason(
+        reasons,
+        rewrite_reasons,
+        "ai_flavor_humanizer",
+        quality.get("ai_flavor_humanizer") or review_report.get("ai_flavor_review"),
+    )
+    _append_blocking_review_reason(
+        reasons,
+        rewrite_reasons,
+        "product_experience_phrase_guard",
+        quality.get("product_experience_phrase_guard") or review_report.get("product_experience_phrase_review"),
+    )
+    llm_review = quality.get("product_experience_llm_quality_review") or review_report.get(
+        "product_experience_llm_review"
+    )
+    _append_blocking_review_reason(reasons, rewrite_reasons, "product_experience_llm_quality_review", llm_review)
+
+    length_guard = quality.get("article_length_guard")
+    if isinstance(length_guard, dict) and length_guard.get("pass") is False:
+        reasons.append("article_length_guard")
+        rewrite_reasons.append("article_length_guard")
+
+    # A failed LLM quality review is not a text issue by itself, but it means the
+    # full audit chain did not complete. If no later successful review exists,
+    # keep the item out of machine-pass/export pools.
+    llm_failures = quality.get("product_experience_llm_quality_failures")
+    llm_failure_mark_only = quality.get("product_experience_llm_quality_review_unavailable_mark_only") is True
+    if (
+        isinstance(llm_failures, list)
+        and llm_failures
+        and not _review_passed(llm_review)
+        and not llm_failure_mark_only
+    ):
+        reasons.append("product_experience_llm_quality_review_failed")
+        rewrite_reasons.append("product_experience_llm_quality_review_failed")
+
+    return {
+        "hard_pass": not reasons,
+        "rewrite_required": bool(rewrite_reasons),
+        "rewrite_reason": "；".join(_dedupe_reason_list(rewrite_reasons)) or None,
+        "reasons": _dedupe_reason_list(reasons),
+    }
+
+
+def _append_blocking_review_reason(
+    reasons: list[str],
+    rewrite_reasons: list[str],
+    source: str,
+    review: Any,
+) -> None:
+    if not isinstance(review, dict):
+        return
+    if review.get("mark_rewrite_required") is False:
+        return
+    if review.get("final_hits"):
+        reasons.append(source)
+        rewrite_reasons.append(source)
+        return
+    if review.get("rewrite_required") is True or review.get("mark_rewrite_required") is True:
+        reasons.append(source)
+        rewrite_reasons.append(source)
+        return
+    if review.get("pass") is False or review.get("pass_") is False:
+        reasons.append(source)
+
+
+def _review_passed(review: Any) -> bool:
+    if not isinstance(review, dict):
+        return False
+    if review.get("mark_rewrite_required") is False:
+        return True
+    if review.get("pass") is True or review.get("pass_") is True:
+        return not review.get("rewrite_required")
+    return False
+
+
+def _last_failure_error(failures: list[Any]) -> str | None:
+    for item in reversed(failures):
+        if not isinstance(item, dict):
+            if item:
+                return str(item)
+            continue
+        message = item.get("error_message") or item.get("message") or item.get("reason")
+        if message:
+            return str(message)
+    return None
+
+
+def _dedupe_reason_list(reasons: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for reason in reasons:
+        normalized = str(reason or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
 def _style_table_header(sheet: Any, *, header_row: int, column_count: int) -> None:
     fill = PatternFill("solid", fgColor="1F2937")
     font = Font(color="FFFFFF", bold=True)
@@ -1793,6 +2076,24 @@ def _bool_label(value: bool | None) -> str:
     if value is False:
         return "未通过"
     return "未知"
+
+
+def _business_usability_from_quality(quality: dict[str, Any]) -> dict[str, str | None]:
+    review = quality.get("product_experience_llm_quality_review")
+    if not isinstance(review, dict):
+        return {"tier": None, "reason": None}
+    tier = str(review.get("business_usability_tier") or "").strip() or None
+    reason = str(review.get("business_usability_reason") or "").strip() or None
+    return {"tier": tier, "reason": reason}
+
+
+def _business_usability_label(value: str | None) -> str:
+    labels = {
+        "direct_pool": "直接入池",
+        "light_fix_usable": "轻修可用",
+        "hold_out": "暂不入池",
+    }
+    return labels.get(str(value or "").strip(), str(value or "").strip())
 
 
 def _similarity_text(warnings: list[ContentBatchSimilarityWarning]) -> str:

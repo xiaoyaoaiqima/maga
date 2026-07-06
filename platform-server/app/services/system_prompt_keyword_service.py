@@ -349,7 +349,7 @@ class SystemPromptKeywordService:
         asset = AssetRegistry(
             asset_type=CONTENT_GENERATION_KEYWORDS_ASSET_TYPE,
             asset_key=asset_key,
-            display_name=display_name or "系统提示词关键词",
+            display_name=display_name or "表达扩散语料",
             version_no=await self._next_asset_version(asset_key),
             status="active",
             asset_stage="production",
@@ -372,11 +372,11 @@ class SystemPromptKeywordService:
     ) -> AssetRegistry:
         source_asset = await self.get_version(asset_key=asset_key, version_no=version_no)
         if source_asset is None:
-            raise ValueError("要回滚的系统提示词关键词版本不存在")
+            raise ValueError("要回滚的表达扩散语料版本不存在")
         content_json = normalize_system_prompt_keyword_content(source_asset.content_json or {}, strict=True)
         asset = await self.save_keywords(
             asset_key=asset_key,
-            display_name=source_asset.display_name or "系统提示词关键词",
+            display_name=source_asset.display_name or "表达扩散语料",
             content_json=content_json,
             created_by=created_by,
         )
@@ -403,7 +403,7 @@ class SystemPromptKeywordService:
         content_json = keyword_rows_to_content(rows)
         asset = await self.save_keywords(
             asset_key=asset_key,
-            display_name=display_name or "系统提示词关键词",
+            display_name=display_name or "表达扩散语料",
             content_json=content_json,
             created_by=created_by,
         )
@@ -632,7 +632,7 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                             "keyword_code": "new_can_record",
                             "keyword_name": "又开一听记录",
                             "corpus": [
-                                "像家里又开一罐、刚换一罐、刚补一罐时顺手记一下。重点是当下动作和小观察，不要默认写囤货推荐、活动促销或购买攻略。"
+                                "像家里又开一罐、刚换一罐、刚补一罐时，从当下动作和小观察自然起笔。不要默认写囤货推荐、活动促销或购买攻略。"
                             ],
                         },
                         {
@@ -677,25 +677,6 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                             "corpus": [
                                 "生成的时候提高你思考的随机性，不要用一种固定的思路。真实的生活就是发散而随机，离散运动。"
                             ],
-                        },
-                        {
-                            "keyword_code": "opening_shift",
-                            "keyword_name": "开头扰动",
-                            "corpus": [
-                                "不要总用同一种开头，可从同款、加一、今天记录、刚转、我们家、顺手提醒里选一种自然切入。"
-                            ],
-                        },
-                        {
-                            "keyword_code": "length_shift",
-                            "keyword_name": "长短扰动",
-                            "corpus": [
-                                "同批内容长短要有变化，至少一半在8到20字，常态8到22字，少量可以到21到30字，不要自动压成两个词的极短回应。"
-                            ],
-                        },
-                        {
-                            "keyword_code": "stance_shift",
-                            "keyword_name": "态度扰动",
-                            "corpus": ["态度可以是补经验、轻共鸣、谨慎观望或小吐槽，不要每条都像强推荐。"],
                         },
                     ],
                 },
@@ -1010,7 +991,7 @@ def keyword_rows_to_content(rows: list[dict[str, str]]) -> dict[str, Any]:
         strict=True,
     )
     if not content["categories"]:
-        raise ValueError("系统提示词关键词导入文件为空")
+        raise ValueError("表达扩散语料导入文件为空")
     return content
 
 

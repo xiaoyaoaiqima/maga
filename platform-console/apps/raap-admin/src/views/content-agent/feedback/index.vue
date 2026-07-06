@@ -146,7 +146,7 @@ const suggestionTypeLabel = (type?: string) => {
   if (type === 'business_forbidden_term') return '业务违禁词';
   if (type === 'business_rule') return '业务规则';
   if (type === 'expert_prompt') return 'Expert';
-  if (type === 'system_keyword') return '系统关键词';
+  if (type === 'system_keyword') return '表达扩散语料';
   return type || '-';
 };
 

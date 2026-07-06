@@ -4868,6 +4868,102 @@ async def test_article_batch_can_start_from_article_business_rule_asset_key_only
 
 
 @pytest.mark.asyncio
+async def test_article_batch_start_supports_two_articles_per_prompt(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue_product_experience",
+            "articles_per_prompt": 2,
+            "count": 2,
+            "created_by": "ops",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["execution"]["requested_limit"] == 2
+    assert data["execution"]["generated_count"] == 2
+    assert data["execution"]["failed_count"] == 0
+    assert data["report"]["status"] == "generated"
+    assert data["report"]["summary"]["generated_count"] == 2
+
+    async with session_factory() as session:
+        job = (
+            await session.execute(
+                select(ContentBatchJob).where(ContentBatchJob.id == data["batch_id"])
+            )
+        ).scalar_one()
+        items = (
+            await session.execute(
+                select(ContentBatchItem)
+                .where(ContentBatchItem.batch_id == data["batch_id"])
+                .order_by(ContentBatchItem.item_no)
+            )
+        ).scalars().all()
+
+    assert job.status == "generated"
+    assert len({item.run_id for item in items}) == 1
+    assert [item.quality_json["multi_output"]["selected_index"] for item in items] == [0, 1]
+    assert all(item.quality_json["multi_output"]["materialized_to_batch_items"] for item in items)
+    assert "一次生成 2 篇" in items[0].plan_json["unified_generation"]["rendered_prompt"]
+    assert items[0].plan_json["multi_output_group"]["group_id"] == items[1].plan_json["multi_output_group"]["group_id"]
+
+
+@pytest.mark.asyncio
+async def test_article_batch_start_keeps_generated_status_when_postprocess_fails(
+    content_agent_workbench_client,
+    monkeypatch,
+):
+    client, session_factory = content_agent_workbench_client
+
+    async def broken_title_repair(self, batch_id, job):  # noqa: ANN001
+        raise RuntimeError("synthetic postprocess failure")
+
+    monkeypatch.setattr(
+        "app.services.content_batch_execution_service.ContentBatchExecutionService._repair_generated_titles",
+        broken_title_repair,
+    )
+
+    response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue_product_experience",
+            "articles_per_prompt": 2,
+            "count": 2,
+            "created_by": "ops",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["execution"]["generated_count"] == 2
+    assert data["report"]["status"] == "generated"
+
+    async with session_factory() as session:
+        job = (
+            await session.execute(
+                select(ContentBatchJob).where(ContentBatchJob.id == data["batch_id"])
+            )
+        ).scalar_one()
+        items = (
+            await session.execute(
+                select(ContentBatchItem).where(ContentBatchItem.batch_id == data["batch_id"])
+            )
+        ).scalars().all()
+
+    assert job.status == "generated"
+    assert job.strategy_json["postprocess_errors"] == [
+        {
+            "step": "title_repair",
+            "error": "synthetic postprocess failure",
+            "error_type": "RuntimeError",
+        }
+    ]
+    assert [item.status for item in items] == ["generated", "generated"]
+
+
+@pytest.mark.asyncio
 async def test_comment_batch_runs_forbidden_term_review_and_rewrite(content_agent_workbench_client):
     client, session_factory = content_agent_workbench_client
     async with session_factory() as session:

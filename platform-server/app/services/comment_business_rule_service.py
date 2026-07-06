@@ -252,22 +252,22 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         return None
     corpus, corpus_examples = _split_examples_from_corpus(raw_corpus)
     corpus = _clean_corpus_for_prompt(corpus, business_rule=business_rule)
-    has_canonical_examples = "示例" in row
-    examples = (
-        _line_examples(row.get("示例"))
-        if has_canonical_examples
-        else _line_examples(row.get("评论示例")) or corpus_examples
-    )
-    if not has_canonical_examples:
+    canonical_examples = _line_examples(row.get("示例") or row.get("examples"))
+    examples = canonical_examples or _line_examples(row.get("评论示例")) or corpus_examples
+    if not canonical_examples:
         examples.extend(_line_examples(row.get("评论补充")))
-    return {
-        "rule_id": f"business_rule_{index:03d}",
+    item = {
+        "rule_id": str(row.get("rule_id") or "").strip() or f"business_rule_{index:03d}",
         "business_rule": business_rule,
         "corpus": corpus,
         "examples": examples,
         "supplements": [],
         "source_row_no": index,
     }
+    prompt_slots = _prompt_slots_from_row(row)
+    if prompt_slots:
+        item["prompt_slots"] = prompt_slots
+    return item
 
 
 def _business_rule_and_corpus(row: dict[str, str]) -> tuple[str, str]:
@@ -277,6 +277,7 @@ def _business_rule_and_corpus(row: dict[str, str]) -> tuple[str, str]:
         or row.get("业务规则")
         or row.get("规则名称")
         or row.get("标题")
+        or row.get("category")
         or row.get("business_rule")
         or row.get(LEGACY_RULE_HEADER)
         or ""
@@ -284,7 +285,7 @@ def _business_rule_and_corpus(row: dict[str, str]) -> tuple[str, str]:
     simple_corpus = _simple_operator_corpus(row)
     if simple_corpus:
         return str(rule_value).strip(), simple_corpus
-    corpus_value = row.get("规则语料") or row.get("语料") or row.get("corpus") or ""
+    corpus_value = row.get("规则语料") or row.get("语料") or row.get("focus") or row.get("corpus") or ""
     if row.get("规则语料") or row.get("语料"):
         return str(rule_value).strip(), str(corpus_value).strip()
     if row.get("评论类型") and (row.get("业务规则") or row.get(LEGACY_RULE_HEADER)):
@@ -303,6 +304,38 @@ def _simple_operator_corpus(row: dict[str, str]) -> str:
     if how_to_say:
         parts.append(f"怎么说：{how_to_say}")
     return "\n\n".join(parts).strip()
+
+
+def _prompt_slots_from_row(row: dict[str, str]) -> dict[str, list[str]] | list[dict[str, Any]] | None:
+    for field in ("prompt_slots", "comment_prompt_slots"):
+        raw = str(row.get(field) or "").strip()
+        if not raw:
+            continue
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{field} must be valid JSON") from exc
+        if isinstance(parsed, (dict, list)):
+            return parsed
+        raise ValueError(f"{field} must be a JSON object or array")
+
+    slots: dict[str, list[str]] = {}
+    for field in ("说话风格", "说话风格语料", "评论说话风格"):
+        entries = _line_prompt_slot_entries(row.get(field), slot_name="说话风格")
+        if entries:
+            slots["说话风格"] = entries
+            break
+    return slots or None
+
+
+def _line_prompt_slot_entries(value: str | None, *, slot_name: str) -> list[str]:
+    entries: list[str] = []
+    for raw in str(value or "").splitlines():
+        line = _clean_example_line(raw)
+        line = re.sub(rf"^{re.escape(slot_name)}\s*[:：]\s*", "", line).strip()
+        if line:
+            entries.append(line)
+    return entries
 
 
 def _line_examples(value: str | None) -> list[str]:

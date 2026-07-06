@@ -39,7 +39,7 @@ describe('frontend controlled sidebar tabs', () => {
     expect(titles).toEqual([
       '生产工作台',
       '评价反馈',
-      '系统关键词',
+      '表达扩散语料',
       '生文 Expert',
       '用户管理',
       '模型配置',

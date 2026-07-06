@@ -36,7 +36,7 @@ const frontendTabRoutes: RouteRecordRaw[] = [
     component: () =>
       import('#/views/content-agent/system-prompt-keywords/index.vue'),
     meta: {
-      title: '系统关键词',
+      title: '表达扩散语料',
       icon: 'lucide:list-tree',
       order: -70,
       activeMenu: '/content-agent/system-prompt-keywords',
