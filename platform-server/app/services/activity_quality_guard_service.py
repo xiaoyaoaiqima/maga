@@ -245,8 +245,30 @@ A2_NEGATIVE_POST_NOTE_LIKE_DAILY_PURCHASE_PATTERN = re.compile(
 A2_NEGATIVE_POST_BAD_BATCH_CHECK_ATTRIBUTION_PATTERN = re.compile(
     r"(?:带批批检的姐妹|批批检的姐妹|带批批检的宝妈|批批检的宝妈)"
 )
+A2_STOCK_ONLY_KEYWORD = "有货"
+A2_MEMBER_BENEFIT_KEYWORD = "会员权益"
 A2_COMBO_KEYWORDS = ("有货+批批检", "批批检+转奶", "有货+转奶")
+A2_SENTIMENT_COMMENT_KEYWORDS = (A2_STOCK_ONLY_KEYWORD, *A2_COMBO_KEYWORDS, A2_MEMBER_BENEFIT_KEYWORD)
 A2_BATCH_REPORT_REQUIRED_KEYWORDS = ("有货+批批检", "批批检+转奶")
+A2_MEMBER_BENEFIT_MARKERS = (
+    "会员",
+    "权益",
+    "礼遇",
+    "活动",
+    "集罐",
+    "攒罐",
+    "空罐",
+    "积分",
+    "换礼",
+    "换奶粉",
+    "兑奖",
+    "抽奖",
+    "抽礼物",
+    "老客",
+    "老用户",
+    "礼品",
+    "礼盒",
+)
 A2_COMPETITOR_GROUPS: dict[str, tuple[str, ...]] = {
     "达能组": ("爱他美", "达能"),
     "雀巢组": ("雀巢", "超启能恩"),
@@ -264,6 +286,16 @@ A2_OUT_OF_SCOPE_COMPETITOR_TERMS = (
     "合生元",
     "诺优能",
 )
+A2_DIRECT_COMPETITOR_BRAND_TERMS = tuple(
+    sorted(
+        {
+            *A2_OUT_OF_SCOPE_COMPETITOR_TERMS,
+            *(term for terms in A2_COMPETITOR_GROUPS.values() for term in terms),
+        },
+        key=len,
+        reverse=True,
+    )
+)
 A2_UNCONFIRMED_COMPETITOR_VALUE_PATTERN = re.compile(
     r"(?:雀巢|超启能恩)(?:也)?(?:的|那边)?0\.03|(?:雀巢|超启能恩)和a2的0\.03"
 )
@@ -278,8 +310,8 @@ A2_BAD_003_PAIN_POINT_PATTERN = re.compile(
     r"0\.03(?:一起)?(?:对比|比)(?:肚肚|便便|奶量|适应|喝奶|反应)"
 )
 A2_BAD_003_COMPETITOR_COMPARISON_PATTERN = re.compile(
-    r"0\.03(?:这条线|这点|这个数值|这项)?(?:比|对比)(?:爱他美|达能|美素|皇家美素|皇美|雀巢|超启能恩|0\.2)"
-    r"|(?:爱他美|达能|美素|皇家美素|皇美|雀巢|超启能恩|0\.2)(?:比|对比)0\.03"
+    r"0\.03(?:这条线|这点|这个数值|这项)?(?:比|对比)(?:爱他美|达能|美素|皇家美素|皇美|雀巢|超启能恩|其他品牌|别的牌子|其他奶粉|之前的奶粉|0\.2)"
+    r"|(?:爱他美|达能|美素|皇家美素|皇美|雀巢|超启能恩|其他品牌|别的牌子|其他奶粉|之前的奶粉|0\.2)(?:比|对比)0\.03"
 )
 A2_UNCONFIRMED_COMPETITOR_BATCH_REPORT_PATTERN = re.compile(
     r"(?:爱他美|达能|皇家美素|皇美|(?<!皇家)美素)[^，。！？；;]{0,8}每批(?:报告|检测|检)"
@@ -422,7 +454,7 @@ A2_SPECIFIC_ADVANTAGE_MARKERS = (
 )
 A2_DIRECTION_MARKER_GROUPS: dict[str, dict[str, tuple[str, ...]]] = {
     "有货+批批检": {
-        "有货信息": ("有货", "到货", "补货", "问货", "快喝完", "新到", "店里"),
+        "有货信息": ("有货", "到货", "补货", "问货", "快喝完", "新到", "店里", "能买", "能拍", "买到", "来货", "发货", "上架"),
         "批批检信息": ("批批检", "物流码", "报告", "批次", "质检", "蜡样", "检测", "0.03"),
     },
     "批批检+转奶": {
@@ -430,7 +462,7 @@ A2_DIRECTION_MARKER_GROUPS: dict[str, dict[str, tuple[str, ...]]] = {
         "转奶动作": ("转奶", "刚转", "想转", "准备转", "转过来", "慢慢转", "换奶", "过渡", "适应"),
     },
     "有货+转奶": {
-        "有货信息": ("有货", "到货", "补货", "问货", "快喝完", "新到", "店里"),
+        "有货信息": ("有货", "到货", "补货", "问货", "快喝完", "新到", "店里", "能买", "能拍", "买到", "来货", "发货", "上架"),
         "转奶动作": ("转奶", "刚转", "想转", "准备转", "转过来", "慢慢转", "换奶", "过渡", "适应"),
         "批次报告": ("物流码", "报告", "批次", "检测", "0.03"),
     },
@@ -576,11 +608,13 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
         label="A2舆情改善评论专项守卫",
         forbidden_terms=A2_SENTIMENT_COMMENT_FORBIDDEN_TERMS,
         context_required_fields=("人设", "关键词", "扰动规则", "生文指令", "业务规则", "生文输出格式"),
-        context_keyword_allowlist=A2_COMBO_KEYWORDS,
+        context_keyword_allowlist=A2_SENTIMENT_COMMENT_KEYWORDS,
         keyword_markers={
+            A2_STOCK_ONLY_KEYWORD: ("有货", "到货", "补货", "问货", "快喝完", "新到", "店里", "能买", "能拍", "买到", "来货", "发货", "上架"),
             "有货+批批检": ("有货", "到货", "补货", "问货", "按需补", "快喝完", "物流码", "报告", "批次", "检测", "质检", "蜡样", "透明"),
             "批批检+转奶": ("批批检", "物流码", "报告", "批次", "质检", "蜡样", "转奶", "换奶", "过渡", "适应"),
             "有货+转奶": ("有货", "到货", "补货", "问货", "快喝完", "转奶", "换奶", "过渡", "适应"),
+            A2_MEMBER_BENEFIT_KEYWORD: A2_MEMBER_BENEFIT_MARKERS,
         },
         default_keyword="有货+批批检",
         body_replacements={
@@ -932,6 +966,17 @@ class ActivityQualityGuardService:
             if a2_repaired != repaired:
                 repaired = a2_repaired
                 repairs.append({"code": "activity_body_a2_003_reference_repaired"})
+        if profile.profile_key in A2_COMMENT_PROFILE_KEYS:
+            competitor_repaired, competitor_hits = _generalize_a2_direct_competitor_terms(repaired)
+            if competitor_repaired != repaired:
+                repaired = competitor_repaired
+                repairs.append(
+                    {
+                        "code": "activity_body_direct_competitor_generalized",
+                        "hits": competitor_hits,
+                        "replacement_scope": ["其他品牌", "别的牌子", "其他奶粉", "之前的奶粉"],
+                    }
+                )
         collapsed = _collapse_repeated_activity_terms(repaired)
         if collapsed != repaired:
             repaired = collapsed
@@ -1209,7 +1254,30 @@ def _repair_a2_003_reference(text: str) -> str:
     return value
 
 
+def _generalize_a2_direct_competitor_terms(text: str) -> tuple[str, list[str]]:
+    value = str(text or "")
+    hits: list[str] = []
+    for term in A2_DIRECT_COMPETITOR_BRAND_TERMS:
+        if term not in value:
+            continue
+        hits.append(term)
+        value = re.sub(rf"(之前|原来|以前)(?:喝|吃)?{re.escape(term)}", "之前的奶粉", value)
+        value = re.sub(rf"(一直|本来)(?:喝|吃)?{re.escape(term)}", r"\1喝之前的奶粉", value)
+        value = value.replace(term, "其他品牌")
+    while re.search(r"(其他品牌)(?:和|跟|、|，|,|/)(?:其他品牌)(?:也)?", value):
+        value = re.sub(r"(其他品牌)(?:和|跟|、|，|,|/)(?:其他品牌)(?:也)?", "其他品牌", value)
+    value = re.sub(r"其他品牌其他品牌", "其他品牌", value)
+    value = value.replace("喝其他品牌", "喝其他奶粉")
+    value = value.replace("换其他品牌", "换别的牌子")
+    value = value.replace("转其他品牌", "转别的牌子")
+    value = value.replace("其他品牌样批", "其他品牌的样批")
+    value = value.replace("其他品牌每批", "其他品牌每批")
+    return value.strip(), hits
+
+
 def _derive_a2_combo_keyword(source: str, profile: QualityGuardProfile) -> str:
+    if _has_any_marker(source, A2_MEMBER_BENEFIT_MARKERS):
+        return A2_MEMBER_BENEFIT_KEYWORD
     for keyword, markers in A2_DIRECT_KEYWORD_MARKERS.items():
         if any(marker in source for marker in markers):
             return keyword
@@ -1222,6 +1290,8 @@ def _derive_a2_combo_keyword(source: str, profile: QualityGuardProfile) -> str:
         return "批批检+转奶"
     if has_yohuo and has_transfer:
         return "有货+转奶"
+    if has_yohuo:
+        return A2_STOCK_ONLY_KEYWORD
     return profile.default_keyword or ""
 
 
@@ -1474,6 +1544,25 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
                     "code": "activity_body_missing_combo_marker",
                     "message": f"{keyword}方向正文缺少批次/报告/物流码信息",
                     "evidence": ["批次/报告/物流码"],
+                    "risk_level": "high",
+                }
+            )
+    if keyword == A2_MEMBER_BENEFIT_KEYWORD:
+        if not _has_any_marker(body, ("a2", "A2", "至初")):
+            issues.append(
+                {
+                    "code": "activity_body_missing_a2_member_brand_anchor",
+                    "message": "会员权益评论需要出现a2或至初品牌锚点",
+                    "evidence": ["a2/至初"],
+                    "risk_level": "high",
+                }
+            )
+        if not _has_any_marker(body, A2_MEMBER_BENEFIT_MARKERS):
+            issues.append(
+                {
+                    "code": "activity_body_missing_member_benefit_marker",
+                    "message": "会员权益评论需要讲清会员活动、集罐、积分、老客礼、抽奖或礼品等权益动作",
+                    "evidence": ["会员/集罐/积分/老客礼/抽奖/礼品"],
                     "risk_level": "high",
                 }
             )

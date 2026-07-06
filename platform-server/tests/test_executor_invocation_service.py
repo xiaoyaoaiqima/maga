@@ -448,7 +448,7 @@ async def test_direct_llm_rewrite_retries_empty_output(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_direct_llm_returns_clear_error_when_api_key_missing(monkeypatch):
-    for key in ["MAGA_DIRECT_MODEL_API_KEY", "AIHUBMIX_API_KEY", "OPENAI_API_KEY", "ARK_API_KEY"]:
+    for key in ["MAGA_DIRECT_MODEL_API_KEY", "DEEPSEEK_API_KEY", "AIHUBMIX_API_KEY", "OPENAI_API_KEY", "ARK_API_KEY"]:
         monkeypatch.delenv(key, raising=False)
     client = ExecutorInvocationClient()
 

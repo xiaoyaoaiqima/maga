@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 from dataclasses import dataclass
 from typing import Any
 
@@ -88,6 +89,11 @@ class UnifiedContentGenerationService:
             item_no=item_no,
             keyword_selection=_keyword_selection_from_rule(business_rule),
         )
+        selected_prompt_slots = (
+            _select_comment_prompt_slots(business_rule)
+            if content_type == "comment"
+            else []
+        )
         expert = await self._expert_snapshot(
             expert_config_code or _default_expert_code(content_type),
             content_type=content_type,
@@ -99,7 +105,19 @@ class UnifiedContentGenerationService:
             business_rule=business_rule,
             selected_keywords=selected_keywords,
         )
-        rendered_prompt = _render_template(expert["prompt_template"], variables)
+        comment_output_format = (
+            _comment_output_format_config(business_rule)
+            if content_type == "comment"
+            else {}
+        )
+        if content_type == "comment":
+            rendered_prompt = _comment_prompt_text(
+                business_rule,
+                selected_prompt_slots=selected_prompt_slots,
+                output_format=comment_output_format,
+            )
+        else:
+            rendered_prompt = _render_template(expert["prompt_template"], variables)
         input_snapshot = {
             "schema_version": "1",
             "capability": CONTENT_GENERATE_CAPABILITY,
@@ -107,6 +125,10 @@ class UnifiedContentGenerationService:
             "output_fields": output_fields,
             "business_rule": business_rule,
             "selected_keywords": selected_keywords,
+            "selected_prompt_slots": selected_prompt_slots,
+            "output_format": comment_output_format,
+            "output_format_mode": comment_output_format.get("mode"),
+            "expansion_count": comment_output_format.get("count"),
             "keyword_asset": _keyword_asset_ref(
                 keyword_asset,
                 resolved_keyword_asset_key,
@@ -336,6 +358,9 @@ def _template_variables(
 
 
 def _business_rule_text(rule: dict[str, Any], *, content_type: str | None = None) -> str:
+    if content_type == "comment":
+        return _comment_rule_text(rule)
+
     lines: list[str] = []
     if content_type == "article" and str(rule.get("corpus") or "").strip():
         # 文章业务规则由运营直接写成可读的写作规则；prompt 里不再重复渲染
@@ -480,6 +505,372 @@ def _business_rule_text(rule: dict[str, Any], *, content_type: str | None = None
     if not lines:
         lines.append(json.dumps(rule, ensure_ascii=False, indent=2))
     return "\n".join(lines)
+
+
+def _comment_rule_text(rule: dict[str, Any]) -> str:
+    lines: list[str] = []
+    corpus_text = str(rule.get("corpus") or "").strip()
+    if corpus_text:
+        lines.append(corpus_text)
+    elif rule.get("business_rule"):
+        lines.append(str(rule.get("business_rule") or "").strip())
+
+    exclude_example_terms = _content_path_exclude_example_terms(rule)
+    examples = [
+        str(item).strip()
+        for item in rule.get("examples") or []
+        if str(item).strip() and not _text_matches_excluded_terms(str(item), exclude_example_terms)
+    ]
+    supplements = [
+        str(item).strip()
+        for item in rule.get("supplements") or []
+        if str(item).strip() and not _text_matches_excluded_terms(str(item), exclude_example_terms)
+    ]
+    prompt_examples = examples + supplements
+    if prompt_examples:
+        lines.append(
+            "参考示例只学习真人语气和评论形态，不照抄、不固定句式：\n"
+            + "\n".join(f"- {item}" for item in prompt_examples)
+        )
+    if not lines:
+        return json.dumps(rule, ensure_ascii=False, indent=2)
+    return "\n".join(lines)
+
+
+def _comment_prompt_text(
+    rule: dict[str, Any],
+    *,
+    selected_prompt_slots: list[dict[str, Any]] | None = None,
+    output_format: dict[str, Any] | None = None,
+) -> str:
+    product_name = _comment_product_name(rule)
+    major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
+    context = _comment_context_line(rule, product_name)
+    focus = _comment_focus_line(rule)
+    notes = _comment_prompt_notes(rule)
+    examples = _comment_prompt_examples(rule)
+    output_format = output_format or _comment_output_format_config(rule)
+    generation_lines: list[str] = []
+    configured = str(rule.get("generation_requirements") or "").strip()
+    if configured:
+        generation_lines.append(configured)
+    generation_lines.extend(_comment_generation_lines(output_format))
+
+    if major == "有货":
+        lines = [context]
+    else:
+        lines = [
+            f"你是一位妈妈，在小红书母婴评论区回复别人关于{product_name}的帖子。",
+            "",
+            context,
+        ]
+    if focus:
+        lines.extend(["", focus])
+    for slot in selected_prompt_slots or []:
+        rendered_slot = _render_comment_prompt_slot(slot)
+        if rendered_slot:
+            lines.extend(["", rendered_slot])
+    if notes:
+        lines.extend(["", "注意：", *[f"- {note}" for note in notes]])
+    if examples:
+        lines.extend(["", "以下参考示例仅供参考，不照抄、不固定句式：", *[f"- {item}" for item in examples]])
+    lines.extend(["", "【生成要求】", *generation_lines])
+    return "\n".join(line for line in lines if line is not None).strip()
+
+
+def _comment_generation_lines(output_format: dict[str, Any]) -> list[str]:
+    mode = str(output_format.get("mode") or "plain_comment").strip()
+    count = _positive_int(output_format.get("count"), default=1)
+    if mode == "json_string_array":
+        return [
+            f"生成 {count} 条评论。",
+            "只输出 JSON 字符串数组，不要标题、编号、解释。",
+        ]
+    if mode == "json_object_array":
+        return [
+            f"生成 {count} 条评论。",
+            '只输出 JSON 对象数组，每个对象包含 "comment" 字段，不要标题、编号、解释。',
+        ]
+    return ["只输出评论正文，不要标题、编号、解释。"]
+
+
+def _comment_output_format_config(rule: dict[str, Any]) -> dict[str, Any]:
+    raw_config = rule.get("output_format") if isinstance(rule.get("output_format"), dict) else {}
+    raw_mode = (
+        rule.get("output_format_mode")
+        or raw_config.get("mode")
+        or raw_config.get("output_format_mode")
+        or "plain_comment"
+    )
+    mode = str(raw_mode or "plain_comment").strip()
+    if mode not in {"plain_comment", "json_string_array", "json_object_array"}:
+        mode = "plain_comment"
+    count = _positive_int(
+        rule.get("expansion_count")
+        or raw_config.get("count")
+        or raw_config.get("expansion_count")
+        or 1,
+        default=1,
+    )
+    if mode == "plain_comment":
+        count = 1
+    return {"mode": mode, "count": count}
+
+
+def _positive_int(value: Any, *, default: int = 1, minimum: int = 1, maximum: int = 100) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(parsed, maximum))
+
+
+def _select_comment_prompt_slots(rule: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_slots = rule.get("prompt_slots") or rule.get("comment_prompt_slots")
+    slots = _normalize_comment_prompt_slots(raw_slots)
+    selected: list[dict[str, Any]] = []
+    for slot in slots:
+        entries = slot["entries"]
+        index = _random_choice_index(len(entries))
+        selected.append(
+            {
+                "slot_name": slot["slot_name"],
+                "text": entries[index],
+                "selected_index": index,
+                "candidate_count": len(entries),
+            }
+        )
+    return selected
+
+
+def _normalize_comment_prompt_slots(raw_slots: Any) -> list[dict[str, Any]]:
+    if not raw_slots:
+        return []
+    normalized: list[dict[str, Any]] = []
+    if isinstance(raw_slots, dict):
+        iterator = raw_slots.items()
+        for slot_name, raw_entries in iterator:
+            entries = _comment_prompt_slot_entries(str(slot_name), raw_entries)
+            if entries:
+                normalized.append({"slot_name": str(slot_name).strip(), "entries": entries})
+        return normalized
+    if isinstance(raw_slots, list):
+        for item in raw_slots:
+            if not isinstance(item, dict):
+                continue
+            slot_name = str(item.get("slot_name") or item.get("name") or item.get("槽位") or "").strip()
+            raw_entries = (
+                item.get("entries")
+                or item.get("corpus")
+                or item.get("items")
+                or item.get("语料")
+            )
+            entries = _comment_prompt_slot_entries(slot_name, raw_entries)
+            if slot_name and entries:
+                normalized.append({"slot_name": slot_name, "entries": entries})
+    return normalized
+
+
+def _comment_prompt_slot_entries(slot_name: str, raw_entries: Any) -> list[str]:
+    if isinstance(raw_entries, str):
+        entries = [line.strip() for line in re.split(r"[\n\r]+", raw_entries) if line.strip()]
+    elif isinstance(raw_entries, list):
+        entries = [str(item).strip() for item in raw_entries if str(item).strip()]
+    else:
+        entries = []
+    if _is_comment_style_slot(slot_name):
+        invalid = [entry for entry in entries if _comment_style_text_has_business_terms(entry)]
+        if invalid:
+            raise ValueError(
+                "说话风格槽位不能包含业务元素: "
+                + "；".join(invalid[:3])
+            )
+    return entries
+
+
+def _is_comment_style_slot(slot_name: str) -> bool:
+    normalized = str(slot_name or "").strip().lower()
+    return normalized in {"说话风格", "说话方式", "comment_style", "speaking_style", "comment_speaking_style"}
+
+
+def _comment_style_text_has_business_terms(text: str) -> bool:
+    business_terms = [
+        "a2",
+        "A2",
+        "至初",
+        "源悦",
+        "爱他美",
+        "美素",
+        "皇家",
+        "批批检",
+        "每批",
+        "检测",
+        "质检",
+        "扫码",
+        "扫罐",
+        "报告",
+        "蜡毒",
+        "蜡样",
+        "溯源码",
+        "罐底",
+        "转奶",
+        "换奶",
+        "会员",
+        "集罐",
+        "积分",
+        "换礼",
+        "老客",
+        "导购",
+        "山姆",
+        "到货",
+        "有货",
+    ]
+    return any(term in str(text or "") for term in business_terms)
+
+
+def _random_choice_index(count: int) -> int:
+    if count <= 0:
+        raise ValueError("count must be positive")
+    return secrets.randbelow(count)
+
+
+def _render_comment_prompt_slot(slot: dict[str, Any]) -> str:
+    slot_name = str(slot.get("slot_name") or "").strip()
+    text = str(slot.get("text") or "").strip()
+    if not slot_name or not text:
+        return ""
+    if text.startswith(f"{slot_name}：") or text.startswith(f"{slot_name}:"):
+        return text
+    return f"{slot_name}：{text}"
+
+
+def _comment_product_name(rule: dict[str, Any]) -> str:
+    text = " ".join(
+        str(rule.get(key) or "")
+        for key in ("asset_key", "quality_guard_profile_key", "business_rule", "corpus", "generation_requirements")
+    )
+    if any(marker in text for marker in ("源悦", "飞鹤")):
+        return "源悦奶粉"
+    if any(marker in text for marker in ("a2", "A2", "至初")) or "a2_sentiment" in text:
+        return "a2奶粉"
+    return "这款奶粉"
+
+
+def _comment_context_line(rule: dict[str, Any], product_name: str) -> str:
+    major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
+    if major == "有货":
+        return (
+            f"你是一位妈妈，之前一直买{product_name}，但前段时间{product_name}没货了，一直没买到，"
+            "今天突然发现有货了，然后你买了，买完之后你想去小红书上跟别人分享这个信息。"
+            f"于是你要在一个说{product_name}缺货了，没货了的帖子下面写一条评论。"
+        )
+    if major == "批批检":
+        return f"你看到有人在聊{product_name}的检测报告或扫码信息，想把自己能看到的报告信息顺手补一句。"
+    if major == "转奶":
+        return f"你看到有人在聊转奶或换奶，想结合自己对{product_name}的选择回一条自然评论。"
+    if major == "会员权益":
+        return f"你看到有人在聊{product_name}会员权益、集罐或积分活动，想把自己看到的权益信息顺手说一下。"
+    return f"你看到有人在聊{product_name}，想结合自己的真实想法回一条自然评论。"
+
+
+def _comment_focus_line(rule: dict[str, Any]) -> str:
+    major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
+    corpus = str(rule.get("corpus") or "").strip()
+    if not corpus:
+        return ""
+    if major == "有货":
+        return ""
+    if major == "批批检":
+        return "可以围绕自己扫码、看报告入口、看到检测报告或报告信息来写。"
+    if major == "转奶":
+        return "可以围绕转奶折腾、怕不适应、喝熟悉款这些真实顾虑来写。"
+    if major == "会员权益":
+        return "可以围绕会员权益、集罐、积分、换礼或老客活动这些信息来写。"
+    return f"可以围绕这个意思来写：{corpus}"
+
+
+def _comment_prompt_notes(rule: dict[str, Any]) -> list[str]:
+    major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
+    notes = [
+        "评论内容不用很丰富，简单表达含义和情绪即可。",
+    ]
+    if major != "有货":
+        notes.append("不要写成品牌公告、客服回复、科普说明或广告口播。")
+    if _is_a2_sentiment_comment_rule(rule):
+        notes.append("不要说缺货、断粮等消极词。")
+        notes.append("不要直接说其他奶粉品牌名，如需提到对比或转奶对象，用其他品牌、别的牌子、其他奶粉、之前的奶粉这类泛化说法。")
+    if major == "有货":
+        notes.append("字数在10到20字之间。")
+    else:
+        notes.append("字数不要超过80字，具体长短参考示例。")
+    return notes
+
+
+def _comment_prompt_examples(rule: dict[str, Any]) -> list[str]:
+    exclude_example_terms = _content_path_exclude_example_terms(rule)
+    examples = [
+        str(item).strip()
+        for item in rule.get("examples") or []
+        if str(item).strip() and not _text_matches_excluded_terms(str(item), exclude_example_terms)
+    ]
+    supplements = [
+        str(item).strip()
+        for item in rule.get("supplements") or []
+        if str(item).strip() and not _text_matches_excluded_terms(str(item), exclude_example_terms)
+    ]
+    prompt_examples = examples + supplements
+    if _is_a2_sentiment_comment_rule(rule):
+        prompt_examples = [_generalize_a2_comment_competitor_terms(item) for item in prompt_examples]
+    major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
+    corpus = str(rule.get("corpus") or "")
+    if major == "有货" and any(marker in corpus for marker in ("导购", "门店", "山姆", "线上")):
+        picked: list[str] = []
+        for marker in ("山姆", "线上", "导购"):
+            match = next((item for item in prompt_examples if marker in item and item not in picked), "")
+            if match:
+                picked.append(match)
+        if len(picked) >= 3:
+            return picked[:3]
+    return prompt_examples[:6]
+
+
+def _is_a2_sentiment_comment_rule(rule: dict[str, Any]) -> bool:
+    text = " ".join(str(rule.get(key) or "") for key in ("asset_key", "quality_guard_profile_key", "business_rule", "corpus"))
+    return "a2_sentiment" in text or "a2" in text or "A2" in text or "至初" in text
+
+
+def _generalize_a2_comment_competitor_terms(text: str) -> str:
+    value = str(text or "")
+    competitor_terms = (
+        "超启能恩",
+        "皇家美素",
+        "美赞臣",
+        "星飞帆",
+        "爱他美",
+        "君乐宝",
+        "贝因美",
+        "合生元",
+        "诺优能",
+        "达能",
+        "雀巢",
+        "美素",
+        "皇美",
+        "飞鹤",
+        "惠氏",
+        "启赋",
+        "雅培",
+    )
+    for term in competitor_terms:
+        value = re.sub(rf"(之前|原来|以前)(?:喝|吃)?{re.escape(term)}", "之前的奶粉", value)
+        value = re.sub(rf"(一直|本来)(?:喝|吃)?{re.escape(term)}", r"\1喝之前的奶粉", value)
+        value = value.replace(term, "其他品牌")
+    while re.search(r"(其他品牌)(?:和|跟|、|，|,|/)(?:其他品牌)(?:也)?", value):
+        value = re.sub(r"(其他品牌)(?:和|跟|、|，|,|/)(?:其他品牌)(?:也)?", "其他品牌", value)
+    value = value.replace("其他品牌其他品牌", "其他品牌")
+    value = value.replace("喝其他品牌", "喝其他奶粉")
+    value = value.replace("换其他品牌", "换别的牌子")
+    value = value.replace("转其他品牌", "转别的牌子")
+    return value.strip()
 
 
 def _real_user_example_text(item: dict[str, Any]) -> str:

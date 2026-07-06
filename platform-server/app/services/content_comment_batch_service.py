@@ -370,14 +370,15 @@ class ContentCommentBatchService:
                     await self._mark_item_timeout(item_id)
                     return False
 
+        requested_output_count = sum(_comment_plan_output_count(item.plan_json or {}) for item in await self._planned_items(job_id))
         results = await asyncio.gather(*(run_item(item_id) for item_id in item_ids))
-        generated = sum(1 for ok in results if ok)
+        generated_seed_count = sum(1 for ok in results if ok)
         failed = sum(1 for ok in results if not ok)
 
         job = await self._require_job(job_id)
-        job.status = "generated" if generated == len(item_ids) else "partially_generated" if generated else "failed"
+        job.status = "generated" if generated_seed_count == len(item_ids) else "partially_generated" if generated_seed_count else "failed"
         await self.db.flush()
-        if generated:
+        if generated_seed_count:
             await self._review_generated_batch_similarity(job_id)
             await self._review_generated_batch_delivery_duplicates(job_id)
             await self._rebalance_micro_reply_batch_variation(job_id)
@@ -388,12 +389,13 @@ class ContentCommentBatchService:
         CommentBatchVariationReviewService().review_batch(items)
         await self.db.flush()
         await self.db.commit()
+        generated_items = [item for item in items if item.status == "generated"]
         return CommentBatchExecutionResult(
             batch_id=job_id,
-            requested_limit=len(item_ids),
-            generated_count=generated,
+            requested_limit=requested_output_count,
+            generated_count=len(generated_items),
             failed_count=failed,
-            item_ids=item_ids,
+            item_ids=[item.id for item in items],
         )
 
     async def _require_rule_asset(self, asset_key: str) -> AssetRegistry:
@@ -633,7 +635,7 @@ class ContentCommentBatchService:
             rule,
             item_no=item_no,
         )
-        return {
+        plan = {
             "rule_type": "business_rule",
             "render_reference_examples": True,
             "item_no": item_no,
@@ -656,6 +658,15 @@ class ContentCommentBatchService:
             "source_row_no": rule.get("source_row_no"),
             "output_fields": ["comment"],
         }
+        output_config = _comment_generation_output_config(rule, asset)
+        if output_config:
+            plan["output_format"] = output_config
+            plan["output_format_mode"] = output_config["mode"]
+            plan["expansion_count"] = output_config["count"]
+        for key in ("prompt_slots", "comment_prompt_slots"):
+            if rule.get(key):
+                plan[key] = rule.get(key)
+        return plan
 
     def _selected_prompt_examples(self, rule: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
         examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
@@ -685,7 +696,7 @@ class ContentCommentBatchService:
                 callback_base_url=self.callback_base_url,
             )
             model_config = dict((item.plan_json or {}).get("model_config") or {})
-            model_config.setdefault("max_tokens", COMMENT_GENERATION_MAX_TOKENS)
+            model_config.setdefault("max_tokens", _comment_generation_max_tokens(item.plan_json or {}))
             model_config.setdefault("timeout", COMMENT_GENERATION_MODEL_TIMEOUT_SECONDS)
             model_config.setdefault("max_retries", COMMENT_GENERATION_MODEL_MAX_RETRIES)
             unified = await UnifiedContentGenerationService(db).build_snapshot(
@@ -721,71 +732,148 @@ class ContentCommentBatchService:
                 },
                 created_by=created_by,
             )
+            expanded_items: list[ContentBatchItem] = []
             try:
                 result = await orchestrator.run_single_capability(task_request, capability=CONTENT_GENERATE_CAPABILITY)
-                comment = str((result.output or {}).get("comment") or "").strip()
+                comments = self._generated_comments_from_output(result.output or {})
                 used_empty_fallback = False
-                if not comment:
-                    comment = (
+                if not comments:
+                    fallback_comment = (
                         self._fallback_empty_micro_reply(item)
                         or self._fallback_empty_thread_short_reply(item)
                         or self._fallback_empty_micro_batch_check_reply(item)
                     )
-                    used_empty_fallback = bool(comment)
-                if not comment:
+                    comments = [fallback_comment] if fallback_comment else []
+                    used_empty_fallback = bool(fallback_comment)
+                if not comments:
                     raise ValueError("content.generate returned empty comment")
-                comment = self._normalize_comment_length(item, comment)
-                item.status = "generated"
-                item.task_id = result.run.task_id
-                item.run_id = result.run.id
-                item.title = (item.plan_json or {}).get("business_rule")
-                item.body = comment
-                item.quality_json = {
-                    "executor": self._executor_label(result.stage_calls),
-                    "stage_call_count": len(result.stage_calls),
-                    "run_status": result.run.status,
-                    "rule_type": "business_rule",
-                    "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
-                    "expert_config_code": (unified.input_snapshot.get("expert") or {}).get("expert_config_code"),
-                    "hard_pass": True,
-                    "empty_generation_fallback": used_empty_fallback,
-                }
-                item.diversity_json = {
-                    "rule_type": "business_rule",
-                    "source_row_no": (item.plan_json or {}).get("source_row_no"),
-                    "business_rule": (item.plan_json or {}).get("business_rule"),
-                    "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
-                }
-                await self._review_and_rewrite_low_information(
-                    item=item,
-                    orchestrator=orchestrator,
-                )
-                await CommentRealnessReviewService().review_and_rewrite_item(
-                    item=item,
-                    orchestrator=orchestrator,
-                    executor_code=self.executor_code,
-                )
-                item.body = self._normalize_comment_length(item, item.body or "")
-                self._sanitize_brand_hallucinations(item)
-                await ForbiddenTermReviewService(db).review_and_rewrite_item(
-                    item=item,
-                    asset_key=(item.plan_json or {}).get("asset_key"),
-                    orchestrator=orchestrator,
-                    executor_code=self.executor_code,
-                    content_type="comment",
-                )
-                item.body = self._normalize_comment_length(item, item.body or "")
-                ActivityQualityGuardService().review_item(item)
+                generated_items = [item]
+                if len(comments) > 1:
+                    expanded_items = await self._create_expanded_comment_items(
+                        db=db,
+                        seed_item=item,
+                        comments=comments[1:],
+                    )
+                    generated_items.extend(expanded_items)
+                for index, target_item in enumerate(generated_items):
+                    await self._apply_generated_comment_to_item(
+                        db=db,
+                        item=target_item,
+                        comment=comments[index],
+                        result=result,
+                        unified_input=unified.input_snapshot,
+                        orchestrator=orchestrator,
+                        used_empty_fallback=used_empty_fallback if index == 0 else False,
+                    )
                 item.error_message = None
                 await db.commit()
                 return True
             except Exception as exc:  # noqa: BLE001 - persist per-item failure for demo report
-                item.status = "failed"
-                if getattr(exc, "run_id", None):
-                    item.run_id = exc.run_id
-                item.error_message = str(exc)
+                for failed_item in [item, *expanded_items]:
+                    failed_item.status = "failed"
+                    if getattr(exc, "run_id", None):
+                        failed_item.run_id = exc.run_id
+                    failed_item.error_message = str(exc)
                 await db.commit()
                 return False
+
+    @staticmethod
+    def _generated_comments_from_output(output: dict[str, Any]) -> list[str]:
+        raw_comments = output.get("comments")
+        if raw_comments is None:
+            raw_items = output.get("items")
+            if isinstance(raw_items, list):
+                raw_comments = [
+                    raw_item.get("comment")
+                    for raw_item in raw_items
+                    if isinstance(raw_item, dict)
+                ]
+        if raw_comments is None:
+            raw_comments = [output.get("comment")]
+        return [str(comment).strip() for comment in raw_comments or [] if str(comment or "").strip()]
+
+    async def _create_expanded_comment_items(
+        self,
+        *,
+        db: AsyncSession,
+        seed_item: ContentBatchItem,
+        comments: list[str],
+    ) -> list[ContentBatchItem]:
+        created: list[ContentBatchItem] = []
+        base_plan = dict(seed_item.plan_json or {})
+        for index, _comment in enumerate(comments, start=2):
+            plan = {
+                **base_plan,
+                "item_no": seed_item.item_no * 1000 + index,
+                "expanded_from_item_id": seed_item.id,
+                "expanded_from_item_no": seed_item.item_no,
+                "expanded_index": index,
+            }
+            expanded_item = ContentBatchItem(
+                batch_id=seed_item.batch_id,
+                item_no=seed_item.item_no * 1000 + index,
+                status="running",
+                plan_json=plan,
+            )
+            db.add(expanded_item)
+            created.append(expanded_item)
+        await db.flush()
+        return created
+
+    async def _apply_generated_comment_to_item(
+        self,
+        *,
+        db: AsyncSession,
+        item: ContentBatchItem,
+        comment: str,
+        result: Any,
+        unified_input: dict[str, Any],
+        orchestrator: ContentAgentOrchestrator,
+        used_empty_fallback: bool,
+    ) -> None:
+        comment = self._normalize_comment_length(item, comment)
+        item.status = "generated"
+        item.task_id = result.run.task_id
+        item.run_id = result.run.id
+        item.title = (item.plan_json or {}).get("business_rule")
+        item.body = comment
+        item.quality_json = {
+            "executor": self._executor_label(result.stage_calls),
+            "stage_call_count": len(result.stage_calls),
+            "run_status": result.run.status,
+            "rule_type": "business_rule",
+            "selected_keywords": unified_input.get("selected_keywords") or [],
+            "expert_config_code": (unified_input.get("expert") or {}).get("expert_config_code"),
+            "hard_pass": True,
+            "empty_generation_fallback": used_empty_fallback,
+        }
+        item.diversity_json = {
+            "rule_type": "business_rule",
+            "source_row_no": (item.plan_json or {}).get("source_row_no"),
+            "business_rule": (item.plan_json or {}).get("business_rule"),
+            "selected_keywords": unified_input.get("selected_keywords") or [],
+        }
+        await self._review_and_rewrite_low_information(
+            item=item,
+            orchestrator=orchestrator,
+        )
+        await CommentRealnessReviewService().review_and_rewrite_item(
+            item=item,
+            orchestrator=orchestrator,
+            executor_code=self.executor_code,
+        )
+        item.body = self._normalize_comment_length(item, item.body or "")
+        self._sanitize_brand_hallucinations(item)
+        await ForbiddenTermReviewService(db).review_and_rewrite_item(
+            item=item,
+            asset_key=(item.plan_json or {}).get("asset_key"),
+            orchestrator=orchestrator,
+            executor_code=self.executor_code,
+            content_type="comment",
+        )
+        item.body = self._normalize_comment_length(item, item.body or "")
+        ActivityQualityGuardService().review_item(item)
+        item.error_message = None
 
     async def _mark_item_timeout(self, item_id: int) -> None:
         async with self.session_factory() as db:
@@ -1819,6 +1907,50 @@ def _batch_variation_review_from_asset(asset: AssetRegistry | None) -> dict[str,
         if isinstance(value, dict):
             return value
     return None
+
+
+def _comment_generation_output_config(rule: dict[str, Any], asset: AssetRegistry | None) -> dict[str, Any] | None:
+    sources = [rule, *_asset_json_sources(asset)]
+    raw_mode: Any = None
+    raw_count: Any = None
+    for source in sources:
+        output_format = source.get("output_format") if isinstance(source.get("output_format"), dict) else {}
+        raw_mode = raw_mode or source.get("output_format_mode") or output_format.get("mode")
+        raw_count = raw_count or source.get("expansion_count") or output_format.get("count") or output_format.get("expansion_count")
+    mode = str(raw_mode or "plain_comment").strip()
+    if mode not in {"json_string_array", "json_object_array"}:
+        return None
+    return {
+        "mode": mode,
+        "count": _comment_positive_int(raw_count, default=1, maximum=100),
+    }
+
+
+def _comment_plan_output_count(plan: dict[str, Any]) -> int:
+    mode = str(plan.get("output_format_mode") or ((plan.get("output_format") or {}).get("mode") if isinstance(plan.get("output_format"), dict) else "")).strip()
+    if mode not in {"json_string_array", "json_object_array"}:
+        return 1
+    return _comment_positive_int(
+        plan.get("expansion_count")
+        or ((plan.get("output_format") or {}).get("count") if isinstance(plan.get("output_format"), dict) else None),
+        default=1,
+        maximum=100,
+    )
+
+
+def _comment_generation_max_tokens(plan: dict[str, Any]) -> int:
+    count = _comment_plan_output_count(plan)
+    if count <= 1:
+        return COMMENT_GENERATION_MAX_TOKENS
+    return max(COMMENT_GENERATION_MAX_TOKENS, min(4096, count * 128))
+
+
+def _comment_positive_int(value: Any, *, default: int = 1, maximum: int = 100) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, min(parsed, maximum))
 
 
 def _asset_json_sources(asset: AssetRegistry | None) -> tuple[dict[str, Any], dict[str, Any]]:

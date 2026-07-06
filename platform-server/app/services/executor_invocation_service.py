@@ -549,7 +549,7 @@ async def _direct_generate_with_empty_retry(
         prompt,
         (
             f"{prompt}\n\n"
-            "再次提醒：必须输出非空结果。评论只输出一条评论正文；文章输出标题和正文。"
+            f"再次提醒：必须输出非空结果。{_empty_retry_output_reminder(input_payload)}"
         ),
     ]
     last_raw = ""
@@ -671,6 +671,7 @@ def _direct_model_endpoint(model_config: dict[str, Any]) -> str | None:
         model_config.get("base_url")
         or model_config.get("endpoint")
         or os.getenv("MAGA_DIRECT_MODEL_BASE_URL")
+        or os.getenv("DEEPSEEK_API_BASE")
         or os.getenv("AIHUBMIX_BASE_URL")
         or os.getenv("AIHUBMIX_API_URL")
         or os.getenv("OPENAI_BASE_URL")
@@ -684,6 +685,7 @@ def _direct_model_api_key(model_config: dict[str, Any]) -> str | None:
     value = (
         model_config.get("api_key")
         or os.getenv("MAGA_DIRECT_MODEL_API_KEY")
+        or os.getenv("DEEPSEEK_API_KEY")
         or os.getenv("AIHUBMIX_API_KEY")
         or os.getenv("OPENAI_API_KEY")
         or os.getenv("ARK_API_KEY")
@@ -716,16 +718,77 @@ def _normalize_comment_text(text: str) -> str:
     return value.strip("“”\"' ")
 
 
+def _comment_output_format_mode(input_payload: dict[str, Any]) -> str:
+    output_format = input_payload.get("output_format")
+    mode = ""
+    if isinstance(output_format, dict):
+        mode = str(output_format.get("mode") or output_format.get("output_format_mode") or "").strip()
+    mode = mode or str(input_payload.get("output_format_mode") or "").strip()
+    return mode if mode in {"json_string_array", "json_object_array"} else "plain_comment"
+
+
+def _empty_retry_output_reminder(input_payload: dict[str, Any]) -> str:
+    if input_payload.get("content_type") == "comment" or (input_payload.get("output_fields") or []) == ["comment"]:
+        mode = _comment_output_format_mode(input_payload)
+        if mode == "json_string_array":
+            return "评论只输出 JSON 字符串数组；文章输出标题和正文。"
+        if mode == "json_object_array":
+            return '评论只输出 JSON 对象数组，每个对象包含 "comment" 字段；文章输出标题和正文。'
+        return "评论只输出一条评论正文；文章输出标题和正文。"
+    return "评论只输出一条评论正文；文章输出标题和正文。"
+
+
+def _normalize_comment_array_output(raw: str, *, mode: str) -> list[str]:
+    parsed = _parse_json_value(raw)
+    if not isinstance(parsed, list):
+        return []
+    comments: list[str] = []
+    for item in parsed:
+        if mode == "json_string_array":
+            comment = _normalize_comment_text(str(item or ""))
+        elif isinstance(item, dict):
+            comment = _normalize_comment_text(
+                str(
+                    item.get("comment")
+                    or item.get("评论")
+                    or item.get("content")
+                    or item.get("内容")
+                    or item.get("text")
+                    or item.get("回复")
+                    or ""
+                )
+            )
+        else:
+            comment = ""
+        if comment:
+            comments.append(comment)
+    return comments
+
+
 def _empty_content_from_unified_input(input_payload: dict[str, Any]) -> dict[str, str]:
     output_fields = input_payload.get("output_fields") or []
     if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
+        mode = _comment_output_format_mode(input_payload)
+        if mode in {"json_string_array", "json_object_array"}:
+            return {"comment": "", "comments": [], "items": []}
         return {"comment": ""}
     return {"title": "", "body": ""}
 
 
-def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -> dict[str, str]:
+def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -> dict[str, Any]:
     output_fields = input_payload.get("output_fields") or []
     if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
+        mode = _comment_output_format_mode(input_payload)
+        if mode in {"json_string_array", "json_object_array"}:
+            comments = _normalize_comment_array_output(raw, mode=mode)
+            if not comments:
+                raise ValueError("content.generate produced empty comment array")
+            return {
+                "comment": comments[0],
+                "comments": comments,
+                "items": [{"comment": comment} for comment in comments],
+                "output_format_mode": mode,
+            }
         comment = _normalize_comment_text(raw)
         if not comment:
             raise ValueError("content.generate produced empty comment")
@@ -847,20 +910,24 @@ def _normalize_rewrite_output(
 
 
 def _parse_json_object(raw: str) -> dict[str, Any]:
+    parsed = _parse_json_value(raw)
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _parse_json_value(raw: str) -> Any:
     value = str(raw or "").strip()
     value = re.sub(r"^```(?:json)?\s*", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\s*```$", "", value).strip()
     try:
-        parsed = json.loads(value)
+        return json.loads(value)
     except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", value, flags=re.DOTALL)
+        match = re.search(r"(\{.*\}|\[.*\])", value, flags=re.DOTALL)
         if not match:
-            return {}
+            return None
         try:
-            parsed = json.loads(match.group(0))
+            return json.loads(match.group(0))
         except json.JSONDecodeError:
-            return {}
-    return parsed if isinstance(parsed, dict) else {}
+            return None
 
 
 def _loose_title_body_from_text(raw: str) -> tuple[str, str] | None:

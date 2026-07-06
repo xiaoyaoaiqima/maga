@@ -375,6 +375,54 @@ def test_comment_plan_injects_three_reference_examples_from_pool():
     assert len(plan["selected_example_indices"]) == 3
 
 
+def test_comment_plan_preserves_prompt_slots_from_rule():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rule = {
+        "rule_id": "business_rule_001",
+        "business_rule": "有货-直给到货情绪",
+        "corpus": "像妈妈看到 a2 到货后顺手接一句。",
+        "examples": ["a2终于到货了"],
+        "prompt_slots": {
+            "说话风格": [
+                "适当加几个网络热词，不要过度。",
+                "像评论区接楼，短一点，顺手补一句。",
+            ]
+        },
+        "source_row_no": 1,
+    }
+    asset = SimpleNamespace(asset_key="a2_sentiment_comment_activity", id=7, version_no=3)
+
+    plan = service._plan_from_rule(rule, asset=asset, item_no=1)
+
+    assert plan["prompt_slots"] == rule["prompt_slots"]
+
+
+def test_comment_plan_preserves_seed_expand_output_config_from_rule():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rule = {
+        "rule_id": "business_rule_001",
+        "business_rule": "有货-直给到货情绪",
+        "corpus": "像妈妈看到 a2 到货后顺手接一句。",
+        "examples": ["a2终于到货了"],
+        "output_format_mode": "json_string_array",
+        "expansion_count": 20,
+        "source_row_no": 1,
+    }
+    asset = SimpleNamespace(
+        asset_key="a2_sentiment_comment_activity",
+        id=7,
+        version_no=3,
+        content_json={},
+        metadata_json={},
+    )
+
+    plan = service._plan_from_rule(rule, asset=asset, item_no=1)
+
+    assert plan["output_format"] == {"mode": "json_string_array", "count": 20}
+    assert plan["output_format_mode"] == "json_string_array"
+    assert plan["expansion_count"] == 20
+
+
 def test_comment_plan_copies_generation_requirements_from_rule_asset():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
     rule = {
@@ -2459,7 +2507,8 @@ def test_a2_activity_guard_repairs_marker_and_entry_terms():
     assert payload["context_list"]["关键词"] == "有货+批批检"
     assert "0.03" in item.body
     assert "a2报告里那项0.03" in item.body
-    assert "爱他美" in item.body
+    assert "爱他美" not in item.body
+    assert "其他品牌" in item.body
     assert "物流码" in item.body
     assert "物流码物流码" not in item.body
     assert "物流码那个物流码" not in item.body
@@ -2646,6 +2695,69 @@ def test_a2_activity_guard_accepts_contextual_this_can_tested_short_comment():
     assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
     assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
     assert not payload["issues"]
+
+
+def test_a2_activity_guard_accepts_stock_only_comment_without_batch_report():
+    item = ContentBatchItem(
+        body="刚看到a2能买了，我去瞅瞅。",
+        plan_json=_a2_guard_plan("有货直给到货情绪：\n像评论区里刷到 a2 到货、能拍、能买之后的短句接话。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert payload["context_list"]["关键词"] == "有货"
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_still_requires_batch_report_for_stock_batch_combo():
+    item = ContentBatchItem(
+        body="刚看到a2能买了，我去瞅瞅。",
+        plan_json=_a2_guard_plan("补货前先扫物流码：\n关键词方向是有货+批批检，像妈妈分享到货后先看报告。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is False
+    assert payload["context_list"]["关键词"] == "有货+批批检"
+    assert any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+
+
+def test_a2_activity_guard_accepts_member_benefit_comment_without_batch_report():
+    item = ContentBatchItem(
+        body="长期喝a2的，空罐攒起来换奶粉挺实在。",
+        plan_json=_a2_guard_plan("会员权益-集罐换礼：\n写妈妈看到 a2 会员活动里可以集罐换奶粉后的评论。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert payload["context_list"]["关键词"] == "会员权益"
+    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
+    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
+    assert not payload["issues"]
+
+
+def test_a2_activity_guard_requires_brand_anchor_for_member_benefit_comment():
+    item = ContentBatchItem(
+        body="长期喝的话，空罐攒起来换奶粉挺实在。",
+        plan_json=_a2_guard_plan("会员权益-集罐换礼：\n写妈妈看到 a2 会员活动里可以集罐换奶粉后的评论。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is False
+    assert any(issue["code"] == "activity_body_missing_a2_member_brand_anchor" for issue in payload["issues"])
 
 
 @pytest.mark.parametrize(
@@ -3213,6 +3325,24 @@ def test_a2_activity_guard_accepts_aptamil_seen_when_a2_advantage_is_clear():
     assert not payload["issues"]
 
 
+def test_a2_activity_guard_generalizes_direct_competitor_brand_names():
+    item = ContentBatchItem(
+        body="之前喝爱他美，现在换a2后会先扫罐底物流码看报告，也对比过雀巢。",
+        plan_json=_a2_guard_plan("补货前先扫物流码：\n关键词方向是有货+批批检。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert "爱他美" not in item.body
+    assert "雀巢" not in item.body
+    assert "之前的奶粉" in item.body
+    assert "其他品牌" in item.body
+    assert any(repair["code"] == "activity_body_direct_competitor_generalized" for repair in payload["repairs"])
+
+
 def test_a2_activity_guard_accepts_switch_to_a2_scan_report_wording():
     item = ContentBatchItem(
         body="之前喝爱他美，现在换a2后会先扫罐底物流码看报告。",
@@ -3411,7 +3541,7 @@ def test_a2_activity_guard_rejects_truncated_comment_tail():
     assert any(issue["code"] == "activity_body_incomplete_comment" for issue in payload["issues"])
 
 
-def test_a2_activity_guard_rejects_out_of_scope_competitor_terms():
+def test_a2_activity_guard_generalizes_out_of_scope_competitor_terms():
     item = ContentBatchItem(
         body="补货时我看美素和美赞臣，也看a2报告里那项0.03和物流码报告。",
         plan_json=_a2_guard_plan("补货前先扫物流码：\n关键词方向是有货+批批检，像妈妈分享到货后先看报告。"),
@@ -3421,8 +3551,11 @@ def test_a2_activity_guard_rejects_out_of_scope_competitor_terms():
     payload = ActivityQualityGuardService().review_item(item)
 
     assert payload is not None
-    assert payload["pass"] is False
-    assert any(issue["code"] == "activity_body_out_of_scope_competitor" for issue in payload["issues"])
+    assert payload["pass"] is True
+    assert "美素" not in item.body
+    assert "美赞臣" not in item.body
+    assert "其他品牌" in item.body
+    assert any(repair["code"] == "activity_body_direct_competitor_generalized" for repair in payload["repairs"])
 
 
 def test_a2_activity_guard_repairs_unconfirmed_nestle_value_attribution():
@@ -3437,7 +3570,8 @@ def test_a2_activity_guard_repairs_unconfirmed_nestle_value_attribution():
     assert payload is not None
     assert payload["pass"] is True
     assert "超启能恩和a2的0.03" not in item.body
-    assert "超启能恩也看，a2报告里那项0.03" in item.body
+    assert "超启能恩" not in item.body
+    assert "其他品牌也看，a2报告里那项0.03" in item.body
 
 
 def test_a2_activity_guard_repairs_ambiguous_competitor_003_comparison():
@@ -3453,7 +3587,8 @@ def test_a2_activity_guard_repairs_ambiguous_competitor_003_comparison():
     assert payload["pass"] is True
     assert "达能和0.03" not in item.body
     assert "拿达能也看" not in item.body
-    assert "还会看达能" in item.body
+    assert "达能" not in item.body
+    assert "还会看其他品牌" in item.body
     assert "0.03对比肚肚" not in item.body
     assert "a2报告里那项0.03" in item.body
 
@@ -3588,7 +3723,8 @@ def test_a2_activity_guard_repairs_competitor_report_003_attribution():
     assert payload is not None
     assert payload["pass"] is True
     assert "爱他美报告里那项0.03" not in item.body
-    assert "爱他美样批也看，a2报告里那项0.03" in item.body
+    assert "爱他美" not in item.body
+    assert "其他品牌的样批也看，a2报告里那项0.03" in item.body
 
 
 def test_a2_activity_guard_rejects_unconfirmed_competitor_batch_report():
@@ -4253,10 +4389,10 @@ async def test_ppl_run_can_start_a2_comment_profile(content_agent_workbench_clie
                     "quality_guard_profile_key": "a2_sentiment_comment_202606",
                     "items": [
                         {
-                            "rule_id": "a2_001",
-                            "business_rule": "A2舆情改善评论",
-                            "corpus": "补货前先扫物流码：\n关键词方向是有货+批批检，像妈妈分享到货后先看报告。",
-                            "examples": ["a2有货了我先扫罐底码看报告"],
+                            "rule_id": "a2_direct_001",
+                            "business_rule": "有货-直给到货情绪",
+                            "corpus": "像妈妈看到 a2 到货后顺手接一句，不回讲以前买不到。",
+                            "examples": ["a2终于到货了，我去看看", "我也买到a2新货了"],
                             "source_row_no": 1,
                         }
                     ],
@@ -4294,6 +4430,13 @@ async def test_ppl_run_can_start_a2_comment_profile(content_agent_workbench_clie
     assert item.plan_json["asset_key"] == "a2_sentiment_comment_activity"
     assert item.plan_json["quality_guard_profile_key"] == "a2_sentiment_comment_202606"
     assert item.plan_json["unified_generation"]["capability"] == "content.generate"
+    rendered_prompt = item.plan_json["unified_generation"]["rendered_prompt"]
+    assert "a2终于到货了，我去看看" in rendered_prompt
+    assert "有货-直给到货情绪" not in rendered_prompt
+    assert "【业务规则】" not in rendered_prompt
+    assert "业务规则" not in rendered_prompt
+    assert "- 业务规则：" not in rendered_prompt
+    assert "- 业务语料：" not in rendered_prompt
 
 
 @pytest.mark.asyncio
@@ -4381,7 +4524,7 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
     assert report["asset_key"] == "yuanyue_comment_activity"
     assert report["product_topic"] == "美素佳儿源悦活动评论"
     assert report["items"][0]["title"] == "整体适应"
-    assert report["items"][0]["body"] == "我家刚开始也在看源悦"
+    assert report["items"][0]["body"] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
     assert report["items"][0]["quality"]["rule_type"] == "business_rule"
     assert report["items"][0]["generation_snapshot"]["rule_type"] == "business_rule"
     assert report["items"][0]["generation_snapshot"]["business_rule"]["business_rule"] == "整体适应"
@@ -4402,7 +4545,7 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
     assert item.plan_json["business_rule"] == "整体适应"
     assert "像妈妈在评论区聊刚开始喝源悦" in item.plan_json["corpus"]
     assert item.plan_json["examples"] == ["我家刚开始也在看源悦，想蹲蹲真实反馈"]
-    assert "- 示例：" in item.plan_json["unified_generation"]["rendered_prompt"]
+    assert "以下参考示例仅供参考" in item.plan_json["unified_generation"]["rendered_prompt"]
     assert "我家刚开始也在看源悦，想蹲蹲真实反馈" in item.plan_json["unified_generation"]["rendered_prompt"]
     assert item.plan_json["unified_generation"]["capability"] == "content.generate"
     assert [kw["category_code"] for kw in item.plan_json["unified_generation"]["selected_keywords"]] == [
@@ -5123,7 +5266,7 @@ async def test_batch_feedback_insights_summarize_operator_feedback(content_agent
     assert insights["samples"][0]["quoted_text"] == "想蹲蹲真实反馈"
     assert insights["samples"][0]["feedback_categories"] == ["too_ad_like", "unnatural"]
     assert insights["suggestions"][0]["suggestion_type"] == "system_keyword"
-    assert insights["suggestions"][0]["target"] == "系统关键词 / 生评论指令"
+    assert insights["suggestions"][0]["target"] == "表达扩散语料 / 生评论指令"
     assert "广告口吻" in insights["suggestions"][0]["evidence"][0]
 
 
