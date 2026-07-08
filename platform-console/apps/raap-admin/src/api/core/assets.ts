@@ -113,6 +113,37 @@ export namespace AssetsApi {
     asset: AssetRegistry;
   }
 
+  export interface BusinessRuleCopilotContext {
+    asset: {
+      id: number;
+      asset_type: string;
+      asset_key: string;
+      display_name?: null | string;
+      version_no: number;
+      status: string;
+      asset_stage: string;
+      source_name?: null | string;
+      created_by?: null | string;
+      create_time?: null | string;
+      update_time?: null | string;
+    };
+    content_type?: null | 'article' | 'comment';
+    rule: {
+      index: number;
+      item_no: number;
+      rule_id?: null | string;
+      source_row_no?: null | number;
+      business_rule?: null | string;
+      corpus: string;
+      examples: string[];
+      supplements: string[];
+      raw: Record<string, any>;
+    };
+    selected_draft?: null | CommentBusinessRuleDraft;
+    drafts: CommentBusinessRuleDraft[];
+    workflow: Record<string, any>;
+  }
+
   export interface SystemPromptSubKeyword {
     keyword_code: string;
     keyword_name: string;
@@ -256,6 +287,19 @@ export async function getCommentBusinessRuleDraftsApi(params: {
 }) {
   return requestClient.get<AssetsApi.CommentBusinessRuleDraft[]>(
     '/v1/assets/comment-business-rule-drafts',
+    { params },
+  );
+}
+
+export async function getBusinessRuleCopilotContextApi(params: {
+  asset_key: string;
+  draft_id?: number;
+  limit?: number;
+  rule_id?: string;
+  source_row_no?: number;
+}) {
+  return requestClient.get<AssetsApi.BusinessRuleCopilotContext>(
+    '/v1/assets/business-rule-copilot-context',
     { params },
   );
 }

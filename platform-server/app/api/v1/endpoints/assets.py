@@ -560,6 +560,29 @@ async def list_comment_business_rule_drafts(
     )
 
 
+@router.get("/business-rule-copilot-context", response_model=ResponseData)
+async def get_business_rule_copilot_context(
+    asset_key: str = Query(..., min_length=1),
+    rule_id: str | None = Query(default=None),
+    source_row_no: int | None = Query(default=None, ge=1),
+    draft_id: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AssetService(db)
+    try:
+        context = await service.business_rule_copilot_context(
+            asset_key=asset_key,
+            rule_id=rule_id,
+            source_row_no=source_row_no,
+            draft_id=draft_id,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ResponseData(code=200, message="success", data=context)
+
+
 @router.post("/comment-business-rule-drafts", response_model=ResponseData)
 async def save_comment_business_rule_draft(payload: CommentBusinessRuleDraftSave, db: AsyncSession = Depends(get_db)):
     service = AssetService(db)

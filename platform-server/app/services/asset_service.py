@@ -13,6 +13,7 @@ from app.services.business_rule_asset_types import (
     ARTICLE_BUSINESS_RULE_ASSET_TYPE,
     ARTICLE_BUSINESS_RULE_ASSET_TYPES,
     COMMENT_BUSINESS_RULE_ASSET_TYPES,
+    content_type_for_business_rule_asset_type,
 )
 from app.services.comment_business_rule_service import (
     COMMENT_BUSINESS_RULE_ASSET_TYPE,
@@ -427,6 +428,154 @@ class AssetService:
             if len(drafts) >= limit:
                 break
         return drafts
+
+    async def business_rule_copilot_context(
+        self,
+        *,
+        asset_key: str,
+        rule_id: str | None = None,
+        source_row_no: int | None = None,
+        draft_id: int | None = None,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        draft: AssetChangeProposal | None = None
+        draft_changes: dict[str, Any] = {}
+        if draft_id is not None:
+            draft = await self.db.get(AssetChangeProposal, draft_id)
+            if draft is None:
+                raise ValueError("draft not found")
+            draft_changes = draft.proposed_changes_json or {}
+            if draft_changes.get("draft_type") not in ("comment_business_rule_item", "article_business_rule_item"):
+                raise ValueError("not a business rule draft")
+            asset_key = str(draft_changes.get("asset_key") or asset_key or "").strip()
+            target = draft_changes.get("target") if isinstance(draft_changes.get("target"), dict) else {}
+            rule_id = rule_id or str(target.get("rule_id") or "") or None
+            source_row_no = source_row_no if source_row_no is not None else _int_or_none(target.get("source_row_no"))
+
+        asset = await self._get_latest_comment_business_rule_asset(asset_key)
+        if asset is None:
+            asset = await self._get_latest_article_business_rule_asset(asset_key)
+        if asset is None:
+            raise ValueError("business rule asset not found")
+
+        index, item = _find_business_rule_item(
+            asset.content_json,
+            rule_id=rule_id,
+            source_row_no=source_row_no,
+        )
+        content_type = content_type_for_business_rule_asset_type(asset.asset_type)
+        endpoint = (
+            "/api/v1/content-agent/comment-batches/start"
+            if content_type == "comment"
+            else "/api/v1/content-agent/batches/start"
+        )
+        resolved_rule_id = str(item.get("rule_id") or "") or None
+        resolved_source_row_no = _int_or_none(item.get("source_row_no"))
+        selector_payload = {
+            "asset_key": asset.asset_key,
+            "rule_id": resolved_rule_id,
+            "source_row_no": resolved_source_row_no,
+        }
+        base_payload = {
+            key: value
+            for key, value in selector_payload.items()
+            if value is not None
+        }
+        draft_payload_template = {
+            **base_payload,
+            "draft_rule_id": resolved_rule_id,
+            "draft_source_row_no": resolved_source_row_no,
+            "draft_corpus": "<fill with candidate corpus>",
+        }
+        draft_corpus = str(draft_changes.get("draft_corpus") or "").strip()
+        if draft_corpus:
+            draft_payload_template["draft_corpus"] = draft_corpus
+
+        latest_drafts = await self.list_comment_business_rule_drafts(
+            asset_key=asset.asset_key,
+            rule_id=resolved_rule_id,
+            source_row_no=resolved_source_row_no,
+            limit=limit,
+        )
+        return {
+            "asset": {
+                "id": asset.id,
+                "asset_type": asset.asset_type,
+                "asset_key": asset.asset_key,
+                "display_name": asset.display_name,
+                "version_no": asset.version_no,
+                "status": asset.status,
+                "asset_stage": asset.asset_stage,
+                "source_name": asset.source_name,
+                "created_by": asset.created_by,
+                "create_time": asset.create_time,
+                "update_time": asset.update_time,
+            },
+            "content_type": content_type,
+            "rule": {
+                "index": index,
+                "item_no": index + 1,
+                "rule_id": resolved_rule_id,
+                "source_row_no": resolved_source_row_no,
+                "business_rule": _business_rule_name(item),
+                "corpus": item.get("corpus") or "",
+                "examples": item.get("examples") or [],
+                "supplements": item.get("supplements") or [],
+                "raw": item,
+            },
+            "selected_draft": comment_business_rule_draft_response(draft) if draft is not None else None,
+            "drafts": [comment_business_rule_draft_response(item) for item in latest_drafts],
+            "workflow": {
+                "save_draft": {
+                    "endpoint": "/api/v1/assets/comment-business-rule-drafts",
+                    "method": "POST",
+                    "payload": {
+                        **base_payload,
+                        "draft_corpus": "<fill with candidate corpus>",
+                        "created_by": "codex-copilot",
+                    },
+                },
+                "publish_draft": {
+                    "endpoint": "/api/v1/assets/comment-business-rule-drafts/{draft_id}/publish",
+                    "method": "POST",
+                    "payload": {"created_by": "codex-copilot"},
+                },
+                "test_payloads": {
+                    "quick_generate_only": {
+                        "endpoint": endpoint,
+                        "method": "POST",
+                        "payload": {
+                            **draft_payload_template,
+                            "count": 1,
+                            "postprocess_mode": "generate_only",
+                            "created_by": "codex-copilot",
+                        },
+                    },
+                    "once_full": {
+                        "endpoint": endpoint,
+                        "method": "POST",
+                        "payload": {
+                            **draft_payload_template,
+                            "count": 1,
+                            "created_by": "codex-copilot",
+                        },
+                    },
+                    "ten_parallel": {
+                        "endpoint": endpoint,
+                        "method": "POST",
+                        "payload": {
+                            **draft_payload_template,
+                            "count": 10,
+                            "created_by": "codex-copilot",
+                        },
+                    },
+                },
+                "report": {
+                    "endpoint": "/api/v1/content-agent/batches/{batch_id}/report?full=true",
+                    "method": "GET",
+                },
+            },
+        }
 
     async def publish_comment_business_rule_draft(
         self,

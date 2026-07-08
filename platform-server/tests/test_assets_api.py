@@ -1383,6 +1383,76 @@ async def test_article_business_rule_draft_publish_updates_corpus_only(asset_cli
 
 
 @pytest.mark.asyncio
+async def test_business_rule_copilot_context_resolves_article_rule_and_draft(asset_client):
+    csv_content = "\n".join(
+        [
+            "业务规则,语料,参考示例",
+            '"V3M-01｜进阶保护力｜使用反馈","这篇要写的事：妈妈记录孩子喝旺玥后的日常状态。","- 示例1"',
+        ]
+    )
+    import_response = await asset_client.post(
+        "/api/v1/assets/imports/article-business-rule-set",
+        data={
+            "asset_key": "wangyue_v3_article_rules",
+            "created_by": "ops",
+            "display_name": "旺玥V3生文业务规则",
+        },
+        files={"file": ("旺玥V3生文业务规则.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+    assert import_response.status_code == 200
+    asset = (
+        await asset_client.get("/api/v1/assets/article_business_rule_set/wangyue_v3_article_rules")
+    ).json()["data"]
+    item = asset["content_json"]["items"][0]
+
+    context_response = await asset_client.get(
+        "/api/v1/assets/business-rule-copilot-context",
+        params={
+            "asset_key": "wangyue_v3_article_rules",
+            "rule_id": item["rule_id"],
+        },
+    )
+    assert context_response.status_code == 200
+    context = context_response.json()["data"]
+    assert context["content_type"] == "article"
+    assert context["asset"]["version_no"] == asset["version_no"]
+    assert context["rule"]["business_rule"] == "V3M-01｜进阶保护力｜使用反馈"
+    assert context["rule"]["corpus"].startswith("这篇要写的事")
+    assert context["workflow"]["test_payloads"]["ten_parallel"]["endpoint"] == "/api/v1/content-agent/batches/start"
+    assert context["workflow"]["test_payloads"]["ten_parallel"]["payload"]["count"] == 10
+    assert context["workflow"]["test_payloads"]["quick_generate_only"]["payload"]["postprocess_mode"] == "generate_only"
+
+    draft_response = await asset_client.post(
+        "/api/v1/assets/comment-business-rule-drafts",
+        json={
+            "asset_key": "wangyue_v3_article_rules",
+            "rule_id": item["rule_id"],
+            "draft_corpus": "候选语料：妈妈从真实聚会聊天切入。",
+            "created_by": "ops",
+        },
+    )
+    assert draft_response.status_code == 200
+    draft = draft_response.json()["data"]
+
+    draft_context_response = await asset_client.get(
+        "/api/v1/assets/business-rule-copilot-context",
+        params={
+            "asset_key": "wangyue_v3_article_rules",
+            "draft_id": draft["id"],
+        },
+    )
+    assert draft_context_response.status_code == 200
+    draft_context = draft_context_response.json()["data"]
+    assert draft_context["selected_draft"]["id"] == draft["id"]
+    assert draft_context["drafts"][0]["id"] == draft["id"]
+    assert (
+        draft_context["workflow"]["test_payloads"]["once_full"]["payload"]["draft_corpus"]
+        == "候选语料：妈妈从真实聚会聊天切入。"
+    )
+    assert draft_context["workflow"]["publish_draft"]["endpoint"].endswith("/{draft_id}/publish")
+
+
+@pytest.mark.asyncio
 async def test_upload_article_business_rule_set_rejects_old_product_experience_header(asset_client):
     csv_content = "\n".join(
         [
