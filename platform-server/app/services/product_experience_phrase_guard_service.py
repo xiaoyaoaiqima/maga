@@ -492,7 +492,6 @@ WANGYUE_GROWTH_NUTRITION_DRIFT_PHRASES = (
 )
 
 WANGYUE_ARTICLE_LOGIC_DRIFT_PHRASES = (
-    "口粮",
     "购物车",
     "放进购物车",
     "直接下单",
@@ -505,18 +504,7 @@ WANGYUE_ARTICLE_LOGIC_DRIFT_PHRASES = (
     "泡了杯",
     "给他泡了杯",
     "给她泡了杯",
-    "每天早上",
-    "早上一杯",
-    "早上那杯",
-    "早晚一杯",
-    "早晚两杯",
-    "每天一杯",
-    "每天两杯",
-    "每天冲一杯",
-    "每天喝一杯",
-    "每天喝",
     "每周开一罐",
-    "每天早晚",
     "每天早晚自己拿杯子要喝",
     "每天早晚愿意喝",
     "每回都喝光",
@@ -645,6 +633,27 @@ WANGYUE_ARTICLE_LOGIC_DRIFT_PHRASES = (
     "3岁以上4段儿童奶粉",
     "3周岁以上专用4段儿童奶粉",
     "3岁以上4段",
+)
+WANGYUE_NEUTRAL_DRINKING_SOUND_PHRASES = {
+    "咕咚咕咚",
+}
+WANGYUE_NEUTRAL_READING_ACTION_PHRASES = {
+    "翻出绘本",
+    "看绘本",
+    "翻绘本",
+    "绘本",
+}
+WANGYUE_READING_ACTION_RISK_CONTEXT_PHRASES = (
+    "眼",
+    "近视",
+    "揉眼睛",
+    "眼脑",
+    "用眼",
+    "护眼",
+    "叶黄素",
+    "脑子",
+    "用脑",
+    "学习效果",
 )
 
 WANGYUE_STRONG_STORY_ALLOWED_PHRASES = (
@@ -1685,10 +1694,10 @@ WANGYUE_INGREDIENT_BENEFIT_MISMATCH_PATTERNS = (
         r"(?:乳铁蛋白|免疫球蛋白|HMO)[^。！？；;\r\n]{0,18}"
         r"(?:是|就是|让|能让|所以|功劳|带来|撑起|长|对|支持|帮助|助力|有助于|友好)"
         r"[^。！？；;\r\n]{0,28}"
-        r"(?:抱起来沉|抱着沉|沉一点|背上有肉|衣服撑|撑起来|长肉|跑跳有劲|身形结实|小身板|体格)"
+        r"(?:抱起来沉|抱着沉|沉一点|背上有肉|衣服撑|长肉|跑跳有劲|身形结实|小身板|体格)"
     ),
     re.compile(
-        r"(?:抱起来沉|抱着沉|沉一点|背上有肉|衣服撑|撑起来|长肉|跑跳有劲|身形结实|小身板|体格)"
+        r"(?:抱起来沉|抱着沉|沉一点|背上有肉|衣服撑|长肉|跑跳有劲|身形结实|小身板|体格)"
         r"[^。！？；;\r\n]{0,18}"
         r"(?:因为|靠|全靠|主要是|功劳|来自)"
         r"[^。！？；;\r\n]{0,18}"
@@ -1703,7 +1712,6 @@ WANGYUE_GROWTH_BODY_TERMS = (
     "沉一点",
     "背上有肉",
     "衣服撑",
-    "撑起来",
     "长肉",
     "跑跳有劲",
     "身形结实",
@@ -1753,7 +1761,6 @@ WANGYUE_FORMULA_USAGE_FORM_PATTERNS = (
     re.compile(r"(?:牛奶|酸奶|粥|饭|汤)[^。！？；;，,\r\n]{0,10}(?:加|放|兑)[^。！？；;，,\r\n]{0,10}(?:旺玥|奶粉)"),
     re.compile(r"(?:旺玥|奶粉)[^。！？；;，,\r\n]{0,10}(?:加进|加到|兑进|兑到)[^。！？；;，,\r\n]{0,10}(?:牛奶|酸奶|粥|饭|汤)"),
     re.compile(r"(?:每天|固定|饭菜|早餐|晚饭|下午)[^。！？；;，,\r\n]{0,16}(?:加|补)[一二两三0-9]?(?:顿|杯)[^。！？；;，,\r\n]{0,8}(?:旺玥|奶粉)"),
-    re.compile(r"(?:每天|早晚|固定|睡前)[^。！？；;，,\r\n]{0,12}(?:喝|要喝|记得要喝|记得喝|一杯|安排)"),
     re.compile(r"自己[^。！？；;，,\r\n]{0,8}(?:记得要喝|记得去喝|记得喝|去拿奶杯|拿奶杯)"),
     re.compile(r"(?:开罐|新罐|奶粉|旺玥|罐子)[^。！？；;\r\n]{0,40}(?:抱走|抱着走|抱回去)"),
 )
@@ -1766,10 +1773,10 @@ WANGYUE_PRODUCT_FACT_NUMBER_PATTERNS = (
 WANGYUE_SLEEP_EFFECT_SCOPE_PATTERNS = (
     re.compile(
         r"(?:旺玥|奶粉|喝完|喝了)[^。！？；;\r\n]{0,28}"
-        r"(?:爬上床[^。！？；;\r\n]{0,6}睡|入睡|睡着|睡得|睡沉|睡到|整夜|一整夜|安稳|不闹腾)"
+        r"(?:爬上床[^。！？；;\r\n]{0,6}睡|入睡|睡着|睡得|睡沉|睡到(?:天亮|早上|自然醒|很晚|第二天|一觉)|整夜|一整夜|安稳|不闹腾)"
     ),
     re.compile(
-        r"(?:入睡|睡着|睡得|睡沉|睡到|整夜|一整夜|安稳|不闹腾)[^。！？；;\r\n]{0,28}"
+        r"(?:入睡|睡着|睡得|睡沉|睡到(?:天亮|早上|自然醒|很晚|第二天|一觉)|整夜|一整夜|安稳|不闹腾)[^。！？；;\r\n]{0,28}"
         r"(?:旺玥|奶粉|喝完|喝了)"
     ),
 )
@@ -1885,6 +1892,7 @@ def review_product_experience_phrase(
     body_text = str(body or "")
     text = f"{title or ''}\n{body_text}"
     is_wangyue = _is_wangyue_plan(plan)
+    is_wangyue_article_rules = _is_wangyue_article_rules_plan(plan)
     skeleton_hits = {
         part: _hits(body_text, phrases)
         for part, phrases in SKELETON_PARTS.items()
@@ -1898,7 +1906,9 @@ def review_product_experience_phrase(
     hard_risk_hits = _hard_risk_hits(text, is_wangyue=is_wangyue)
     adult_self_drinking_hits = _hits_prefer_longer(text, ADULT_SELF_DRINKING_PHRASES)
     formula_dry_powder_ingestion_hits = _formula_dry_powder_ingestion_hits(text)
-    ingredient_benefit_mismatch_hits = _wangyue_ingredient_benefit_mismatch_hits(text) if is_wangyue else []
+    # Benefit-to-outcome mapping is controlled by the active business rule.
+    # The phrase guard should not hard-fail positive Wangyue effect wording.
+    ingredient_benefit_mismatch_hits: list[str] = []
     formula_usage_form_hits = _wangyue_formula_usage_form_hits(text) if is_wangyue else []
     child_self_brewing_hits = _merge_hits(
         _hits_prefer_longer(text, CHILD_SELF_BREWING_PHRASES),
@@ -1958,6 +1968,14 @@ def review_product_experience_phrase(
         wangyue_article_logic_drift_hits = [
             hit for hit in wangyue_article_logic_drift_hits if hit not in WANGYUE_SENSORY_EXPERIENCE_PHRASES
         ]
+    if is_wangyue:
+        wangyue_article_logic_drift_hits = [
+            hit for hit in wangyue_article_logic_drift_hits if hit not in WANGYUE_NEUTRAL_DRINKING_SOUND_PHRASES
+        ]
+        if not any(term in text for term in WANGYUE_READING_ACTION_RISK_CONTEXT_PHRASES):
+            wangyue_article_logic_drift_hits = [
+                hit for hit in wangyue_article_logic_drift_hits if hit not in WANGYUE_NEUTRAL_READING_ACTION_PHRASES
+            ]
     if _allows_wangyue_eye_brain_selection_context(plan):
         wangyue_article_logic_drift_hits = [
             hit for hit in wangyue_article_logic_drift_hits if hit not in {"用眼", "绘本", "看绘本"}
@@ -2040,9 +2058,9 @@ def review_product_experience_phrase(
         reasons.append("empty_body")
     # 链路节点密度是批量分布信号，不是单篇硬改写理由。
     # skeleton_hits 仍保留在报告里，用于观察“选购/接受/状态/收口”比例。
-    if _hits(text, HARD_AI_CLOSURE_PHRASES):
+    if not is_wangyue_article_rules and _hits(text, HARD_AI_CLOSURE_PHRASES):
         reasons.append("hard_ai_closure_phrase")
-    if _hits(text, COMMON_AI_CLOSURE_PHRASES):
+    if not is_wangyue_article_rules and _hits(text, COMMON_AI_CLOSURE_PHRASES):
         reasons.append("common_ai_closure_phrase")
     if _has_state_template_pattern(state_template_hits, ai_hits):
         reasons.append("state_template_phrase")
@@ -2098,7 +2116,7 @@ def review_product_experience_phrase(
         reasons.append("scene_motive_drift")
     if product_action_surface_hits:
         reasons.append("product_action_surface_drift")
-    if product_effect_proof_chain_hits:
+    if not is_wangyue_article_rules and product_effect_proof_chain_hits:
         reasons.append("product_effect_proof_chain")
     if temporal_context_hits:
         reasons.append("explicit_temporal_context")
@@ -3318,8 +3336,7 @@ def _wangyue_temporary_remedy_chain_hits(text: str) -> list[str]:
     for remedy_match in remedy_pattern.finditer(text):
         start = max(0, remedy_match.start() - 160)
         end = min(len(text), remedy_match.end() + 80)
-        window = text[start:end]
-        symptom_match = symptom_pattern.search(window)
+        symptom_match = symptom_pattern.search(text[start:remedy_match.start()])
         if not symptom_match:
             continue
         symptom_start = start + symptom_match.start()
@@ -3442,14 +3459,12 @@ def _wangyue_under_three_month_age_hits(text: str) -> list[str]:
     pattern = re.compile(r"([0-9]{1,2}|[一二两三四五六七八九十]{1,4})\s*个?多?月")
     child_terms = ("宝宝", "娃", "孩子", "小孩", "男孩", "女孩", "儿子", "女儿", "闺女")
     age_context_terms = (*child_terms, "月龄", "断奶", "辅食", "大了", "大", "龄")
-    duration_prefixes = ("喝了", "用了", "补了", "吃了", "试了", "买了", "囤了", "过了", "这", "上", "前", "最近")
     for match in pattern.finditer(text):
         months = _parse_age_month_value(match.group(1))
         if months is None or months >= 36:
             continue
         start, end = match.span()
-        before = text[max(0, start - 4) : start]
-        if any(before.endswith(prefix) for prefix in duration_prefixes):
+        if _is_wangyue_month_duration_context(text, start=start, end=end):
             continue
         window = text[max(0, start - 8) : min(len(text), end + 10)]
         if not any(term in window for term in age_context_terms):
@@ -3458,6 +3473,21 @@ def _wangyue_under_three_month_age_hits(text: str) -> list[str]:
         if hit and hit not in hits:
             hits.append(hit)
     return hits
+
+
+def _is_wangyue_month_duration_context(text: str, *, start: int, end: int) -> bool:
+    before = text[max(0, start - 16) : start]
+    after = text[end : min(len(text), end + 8)].lstrip()
+    if after.startswith(("大", "月龄", "的宝宝", "的娃", "的孩子", "的儿子", "的女儿")):
+        return False
+    if before.endswith(("快", "有", "也有", "快有", "将近", "差不多", "差不多快", "这", "上", "前", "最近")):
+        return True
+    return bool(
+        re.search(
+            r"(?:喝|喝了|喝旺玥|喝下来|用了|用|试了|吃了|坚持|补了|买了|囤了|备了|过了)[^，。！？；;\n\r]{0,8}$",
+            before,
+        )
+    )
 
 
 def _parse_age_month_value(value: str) -> int | None:
@@ -3749,22 +3779,18 @@ def _wangyue_selling_point_drift_hits(text: str, plan: dict[str, Any]) -> list[s
     if "眼脑" in selling_context:
         expected_terms = ("DHA", "燕窝酸", "眼脑", "用眼用脑", "用脑", "桌面时间")
         if not any(term in text for term in expected_terms):
-            hits.append("眼脑营养缺失")
             hits.extend(term for term in ("日常营养", "支持成长", "阶段营养", "成长营养", "保护力") if term in text)
     elif any(term in selling_context for term in ("钙铁锌", "营养丰富", "日常营养配置", "整体营养配置", "营养配置", "日常营养", "营养不足", "成长发育需求", "同品牌延续")):
         expected_terms = ("钙铁锌", "日常营养", "营养配置", "营养", "阶段", "同品牌", "续过来", "延续", "4段")
         if not any(term in text for term in expected_terms):
-            hits.append("日常营养配置缺失")
             hits.extend(term for term in ("保护力", "眼脑", "DHA", "燕窝酸") if term in text)
     elif "保护力" in selling_context:
         expected_terms = ("保护力", "乳铁蛋白", "HMO", "免疫球蛋白")
         if not any(term in text for term in expected_terms):
-            hits.append("保护力营养缺失")
             hits.extend(term for term in ("日常营养", "眼脑", "DHA", "燕窝酸", "支持成长") if term in text)
     elif "4段" in selling_context or "阶段营养" in selling_context:
         expected_terms = ("3岁", "三岁", "3周岁", "三周岁", "3-6", "4段", "学龄前", "阶段")
         if not any(term in text for term in expected_terms):
-            hits.append("4段阶段营养缺失")
             hits.extend(term for term in ("日常营养", "保护力", "眼脑", "DHA", "燕窝酸") if term in text)
     return _merge_hits(hits)
 
@@ -3816,6 +3842,10 @@ def _wangyue_selling_context(plan: dict[str, Any]) -> str:
 def _is_wangyue_plan(plan: dict[str, Any]) -> bool:
     corpus = str(plan.get("corpus") or "")
     return str(plan.get("asset_key") or "").startswith("wangyue_") or "旺玥" in corpus
+
+
+def _is_wangyue_article_rules_plan(plan: dict[str, Any]) -> bool:
+    return str((plan or {}).get("asset_key") or "").startswith("wangyue_v2_")
 
 
 def _is_wangyue_painpoint_selling_plan(plan: dict[str, Any]) -> bool:

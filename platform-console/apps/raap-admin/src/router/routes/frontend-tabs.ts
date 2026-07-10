@@ -56,6 +56,18 @@ const frontendTabRoutes: RouteRecordRaw[] = [
     },
   },
   {
+    name: 'ContentAgentPromptDebug',
+    path: '/content-agent/prompt-debug',
+    component: () => import('#/views/content-agent/prompt-debug/index.vue'),
+    meta: {
+      title: '提示词调试',
+      icon: 'lucide:flask-conical',
+      order: -58,
+      activeMenu: '/content-agent/prompt-debug',
+      authority: ['admin'],
+    },
+  },
+  {
     name: 'SystemUserManagement',
     path: '/system/user',
     component: () => import('#/views/system/user/index.vue'),

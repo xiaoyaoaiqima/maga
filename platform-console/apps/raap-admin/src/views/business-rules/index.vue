@@ -11,7 +11,6 @@ import { useRoute } from 'vue-router';
 import { useUserStore } from '@vben/stores';
 
 import {
-  CheckOutlined,
   DownloadOutlined,
   EditOutlined,
   MenuFoldOutlined,
@@ -44,7 +43,6 @@ import {
 import {
   getAssetDetailApi,
   getAssetSummariesApi,
-  getCommentBusinessRuleDraftsApi,
   importCommentBusinessRuleSetApi,
   importArticleBusinessRuleSetApi,
   publishCommentBusinessRuleDraftApi,
@@ -62,6 +60,8 @@ import { useMagaChatStore } from '#/store';
 
 type RulePackageType = 'comment_business' | 'article_business';
 type BatchScope = 'asset' | 'rule';
+
+const ARTICLE_TEST_ARTICLES_PER_RUN = 2;
 
 interface RulePackageConfig {
   accept: string;
@@ -127,14 +127,16 @@ const batchScope = ref<BatchScope>('asset');
 const compareBatchIds = ref<number[]>([]);
 const compareDrawerOpen = ref(false);
 const compareLoading = ref(false);
+const contrastTesting = ref(false);
 const compareReports = ref<ContentAgentApi.BatchReport[]>([]);
+const compareReportLabels = ref<string[]>([]);
 const ruleSearchText = ref('');
 const selectedRuleKey = ref('');
-const draftMap = ref<Record<string, AssetsApi.CommentBusinessRuleDraft>>({});
 const packagePaneCollapsed = ref(false);
 const batchDetailOpen = ref(false);
 const preflightResult = ref<ContentAgentApi.PreflightResponse | null>(null);
 const preflightLoading = ref(false);
+const packageSearchText = ref('');
 const viewportHeight = ref(typeof window === 'undefined' ? 900 : window.innerHeight);
 const focusGenerateOpen = ref(false);
 const focusGenerateForm = ref({
@@ -144,23 +146,38 @@ const focusGenerateForm = ref({
 const draftEditorOpen = ref(false);
 const draftSaving = ref(false);
 const draftTesting = ref(false);
-const draftPublishing = ref(false);
 const selectedDraftRule = ref<Record<string, any> | null>(null);
 const draftCorpus = ref('');
 const exampleSaving = ref(false);
 const examplesText = ref('');
-const latestDraft = ref<AssetsApi.CommentBusinessRuleDraft | null>(null);
-const hasUnsavedDraftChanges = computed(
-  () =>
-    Boolean(latestDraft.value) &&
-    draftCorpus.value.trim() !== latestDraft.value?.draft_corpus.trim(),
-);
+const hasUnsavedRuleChanges = computed(() => {
+  if (!activeRule.value || selectedDraftRuleKey.value !== ruleKey(activeRule.value)) {
+    return false;
+  }
+  return draftCorpus.value.trim() !== String(activeRule.value.corpus || '').trim();
+});
 
 const selectedRuleItems = computed(() => {
   const items = selectedAsset.value?.content_json?.items;
   return Array.isArray(items) ? items : [];
 });
 const selectedItems = computed(() => selectedRuleItems.value);
+const filteredRuleAssets = computed(() => {
+  const keyword = packageSearchText.value.trim().toLowerCase();
+  if (!keyword) return ruleAssets.value;
+  return ruleAssets.value.filter((asset) => {
+    const haystack = [
+      asset.display_name,
+      asset.asset_key,
+      asset.source_name,
+      packageLabel(asset),
+      asset.version_no ? `v${asset.version_no}` : '',
+    ]
+      .map((value) => String(value || '').toLowerCase())
+      .join('\n');
+    return haystack.includes(keyword);
+  });
+});
 const filteredRuleItems = computed(() => {
   const keyword = ruleSearchText.value.trim().toLowerCase();
   if (!keyword) return selectedRuleItems.value;
@@ -170,7 +187,6 @@ const filteredRuleItems = computed(() => {
       item.corpus,
       item.rule_id,
       item.source_row_no,
-      item.topic,
     ]
       .map((value) => String(value || '').toLowerCase())
       .join('\n');
@@ -192,6 +208,7 @@ const activeDraftReady = computed(
   () => Boolean(activeRule.value) && selectedDraftRuleKey.value === ruleKey(activeRule.value),
 );
 const selectedReportItems = computed(() => selectedReport.value?.items || []);
+const currentBatchPreviewItems = computed(() => selectedReportItems.value.slice(0, 2));
 const selectedReportSummary = computed(
   () => selectedReport.value?.summary || null,
 );
@@ -298,6 +315,8 @@ const inspectorReport = computed(() => {
 const inspectorReportSummary = computed(() => inspectorReport.value?.summary || null);
 const compareLeftReport = computed(() => compareReports.value[0] || null);
 const compareRightReport = computed(() => compareReports.value[1] || null);
+const compareLeftLabel = computed(() => compareReportLabels.value[0] || '基准批次');
+const compareRightLabel = computed(() => compareReportLabels.value[1] || '对比批次');
 const compareMetricRows = computed(() => {
   if (!compareLeftReport.value || !compareRightReport.value) return [];
   const left = compareLeftReport.value.summary;
@@ -341,11 +360,6 @@ const compareMetricRows = computed(() => {
     },
   ];
 });
-const activeRuleDraft = computed(() => {
-  const rule = activeRule.value;
-  return rule ? draftMap.value[draftKey(rule)] || null : null;
-});
-
 const batchDetailColumns: any[] = [
   { title: '序号', dataIndex: 'item_no', key: 'item_no', width: 72 },
   { title: '状态', dataIndex: 'status', key: 'status', width: 110 },
@@ -404,7 +418,7 @@ const statusColor = (status?: string) => {
 
 const failedCountOf = (summary?: ContentAgentApi.BatchReportSummary | null) => {
   if (!summary) return 0;
-  return Math.max(0, summary.total_count - summary.generated_count);
+  return summary.failed_count ?? Math.max(0, summary.total_count - summary.generated_count);
 };
 
 const passColor = (value?: boolean | null) => {
@@ -436,6 +450,16 @@ const itemFailureMessage = (item: ContentAgentApi.BatchReportItem | Record<strin
     '正文尚未生成，请查看执行链路。'
   );
 };
+
+function batchItemPreviewText(item: ContentAgentApi.BatchReportItem | Record<string, any>) {
+  return String(item.body || item.body_preview || itemFailureMessage(item) || '').trim();
+}
+
+function batchItemNote(item: ContentAgentApi.BatchReportItem | Record<string, any>) {
+  if (item.status === 'failed') return itemFailureMessage(item);
+  if (item.rewrite_required) return item.rewrite_reason || '需要改写';
+  return '';
+}
 
 function riskTagsOf(item: ContentAgentApi.BatchReportItem | Record<string, any>) {
   const tags: Array<{ color: string; label: string }> = [];
@@ -497,8 +521,7 @@ function buildDraftChatContext(): ChatContext | null {
     page: 'business_rules',
     asset_key: selectedAsset.value.asset_key,
     asset_type: selectedAsset.value.asset_type,
-    asset_version:
-      selectedAsset.value.version_no || latestDraft.value?.base_version_no || null,
+    asset_version: selectedAsset.value.version_no || null,
     rule_id: String(selectedDraftRule.value.rule_id || ''),
     source_row_no:
       Number(selectedDraftRule.value.source_row_no || 0) || null,
@@ -519,10 +542,9 @@ function syncDraftChatContext() {
 
 function setInlineDraftRule(record: Record<string, any>) {
   selectedDraftRule.value = record;
-  latestDraft.value = draftMap.value[draftKey(record)] || null;
-  draftCorpus.value = latestDraft.value?.draft_corpus || String(record.corpus || '');
+  draftCorpus.value = String(record.corpus || '');
   syncExampleEditorFromRule(record);
-  // 重要逻辑：草稿编辑已内嵌到右侧 Inspector，保留这个状态只用于 Chat 上下文同步。
+  // 重要逻辑：编辑器内嵌到右侧 Inspector，保留这个状态只用于 Chat 上下文同步。
   draftEditorOpen.value = true;
 }
 
@@ -564,7 +586,7 @@ async function loadRuleAssets() {
         }),
       ),
     );
-    ruleAssets.value = groups.flat();
+    ruleAssets.value = groups.flat().sort(compareRuleAssetsByUpdatedTime);
     const selectedStillVisible = ruleAssets.value.some(
       (asset) =>
         asset.id === selectedSummary.value?.id ||
@@ -605,7 +627,6 @@ async function openAsset(row: AssetsApi.AssetSummary | Record<string, any>) {
   selectedRuleKey.value = selectedRuleItems.value[0]
     ? ruleKey(selectedRuleItems.value[0])
     : '';
-  await loadDraftMap();
   if (selectedRuleItems.value[0]) {
     setInlineDraftRule(selectedRuleItems.value[0]);
   }
@@ -666,29 +687,6 @@ async function syncAssetRecentReport() {
   if (!latestBatch) return;
   if (selectedReport.value?.asset_key === selectedAsset.value?.asset_key) return;
   await openReport(latestBatch.batch_id, false);
-}
-
-async function loadDraftMap() {
-  draftMap.value = {};
-  if (!selectedAsset.value?.asset_key || !isSelectedBusinessRuleSet.value) return;
-  try {
-    const drafts = await getCommentBusinessRuleDraftsApi({
-      asset_key: selectedAsset.value.asset_key,
-      limit: 100,
-    });
-    const nextMap: Record<string, AssetsApi.CommentBusinessRuleDraft> = {};
-    for (const draft of drafts) {
-      const key = draftKey({
-        rule_id: draft.rule_id,
-        source_row_no: draft.source_row_no,
-        business_rule: draft.business_rule,
-      });
-      if (key && !nextMap[key]) nextMap[key] = draft;
-    }
-    draftMap.value = nextMap;
-  } catch {
-    draftMap.value = {};
-  }
 }
 
 function openFocusGeneration() {
@@ -784,33 +782,8 @@ async function openDraftEditor(record: Record<string, any>) {
     return;
   }
   setInlineDraftRule(record);
-  await loadLatestDraft(record);
   syncDraftChatContext();
   focusInlineDraftEditor();
-}
-
-async function loadLatestDraft(record = selectedDraftRule.value) {
-  if (!selectedAsset.value?.asset_key || !record) return;
-  try {
-    const drafts = await getCommentBusinessRuleDraftsApi({
-      asset_key: selectedAsset.value.asset_key,
-      limit: 1,
-      rule_id: String(record.rule_id || ''),
-      source_row_no: Number(record.source_row_no || 0) || undefined,
-    });
-    latestDraft.value = drafts[0] || null;
-    if (latestDraft.value) {
-      draftMap.value = {
-        ...draftMap.value,
-        [draftKey(record)]: latestDraft.value,
-      };
-    }
-    if (latestDraft.value?.draft_corpus) {
-      draftCorpus.value = latestDraft.value.draft_corpus;
-    }
-  } catch {
-    latestDraft.value = null;
-  }
 }
 
 async function openRuleChatCopilot(record: Record<string, any>) {
@@ -820,7 +793,6 @@ async function openRuleChatCopilot(record: Record<string, any>) {
     return;
   }
   setInlineDraftRule(record);
-  await loadLatestDraft(record);
   const context = buildDraftChatContext();
   if (!context) {
     message.warning('当前业务规则上下文不可用');
@@ -829,18 +801,19 @@ async function openRuleChatCopilot(record: Record<string, any>) {
   chatStore.openWithContext(context);
 }
 
-async function saveRuleDraft() {
+async function saveRuleVersion() {
   if (!selectedAsset.value?.asset_key || !selectedDraftRule.value) {
     message.warning('请先选择一条业务规则');
     return;
   }
   if (!draftCorpus.value.trim()) {
-    message.warning('草稿语料不能为空');
+    message.warning('规则语料不能为空');
     return;
   }
+  const targetRuleKey = ruleKey(selectedDraftRule.value);
   draftSaving.value = true;
   try {
-    latestDraft.value = await saveCommentBusinessRuleDraftApi({
+    const savedDraft = await saveCommentBusinessRuleDraftApi({
       asset_key: selectedAsset.value.asset_key,
       created_by: currentOperator.value,
       draft_corpus: draftCorpus.value,
@@ -848,13 +821,22 @@ async function saveRuleDraft() {
       source_row_no:
         Number(selectedDraftRule.value.source_row_no || 0) || undefined,
     });
-    draftMap.value = {
-      ...draftMap.value,
-      [draftKey(selectedDraftRule.value)]: latestDraft.value,
-    };
-    message.success(`草稿已保存 #${latestDraft.value.id}`);
+    const result = await publishCommentBusinessRuleDraftApi(savedDraft.id, {
+      created_by: currentOperator.value,
+    });
+    selectedSummary.value = result.asset as unknown as AssetsApi.AssetSummary;
+    selectedAsset.value = result.asset;
+    selectedRuleKey.value = targetRuleKey;
+    const updatedRule = selectedRuleItems.value.find(
+      (item) => ruleKey(item) === targetRuleKey,
+    );
+    if (updatedRule) {
+      setInlineDraftRule(updatedRule);
+    }
+    message.success(`已保存为业务规则 v${result.asset.version_no}`);
+    await loadRuleAssets();
   } catch (error: any) {
-    message.error(error?.message || '保存草稿失败');
+    message.error(error?.message || '保存新版本失败');
   } finally {
     draftSaving.value = false;
   }
@@ -965,6 +947,7 @@ async function openBatchCompare() {
   }
   compareLoading.value = true;
   compareDrawerOpen.value = true;
+  compareReportLabels.value = ['基准批次', '对比批次'];
   try {
     compareReports.value = await Promise.all(
       compareBatchIds.value.map((batchId) => getContentBatchReportApi(batchId)),
@@ -974,72 +957,149 @@ async function openBatchCompare() {
   }
 }
 
-async function testRuleDraft(count: number) {
+function buildRuleDraftTestPayload(
+  count: number,
+  draftText?: string,
+  createdBySuffix?: string,
+) {
+  if (!selectedAsset.value?.asset_key || !selectedDraftRule.value) {
+    return null;
+  }
+  const articleTestCount = isSelectedArticleBusinessRuleSet.value
+    ? count * ARTICLE_TEST_ARTICLES_PER_RUN
+    : count;
+  const payload = {
+    asset_key: selectedAsset.value.asset_key,
+    count: articleTestCount,
+    created_by: createdBySuffix
+      ? `${currentOperator.value}-${createdBySuffix}`
+      : currentOperator.value,
+    rule_id: String(selectedDraftRule.value.rule_id || ''),
+    source_row_no:
+      Number(selectedDraftRule.value.source_row_no || 0) || undefined,
+  };
+  const normalizedDraftText = String(draftText || '').trim();
+  if (!normalizedDraftText) {
+    return payload;
+  }
+  return {
+    ...payload,
+    draft_corpus: normalizedDraftText,
+    draft_rule_id: String(selectedDraftRule.value.rule_id || ''),
+    draft_source_row_no:
+      Number(selectedDraftRule.value.source_row_no || 0) || undefined,
+  };
+}
+
+async function testRuleDraft(
+  count: number,
+  options: { postprocessMode?: 'generate_only' } = {},
+) {
   if (!selectedAsset.value?.asset_key || !selectedDraftRule.value) {
     message.warning('请先选择一条业务规则');
     return;
   }
   if (!draftCorpus.value.trim()) {
-    message.warning('草稿语料不能为空');
+    message.warning('规则语料不能为空');
     return;
   }
   draftTesting.value = true;
   generating.value = true;
   try {
-    const sharedPayload = {
-      asset_key: selectedAsset.value.asset_key,
-      count,
-      created_by: currentOperator.value,
-      draft_corpus: draftCorpus.value,
-      draft_rule_id: String(selectedDraftRule.value.rule_id || ''),
-      draft_source_row_no:
-        Number(selectedDraftRule.value.source_row_no || 0) || undefined,
-      rule_id: String(selectedDraftRule.value.rule_id || ''),
-      source_row_no:
-        Number(selectedDraftRule.value.source_row_no || 0) || undefined,
-    };
+    const isQuickTrial = options.postprocessMode === 'generate_only';
+    const sharedPayload = buildRuleDraftTestPayload(count, draftCorpus.value);
+    if (!sharedPayload) return;
     const result = isSelectedArticleBusinessRuleSet.value
-      ? await startContentBatchApi(sharedPayload)
+      ? await startContentBatchApi({
+          ...sharedPayload,
+          articles_per_prompt: ARTICLE_TEST_ARTICLES_PER_RUN,
+          postprocess_mode: options.postprocessMode,
+        })
       : await startCommentBatchApi(sharedPayload);
-    message.success(
-      `草稿测试完成：${result.execution.generated_count}/${result.execution.requested_limit}`,
-    );
+    message.success(formatRuleTestSuccessMessage(result, count, isQuickTrial));
     selectedReport.value = result.report;
     await loadBatches();
   } catch (error: any) {
-    message.error(error?.message || '草稿测试失败');
+    message.error(error?.message || '规则测试失败');
   } finally {
     draftTesting.value = false;
     generating.value = false;
   }
 }
 
-async function publishRuleDraft() {
-  if (!latestDraft.value) {
-    message.warning('请先保存草稿');
+async function runRuleDraftContrast() {
+  if (!selectedAsset.value?.asset_key || !selectedDraftRule.value || !activeRule.value) {
+    message.warning('请先选择一条业务规则');
     return;
   }
-  if (hasUnsavedDraftChanges.value) {
-    message.warning('当前草稿有未保存修改，请先保存草稿');
+  if (!isSelectedArticleBusinessRuleSet.value) {
+    message.warning('对照组先只支持帖子/生文业务规则');
     return;
   }
-  draftPublishing.value = true;
+  if (!draftCorpus.value.trim()) {
+    message.warning('规则语料不能为空');
+    return;
+  }
+  if (!hasUnsavedRuleChanges.value) {
+    message.warning('请先在编辑框里改出实验组语料');
+    return;
+  }
+  const basePayload = buildRuleDraftTestPayload(1, undefined, 'contrast-base');
+  const draftPayload = buildRuleDraftTestPayload(1, draftCorpus.value, 'contrast-draft');
+  if (!basePayload || !draftPayload) return;
+
+  contrastTesting.value = true;
+  generating.value = true;
+  compareLoading.value = true;
+  compareDrawerOpen.value = true;
+  compareReports.value = [];
+  compareReportLabels.value = ['A 正式语料', 'B 编辑框语料'];
   try {
-    const result = await publishCommentBusinessRuleDraftApi(latestDraft.value.id, {
-      created_by: currentOperator.value,
-    });
-    latestDraft.value = result.draft;
-    message.success(`已发布为业务规则 v${result.asset.version_no}`);
-    selectedSummary.value = null;
-    selectedAsset.value = null;
-    await loadRuleAssets();
-    const summary = ruleAssets.value.find((asset) => asset.id === result.asset.id);
-    await openAsset(summary || result.asset);
+    const [baseResult, draftResult] = await Promise.all([
+      startContentBatchApi({
+        ...basePayload,
+        articles_per_prompt: ARTICLE_TEST_ARTICLES_PER_RUN,
+        postprocess_mode: 'generate_only',
+      }),
+      startContentBatchApi({
+        ...draftPayload,
+        articles_per_prompt: ARTICLE_TEST_ARTICLES_PER_RUN,
+        postprocess_mode: 'generate_only',
+      }),
+    ]);
+    compareBatchIds.value = [baseResult.batch_id, draftResult.batch_id];
+    compareReports.value = [baseResult.report, draftResult.report];
+    selectedReport.value = draftResult.report;
+    message.success(
+      `对照试跑完成：A #${baseResult.batch_id}，B #${draftResult.batch_id}`,
+    );
+    await loadBatches();
   } catch (error: any) {
-    message.error(error?.message || '发布草稿失败');
+    message.error(error?.message || '对照试跑失败');
   } finally {
-    draftPublishing.value = false;
+    compareLoading.value = false;
+    contrastTesting.value = false;
+    generating.value = false;
   }
+}
+
+function formatRuleTestSuccessMessage(
+  result: ContentAgentApi.BatchStartResponse,
+  requestedRuns: number,
+  isQuickTrial = false,
+) {
+  const summary = result.report?.summary;
+  const generated = summary?.generated_count ?? result.execution.generated_count;
+  const failed = summary ? failedCountOf(summary) : result.execution.failed_count;
+  const hardPass = summary?.hard_pass_count ?? '-';
+  const unit = isSelectedArticleBusinessRuleSet.value ? '篇' : '条';
+  const runLabel = isSelectedArticleBusinessRuleSet.value
+    ? `模型调用 ${requestedRuns} 次`
+    : `跑 ${requestedRuns} 条`;
+  if (isQuickTrial) {
+    return `快速试跑完成 #${result.batch_id}：${runLabel}，原始生成 ${generated}${unit}，失败 ${failed}`;
+  }
+  return `测试完成 #${result.batch_id}：${runLabel}，生成 ${generated}${unit}，失败 ${failed}，红线通过 ${hardPass}`;
 }
 
 function showPreflightFailure(preflight: {
@@ -1117,7 +1177,7 @@ function downloadSelectedRulePackage() {
   const rows = [
     ['业务规则名称', '规则语料', '示例'],
     ...items.map((item) => [
-      item.business_rule || ruleDisplayName(item),
+      ruleDisplayName(item),
       item.corpus || '',
       [...normalizeTextList(item.examples), ...normalizeTextList(item.supplements)].join('\n'),
     ]),
@@ -1224,13 +1284,9 @@ function ruleKey(record: Record<string, any>) {
   ].join('::');
 }
 
-function draftKey(record: Record<string, any>) {
-  return [record.rule_id || '', record.source_row_no || ''].join('::');
-}
-
 function selectRule(record: Record<string, any>) {
   selectedRuleKey.value = ruleKey(record);
-  if (isSelectedCommentRuleSet.value) {
+  if (isSelectedBusinessRuleSet.value) {
     setInlineDraftRule(record);
   }
 }
@@ -1243,7 +1299,6 @@ function ruleDisplayName(record: Record<string, any>) {
   return (
     String(
       record.business_rule ||
-        record.topic ||
         record.rule_id ||
         '',
     ).trim() || `规则 ${record.source_row_no || ''}`.trim()
@@ -1295,6 +1350,22 @@ function riskSamplesOf(report?: ContentAgentApi.BatchReport | null, limit = 5) {
 function formatBatchTime(value?: null | string) {
   if (!value) return '-';
   return value.replace('T', ' ').slice(0, 16);
+}
+
+function assetTimeMs(value?: null | string) {
+  if (!value) return 0;
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function compareRuleAssetsByUpdatedTime(
+  left: AssetsApi.AssetSummary,
+  right: AssetsApi.AssetSummary,
+) {
+  const leftTime = assetTimeMs(left.update_time || left.create_time);
+  const rightTime = assetTimeMs(right.update_time || right.create_time);
+  if (leftTime !== rightTime) return rightTime - leftTime;
+  return (right.id || 0) - (left.id || 0);
 }
 
 function formatValue(value: unknown) {
@@ -1376,6 +1447,24 @@ watch(showHiddenRules, () => {
 });
 
 watch(
+  () => filteredRuleAssets.value.map((asset) => asset.id).join('|'),
+  () => {
+    if (!packageSearchText.value.trim() || filteredRuleAssets.value.length === 0) {
+      return;
+    }
+    const selectedVisible = filteredRuleAssets.value.some(
+      (asset) =>
+        asset.id === selectedSummary.value?.id ||
+        (asset.asset_type === selectedSummary.value?.asset_type &&
+          asset.asset_key === selectedSummary.value?.asset_key),
+    );
+    if (!selectedVisible) {
+      void openAsset(filteredRuleAssets.value[0]);
+    }
+  },
+);
+
+watch(
   () => filteredRuleItems.value.map((item) => ruleKey(item)).join('|'),
   () => {
     if (!filteredRuleItems.value.length) {
@@ -1434,14 +1523,14 @@ watch(
     if (!payload) return;
     const matched = await ensureChatActionTargetRule(payload.rule_id, payload.source_row_no);
     if (!matched) {
-      message.warning('Chat 返回的草稿不属于当前业务规则，已忽略');
+      message.warning('Chat 返回的编辑内容不属于当前业务规则，已忽略');
       chatStore.clearDraftFillPayload(payload.request_id);
       return;
     }
     draftCorpus.value = payload.draft_corpus;
     syncDraftChatContext();
     focusInlineDraftEditor();
-    message.success('已填入草稿，请确认后再保存或试跑');
+    message.success('已填入编辑框，请确认后再保存或测试');
     chatStore.clearDraftFillPayload(payload.request_id);
   },
 );
@@ -1478,7 +1567,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
     if (targetRule) {
       selectedRuleKey.value = ruleKey(targetRule);
       setInlineDraftRule(targetRule);
-      await loadLatestDraft(targetRule);
       currentRuleId = String(targetRule.rule_id || '');
       currentSourceRowNo = Number(targetRule.source_row_no || 0) || null;
     }
@@ -1547,7 +1635,10 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
           <div class="pane-card-header">
             <div>
               <h2>业务规则包</h2>
-              <span>{{ ruleAssets.length }} 个{{ showHiddenRules ? '规则包' : '可见规则包' }}</span>
+              <span>
+                {{ filteredRuleAssets.length }}/{{ ruleAssets.length }}
+                个{{ showHiddenRules ? '规则包' : '可见规则包' }}
+              </span>
             </div>
             <Space size="small">
               <span class="history-toggle-label">含隐藏</span>
@@ -1565,30 +1656,43 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 
           <Spin :spinning="loading">
             <Empty v-if="ruleAssets.length === 0" description="暂无业务规则" />
-            <div v-else class="rule-package-list">
-              <button
-                v-for="asset in ruleAssets"
-                :key="asset.id"
-                class="rule-package-option"
-                :class="{ active: selectedSummary?.id === asset.id }"
-                type="button"
-                @click="openAsset(asset)"
-              >
-                <span class="option-main">
-                  <span class="option-title">
-                    {{ asset.display_name || packageLabel(asset) }}
+            <template v-else>
+              <Input
+                v-model:value="packageSearchText"
+                allow-clear
+                class="package-search-input"
+                placeholder="搜索规则包名称 / key / 文件名"
+                size="small"
+              />
+              <Empty
+                v-if="filteredRuleAssets.length === 0"
+                description="没有匹配的规则包"
+              />
+              <div v-else class="rule-package-list">
+                <button
+                  v-for="asset in filteredRuleAssets"
+                  :key="asset.id"
+                  class="rule-package-option"
+                  :class="{ active: selectedSummary?.id === asset.id }"
+                  type="button"
+                  @click="openAsset(asset)"
+                >
+                  <span class="option-main">
+                    <span class="option-title">
+                      {{ asset.display_name || packageLabel(asset) }}
+                    </span>
+                    <Tag>{{ packageLabel(asset) }}</Tag>
+                    <Tag v-if="asset.hidden" color="orange">历史/调试</Tag>
                   </span>
-                  <Tag>{{ packageLabel(asset) }}</Tag>
-                  <Tag v-if="asset.hidden" color="orange">历史/调试</Tag>
-                </span>
-                <span class="option-meta">
-                  v{{ asset.version_no }} · {{ asset.item_count ?? '-' }} 条
-                </span>
-                <span class="option-meta">
-                  {{ asset.source_name || '-' }}
-                </span>
-              </button>
-            </div>
+                  <span class="option-meta">
+                    v{{ asset.version_no }} · {{ asset.item_count ?? '-' }} 条
+                  </span>
+                  <span class="option-meta">
+                    {{ asset.source_name || '-' }}
+                  </span>
+                </button>
+              </div>
+            </template>
           </Spin>
         </Card>
       </aside>
@@ -1698,7 +1802,7 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
                     </Button>
                     <Button v-if="isSelectedBusinessRuleSet" size="small" @click.stop="openDraftEditor(record)">
                       <template #icon><EditOutlined /></template>
-                      编辑
+                      编辑语料
                     </Button>
                     <Button size="small" @click.stop="openRuleGeneration(record)">
                       正式测试
@@ -1718,9 +1822,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
               <div class="inspector-section">
                 <div class="inspector-title">
                   <strong>{{ ruleDisplayName(activeRule) }}</strong>
-                  <Tag v-if="activeRuleDraft" color="blue">
-                    草稿 #{{ activeRuleDraft.id }}
-                  </Tag>
                 </div>
                 <div class="inspector-meta">
                   <Tag>{{ activeRule.rule_id || '-' }}</Tag>
@@ -1736,52 +1837,60 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
               <div v-if="isSelectedBusinessRuleSet" class="inspector-section">
                 <div class="draft-workspace-header">
                   <div class="field-label">规则语料</div>
-                  <Tag v-if="latestDraft">
-                    {{ latestDraft.status }} · v{{ latestDraft.base_version_no || '-' }}
-                  </Tag>
+                  <Tag>当前 v{{ selectedAsset?.version_no || '-' }}</Tag>
                 </div>
-                <div class="draft-compare-grid">
-                  <div class="draft-compare-column">
-                    <div class="field-label">当前正式规则语料</div>
-                    <div class="readonly-corpus inspector-corpus">
-                      {{ activeRule.corpus || '-' }}
-                    </div>
-                  </div>
-                  <div class="draft-compare-column inline-draft-editor">
-                    <div class="field-label">草稿规则语料</div>
-                    <Textarea
-                      v-model:value="draftCorpus"
-                      :auto-size="{ minRows: 10, maxRows: 18 }"
-                      :disabled="draftSaving || draftTesting || draftPublishing"
-                      placeholder="只写这条规则要表达什么、怎么说；示例在下方单独维护。保存草稿不会影响正式规则。"
-                    />
-                  </div>
+                <div class="inline-draft-editor">
+                  <Textarea
+                    v-model:value="draftCorpus"
+                    :auto-size="{ minRows: 12, maxRows: 22 }"
+                    :disabled="draftSaving || draftTesting"
+                    placeholder="只写这条规则要表达什么、怎么说；示例在下方单独维护。"
+                  />
                 </div>
 
                 <div class="draft-hint">
-                  <template v-if="latestDraft">
-                    草稿 #{{ latestDraft.id }}，基于 v{{ latestDraft.base_version_no || '-' }}
-                    <span v-if="hasUnsavedDraftChanges"> · 有未保存修改</span>
+                  <template v-if="hasUnsavedRuleChanges">
+                    有未保存修改。测试会直接使用当前框里的内容；保存会生成规则包新版本。
                   </template>
-                  <template v-else>尚未保存草稿，默认从正式语料开始编辑。</template>
+                  <template v-else>当前框内是规则包 v{{ selectedAsset?.version_no || '-' }} 的正式语料。</template>
                 </div>
 
                 <Space class="draft-actions inline-draft-actions" wrap>
-                  <Button :icon="h(SaveOutlined)" :loading="draftSaving" @click="saveRuleDraft">
-                    保存草稿
-                  </Button>
-                  <Button :loading="draftTesting" @click="testRuleDraft(10)">
-                    用草稿跑 10 条
+                  <Button
+                    :disabled="!hasUnsavedRuleChanges"
+                    :icon="h(SaveOutlined)"
+                    :loading="draftSaving"
+                    type="primary"
+                    @click="saveRuleVersion"
+                  >
+                    保存为新版本
                   </Button>
                   <Button
-                    danger
-                    type="primary"
-                    :disabled="!latestDraft || hasUnsavedDraftChanges"
-                    :icon="h(CheckOutlined)"
-                    :loading="draftPublishing"
-                    @click="publishRuleDraft"
+                    :disabled="!hasUnsavedRuleChanges"
+                    :loading="contrastTesting"
+                    @click="runRuleDraftContrast"
+                    v-if="isSelectedArticleBusinessRuleSet"
                   >
-                    发布为新版本
+                    快速对照 1 次
+                  </Button>
+                  <Button
+                    :loading="draftTesting"
+                    @click="testRuleDraft(1, { postprocessMode: 'generate_only' })"
+                    v-if="isSelectedArticleBusinessRuleSet"
+                  >
+                    快速试跑 1 次
+                  </Button>
+                  <Button
+                    :loading="draftTesting"
+                    @click="testRuleDraft(1)"
+                  >
+                    {{ isSelectedArticleBusinessRuleSet ? '完整测试 1 次' : '测试 1 条' }}
+                  </Button>
+                  <Button
+                    :loading="draftTesting"
+                    @click="testRuleDraft(10)"
+                  >
+                    {{ isSelectedArticleBusinessRuleSet ? '完整测试 10 次并发' : '测试 10 条' }}
                   </Button>
                 </Space>
               </div>
@@ -1863,29 +1972,41 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 
             <template v-if="inspectorReport">
               <div class="recent-batch-summary">
-                <div class="current-batch-title">
-                  <span>当前批次</span>
-                  <strong>{{ inspectorReportTitle }}</strong>
-                  <Tag :color="statusColor(inspectorReport.status)">
-                    {{ statusLabel(inspectorReport.status) }}
-                  </Tag>
+                <div class="current-batch-strip">
+                  <div class="current-batch-title">
+                    <span>当前批次</span>
+                    <strong>{{ inspectorReportTitle }}</strong>
+                  </div>
+                  <div class="current-batch-stats">
+                    <Tag :color="statusColor(inspectorReport.status)">
+                      {{ statusLabel(inspectorReport.status) }}
+                    </Tag>
+                    <span>
+                      {{ inspectorReportSummary?.generated_count ?? '-' }}/{{
+                        inspectorReportSummary?.total_count ?? '-'
+                      }}
+                      已生成
+                    </span>
+                    <span>失败 {{ failedCountOf(inspectorReportSummary) }}</span>
+                    <span>风险 {{ batchRiskCount(inspectorReportSummary) }}</span>
+                  </div>
                 </div>
-                <div class="mini-metrics">
-                  <div>
-                    <span>总数</span>
-                    <strong>{{ inspectorReportSummary?.total_count ?? '-' }}</strong>
-                  </div>
-                  <div>
-                    <span>生成</span>
-                    <strong>{{ inspectorReportSummary?.generated_count ?? '-' }}</strong>
-                  </div>
-                  <div>
-                    <span>失败</span>
-                    <strong>{{ failedCountOf(inspectorReportSummary) }}</strong>
-                  </div>
-                  <div>
-                    <span>风险</span>
-                    <strong>{{ batchRiskCount(inspectorReportSummary) }}</strong>
+                <div v-if="currentBatchPreviewItems.length" class="current-batch-samples">
+                  <div
+                    v-for="item in currentBatchPreviewItems"
+                    :key="item.item_id"
+                    class="current-batch-sample"
+                  >
+                    <div class="current-batch-sample-head">
+                      <Tag :color="statusColor(item.status)">
+                        #{{ item.item_no }} · {{ statusLabel(item.status) }}
+                      </Tag>
+                      <strong>{{ item.title || '-' }}</strong>
+                    </div>
+                    <p>{{ batchItemPreviewText(item) }}</p>
+                    <div v-if="batchItemNote(item)" class="current-batch-sample-note">
+                      {{ batchItemNote(item) }}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2127,12 +2248,14 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
           <div class="batch-compare-head">
             <div>
               <span>基准批次</span>
+              <Tag>{{ compareLeftLabel }}</Tag>
               <strong>
                 {{ compareLeftReport.batch_code || `#${compareLeftReport.batch_id}` }}
               </strong>
             </div>
             <div>
               <span>对比批次</span>
+              <Tag>{{ compareRightLabel }}</Tag>
               <strong>
                 {{ compareRightReport.batch_code || `#${compareRightReport.batch_id}` }}
               </strong>
@@ -2404,10 +2527,22 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   min-height: 0;
 }
 
+.rule-package-pane .fill-card {
+  overflow: hidden;
+}
+
 .fill-card :deep(.ant-card-body) {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+}
+
+.rule-package-pane .fill-card :deep(.ant-spin-nested-loading),
+.rule-package-pane .fill-card :deep(.ant-spin-container) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
 }
 
@@ -2453,6 +2588,12 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 }
 
 .rule-package-list {
+  flex: 1 1 auto;
+  margin-top: 12px;
+}
+
+.package-search-input {
+  flex: 0 0 auto;
   margin-top: 12px;
 }
 
@@ -2745,23 +2886,11 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   color: var(--maga-text);
 }
 
-.mini-metrics {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 10px;
-}
-
 .current-batch-title {
   align-items: center;
-  background: var(--maga-surface-soft);
-  border: 1px solid var(--maga-border);
-  border-radius: 8px;
   display: flex;
   gap: 8px;
-  margin-top: 10px;
   min-width: 0;
-  padding: 8px 10px;
 }
 
 .current-batch-title span {
@@ -2772,12 +2901,9 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 
 .current-batch-title strong {
   color: var(--maga-text);
-  flex: 1;
   font-size: 13px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .batch-scope-switch {
@@ -2787,7 +2913,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   margin-top: 10px;
 }
 
-.mini-metrics div,
 .metric-block {
   background: var(--maga-surface-soft);
   border: 1px solid var(--maga-border);
@@ -2799,13 +2924,11 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   padding: 10px 12px;
 }
 
-.mini-metrics span,
 .metric-block span {
   color: var(--maga-text-muted);
   font-size: 12px;
 }
 
-.mini-metrics strong,
 .metric-block strong {
   color: var(--maga-text);
   font-size: 14px;
@@ -2889,8 +3012,76 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 
 .recent-batch-summary {
   display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(260px, 1.2fr) minmax(420px, 2fr);
+  gap: 10px;
+}
+
+.current-batch-samples {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.current-batch-strip {
+  align-items: center;
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.current-batch-stats {
+  align-items: center;
+  color: var(--maga-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px 10px;
+}
+
+.current-batch-sample {
+  background: var(--maga-surface-soft);
+  border: 1px solid var(--maga-border);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.current-batch-sample-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.current-batch-sample-head strong {
+  color: var(--maga-text);
+  flex: 1;
+  font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.current-batch-sample p {
+  color: var(--maga-text);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.current-batch-sample-note {
+  color: var(--maga-error);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
 }
 
 .recent-batches-card .compact-list {
@@ -2914,11 +3105,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 .recent-batches-card .batch-scope-switch {
   display: flex;
   gap: 8px;
-  margin-top: 0;
-}
-
-.recent-batches-card .current-batch-title,
-.recent-batches-card .mini-metrics {
   margin-top: 0;
 }
 
@@ -3144,6 +3330,10 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
     min-height: 0;
   }
 
+  .rule-package-pane .fill-card {
+    height: min(560px, calc(100vh - 180px));
+  }
+
   .rule-workbench-shell.package-pane-collapsed {
     grid-template-columns: 48px minmax(520px, 1fr);
   }
@@ -3195,6 +3385,10 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
     height: auto;
   }
 
+  .rule-package-pane .fill-card {
+    height: min(560px, calc(100vh - 180px));
+  }
+
   .package-pane-expand {
     flex-direction: row;
     justify-content: center;
@@ -3222,8 +3416,7 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
     grid-template-columns: 1fr;
   }
 
-  .batch-detail-summary,
-  .mini-metrics {
+  .batch-detail-summary {
     grid-template-columns: 1fr 1fr;
   }
 }

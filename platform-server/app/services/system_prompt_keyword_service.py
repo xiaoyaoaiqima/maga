@@ -777,7 +777,7 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                             "keyword_code": "low_voice_addition",
                             "keyword_name": "小声补充",
                             "corpus": [
-                                "像小声补一句信息，语气轻，不抢话，也不喊大家去买。适合写术语记不全、没逐条看完、只看了入口，比如“蜡样那个名字我记不住”“60多项没全看”。"
+                                "像小声补一句信息，语气轻，不抢话，也不喊大家去买。适合写术语记不全、没逐条看完、只看了入口，比如“蜡样那个名字我记不住”“检测项目没全看”。"
                             ],
                         },
                         {

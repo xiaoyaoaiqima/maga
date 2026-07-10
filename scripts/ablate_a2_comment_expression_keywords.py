@@ -48,6 +48,10 @@ FORBIDDEN = [
     "保证没问题",
     "绝对安全",
     "无风险",
+    # 业务新要求：暂不露出蜡样/蜡毒检测数值和检测报告/检测项目的明确数量。
+    "0.03",
+    "60+",
+    "60多项",
 ]
 
 AUDIT_ONLY_FORBIDDEN = ["没找到", "找不到", "难买", "心焦", "心急"]
@@ -244,7 +248,7 @@ def audit(rule_name: str, text: str, seen: set[str]) -> str:
         return "prompt_leak"
     major = rule_name.split("-", 1)[0]
     if major == "批批检":
-        if not any(k in text for k in ["报告", "扫", "码", "批", "检测", "质检", "数据", "蜡样", "入口", "三方", "60多项"]):
+        if not any(k in text for k in ["报告", "扫", "码", "批", "检测", "质检", "数据", "蜡样", "入口", "三方"]):
             return "batch_no_anchor"
         if any(k in text for k in ["标准最高", "最安全", "官方保证", "绝对放心"]):
             return "batch_bad_claim"

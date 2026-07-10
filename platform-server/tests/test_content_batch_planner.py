@@ -9,6 +9,9 @@ from app.models.maga_assets import AssetRegistry
 from app.models.content_agent import ContentBatchJob, ContentBatchItem
 from app.services.content_batch_planner import (
     ContentBatchPlanner,
+    _article_rules_with_draft_override,
+    _normalize_article_draft_rule_override,
+    _resolve_prompt_mode,
     _resolve_real_user_pool_config,
     _rotated_model_config,
     _select_article_business_rules_for_generation,
@@ -48,6 +51,51 @@ def test_article_business_rule_multi_output_selects_same_rule_pairs():
         "post_rule_002",
         "post_rule_003",
     ]
+
+
+def test_prompt_mode_resolves_from_explicit_or_asset_config():
+    asset = AssetRegistry(
+        content_json={"generation_prompt_mode": "minimal-rule-prompt"},
+        metadata_json={"prompt_mode": "rule_as_prompt"},
+    )
+
+    assert _resolve_prompt_mode("rule-corpus-as-prompt", asset) == "rule_corpus_as_prompt"
+    assert _resolve_prompt_mode(None, asset) == "rule_corpus_as_prompt"
+
+
+def test_article_business_rule_draft_override_replaces_only_target_corpus():
+    rules = [
+        {
+            "rule_id": "V2M-01",
+            "source_row_no": 1,
+            "business_rule": "保护力",
+            "corpus": "原始保护力语料",
+            "examples": ["保留示例"],
+        },
+        {
+            "rule_id": "V2M-02",
+            "source_row_no": 2,
+            "business_rule": "营养补充",
+            "corpus": "原始营养语料",
+        },
+    ]
+    override = _normalize_article_draft_rule_override(
+        draft_corpus="草稿保护力语料",
+        draft_rule_id="V2M-01",
+        draft_source_row_no=1,
+    )
+
+    updated = _article_rules_with_draft_override(rules, override)
+
+    assert updated[0]["corpus"] == "草稿保护力语料"
+    assert updated[0]["examples"] == ["保留示例"]
+    assert updated[0]["draft_rule_override"] == {
+        "enabled": True,
+        "rule_id": "V2M-01",
+        "source_row_no": 1,
+    }
+    assert updated[1]["corpus"] == "原始营养语料"
+    assert rules[0]["corpus"] == "原始保护力语料"
 
 
 def test_article_business_rule_plan_samples_three_examples_from_pool():
@@ -824,7 +872,6 @@ def test_article_business_rule_plan_uses_content_path_control_to_filter_real_use
         "rule_id": "business_rule_002",
         "source_row_no": 2,
         "business_rule": "精力不足，日常状态观察",
-        "topic": "精力不足，日常状态观察",
         "corpus": "围绕孩子活动量大、日常状态观察来写。",
         "content_path_control": {
             "enabled": True,
@@ -1038,7 +1085,6 @@ def test_article_business_rule_plan_selects_layered_real_user_examples():
     rule = {
         "rule_id": "business_rule_001",
         "business_rule": "容易中招，日常保护力观察",
-        "topic": "容易中招，日常保护力观察",
         "corpus": "孩子上幼儿园后接触人多，妈妈关注保护力。",
         "examples": [],
     }
@@ -1164,7 +1210,6 @@ def test_wangyue_real_user_pool_defaults_sample_prompt_layers_without_static_tit
     rule = {
         "rule_id": "business_rule_001",
         "business_rule": "容易中招，日常保护力观察",
-        "topic": "容易中招，日常保护力观察",
         "corpus": "孩子上幼儿园后接触人多，妈妈关注保护力。",
         "examples": [],
     }
@@ -1273,7 +1318,6 @@ def test_wangyue_real_user_pool_source_row_override_can_disable_route_layer():
         "rule_id": "business_rule_003",
         "source_row_no": 3,
         "business_rule": "注意力不集中，眼脑营养观察",
-        "topic": "注意力不集中，眼脑营养观察",
         "corpus": "妈妈给孩子选儿童奶粉时，会关注保护力和眼脑营养；正文可以从选奶、看成分或日常记录里自然带出。",
         "examples": [],
     }
@@ -1382,7 +1426,6 @@ def test_wangyue_real_user_pool_source_row_override_can_filter_layer_source_keyw
         "rule_id": "business_rule_003",
         "source_row_no": 3,
         "business_rule": "注意力不集中，眼脑营养观察",
-        "topic": "注意力不集中，眼脑营养观察",
         "corpus": "眼脑相关营养只是旺玥的一个轻挂卖点，不要写成正文主剧情。",
         "examples": [],
     }
@@ -1487,7 +1530,6 @@ def test_wangyue_real_user_pool_source_row_override_can_disable_all_layers():
         "rule_id": "business_rule_004",
         "source_row_no": 4,
         "business_rule": "营养不足/成长发育需求，日常补充观察",
-        "topic": "营养不足/成长发育需求，日常补充观察",
         "corpus": "妈妈关注日常营养能不能跟上，选择旺玥补充营养、支持成长。",
         "examples": ["儿童奶粉这块，我主要看适不适合日常补充。"],
     }
@@ -1558,7 +1600,6 @@ def test_wangyue_title_shape_can_use_fallback_pool_without_changing_route_pool()
     rule = {
         "rule_id": "business_rule_001",
         "business_rule": "容易中招，日常保护力观察",
-        "topic": "容易中招，日常保护力观察",
         "corpus": "孩子上幼儿园后接触人多，妈妈关注保护力。",
         "examples": [],
     }
@@ -1708,7 +1749,6 @@ def test_article_business_rule_plan_adds_title_reference_examples():
     rule = {
         "rule_id": "business_rule_001",
         "business_rule": "容易中招，日常保护力观察",
-        "topic": "容易中招，日常保护力观察",
         "corpus": "孩子上幼儿园后接触人多，妈妈关注保护力。",
         "examples": [],
     }
@@ -1767,7 +1807,6 @@ def test_article_business_rule_plan_avoids_repeated_static_title_references():
     rule = {
         "rule_id": "business_rule_001",
         "business_rule": "营养不足/成长发育需求，日常补充观察",
-        "topic": "营养不足/成长发育需求，日常补充观察",
         "corpus": "围绕给孩子选择儿童奶粉来写。",
         "examples": [],
     }
@@ -1819,7 +1858,6 @@ def test_article_business_rule_plan_avoids_stacked_title_prompt_family_when_poss
         "rule_id": "business_rule_002",
         "source_row_no": 2,
         "business_rule": "精力不足，户外活动后日常观察",
-        "topic": "精力不足，户外活动后日常观察",
         "corpus": "围绕皇家美素佳儿旺玥儿童奶粉的保护力和眼脑营养来写。",
         "examples": [],
     }
@@ -1887,7 +1925,6 @@ def test_article_business_rule_plan_keeps_stacked_title_prompt_family_when_no_al
         "rule_id": "business_rule_002",
         "source_row_no": 2,
         "business_rule": "精力不足，户外活动后日常观察",
-        "topic": "精力不足，户外活动后日常观察",
         "corpus": "围绕皇家美素佳儿旺玥儿童奶粉的保护力和眼脑营养来写。",
         "examples": [],
     }
@@ -1955,7 +1992,6 @@ def test_article_business_rule_plan_passes_prompt_family_filters_to_real_user_se
         "rule_id": "business_rule_003",
         "source_row_no": 3,
         "business_rule": "注意力不集中，眼脑营养观察",
-        "topic": "注意力不集中，眼脑营养观察",
         "corpus": "眼脑相关营养只是旺玥的一个轻挂卖点。",
         "examples": [],
     }
@@ -2053,7 +2089,6 @@ def test_wangyue_growth_rule_filters_drinking_synthetic_title_examples():
         "rule_id": "business_rule_004",
         "source_row_no": 4,
         "business_rule": "营养不足/成长发育需求，日常补充观察",
-        "topic": "营养不足/成长发育需求，日常补充观察",
         "corpus": "围绕给孩子选择皇家美素佳儿旺玥儿童奶粉来写。",
         "examples": [],
     }
@@ -2103,7 +2138,6 @@ def test_article_business_rule_plan_filters_synthetic_titles_from_row_override()
         "rule_id": "business_rule_002",
         "source_row_no": 2,
         "business_rule": "精力不足，日常状态观察",
-        "topic": "精力不足，日常状态观察",
         "corpus": "围绕孩子活动量大、日常状态观察来写。",
         "examples": [],
     }
@@ -2155,7 +2189,6 @@ def test_article_business_rule_plan_selects_detail_and_ending_real_user_examples
     rule = {
         "rule_id": "business_rule_001",
         "business_rule": "容易中招，日常保护力观察",
-        "topic": "容易中招，日常保护力观察",
         "corpus": "孩子上幼儿园后接触人多，妈妈关注保护力。",
         "examples": [],
     }
@@ -2237,7 +2270,6 @@ def test_article_business_rule_plan_passes_detail_family_filter():
     rule = {
         "rule_id": "business_rule_002",
         "business_rule": "精力不足，户外活动和保护力观察",
-        "topic": "精力不足，户外活动和保护力观察",
         "corpus": "孩子活动量大，妈妈关注旺玥的保护力和眼脑营养。",
         "examples": [],
     }
@@ -2310,7 +2342,6 @@ def test_article_business_rule_plan_avoids_reusing_route_family_across_batch():
     rule = {
         "rule_id": "business_rule_001",
         "business_rule": "容易中招，日常保护力观察",
-        "topic": "容易中招，日常保护力观察",
         "corpus": "孩子上幼儿园后接触人多，妈妈关注保护力。",
         "examples": [],
     }

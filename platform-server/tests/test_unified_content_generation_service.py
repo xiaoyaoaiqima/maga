@@ -36,20 +36,22 @@ def test_article_output_format_supports_explicit_two_items_mode():
     multi = _article_output_format_requirement("article", ["title", "body"], {"multi_output_count": 2})
 
     assert "字段只能包含 title 和 body" in single
-    assert "字段只能包含 items" in multi
+    assert '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。' in multi
     assert "items 必须正好 2 个" in multi
+    assert "一次生成 2 篇" not in multi
 
 
-def test_wangyue_v2_minimal_prompt_skips_legacy_wangyue_layers():
+def test_rule_corpus_as_prompt_mode_skips_legacy_article_layers():
     from app.services.unified_content_generation_service import (
         _generation_requirements,
         _keyword_corpus_text,
-        _wangyue_v2_minimal_article_prompt,
+        _rule_corpus_as_prompt_article_prompt,
     )
 
     business_rule = {
-        "asset_key": "wangyue_v2_core_storyline_article_rules",
-        "keyword_asset_key": "wangyue_v2_minimal_generation_keywords",
+        "asset_key": "generic_storyline_article_rules",
+        "keyword_asset_key": "minimal_generation_keywords",
+        "prompt_mode": "rule_corpus_as_prompt",
         "product_name": "旺玥",
         "post_type": "妈妈日记型",
         "product_appearance_mode": "精力不足｜精神状态变化",
@@ -107,11 +109,11 @@ def test_wangyue_v2_minimal_prompt_skips_legacy_wangyue_layers():
     assert "产品叙事推进" not in rule_text
     assert "产品进入含义" not in rule_text
     assert "这篇要写的事" in rule_text
-    prompt = _wangyue_v2_minimal_article_prompt(
+    prompt = _rule_corpus_as_prompt_article_prompt(
         {
             "generation_requirements": requirements,
             "business_rule": rule_text,
-            "output_format_requirement": "一次生成 2 篇。只输出 JSON 对象，字段只能包含 items；items 必须正好 2 个。",
+            "output_format_requirement": '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。items 必须正好 2 个。',
         },
         selected_keywords=selected_keywords,
     )
@@ -132,6 +134,7 @@ def test_wangyue_v2_minimal_prompt_skips_legacy_wangyue_layers():
     assert "产品叙事推进" not in prompt
     assert "低权重表达扰动" not in prompt
     assert "生成同质化内容是原罪" in prompt
+    assert "一次生成 2 篇" not in prompt
     assert '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。' in prompt
     assert "items 必须正好 2 个。" in prompt
 
@@ -1779,6 +1782,38 @@ async def test_unified_comment_generation_does_not_add_a2_business_boundaries(un
     assert "不要把检测数值拿去和宝宝肚肚反应或竞品品牌直接对比" not in prompt
     assert "检测数值只用口语写法" not in prompt
     assert "0.03" not in prompt
+
+
+def test_a2_comment_direction_uses_safe_sub_rule_name_only():
+    from app.services.unified_content_generation_service import _comment_rule_direction_line
+
+    assert (
+        _comment_rule_direction_line(
+            {"asset_key": "a2_sentiment_comment_activity", "business_rule": "有货-渠道线索"}
+        )
+        == ""
+    )
+    assert (
+        _comment_rule_direction_line(
+            {"asset_key": "a2_sentiment_comment_activity", "business_rule": "批批检-蜡样/蜡毒报告轻提"}
+        )
+        == "本条方向：蜡样/蜡毒报告轻提。"
+    )
+    assert (
+        _comment_rule_direction_line(
+            {"asset_key": "a2_sentiment_comment_activity", "business_rule": "转奶-爱他美/达能转奶对比"}
+        )
+        == "本条方向：其他品牌转奶对比。"
+    )
+    assert (
+        _comment_rule_direction_line(
+            {
+                "asset_key": "a2_sentiment_comment_activity",
+                "business_rule": "批批检-对比皇家美素后看a2三份报告",
+            }
+        )
+        == "本条方向：对比其他品牌后看a2报告。"
+    )
 
 
 @pytest.mark.asyncio

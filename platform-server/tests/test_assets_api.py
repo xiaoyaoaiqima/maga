@@ -328,6 +328,22 @@ async def test_asset_summary_and_import_runs(asset_client):
 
 
 @pytest.mark.asyncio
+async def test_asset_summary_filters_latest_versions_by_asset_type(asset_client):
+    response = await asset_client.get(
+        "/api/v1/assets/summary",
+        params={"asset_type": "painpoint_model"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data
+    assert {item["asset_type"] for item in data} == {"painpoint_model"}
+    yuanyue = next(item for item in data if item["asset_key"] == "yuanyue")
+    assert yuanyue["version_no"] == 2
+    assert all(item["asset_stage"] == "production" for item in data)
+
+
+@pytest.mark.asyncio
 async def test_asset_summary_hides_debug_rules_by_default(asset_client):
     default_response = await asset_client.get(
         "/api/v1/assets/summary",
@@ -1276,7 +1292,7 @@ async def test_upload_article_business_rule_set_imports_rule_asset(asset_client)
     assert "product_experience" not in asset["content_json"]["items"][0]
     assert "baby_stage" not in asset["content_json"]["items"][0]
     assert "use_duration" not in asset["content_json"]["items"][0]
-    assert asset["content_json"]["items"][0]["topic"] == "奶量补充"
+    assert "topic" not in asset["content_json"]["items"][0]
     assert asset["content_json"]["items"][0]["examples"] == [
         "刚换源悦那阵子，喂奶没之前那么拉扯。",
         "有时候不用追着喂，家里人也松口气。",

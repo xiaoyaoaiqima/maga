@@ -3,13 +3,24 @@ import { requestClient } from '#/api/request';
 export namespace ContentAgentApi {
   export interface BatchStartRequest {
     asset_key?: string;
+    keyword_asset_key?: null | string;
+    prompt_mode?:
+      | null
+      | 'minimal_rule_prompt'
+      | 'rule_as_prompt'
+      | 'rule_corpus_as_prompt';
     rule_id?: null | string;
     source_row_no?: null | number;
+    draft_corpus?: null | string;
+    draft_rule_id?: null | string;
+    draft_source_row_no?: null | number;
     product_topic?: null | string;
     target_audience?: null | string;
     persona_target?: null | string;
     style?: null | string;
     count?: number;
+    articles_per_prompt?: number;
+    postprocess_mode?: null | 'generate_only';
     executor_code?: string;
     model_config?: null | {
       ae_model?: null | string;

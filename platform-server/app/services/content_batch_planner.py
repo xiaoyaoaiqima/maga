@@ -57,13 +57,19 @@ class ContentBatchPlanner:
         style: str | None,
         count: int,
         articles_per_prompt: int = 1,
+        postprocess_mode: str | None = None,
         keyword_asset_key: str | None = None,
+        prompt_mode: str | None = None,
+        draft_corpus: str | None = None,
+        draft_rule_id: str | None = None,
+        draft_source_row_no: int | None = None,
         model_config: dict[str, Any] | None = None,
         model_config_rotation: list[dict[str, Any]] | None = None,
         created_by: str | None = None,
     ) -> ContentBatchJob:
         if count <= 0:
             raise ValueError("count must be positive")
+        normalized_postprocess_mode = _normalize_postprocess_mode(postprocess_mode)
 
         rule_asset = await self._latest_article_business_rule_asset(asset_key)
         if rule_asset is not None:
@@ -73,7 +79,16 @@ class ContentBatchPlanner:
                 rule_id=rule_id,
                 source_row_no=source_row_no,
                 keyword_asset_key=keyword_asset_key,
+                prompt_mode=prompt_mode,
                 articles_per_prompt=articles_per_prompt,
+                postprocess_mode=normalized_postprocess_mode,
+                draft_corpus=draft_corpus,
+                draft_rule_id=draft_rule_id or rule_id,
+                draft_source_row_no=(
+                    draft_source_row_no
+                    if draft_source_row_no is not None
+                    else source_row_no
+                ),
                 model_config=model_config,
                 model_config_rotation=model_config_rotation,
                 created_by=created_by,
@@ -115,6 +130,7 @@ class ContentBatchPlanner:
                 "diversity": "high",
                 "executor": DEFAULT_EXECUTOR_CODE,
                 "persona_target": persona_target,
+                "postprocess_mode": normalized_postprocess_mode,
             },
             diversity_plan_json={},
             created_by=created_by,
@@ -167,12 +183,24 @@ class ContentBatchPlanner:
         rule_id: str | None,
         source_row_no: int | None,
         keyword_asset_key: str | None,
+        prompt_mode: str | None,
         articles_per_prompt: int,
+        postprocess_mode: str | None,
+        draft_corpus: str | None,
+        draft_rule_id: str | None,
+        draft_source_row_no: int | None,
         model_config: dict[str, Any] | None,
         model_config_rotation: list[dict[str, Any]] | None,
         created_by: str | None,
     ) -> ContentBatchJob:
         rules = self._article_business_rule_items(asset)
+        draft_override = _normalize_article_draft_rule_override(
+            draft_corpus=draft_corpus,
+            draft_rule_id=draft_rule_id,
+            draft_source_row_no=draft_source_row_no,
+        )
+        if draft_override:
+            rules = _article_rules_with_draft_override(rules, draft_override)
         focus_rules = _filter_rules(rules, rule_id=rule_id, source_row_no=source_row_no)
         if rule_id or source_row_no is not None:
             rules = focus_rules
@@ -192,6 +220,7 @@ class ContentBatchPlanner:
             or DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME
         )
         resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, asset)
+        resolved_prompt_mode = _resolve_prompt_mode(prompt_mode, asset)
         quality_guard_profile_key = _resolve_quality_guard_profile_key(asset)
         real_user_pool_asset = await self._latest_real_user_pool_asset(asset)
         real_user_pool_items = _real_user_pool_items(real_user_pool_asset)
@@ -215,7 +244,9 @@ class ContentBatchPlanner:
                 "rule_asset_version": asset.version_no,
                 "executor": DEFAULT_EXECUTOR_CODE,
                 "generation_mode": "unified_content_generate",
+                "postprocess_mode": postprocess_mode,
                 "keyword_asset_key": resolved_keyword_asset_key,
+                "prompt_mode": resolved_prompt_mode,
                 "quality_guard_profile_key": quality_guard_profile_key,
                 "articles_per_prompt": max(1, min(int(articles_per_prompt or 1), 2)),
                 "real_user_pool_asset_key": real_user_pool_asset.asset_key if real_user_pool_asset else None,
@@ -256,6 +287,7 @@ class ContentBatchPlanner:
                 asset=asset,
                 item_no=index + 1,
                 keyword_asset_key=resolved_keyword_asset_key,
+                prompt_mode=resolved_prompt_mode,
                 quality_guard_profile_key=quality_guard_profile_key,
                 model_config=_rotated_model_config(index + 1, model_config, model_config_rotation),
                 real_user_pool_asset=real_user_pool_asset,
@@ -413,7 +445,7 @@ class ContentBatchPlanner:
             item
             for item in items or []
             if isinstance(item, dict)
-            and (item.get("business_rule") or item.get("article_rule"))
+            and item.get("business_rule")
         ]
 
     def _article_business_generation_limit(
@@ -450,6 +482,7 @@ class ContentBatchPlanner:
         asset: AssetRegistry,
         item_no: int,
         keyword_asset_key: str,
+        prompt_mode: str | None,
         quality_guard_profile_key: str | None,
         model_config: dict[str, Any] | None,
         real_user_pool_asset: AssetRegistry | None = None,
@@ -474,11 +507,7 @@ class ContentBatchPlanner:
             rule,
             sample_count=self._article_business_example_sample_count(asset, rule),
         )
-        business_rule = (
-            rule.get("business_rule")
-            or rule.get("article_rule")
-            or rule.get("topic")
-        )
+        business_rule = rule.get("business_rule")
         resolved_model_config = self._article_business_model_config(asset, model_config)
         resolved_real_user_pool_config = _real_user_pool_config_for_rule(
             real_user_pool_config or _default_real_user_pool_config(asset),
@@ -638,6 +667,7 @@ class ContentBatchPlanner:
             "item_no": item_no,
             "asset_key": asset.asset_key,
             "keyword_asset_key": keyword_asset_key,
+            "prompt_mode": prompt_mode,
             "quality_guard_profile_key": quality_guard_profile_key,
             "keyword_selection": _resolve_keyword_selection(asset),
             "generation_requirements": _resolve_generation_requirements(asset),
@@ -645,9 +675,8 @@ class ContentBatchPlanner:
             "rule_asset_id": asset.id,
             "rule_asset_version": asset.version_no,
             "rule_id": rule.get("rule_id"),
+            "draft_rule_override": rule.get("draft_rule_override"),
             "business_rule": business_rule,
-            "article_rule": rule.get("article_rule"),
-            "topic": rule.get("topic"),
             "product_name": product_name,
             "post_type": _resolve_post_type(asset, rule),
             "product_appearance_mode": product_appearance_mode,
@@ -752,8 +781,6 @@ class ContentBatchPlanner:
             str(value or "")
             for value in (
                 rule.get("business_rule"),
-                rule.get("article_rule"),
-                rule.get("topic"),
                 rule.get("corpus"),
             )
         )
@@ -810,8 +837,6 @@ class ContentBatchPlanner:
             str(value or "")
             for value in (
                 rule.get("business_rule"),
-                rule.get("article_rule"),
-                rule.get("topic"),
                 rule.get("corpus"),
             )
         )
@@ -1012,6 +1037,61 @@ def _filter_rules(
     ]
 
 
+def _normalize_article_draft_rule_override(
+    *,
+    draft_corpus: str | None,
+    draft_rule_id: str | None,
+    draft_source_row_no: int | None,
+) -> dict[str, Any] | None:
+    corpus = str(draft_corpus or "").strip()
+    if not corpus:
+        return None
+    rule_id = str(draft_rule_id or "").strip() or None
+    source_row_no = _int_or_none(draft_source_row_no)
+    if not rule_id and source_row_no is None:
+        raise ValueError("draft_corpus requires draft_rule_id, draft_source_row_no, rule_id, or source_row_no")
+    return {"corpus": corpus, "rule_id": rule_id, "source_row_no": source_row_no}
+
+
+def _article_rules_with_draft_override(
+    rules: list[dict[str, Any]],
+    draft_override: dict[str, Any],
+) -> list[dict[str, Any]]:
+    updated: list[dict[str, Any]] = []
+    matched = False
+    for rule in rules:
+        if not _article_rule_matches_draft_override(rule, draft_override):
+            updated.append(rule)
+            continue
+        next_rule = dict(rule)
+        next_rule["corpus"] = str(draft_override.get("corpus") or "").strip()
+        next_rule["draft_rule_override"] = _article_draft_override_summary(draft_override)
+        updated.append(next_rule)
+        matched = True
+    if not matched:
+        raise ValueError(
+            "draft corpus target rule not found; pass draft_rule_id or "
+            "draft_source_row_no matching the selected rule"
+        )
+    return updated
+
+
+def _article_rule_matches_draft_override(rule: dict[str, Any], draft_override: dict[str, Any]) -> bool:
+    rule_id = draft_override.get("rule_id")
+    source_row_no = draft_override.get("source_row_no")
+    return (not rule_id or str(rule.get("rule_id") or "").strip() == rule_id) and (
+        source_row_no is None or _int_or_none(rule.get("source_row_no")) == source_row_no
+    )
+
+
+def _article_draft_override_summary(draft_override: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "enabled": True,
+        "rule_id": draft_override.get("rule_id"),
+        "source_row_no": draft_override.get("source_row_no"),
+    }
+
+
 def _int_or_none(value: Any) -> int | None:
     try:
         return int(value)
@@ -1123,7 +1203,7 @@ def _real_user_pool_config_for_rule(config: dict[str, Any], rule: dict[str, Any]
     source_row_no = _int_or_none(rule.get("source_row_no"))
     if source_row_no is not None:
         candidate_keys.append(str(source_row_no))
-    for key in ("rule_id", "business_rule", "topic"):
+    for key in ("rule_id", "business_rule"):
         value = str(rule.get(key) or "").strip()
         if value:
             candidate_keys.append(value)
@@ -1437,6 +1517,17 @@ def _resolve_keyword_asset_key(explicit_key: str | None, asset: AssetRegistry | 
         if normalized:
             return normalized
     return DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
+
+
+def _resolve_prompt_mode(explicit_mode: str | None, asset: AssetRegistry | None) -> str | None:
+    normalized = _normalize_prompt_mode(explicit_mode)
+    if normalized:
+        return normalized
+    for source in ((asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        normalized = _normalize_prompt_mode(source.get("prompt_mode") or source.get("generation_prompt_mode"))
+        if normalized:
+            return normalized
+    return None
 
 
 def _resolve_quality_guard_profile_key(asset: AssetRegistry | None) -> str | None:
@@ -2147,14 +2238,12 @@ def _selected_real_user_title_reference_examples(
     if count <= 0 or not items:
         return [], {"requested": 0, "selected": 0}
     query_text = " ".join(
-        str(value or "")
-        for value in (
-            rule.get("business_rule"),
-            rule.get("article_rule"),
-            rule.get("topic"),
-            rule.get("corpus"),
+            str(value or "")
+            for value in (
+                rule.get("business_rule"),
+                rule.get("corpus"),
+            )
         )
-    )
     query_tags = set(infer_real_user_tags(query_text))
     exclude_terms = _normalized_terms(_string_list(real_user_pool_config.get("exclude_terms")))
     exclude_risk_tags = set(_string_list(real_user_pool_config.get("title_exclude_risk_tags"))) or set(
@@ -2408,6 +2497,16 @@ def _normalize_keyword_asset_key(value: Any) -> str | None:
     return normalized or None
 
 
+def _normalize_prompt_mode(value: Any) -> str | None:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    aliases = {
+        "rule_corpus_as_prompt": "rule_corpus_as_prompt",
+        "minimal_rule_prompt": "rule_corpus_as_prompt",
+        "rule_as_prompt": "rule_corpus_as_prompt",
+    }
+    return aliases.get(normalized, normalized or None)
+
+
 def _article_multi_output_rule_key(rule: dict[str, Any]) -> str:
     rule_id = str(rule.get("rule_id") or "").strip()
     source_row_no = _int_or_none(rule.get("source_row_no"))
@@ -2415,7 +2514,7 @@ def _article_multi_output_rule_key(rule: dict[str, Any]) -> str:
         return f"rule:{rule_id}"
     if source_row_no is not None:
         return f"row:{source_row_no}"
-    text = re.sub(r"\s+", "", str(rule.get("business_rule") or rule.get("topic") or "default"))
+    text = re.sub(r"\s+", "", str(rule.get("business_rule") or "default"))
     return "rule_text:" + (text[:40] or "default")
 
 
@@ -2445,6 +2544,15 @@ def _select_article_business_rules_for_generation(
                 break
             selected.append(rule)
     return selected
+
+
+def _normalize_postprocess_mode(value: str | None) -> str | None:
+    mode = str(value or "").strip()
+    if not mode:
+        return None
+    if mode != "generate_only":
+        raise ValueError(f"unsupported postprocess_mode: {mode}")
+    return mode
 
 
 def _article_business_asset_allows_repeat(asset: AssetRegistry) -> bool:

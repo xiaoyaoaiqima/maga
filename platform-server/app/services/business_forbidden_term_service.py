@@ -15,14 +15,41 @@ BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE = "business_forbidden_terms"
 DEFAULT_BUSINESS_FORBIDDEN_TERMS_ASSET_KEY = "default_business_forbidden_terms"
 BUSINESS_FORBIDDEN_TERMS_SCHEMA_VERSION = "1"
 A2_SENTIMENT_COMMENT_ASSET_KEY = "a2_sentiment_comment_activity"
-A2_SENTIMENT_COMMENT_SEED_TERM = {
-    "term": "小程序",
-    "reason": "小红书不能出现微信生态的词",
-    "enabled": True,
-    "replacement": "",
-    "source": "operator_rule",
-    "created_by": "ops",
-}
+A2_SENTIMENT_COMMENT_SEED_TERMS = (
+    {
+        "term": "小程序",
+        "reason": "小红书不能出现微信生态的词",
+        "enabled": True,
+        "replacement": "",
+        "source": "operator_rule",
+        "created_by": "ops",
+    },
+    {
+        "term": "0.03",
+        "reason": "业务新要求：暂不露出蜡样/蜡毒检测的明确数值",
+        "enabled": True,
+        "replacement": "",
+        "source": "operator_rule",
+        "created_by": "ops",
+    },
+    {
+        "term": "60+",
+        "reason": "业务新要求：暂不露出检测报告/检测项目的明确数量",
+        "enabled": True,
+        "replacement": "",
+        "source": "operator_rule",
+        "created_by": "ops",
+    },
+    {
+        "term": "60多项",
+        "reason": "业务新要求：暂不露出检测报告/检测项目的明确数量",
+        "enabled": True,
+        "replacement": "",
+        "source": "operator_rule",
+        "created_by": "ops",
+    },
+)
+A2_SENTIMENT_COMMENT_SEED_TERM = A2_SENTIMENT_COMMENT_SEED_TERMS[0]
 
 
 @dataclass(frozen=True)

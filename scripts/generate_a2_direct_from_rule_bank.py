@@ -41,6 +41,10 @@ FORBIDDEN = [
     "保证没问题",
     "绝对安全",
     "无风险",
+    # 业务新要求：暂不露出蜡样/蜡毒检测数值和检测报告/检测项目的明确数量。
+    "0.03",
+    "60+",
+    "60多项",
 ]
 
 AUDIT_ONLY_FORBIDDEN = [
@@ -136,9 +140,31 @@ def parse_comments(raw: str) -> list[str]:
     return comments
 
 
-def prompt_for(focus: str, examples: str, count: int) -> str:
+def prompt_for(focus: str, examples: str, count: int, prompt_mode: str = "stock_comment") -> str:
     example_lines = [line.strip() for line in examples.splitlines() if line.strip()]
-    examples_text = "\n".join(f"- {line}" for line in example_lines[:3])
+    example_limit = 6 if prompt_mode == "sentiment_news" else 3
+    examples_text = "\n".join(f"- {line}" for line in example_lines[:example_limit])
+    if prompt_mode == "sentiment_news":
+        return f"""你是一位妈妈，在小红书母婴评论区参与别人关于 a2 奶粉新消息的帖子讨论。
+
+这批评论想表达的意思是：{focus}
+
+注意：
+- 贴近参考示例的评论区语气，可以有正向认可、中立观望、安心感、轻情绪和生活细节。
+- 以直评、跟评和追问为主；只有参考示例里出现“回复：”时，才可以少量使用回复形式。
+- 具体评论形态参考示例，不要统一写成短句或长句，也不要把示例里的真实毛边磨平。
+- 可以自然提到检测、报告、食品安全、业绩、市场认可、品质、品控、供应稳定等 demo 里出现过的表达。
+- 不要写成品牌公告、客服回复、完整科普说明、投资分析或广告口播。
+- 不要出现供应负面回忆或当下负面供应表达。
+- 不要直接说其他奶粉品牌名，如需提到对比对象，用其他品牌、别的牌子、其他奶粉、之前的奶粉这类泛化说法。
+- 字数不要超过80字。
+
+以下参考示例仅供参考，不照抄、不固定句式：
+{examples_text}
+
+【生成要求】
+生成 {count} 条评论。
+只输出 JSON 字符串数组，不要标题、编号、解释。"""
     return f"""你是一位妈妈，之前一直买a2奶粉，但前段时间a2没货了，一直没买到，今天突然发现有货了，然后你买了，买完之后你想去小红书上跟别人分享这个信息。于是你要在一个说a2奶粉缺货了，没货了的帖子下面写评论。
 
 这批评论想表达的意思是：{focus}
@@ -148,10 +174,9 @@ def prompt_for(focus: str, examples: str, count: int) -> str:
 - 可以写成跟评、接楼、追问、求指路，不要求每条都独立成完整总结。
 - 具体评论形态参考示例，不要统一写成短句或长句。
 - 不要写成品牌公告、客服回复、科普说明或广告口播。
-- 不要说缺货、断粮等消极词。
+- 避免把评论写成消极断供语境。
 - 不要直接说其他奶粉品牌名，如需提到对比或转奶对象，用其他品牌、别的牌子、其他奶粉、之前的奶粉这类泛化说法。
 - 字数不要超过80字。
-- 不要出现这些词：{", ".join(FORBIDDEN)}
 
 以下参考示例仅供参考，不照抄、不固定句式：
 {examples_text}
@@ -177,7 +202,7 @@ def generalize_competitor_brand_terms(text: str) -> str:
     return value.strip()
 
 
-def audit(category: str, text: str, seen: set[str]) -> str:
+def audit(category: str, text: str, seen: set[str], audit_mode: str = "stock_comment") -> str:
     if not text:
         return "empty"
     if any(k in text for k in ["å", "æ", "ç", "è", "é", "ä", "ï¼"]):
@@ -192,13 +217,18 @@ def audit(category: str, text: str, seen: set[str]) -> str:
         return "parse_artifact"
     major = category.split("-", 1)[0]
     if major == "批批检":
-        if not any(k in text for k in ["报告", "扫", "码", "批", "检测", "质检", "数据", "蜡样", "入口", "三方", "60多项"]):
+        batch_anchors = ["报告", "扫", "码", "批", "检测", "质检", "数据", "蜡样", "入口", "三方"]
+        if audit_mode == "sentiment_news":
+            batch_anchors.extend(["透明", "公开", "食品安全", "品控", "品质", "行业", "标准", "安心", "放心", "踏实", "长期", "保持", "口粮"])
+        if not any(k in text for k in batch_anchors):
             return "batch_no_anchor"
         if any(k in text for k in ["标准最高", "最安全", "秒懂", "不用看", "官方保证", "符合标准"]):
             return "batch_bad_claim"
     if major == "转奶":
         pain_terms = ["不适应", "拉肚子", "厌奶", "胀气", "肠胃", "哭闹", "拉稀", "奶瓣", "绿便", "折腾"]
         bridge_terms = ["a2", "至初", "报告", "扫", "码", "批", "检测", "质检", "慢慢", "先看", "先观察", "转回", "试试"]
+        if audit_mode == "sentiment_news":
+            bridge_terms.extend(["有货", "供应", "稳定", "喝习惯", "继续", "不折腾", "安心", "放心", "市场认可", "品质", "品控", "适应差异"])
         if any(k in text for k in pain_terms) and not any(k in text for k in bridge_terms):
             return "transfer_pain_only"
         if any(k in text for k in ["好了", "改善", "缓解", "治"]):
@@ -342,6 +372,7 @@ def main() -> int:
     parser.add_argument("--model", default="deepseek-v4-flash")
     parser.add_argument("--base-url", default="https://api.deepseek.com/v1")
     parser.add_argument("--per-rule-count", type=int, default=20)
+    parser.add_argument("--prompt-mode", choices=["stock_comment", "sentiment_news"], default="stock_comment")
     parser.add_argument("--similarity-threshold", type=float, default=0.86)
     parser.add_argument("--target", action="append", default=[], type=parse_target)
     parser.add_argument("--dry-run-prompts-md", type=Path)
@@ -354,7 +385,7 @@ def main() -> int:
     if prompt_preview_path:
         lines = ["# Rendered Prompts", ""]
         for chunk_index, (rule, count) in enumerate(plan, start=1):
-            prompt = prompt_for(rule["focus"], rule["examples"], count)
+            prompt = prompt_for(rule["focus"], rule["examples"], count, args.prompt_mode)
             lines.extend(
                 [
                     f"## chunk_{chunk_index:03d} / {rule['rule_id']} / {rule['category']} / count={count}",
@@ -378,7 +409,7 @@ def main() -> int:
     accepted_texts: list[str] = []
     for chunk_index, (rule, count) in enumerate(plan, start=1):
         raw = call_model(
-            prompt=prompt_for(rule["focus"], rule["examples"], count),
+            prompt=prompt_for(rule["focus"], rule["examples"], count, args.prompt_mode),
             model=args.model,
             temperature=0.9,
             max_tokens=max(1000, min(4000, count * 180)),
@@ -387,7 +418,7 @@ def main() -> int:
         )
         for text in parse_comments(raw)[:count]:
             text = generalize_competitor_brand_terms(text)
-            reason = audit(rule["category"], text, seen)
+            reason = audit(rule["category"], text, seen, args.prompt_mode)
             if not reason:
                 reason = near_duplicate_reason(text, accepted_texts, args.similarity_threshold)
             passed = not reason

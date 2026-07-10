@@ -1,6 +1,6 @@
 """Content-agent execution-layer endpoints."""
-from urllib.parse import quote
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import select
@@ -11,6 +11,8 @@ from app.core.database import get_db
 from app.models.llm_provider_config import LLMProviderConfig
 from app.schemas.base import ResponseData
 from app.schemas.content_batch_report import (
+    ContentBatchBusinessUsabilityReviewRequest,
+    ContentBatchBusinessUsabilityReviewResponse,
     ContentCommentBatchStartRequest,
     ContentBatchExecutionSummary,
     ContentBatchFeedbackInsightResponse,
@@ -26,6 +28,11 @@ from app.schemas.content_batch_report import (
     ContentPPLProfileListResponse,
     ContentPPLRunStartRequest,
     ContentPPLRunStartResponse,
+)
+from app.schemas.prompt_debug import (
+    PromptDebugRequest,
+    PromptDebugResponse,
+    PromptDebugTokenUsage,
 )
 from app.schemas.content_agent import (
     ContentAgentArtifactCreate,
@@ -52,6 +59,7 @@ from app.services.content_comment_batch_service import ContentCommentBatchServic
 from app.services.content_generation_ppl_profile_service import ContentGenerationPPLProfileService
 from app.services.executor_invocation_service import ExecutorInvocationClient, MockExecutorInvocationClient
 from app.services.content_generation_preflight_service import ContentGenerationPreflightService
+from app.services.llm_factory import invoke_llm
 
 router = APIRouter()
 
@@ -182,6 +190,55 @@ async def start_ppl_generation(
     return ResponseData(message=batch_response.message, data=response)
 
 
+@router.post("/prompt-debug/run", response_model=ResponseData[PromptDebugResponse])
+async def run_prompt_debug(
+    request: PromptDebugRequest,
+) -> ResponseData[PromptDebugResponse]:
+    """Run one raw prompt against the configured LLM router without batch side effects."""
+    messages: list[dict[str, str]] = []
+    if request.system_prompt:
+        messages.append({"role": "system", "content": request.system_prompt})
+    messages.append({"role": "user", "content": request.prompt})
+
+    try:
+        result = await invoke_llm(
+            model_code=request.model_code,
+            messages=messages,
+            temperature=request.temperature if request.temperature is not None else 0.7,
+            max_tokens=request.max_tokens if request.max_tokens is not None else 1500,
+            context={
+                "trace_id": "prompt-debug",
+                "expert_config_code": "prompt_debug_workbench",
+            },
+        )
+    except Exception as exc:
+        return ResponseData(
+            message="Prompt 调试失败",
+            data=PromptDebugResponse(
+                success=False,
+                model_code=request.model_code,
+                error_message=str(exc),
+            ),
+        )
+
+    result_data = result if isinstance(result, dict) else {}
+    usage = result_data.get("usage")
+    provider_code = str(result_data.get("provider_code") or "") or None
+    provider_model = str(result_data.get("provider_model") or "") or None
+    return ResponseData(
+        message="Prompt 调试完成",
+        data=PromptDebugResponse(
+            success=True,
+            content=str(result_data.get("content") or ""),
+            model_code=str(result_data.get("model_code") or request.model_code),
+            provider_code=provider_code,
+            provider_model=provider_model,
+            usage=PromptDebugTokenUsage(**usage) if isinstance(usage, dict) else None,
+            latency_ms=result_data.get("latency_ms"),
+        ),
+    )
+
+
 @router.post("/batches/start", response_model=ResponseData[ContentBatchStartResponse])
 async def start_batch_generation(
     request: ContentBatchStartRequest,
@@ -208,7 +265,12 @@ async def start_batch_generation(
             style=request.style,
             count=request.count,
             articles_per_prompt=request.articles_per_prompt,
+            postprocess_mode=request.postprocess_mode,
             keyword_asset_key=request.keyword_asset_key,
+            prompt_mode=request.prompt_mode,
+            draft_corpus=request.draft_corpus,
+            draft_rule_id=request.draft_rule_id,
+            draft_source_row_no=request.draft_source_row_no,
             model_config=model_config,
             model_config_rotation=await _model_config_rotation_with_maga_defaults(
                 db,
@@ -358,6 +420,47 @@ async def get_batch_report(
     except ValueError as exc:
         raise _map_protocol_error(exc) from exc
     return ResponseData(data=report)
+
+
+@router.post(
+    "/batches/{batch_id}/business-usability-review",
+    response_model=ResponseData[ContentBatchBusinessUsabilityReviewResponse],
+    response_model_exclude_none=True,
+)
+async def review_batch_business_usability(
+    batch_id: int,
+    request: ContentBatchBusinessUsabilityReviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchBusinessUsabilityReviewResponse]:
+    try:
+        result = await ContentBatchExecutionService(
+            db,
+            callback_base_url="/api/v1/content-agent",
+        ).review_business_usability_items(
+            batch_id,
+            force=request.force,
+            limit=request.limit,
+            concurrency=request.concurrency,
+        )
+        await db.commit()
+        db.expire_all()
+        report = await ContentBatchReportService(db).get_batch_report(batch_id, include_details=True)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    return ResponseData(
+        message="Business usability review completed",
+        data=ContentBatchBusinessUsabilityReviewResponse(
+            batch_id=result.batch_id,
+            reviewed_count=result.reviewed_count,
+            skipped_count=result.skipped_count,
+            failed_count=result.failed_count,
+            reviewed_item_nos=result.reviewed_item_nos,
+            skipped_item_nos=result.skipped_item_nos,
+            failed_items=result.failed_items,
+            tier_counts=result.tier_counts,
+            report=report,
+        ),
+    )
 
 
 @router.get("/batches/{batch_id}/export.xlsx")

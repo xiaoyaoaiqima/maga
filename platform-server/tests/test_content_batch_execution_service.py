@@ -37,6 +37,7 @@ from app.services.content_batch_execution_service import (
     _should_rewrite_product_experience_llm_quality,
     _should_review_product_experience_llm_quality,
     _title_guard_reasons,
+    _title_guard_watch_reasons,
     _title_weighted_len,
     _rewrite_removed_required_wangyue_product,
     _restore_product_permission_wangyue_surface,
@@ -133,6 +134,23 @@ def test_mouth_phrase_budget_hits_only_unassigned_terms():
     assert "只处理这些本篇未分配的批量高频口癖：除了贵、踏实" in payload["rewrite_instructions"][0]
     assert "硬性验收：改写后的 title/body 里不能再出现这些完整字符串：除了贵、踏实" in payload["rewrite_instructions"][1]
     assert "优先把含口癖的收尾半句或整句删掉" in payload["rewrite_instructions"][2]
+
+
+def test_mouth_phrase_budget_does_not_rewrite_title_only_watch_terms():
+    item = ContentBatchItem(
+        item_no=1,
+        title="给孩子喝对奶粉 省心不少",
+        body="放学回来还能正常吃饭，玩一会儿积木。",
+        plan_json={
+            "mouth_phrase_budget": {
+                "enabled": True,
+                "allowed_terms": [],
+                "avoid_terms": ["省心", "踏实"],
+            }
+        },
+    )
+
+    assert _mouth_phrase_budget_hits(item) == []
 
 
 def test_article_length_guard_marks_reasoning_leak_unusable_without_rewrite():
@@ -343,7 +361,7 @@ def test_wangyue_v2_marks_soft_closure_and_state_template_only():
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v2_core_storyline_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -356,7 +374,7 @@ def test_wangyue_v2_marks_soft_closure_and_state_template_only():
     assert _should_mark_only_product_experience_phrase_review(
         {
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v2_core_storyline_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
         review,
@@ -369,7 +387,7 @@ def test_wangyue_v2_keeps_age_context_as_rewrite():
         body="一岁多开始喝旺玥，后来状态挺稳。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v2_core_storyline_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -383,7 +401,7 @@ def test_wangyue_v2_keeps_age_context_as_rewrite():
     assert not _should_mark_only_product_experience_phrase_review(
         {
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v2_core_storyline_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
         review,
@@ -612,6 +630,159 @@ def test_forbidden_hits_prefer_longer_overlapping_terms():
 def test_forbidden_hits_do_not_block_tianranruzhi_proprietary_term():
     assert find_forbidden_hits("奶粉里的天然乳脂确实帮助吸收了。", ["天然"]) == []
     assert find_forbidden_hits("不要写成天然成分。", ["天然"]) == ["天然"]
+
+
+@pytest.mark.asyncio
+async def test_wangyue_forbidden_review_blocks_diqi_without_rewrite():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, tables=[AssetRegistry.__table__])
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        service = ForbiddenTermReviewService(session)
+        item = ContentBatchItem(
+            title="孩子状态还行😅",
+            body="以前总说体质和脾胃，现在喝旺玥后我心里有底气。",
+            quality_json={},
+        )
+
+        terms = await service.list_terms(asset_key="wangyue_v3_core_storyline_article_rules")
+        review = await service.review_and_rewrite_item(
+            item=item,
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            orchestrator=None,
+            executor_code=None,
+            content_type="article",
+        )
+
+    full_text = f"{item.title}\n{item.body}"
+    assert "😅" not in terms
+    assert "底气" in terms
+    assert "体质" in full_text
+    assert "脾胃" in full_text
+    assert "底气" in full_text
+    assert "😅" in full_text
+    assert review["initial_hits"] == ["体质", "脾胃", "底气"]
+    assert review["final_hits"] == ["底气"]
+    assert review["rewrite_rounds"] == 0
+    assert review["rewrite_method"] == "block_only"
+    assert item.quality_json["hard_pass"] is False
+    assert item.quality_json["review_report"]["rewrite_required"] is True
+    assert item.quality_json["review_report"]["rewrite_reason"] == "命中硬违禁词：底气，直接阻断，不改写"
+
+
+@pytest.mark.asyncio
+async def test_wangyue_forbidden_review_replaces_rewritable_terms_without_diqi():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, tables=[AssetRegistry.__table__])
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        service = ForbiddenTermReviewService(session)
+        item = ContentBatchItem(
+            title="孩子状态还行😅",
+            body="以前总说体质和脾胃，现在喝旺玥后我心里更稳。",
+            quality_json={},
+        )
+
+        terms = await service.list_terms(asset_key="wangyue_v3_core_storyline_article_rules")
+        review = await service.review_and_rewrite_item(
+            item=item,
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            orchestrator=None,
+            executor_code=None,
+            content_type="article",
+        )
+
+    full_text = f"{item.title}\n{item.body}"
+    assert "😅" not in terms
+    assert "底气" in terms
+    for term in ["体质", "脾胃"]:
+        assert term not in full_text
+    assert "😅" in full_text
+    assert "状态" in full_text
+    assert "肚肚状态" in full_text
+    assert review["initial_hits"] == ["体质", "脾胃"]
+    assert review["final_hits"] == []
+
+
+@pytest.mark.asyncio
+async def test_wangyue_forbidden_review_removes_songkuai_term():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, tables=[AssetRegistry.__table__])
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        service = ForbiddenTermReviewService(session)
+        item = ContentBatchItem(
+            title="日常安排",
+            body="家里这项安排松快多了，孩子也能正常喝旺玥。",
+            quality_json={},
+        )
+
+        terms = await service.list_terms(asset_key="wangyue_v3_core_storyline_article_rules")
+        review = await service.review_and_rewrite_item(
+            item=item,
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            orchestrator=None,
+            executor_code=None,
+            content_type="article",
+        )
+
+    full_text = f"{item.title}\n{item.body}"
+    assert "松快" in terms
+    assert review["initial_hits"] == ["松快"]
+    assert review["final_hits"] == []
+    assert "松快" not in full_text
+
+
+@pytest.mark.asyncio
+async def test_wangyue_forbidden_review_removes_4duan_term_only_for_wangyue():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, tables=[AssetRegistry.__table__])
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        service = ForbiddenTermReviewService(session)
+        wangyue_item = ContentBatchItem(
+            title="选奶粉这事",
+            body="之前总说4段怎么选，后来才发现旺玥更适合家里日常安排。",
+            quality_json={},
+        )
+        other_item = ContentBatchItem(
+            title="选奶粉这事",
+            body="之前总说4段怎么选，后来才慢慢定下来。",
+            quality_json={},
+        )
+
+        wangyue_terms = await service.list_terms(asset_key="wangyue_v3_core_storyline_article_rules")
+        other_terms = await service.list_terms(asset_key="yuanyue_article_rules")
+        wangyue_review = await service.review_and_rewrite_item(
+            item=wangyue_item,
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            orchestrator=None,
+            executor_code=None,
+            content_type="article",
+        )
+        other_audit = await service.audit_text(
+            asset_key="yuanyue_article_rules",
+            title=other_item.title,
+            body=other_item.body,
+        )
+
+    reason = "旺玥不是4段奶粉，品牌定位是儿童奶粉；不能把旺玥和4段奶粉放在一起关联。"
+    assert "4段" in wangyue_terms
+    assert "4段" not in other_terms
+    assert wangyue_review["initial_hits"] == ["4段"]
+    assert wangyue_review["term_reasons"] == {"4段": reason}
+    assert wangyue_review["final_hits"] == []
+    assert "4段" not in f"{wangyue_item.title}\n{wangyue_item.body}"
+    assert other_audit.hits == []
+    assert other_audit.term_reasons == {}
 
 
 def test_product_experience_phrase_guard_allows_single_soft_closure_phrase():
@@ -857,6 +1028,43 @@ def test_product_experience_phrase_guard_still_blocks_hard_ai_closure_phrase():
     assert review.pass_ is False
 
 
+def test_product_experience_phrase_guard_treats_wangyue_v2_closure_as_watch_only():
+    review = review_product_experience_phrase(
+        title="旺玥记录",
+        body="记录下，孩子喝旺玥有一阵子了。外面活动多了回来也照常吃饭，老母亲心里踏实多了。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "0705旺玥活动-v2",
+        },
+    )
+
+    assert "hard_ai_closure_phrase" not in review.reasons
+    assert "common_ai_closure_phrase" not in review.reasons
+    assert review.rewrite_required is False
+    assert review.pass_ is True
+
+
+def test_product_experience_phrase_guard_treats_wangyue_v2_effect_chain_as_watch_only():
+    review = review_product_experience_phrase(
+        title="喝旺玥后，孩子状态稳了",
+        body=(
+            "记录下，给孩子喝了一阵子旺玥，变化挺明显。以前户外活动一多，回来就蔫蔫的，"
+            "吃饭也忽多忽少。这段时间坚持泡奶粉，小家伙精神头一直在线，饭量也稳定不少。"
+            "当时就是看中旺玥的乳铁蛋白含量高，想着能帮孩子自己拉保护力，现在看来真没选错。继续喝下去"
+        ),
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "0705旺玥活动-v2",
+        },
+    )
+
+    assert "product_effect_proof_chain" not in review.reasons
+    assert review.rewrite_required is False
+    assert review.pass_ is True
+
+
 def test_product_experience_phrase_guard_blocks_adult_self_drinking_child_formula():
     review = review_product_experience_phrase(
         title="刚开了一罐奶粉",
@@ -898,7 +1106,7 @@ def test_product_experience_phrase_guard_blocks_formula_dry_powder_ingestion():
     assert cleaned == "家里奶粉罐见底了，赶紧又开一罐旺玥。有妈妈问怎么选的，我就说冲着乳铁蛋白去的，孩子愿意喝就行"
 
 
-def test_product_experience_phrase_guard_blocks_wangyue_ingredient_benefit_mismatch():
+def test_product_experience_phrase_guard_allows_wangyue_ingredient_positive_growth_result():
     text = (
         "我看中这个乳铁蛋白来着。"
         "她当时还纳闷乳铁蛋白是啥，我就说就是那个让娃抱起来沉一点的成分。"
@@ -914,16 +1122,11 @@ def test_product_experience_phrase_guard_blocks_wangyue_ingredient_benefit_misma
         },
     )
 
-    assert "ingredient_benefit_mismatch" in review.reasons
-    assert any(
-        "乳铁蛋白是啥，我就说就是那个让娃抱起来沉一点" in hit
-        for hit in review.ingredient_benefit_mismatch_hits
-    )
-    assert review.rewrite_required is True
-    assert review.pass_ is False
+    assert "ingredient_benefit_mismatch" not in review.reasons
+    assert review.ingredient_benefit_mismatch_hits == []
 
 
-def test_product_experience_phrase_guard_blocks_weak_wangyue_ingredient_growth_bridge():
+def test_product_experience_phrase_guard_allows_wangyue_ingredient_growth_bridge():
     review = review_product_experience_phrase(
         title="这罐还挺顺",
         body="朋友问我为什么留旺玥，我说它含有乳铁蛋白，对孩子体格比较友好，最近小身板看着结实些。",
@@ -934,8 +1137,8 @@ def test_product_experience_phrase_guard_blocks_weak_wangyue_ingredient_growth_b
         },
     )
 
-    assert "ingredient_benefit_mismatch" in review.reasons
-    assert any("乳铁蛋白，对孩子体格" in hit for hit in review.ingredient_benefit_mismatch_hits)
+    assert "ingredient_benefit_mismatch" not in review.reasons
+    assert review.ingredient_benefit_mismatch_hits == []
 
 
 def test_product_experience_phrase_guard_blocks_wangyue_product_fact_number_drift():
@@ -1000,7 +1203,7 @@ def test_product_experience_phrase_guard_allows_sleep_as_background_context():
     assert "effect_scope_drift" not in review.reasons
 
 
-def test_product_experience_phrase_guard_blocks_nearby_wangyue_ingredient_growth_pairing():
+def test_product_experience_phrase_guard_allows_nearby_wangyue_ingredient_growth_pairing():
     plan = {
         "rule_type": "business_rule",
         "asset_key": "wangyue_article_business_rules",
@@ -1018,8 +1221,10 @@ def test_product_experience_phrase_guard_blocks_nearby_wangyue_ingredient_growth
         plan=plan,
     )
 
-    assert "ingredient_benefit_mismatch" in after_review.reasons
-    assert "ingredient_benefit_mismatch" in before_review.reasons
+    assert "ingredient_benefit_mismatch" not in after_review.reasons
+    assert after_review.ingredient_benefit_mismatch_hits == []
+    assert "ingredient_benefit_mismatch" not in before_review.reasons
+    assert before_review.ingredient_benefit_mismatch_hits == []
 
 
 def test_product_experience_phrase_guard_allows_correct_wangyue_benefit_mapping():
@@ -1046,7 +1251,43 @@ def test_product_experience_phrase_guard_allows_correct_wangyue_benefit_mapping(
     assert growth_review.ingredient_benefit_mismatch_hits == []
 
 
-def test_product_experience_phrase_rewrite_input_preserves_strong_effect_with_correct_bridge():
+def test_product_experience_phrase_guard_allows_protection_force_supported():
+    review = review_product_experience_phrase(
+        title="这罐喝着挺稳",
+        body=(
+            "家里喝的是旺玥。"
+            "当时冲着乳铁蛋白去的，想着能帮他把保护力撑起来。"
+            "喝到现在快两个月，明显感觉到他精力稳了很多。"
+        ),
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_article_business_rules",
+            "corpus": "写作规则：0705旺玥活动。复购/长期使用。",
+        },
+    )
+
+    assert "ingredient_benefit_mismatch" not in review.reasons
+    assert review.ingredient_benefit_mismatch_hits == []
+
+
+def test_product_experience_phrase_guard_allows_regular_daily_routine_scope():
+    review = review_product_experience_phrase(
+        title="最近日常顺了些",
+        body="后来选了旺玥，奶粉冲泡起来顺手，他接受度也高，现在吃饭稳定很多，午睡到户外活动都更规律。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v347_selling_description_mainline_article_rules",
+            "painpoint": "保护力关注",
+            "selling_point": "进阶保护力",
+            "corpus": "写作规则：0705旺玥活动。",
+        },
+    )
+
+    assert "effect_scope_drift" not in review.reasons
+    assert review.effect_scope_drift_hits == []
+
+
+def test_product_experience_phrase_rewrite_input_does_not_weaken_positive_effect_bridge():
     service = ContentBatchExecutionService(None, callback_base_url="http://testserver", session_factory=lambda: None)
     item = ContentBatchItem(
         batch_id=1,
@@ -1065,11 +1306,10 @@ def test_product_experience_phrase_rewrite_input_preserves_strong_effect_with_co
     payload = service._product_experience_phrase_rewrite_input(item, review)
     instructions = "\n".join(payload["rewrite_instructions"])
 
-    assert "ingredient_benefit_mismatch" in review.reasons
-    assert "保留强正向效果证明" in instructions
-    assert "乳铁蛋白/免疫球蛋白/HMO只承接保护力、少中招、状态稳" in instructions
-    assert "阶段营养、整体营养配置、钙铁锌或营养丰富承接" in instructions
-    assert "不要把强效果洗成“还在观察/不一定/每家不同”" in instructions
+    assert "ingredient_benefit_mismatch" not in review.reasons
+    assert review.ingredient_benefit_mismatch_hits == []
+    assert "不因成分和积极结果相连而硬改写" in instructions
+    assert "不要把强效果洗成“还在观察/不一定/每家不同”" not in instructions
 
 
 def test_product_experience_phrase_rewrite_input_repairs_fact_number_and_effect_scope_without_weakening():
@@ -1619,7 +1859,7 @@ def test_product_experience_phrase_guard_allows_child_fetching_cup_without_formu
         ("今天翻冰箱看到那盒奶粉，才想起来旺玥也要补。", "冰箱看到那盒奶粉"),
         ("怕营养跟不上，下午牛奶里加点旺玥，主要是钙铁锌。", "牛奶里加点旺玥"),
         ("每天除了饭菜，我会给他加一顿旺玥，钙铁锌也都带着。", "加一顿旺玥"),
-        ("现在每天睡前他自己记得要喝，旺玥这罐接受度还行。", "每天睡前他自己记得要喝"),
+        ("现在每天睡前他自己记得要喝，旺玥这罐接受度还行。", "自己记得要喝"),
         ("开罐时她凑过来看，我说这是你的，她乐呵呵抱走了。旺玥这阵喝着还顺。", "开罐时她凑过来看"),
     ],
 )
@@ -1653,6 +1893,31 @@ def test_product_experience_phrase_guard_allows_child_holding_cup_without_formul
     assert "formula_usage_form_error" not in review.reasons
     assert review.child_self_brewing_hits == []
     assert "child_self_brewing_formula" not in review.reasons
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "现在每天一杯旺玥，孩子状态看着挺稳。",
+        "每天冲一杯旺玥，配合正常吃饭，家里安排顺手很多。",
+        "现在每天早晚各一杯，饭量不稳的时候也不用太乱。",
+        "每天早晚冲一杯旺玥，孩子喝完就去玩了。",
+    ],
+)
+def test_product_experience_phrase_guard_allows_adult_daily_cup_routine(body):
+    review = review_product_experience_phrase(
+        title="随手记一下",
+        body=body,
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "0705旺玥活动",
+        },
+    )
+
+    assert review.formula_usage_form_hits == []
+    assert "formula_usage_form_error" not in review.reasons
+    assert not any(hit in body for hit in review.wangyue_article_logic_drift_hits)
 
 
 @pytest.mark.parametrize(
@@ -2139,9 +2404,31 @@ def test_product_experience_phrase_guard_blocks_wangyue_under_three_age_variants
 
 
 def test_product_experience_phrase_guard_does_not_treat_usage_duration_as_under_three_age():
+    cases = [
+        "孩子三岁后开始喝旺玥，喝了两个月，小身板看着结实了点。",
+        "孩子喝旺玥快一个月了，饭量比之前稳。",
+        "最近给他喝旺玥，差不多一个月吧，发现状态稳很多。",
+        "想起来喝旺玥也有一个多月了，当时冲着乳铁蛋白去的。",
+    ]
+    for body in cases:
+        review = review_product_experience_phrase(
+            title="喝了一阵记录",
+            body=body,
+            plan={
+                "rule_type": "business_rule",
+                "asset_key": "wangyue_article_business_rules",
+                "corpus": "旺玥是3周岁以上、3-6岁学龄前儿童语境下的4段儿童奶粉。",
+            },
+        )
+
+        assert review.wangyue_explicit_age_hits == []
+        assert "wangyue_explicit_age_context" not in review.reasons
+
+
+def test_product_experience_phrase_guard_still_blocks_month_age_context():
     review = review_product_experience_phrase(
-        title="喝了一阵记录",
-        body="孩子三岁后开始喝旺玥，喝了两个月，小身板看着结实了点。",
+        title="旺玥记录",
+        body="孩子有两个月大，断奶后家里就备了旺玥。",
         plan={
             "rule_type": "business_rule",
             "asset_key": "wangyue_article_business_rules",
@@ -2149,8 +2436,8 @@ def test_product_experience_phrase_guard_does_not_treat_usage_duration_as_under_
         },
     )
 
-    assert review.wangyue_explicit_age_hits == []
-    assert "wangyue_explicit_age_context" not in review.reasons
+    assert "两个月" in review.wangyue_explicit_age_hits
+    assert "wangyue_explicit_age_context" in review.reasons
 
 
 def test_product_experience_phrase_guard_blocks_wangyue_any_explicit_age():
@@ -3230,6 +3517,25 @@ def test_product_experience_phrase_guard_allows_plain_right_choice_phrase():
     assert "hard_risk_expression" not in review.reasons
 
 
+def test_product_experience_phrase_guard_allows_growth_with_later_plain_cold_feedback():
+    review = review_product_experience_phrase(
+        title="三岁后换口粮，终于不纠结了",
+        body=(
+            "最近发现孩子能跑能跳，但饭量起伏大，有时一碗都吃不完。"
+            "想着日常营养不能掉链子，就选了旺玥，里面钙铁锌都配齐，正好适合长身体。"
+            "坚持喝了一阵，整体状态很在线，身体结实，感冒都少了。"
+        ),
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "0705旺玥活动",
+        },
+    )
+
+    assert review.hard_risk_hits == []
+    assert "hard_risk_expression" not in review.reasons
+
+
 def test_product_experience_phrase_guard_allows_negated_temporary_remedy():
     review = review_product_experience_phrase(
         title="保护力这块我会看",
@@ -4078,7 +4384,8 @@ def test_product_experience_phrase_guard_blocks_wangyue_logic_drift_terms():
     )
 
     assert "wangyue_article_logic_drift_context" in review.reasons
-    assert "口粮" in review.wangyue_article_logic_drift_hits
+    assert "口粮" not in review.wangyue_article_logic_drift_hits
+    assert review.wangyue_article_logic_drift_hits
     assert "购物车" in review.wangyue_article_logic_drift_hits
     assert "直接下单" in review.wangyue_article_logic_drift_hits
     assert "护眼" in review.wangyue_article_logic_drift_hits
@@ -4348,6 +4655,32 @@ def test_product_experience_phrase_guard_allows_eye_brain_selection_context_with
     assert "近视" not in background_review.wangyue_article_logic_drift_hits
 
 
+def test_product_experience_phrase_guard_allows_neutral_drinking_and_reading_action():
+    review = review_product_experience_phrase(
+        title="选奶粉的终点站",
+        body=(
+            "之前为3岁后奶粉纠结好久，问了一圈朋友反而更乱。后来自己重新做功课，"
+            "发现旺玥的钙铁锌和多种关键营养列得特别清楚。"
+            "上周放学接她，路上说口渴，回家我照常冲了一杯递过去。"
+            "她咕咚咕咚喝完，放下杯子就开始翻绘本，嘴里还念叨今天学的新词。"
+        ),
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "source_row_no": 15,
+            "post_type": "求建议后的反馈",
+            "painpoint": "成长发育需求",
+            "selling_point": "营养丰富",
+            "corpus": "0705旺玥活动；写成妈妈之前为3岁后儿童奶粉怎么选纠结过，后来回来补一个真实反馈。",
+        },
+    )
+
+    assert "咕咚咕咚" not in review.wangyue_article_logic_drift_hits
+    assert "翻绘本" not in review.wangyue_article_logic_drift_hits
+    assert "绘本" not in review.wangyue_article_logic_drift_hits
+    assert "wangyue_article_logic_drift_context" not in review.reasons
+
+
 def test_product_experience_phrase_guard_blocks_wangyue_selling_point_drift():
     review = review_product_experience_phrase(
         title="别的先不夸太满",
@@ -4366,7 +4699,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_selling_point_drift():
     )
 
     assert "wangyue_article_logic_drift_context" in review.reasons
-    assert "眼脑营养缺失" in review.wangyue_article_logic_drift_hits
+    assert "眼脑营养缺失" not in review.wangyue_article_logic_drift_hits
     assert "日常营养" in review.wangyue_article_logic_drift_hits
 
 
@@ -5895,7 +6228,21 @@ def test_wangyue_title_guard_blocks_forbidden_template_title_phrases():
     reasons = _title_guard_reasons("给娃选奶粉的真实体验", set())
 
     assert "forbidden_title_phrase:真实体验" in reasons
-    assert "forbidden_title_phrase:不用纠结" in _title_guard_reasons("终于不用纠结了", set())
+    assert _title_guard_reasons("终于不用纠结了", set()) == []
+    assert _title_guard_watch_reasons("终于不用纠结了") == ["watch_title_phrase:不用纠结"]
+
+
+def test_wangyue_title_guard_allows_watch_only_closure_title_terms():
+    allowed_titles = [
+        "给孩子喝对奶粉 省心不少",
+        "睡前那杯还挺省心",
+        "这罐还真选对了",
+        "喝着踏实一点",
+        "没选错这件小事",
+    ]
+
+    for title in allowed_titles:
+        assert _title_guard_reasons(title, set()) == []
 
 
 def test_wangyue_title_guard_blocks_low_natural_product_summary_title():
@@ -6076,6 +6423,119 @@ async def test_batch_execution_marks_overcomplete_decision_chain_without_rewrite
     assert "product_experience_llm_quality_rewrites" not in quality
     assert len(reviewer.calls) == 1
     assert reviewer.calls[0]["phrase_review"]["decision_chain_hits"]
+
+
+@pytest.mark.asyncio
+async def test_batch_business_usability_review_reruns_stable_judge_without_rewrite():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    reviewer = FakeProductExperienceLLMReviewer(
+        [
+            ProductExperienceLLMReview(
+                pass_=False,
+                rewrite_required=True,
+                severity="rewrite",
+                issues=[
+                    ProductExperienceLLMIssue(
+                        code="business_tone",
+                        evidence="标题略像总结",
+                        reason="业务可用，但标题需要轻修",
+                        rewrite_direction="标题降成生活碎片",
+                    )
+                ],
+                business_usability_tier="light_fix_usable",
+                business_usability_reason="种草内核成立，标题轻修后可用",
+            )
+        ]
+    )
+
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="batch_business_usability_review",
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            product_topic="0705旺玥活动",
+            count=2,
+            status="generated",
+        )
+        session.add(job)
+        await session.flush()
+        base_plan = {
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "post_type": "使用反馈",
+            "ugc_post_type": "使用反馈",
+            "corpus": "0705旺玥活动",
+        }
+        session.add_all(
+            [
+                ContentBatchItem(
+                    batch_id=job.id,
+                    item_no=1,
+                    status="generated",
+                    title="饭后那杯奶",
+                    body="孩子喝旺玥快一个月了，晚饭后那杯还是照常冲好，状态挺稳。",
+                    plan_json=base_plan,
+                    quality_json={
+                        "hard_pass": True,
+                        "review_report": {"rewrite_required": False},
+                    },
+                ),
+                ContentBatchItem(
+                    batch_id=job.id,
+                    item_no=2,
+                    status="generated",
+                    title="又续了一罐",
+                    body="家里上一罐快空了，旺玥这次我还是直接续上。",
+                    plan_json=base_plan,
+                    quality_json={
+                        "hard_pass": True,
+                        "review_report": {"rewrite_required": False},
+                        "product_experience_llm_quality_review": {
+                            "business_usability_tier": "direct_pool",
+                            "business_usability_reason": "已有稳定判断",
+                        },
+                    },
+                ),
+            ]
+        )
+        await session.commit()
+
+        service = ContentBatchExecutionService(
+            session,
+            callback_base_url="http://maga.test/api/v1/executor",
+            session_factory=session_factory,
+            product_experience_llm_reviewer=reviewer,
+        )
+        result = await service.review_business_usability_items(job.id, concurrency=1)
+
+    assert result.reviewed_count == 1
+    assert result.skipped_count == 1
+    assert result.failed_count == 0
+    assert result.reviewed_item_nos == [1]
+    assert result.skipped_item_nos == [2]
+    assert result.tier_counts == {"light_fix_usable": 1}
+    assert len(reviewer.calls) == 1
+    assert reviewer.calls[0]["ai_flavor_review"] is not None
+
+    async with session_factory() as session:
+        items = (
+            await session.execute(
+                select(ContentBatchItem)
+                .where(ContentBatchItem.batch_id == job.id)
+                .order_by(ContentBatchItem.item_no)
+            )
+        ).scalars().all()
+
+    assert items[0].body == "孩子喝旺玥快一个月了，晚饭后那杯还是照常冲好，状态挺稳。"
+    assert items[0].quality_json["product_experience_llm_quality_review"]["business_usability_tier"] == "light_fix_usable"
+    assert items[0].quality_json["product_experience_llm_quality_review"]["rewrite_required"] is True
+    assert items[0].quality_json["product_experience_llm_quality_review"]["mark_rewrite_required"] is False
+    assert items[0].quality_json["review_report"].get("rewrite_required") is False
 
 
 @pytest.mark.asyncio
@@ -7503,6 +7963,116 @@ async def test_wangyue_batch_execution_repairs_duplicate_titles():
 
 
 @pytest.mark.asyncio
+async def test_wangyue_title_guard_does_not_repair_watch_only_closure_title():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="batch_wangyue_title_watch_only",
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            product_topic="0705旺玥活动",
+            count=1,
+            status="generated",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(
+            ContentBatchItem(
+                batch_id=job.id,
+                item_no=1,
+                status="generated",
+                title="给孩子喝对奶粉 省心不少",
+                body="孩子喝旺玥快一个月了，放学回来还能正常吃饭，玩一会儿积木。",
+                plan_json={
+                    "asset_key": "wangyue_v3_core_storyline_article_rules",
+                    "rule_type": "business_rule",
+                    "corpus": "0705旺玥活动-v2",
+                },
+                quality_json={"hard_pass": True, "review_report": {"rewrite_required": False}},
+            )
+        )
+        await session.commit()
+
+        service = ContentBatchExecutionService(
+            session,
+            callback_base_url="http://maga.test/api/v1/executor",
+            session_factory=session_factory,
+        )
+        repaired = await service._repair_generated_titles(job.id, job)
+        await session.commit()
+
+    assert repaired == 0
+    async with session_factory() as session:
+        item = (await session.execute(select(ContentBatchItem))).scalar_one()
+
+    assert item.title == "给孩子喝对奶粉 省心不少"
+    assert "title_guard_repairs" not in item.quality_json
+
+
+@pytest.mark.asyncio
+async def test_wangyue_title_guard_records_watch_only_template_title_without_repair():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="batch_wangyue_title_watch_only_template",
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            product_topic="0705旺玥活动",
+            count=1,
+            status="generated",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(
+            ContentBatchItem(
+                batch_id=job.id,
+                item_no=1,
+                status="generated",
+                title="终于不用纠结奶粉了",
+                body="孩子晚饭后主动要喝奶，喝完就去搭积木。",
+                plan_json={
+                    "asset_key": "wangyue_v3_core_storyline_article_rules",
+                    "rule_type": "business_rule",
+                    "corpus": "0705旺玥活动-v2",
+                },
+                quality_json={"hard_pass": True, "review_report": {"rewrite_required": False}},
+            )
+        )
+        await session.commit()
+
+        service = ContentBatchExecutionService(
+            session,
+            callback_base_url="http://maga.test/api/v1/executor",
+            session_factory=session_factory,
+        )
+        repaired = await service._repair_generated_titles(job.id, job)
+        await session.commit()
+
+    assert repaired == 0
+    async with session_factory() as session:
+        item = (await session.execute(select(ContentBatchItem))).scalar_one()
+
+    assert item.title == "终于不用纠结奶粉了"
+    assert "title_guard_repairs" not in item.quality_json
+    assert item.quality_json["title_guard_watch"] == [
+        {"title": "终于不用纠结奶粉了", "reasons": ["watch_title_phrase:不用纠结"]}
+    ]
+    assert item.quality_json["title_guard"]["watch_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_wangyue_batch_execution_repairs_copied_reference_titles():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
@@ -8228,6 +8798,80 @@ class ForbiddenResidualRewriteClient(RuntimeFastDraftReviewClient):
             }
             return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
         return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
+
+
+@pytest.mark.asyncio
+async def test_multi_output_group_keeps_partial_article_when_model_returns_one():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add(
+            ExecutorRegistry(
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
+                display_name="Hermes MAGA worker",
+                invoke_url="http://maga-worker.test/invoke",
+                enabled=1,
+                config_json={},
+            )
+        )
+        job = ContentBatchJob(
+            batch_code="batch_partial_multi_output",
+            asset_key="yuanyue",
+            product_topic="普通话题",
+            count=2,
+            status="planned",
+        )
+        session.add(job)
+        await session.flush()
+        group = {"enabled": True, "group_id": "partial-group", "requested_count": 2}
+        session.add_all(
+            [
+                ContentBatchItem(
+                    batch_id=job.id,
+                    item_no=1,
+                    status="planned",
+                    plan_json={**_plan(1), "multi_output_group": group, "persona_style_rewrite_enabled": False},
+                ),
+                ContentBatchItem(
+                    batch_id=job.id,
+                    item_no=2,
+                    status="planned",
+                    plan_json={**_plan(2), "multi_output_group": group, "persona_style_rewrite_enabled": False},
+                ),
+            ]
+        )
+        await session.commit()
+
+        service = ContentBatchExecutionService(
+            session,
+            invocation_client=RuntimeFastDraftReviewClient(),
+            callback_base_url="http://maga.test/api/v1/executor",
+            session_factory=session_factory,
+        )
+        result = await service.execute_batch_items(job.id, limit=2, created_by="test")
+        await session.commit()
+
+    assert result.generated_count == 1
+    assert result.failed_count == 1
+    async with session_factory() as session:
+        items = (
+            await session.execute(select(ContentBatchItem).order_by(ContentBatchItem.item_no))
+        ).scalars().all()
+
+    assert [item.status for item in items] == ["generated", "failed"]
+    assert items[0].title == "runtime content 标题"
+    assert items[0].run_id is not None
+    assert items[1].run_id == items[0].run_id
+    assert items[1].error_message == "content.generate returned 1 articles for 2 planned items"
+    assert items[1].quality_json["multi_output"]["parse_error"] == "insufficient_multi_output_items"
+    assert items[1].quality_json["multi_output"]["returned_count"] == 1
 
 
 class RoyalFrisoStructureRewriteClient(RuntimeFastDraftReviewClient):
@@ -9373,7 +10017,7 @@ async def test_batch_execution_reports_worker_start_hint_when_executor_is_unreac
 
 
 @pytest.mark.asyncio
-async def test_batch_execution_rewrites_later_item_when_similarity_is_too_high():
+async def test_batch_execution_watches_later_item_when_similarity_is_too_high():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(
@@ -9427,27 +10071,24 @@ async def test_batch_execution_rewrites_later_item_when_similarity_is_too_high()
         ).scalars().all()
 
     assert items[0].body == "第一段相同。第二段也相同。第三段继续相同。"
-    assert items[1].title == "降重后的标题"
-    assert "触发原因" in items[1].body
-    similarity_rewrites = items[1].quality_json["similarity_rewrites"]
-    assert similarity_rewrites[0]["similar_item_no"] == 1
-    assert similarity_rewrites[0]["similarity_score"] >= 0.42
-    assert similarity_rewrites[0]["similarity_rewrite_passed"] is True
-    assert similarity_rewrites[0]["post_rewrite_similarity_score"] < 0.42
-    assert items[1].quality_json["review_report"]["rewrite_required"] is False
-    assert any(stage.capability == "content.rewrite" for stage in stage_calls)
-    rewrite_stage = next(
-        stage
+    assert items[1].title == "相似标题"
+    assert items[1].body == "第一段相同。第二段也相同。第三段继续相同。"
+    similarity_watch = items[1].quality_json["similarity_watch"]
+    assert similarity_watch[0]["similar_item_no"] == 1
+    assert similarity_watch[0]["similarity_score"] >= 0.42
+    assert similarity_watch[0]["watch"] is True
+    assert similarity_watch[0]["rewrite_required"] is False
+    assert "similarity_rewrites" not in items[1].quality_json
+    assert items[1].quality_json["review_report"]["similarity_watch"][0]["rewrite_required"] is False
+    assert not any(
+        stage.capability == "content.rewrite"
+        and (stage.input_snapshot or {}).get("rewrite_source") == "similarity_rewrite"
         for stage in stage_calls
-        if stage.capability == "content.rewrite" and (stage.input_snapshot or {}).get("rewrite_source") != "persona_style_rewrite"
     )
-    instructions = "\n".join((rewrite_stage.input_snapshot or {}).get("rewrite_instructions") or [])
-    assert "优先删除或压缩" in instructions
-    assert "不要为了多样化扩写新情节" in instructions
 
 
 @pytest.mark.asyncio
-async def test_batch_execution_checks_recent_history_for_similarity():
+async def test_batch_execution_watches_recent_history_for_similarity():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(
@@ -9514,17 +10155,28 @@ async def test_batch_execution_checks_recent_history_for_similarity():
         item = (
             await session.execute(select(ContentBatchItem).where(ContentBatchItem.batch_id == current_job.id))
         ).scalar_one()
+        stage_calls = (
+            await session.execute(select(ContentAgentStageCall).order_by(ContentAgentStageCall.sequence_no))
+        ).scalars().all()
 
-    assert item.title == "降重后的标题"
-    rewrite = item.quality_json["similarity_rewrites"][0]
-    assert rewrite["scope"] == "history"
-    assert rewrite["similar_batch_id"] == history_job.id
-    assert rewrite["threshold"] == 0.48
-    assert item.quality_json["review_report"]["rewrite_required"] is False
+    assert item.title == "相似标题"
+    watch = item.quality_json["similarity_watch"][0]
+    assert watch["scope"] == "history"
+    assert watch["similar_batch_id"] == history_job.id
+    assert watch["threshold"] == 0.48
+    assert watch["watch"] is True
+    assert watch["rewrite_required"] is False
+    assert "similarity_rewrites" not in item.quality_json
+    assert item.quality_json["review_report"]["similarity_watch"][0]["rewrite_required"] is False
+    assert not any(
+        stage.capability == "content.rewrite"
+        and (stage.input_snapshot or {}).get("rewrite_source") == "similarity_rewrite"
+        for stage in stage_calls
+    )
 
 
 @pytest.mark.asyncio
-async def test_batch_execution_marks_manual_review_when_similarity_rewrite_still_high():
+async def test_batch_execution_keeps_similarity_as_watch_when_similarity_stays_high():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(
@@ -9575,11 +10227,20 @@ async def test_batch_execution_marks_manual_review_when_similarity_rewrite_still
                 select(ContentBatchItem).where(ContentBatchItem.batch_id == job.id, ContentBatchItem.item_no == 2)
             )
         ).scalar_one()
+        stage_calls = (
+            await session.execute(select(ContentAgentStageCall).order_by(ContentAgentStageCall.sequence_no))
+        ).scalars().all()
 
-    assert len(item.quality_json["similarity_rewrites"]) == 2
-    assert item.quality_json["similarity_rewrites"][-1]["similarity_rewrite_passed"] is False
-    assert item.quality_json["review_report"]["rewrite_required"] is True
-    assert "需要人工处理" in item.quality_json["review_report"]["rewrite_reason"]
+    assert len(item.quality_json["similarity_watch"]) == 1
+    assert item.quality_json["similarity_watch"][0]["watch"] is True
+    assert item.quality_json["similarity_watch"][0]["rewrite_required"] is False
+    assert "similarity_rewrites" not in item.quality_json
+    assert item.quality_json["review_report"]["similarity_watch"][0]["rewrite_required"] is False
+    assert not any(
+        stage.capability == "content.rewrite"
+        and (stage.input_snapshot or {}).get("rewrite_source") == "similarity_rewrite"
+        for stage in stage_calls
+    )
 
 
 @pytest.mark.asyncio
@@ -11325,6 +11986,66 @@ async def test_batch_execution_uses_unified_content_generate_runtime_output():
     assert item.quality_json["soft_score_avg"] is None
     assert {stage.capability for stage in stage_calls} == {"content.generate", "content.rewrite"}
     assert item.quality_json["persona_style_rewrites"][0]["preset_code"] == "roommate_direct"
+
+
+@pytest.mark.asyncio
+async def test_batch_execution_generate_only_skips_postprocess_rewrite():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add(
+            ExecutorRegistry(
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
+                display_name="Hermes MAGA worker",
+                invoke_url="http://maga-worker.test/invoke",
+                enabled=1,
+                config_json={"executor_token": "test-token"},
+            )
+        )
+        job = ContentBatchJob(
+            batch_code="batch_content_generate_only",
+            asset_key="yuanyue",
+            product_topic="宝宝便便不规律",
+            target_audience="新手妈妈",
+            style="经验老道型",
+            count=1,
+            status="planned",
+            strategy_json={"postprocess_mode": "generate_only"},
+        )
+        session.add(job)
+        await session.flush()
+        session.add(ContentBatchItem(batch_id=job.id, item_no=1, status="planned", plan_json=_plan(1)))
+        await session.commit()
+
+        service = ContentBatchExecutionService(
+            session,
+            invocation_client=RuntimeFastDraftReviewClient(),
+            callback_base_url="http://maga.test/api/v1/executor",
+        )
+        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
+        await session.commit()
+
+    assert result.generated_count == 1
+    async with session_factory() as session:
+        item = (await session.execute(select(ContentBatchItem))).scalar_one()
+        stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
+
+    assert item.status == "generated"
+    assert item.title == "runtime content 标题"
+    assert item.body == "runtime content 正文"
+    assert {stage.capability for stage in stage_calls} == {"content.generate"}
+    assert item.quality_json["postprocess_mode"] == "generate_only"
+    assert item.quality_json["audit_skipped"] is True
+    assert item.quality_json["hard_pass"] is False
+    assert item.quality_json["review_report"]["audit_skipped"] is True
+    assert "persona_style_rewrites" not in item.quality_json
 
 
 @pytest.mark.asyncio

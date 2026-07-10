@@ -13,6 +13,11 @@ from app.services.content_generation_expert_service import ContentGenerationExpe
 from app.services.content_rewrite_context import rewrite_business_rule_context
 
 STATIC_FORBIDDEN_REPLACEMENTS = {"肠胃": "肚肚"}
+WANGYUE_STATIC_FORBIDDEN_REPLACEMENTS = {
+    "体质": "状态",
+    "脾胃": "肚肚状态",
+}
+WANGYUE_STATIC_BLOCK_ONLY_TERMS = {"底气"}
 STATIC_FORBIDDEN_TERMS = [
     "治疗便秘",
     "治好便秘",
@@ -35,6 +40,8 @@ WANGYUE_STATIC_FORBIDDEN_TERMS = [
     "宝妈",
     "自护力",
     "底气",
+    "松快",
+    "4段",
     "源乳",
     "初乳",
     "换季",
@@ -42,6 +49,9 @@ WANGYUE_STATIC_FORBIDDEN_TERMS = [
     "秋游",
     "春游",
 ]
+WANGYUE_STATIC_FORBIDDEN_TERM_REASONS = {
+    "4段": "旺玥不是4段奶粉，品牌定位是儿童奶粉；不能把旺玥和4段奶粉放在一起关联。",
+}
 ALLOWED_PROPRIETARY_TERMS = {
     "天然乳脂": "__MAGA_ALLOWED_TIANRANRUZHI__",
 }
@@ -53,6 +63,7 @@ class ForbiddenTermAuditResult:
     terms: list[str]
     hits: list[str]
     replacements: dict[str, str]
+    term_reasons: dict[str, str]
 
 
 class ForbiddenTermReviewService:
@@ -81,14 +92,16 @@ class ForbiddenTermReviewService:
         term_service = BusinessForbiddenTermService(self.db)
         terms = await self.list_terms(asset_key=asset_key)
         replacements = {
-            **STATIC_FORBIDDEN_REPLACEMENTS,
+            **_static_forbidden_replacements_for_asset(asset_key),
             **(await term_service.list_replacements(asset_key=asset_key)),
         }
         hits = find_forbidden_hits(_text(title, body), terms)
+        term_reasons = _static_forbidden_term_reasons_for_asset(asset_key)
         return ForbiddenTermAuditResult(
             terms=terms,
             hits=hits,
             replacements={hit: replacements[hit] for hit in hits if replacements.get(hit)},
+            term_reasons={hit: term_reasons[hit] for hit in hits if term_reasons.get(hit)},
         )
 
     async def review_and_rewrite_item(
@@ -109,11 +122,25 @@ class ForbiddenTermReviewService:
                 final_hits=[],
                 rewrite_rounds=0,
                 rewrite_method="none",
+                term_reasons={},
             )
             item.quality_json = quality
             return quality["forbidden_terms_review"]
 
         initial_hits = list(audit.hits)
+        block_only_hits = [hit for hit in initial_hits if hit in _static_block_only_terms_for_asset(asset_key)]
+        if block_only_hits:
+            review_payload = _review_payload(
+                initial_hits=initial_hits,
+                final_hits=block_only_hits,
+                rewrite_rounds=0,
+                rewrite_method="block_only",
+                term_reasons={hit: audit.term_reasons[hit] for hit in initial_hits if audit.term_reasons.get(hit)},
+            )
+            quality = _quality_with_forbidden_review(item.quality_json or {}, review_payload)
+            item.quality_json = quality
+            return review_payload
+
         rewrite_rounds = 0
         rewrite_method = "none"
         last_error: str | None = None
@@ -160,6 +187,7 @@ class ForbiddenTermReviewService:
                 terms=audit.terms,
                 hits=find_forbidden_hits(_text(item.title, item.body), audit.terms),
                 replacements={},
+                term_reasons={},
             )
             if post_audit.hits:
                 item.title = _remove_or_replace_forbidden_terms(item.title or "", post_audit.hits, audit.replacements)
@@ -173,6 +201,7 @@ class ForbiddenTermReviewService:
                     terms=audit.terms,
                     hits=find_forbidden_hits(_text(item.title, item.body), audit.terms),
                     replacements={},
+                    term_reasons={},
                 )
             current_hits = post_audit.hits
             if not current_hits:
@@ -184,6 +213,7 @@ class ForbiddenTermReviewService:
             rewrite_rounds=rewrite_rounds,
             rewrite_method=rewrite_method,
             last_error=last_error,
+            term_reasons={hit: audit.term_reasons[hit] for hit in initial_hits if audit.term_reasons.get(hit)},
         )
         quality = _quality_with_forbidden_review(item.quality_json or {}, review_payload)
         item.quality_json = quality
@@ -209,10 +239,33 @@ def _mask_allowed_proprietary_terms(text: str) -> str:
 
 def _static_forbidden_terms_for_asset(asset_key: str | None) -> list[str]:
     terms = list(STATIC_FORBIDDEN_TERMS)
-    normalized = str(asset_key or "").lower()
-    if normalized.startswith("wangyue_") or "wangyue" in normalized:
+    if _is_wangyue_asset(asset_key):
         terms.extend(WANGYUE_STATIC_FORBIDDEN_TERMS)
     return terms
+
+
+def _static_forbidden_replacements_for_asset(asset_key: str | None) -> dict[str, str]:
+    replacements = dict(STATIC_FORBIDDEN_REPLACEMENTS)
+    if _is_wangyue_asset(asset_key):
+        replacements.update(WANGYUE_STATIC_FORBIDDEN_REPLACEMENTS)
+    return replacements
+
+
+def _static_forbidden_term_reasons_for_asset(asset_key: str | None) -> dict[str, str]:
+    if _is_wangyue_asset(asset_key):
+        return dict(WANGYUE_STATIC_FORBIDDEN_TERM_REASONS)
+    return {}
+
+
+def _static_block_only_terms_for_asset(asset_key: str | None) -> set[str]:
+    if _is_wangyue_asset(asset_key):
+        return set(WANGYUE_STATIC_BLOCK_ONLY_TERMS)
+    return set()
+
+
+def _is_wangyue_asset(asset_key: str | None) -> bool:
+    normalized = str(asset_key or "").lower()
+    return normalized.startswith("wangyue_") or "wangyue" in normalized
 
 
 def _quality_with_forbidden_review(quality_json: dict[str, Any], review_payload: dict[str, Any]) -> dict[str, Any]:
@@ -228,11 +281,14 @@ def _quality_with_forbidden_review(quality_json: dict[str, Any], review_payload:
         }
     )
     if review_payload["initial_hits"]:
-        review_report["rewrite_reason"] = (
-            f"命中违禁词已自动改写：{'、'.join(review_payload['initial_hits'])}"
-            if not review_payload["final_hits"]
-            else f"命中违禁词：{'、'.join(review_payload['final_hits'])}，自动改写后仍需人工处理"
-        )
+        if review_payload.get("rewrite_method") == "block_only":
+            review_report["rewrite_reason"] = f"命中硬违禁词：{'、'.join(review_payload['final_hits'])}，直接阻断，不改写"
+        else:
+            review_report["rewrite_reason"] = (
+                f"命中违禁词已自动改写：{'、'.join(review_payload['initial_hits'])}"
+                if not review_payload["final_hits"]
+                else f"命中违禁词：{'、'.join(review_payload['final_hits'])}，自动改写后仍需人工处理"
+            )
     quality["review_report"] = review_report
     quality["forbidden_terms_review"] = review_payload
     existing_hard_pass = quality.get("hard_pass")
@@ -253,15 +309,19 @@ def _hard_results_with_forbidden_guard(
             "ae_code": "forbidden_terms_guard",
             "pass": not review_payload["final_hits"],
             "risk_level": "high",
-            "feedback": (
-                f"命中违禁词已自动改写：{'、'.join(review_payload['initial_hits'])}"
-                if not review_payload["final_hits"]
-                else f"自动改写后仍命中违禁词：{'、'.join(review_payload['final_hits'])}"
-            ),
+            "feedback": _forbidden_feedback(review_payload),
             "evidence": review_payload["final_hits"] or review_payload["initial_hits"],
         }
     )
     return normalized
+
+
+def _forbidden_feedback(review_payload: dict[str, Any]) -> str:
+    if review_payload.get("rewrite_method") == "block_only":
+        return f"命中硬违禁词，直接阻断不改写：{'、'.join(review_payload['final_hits'])}"
+    if not review_payload["final_hits"]:
+        return f"命中违禁词已自动改写：{'、'.join(review_payload['initial_hits'])}"
+    return f"自动改写后仍命中违禁词：{'、'.join(review_payload['final_hits'])}"
 
 
 def _review_payload(
@@ -271,6 +331,7 @@ def _review_payload(
     rewrite_rounds: int,
     rewrite_method: str,
     last_error: str | None = None,
+    term_reasons: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     payload = {
         "source": "maga_forbidden_term_review",
@@ -280,6 +341,7 @@ def _review_payload(
         "rewrite_required": bool(final_hits),
         "rewrite_rounds": rewrite_rounds,
         "rewrite_method": rewrite_method,
+        "term_reasons": term_reasons or {},
     }
     if last_error:
         payload["last_error"] = last_error

@@ -75,12 +75,44 @@ def test_summary_reports_repeated_closure_clusters_only_near_body_end():
     assert stats["total_checked"] == 6
     assert stats["closing_hit_count"] == 5
     assert clusters["peace_of_mind"]["count"] == 2
-    assert clusters["peace_of_mind"]["warning"] is True
+    assert clusters["peace_of_mind"]["watch"] is True
+    assert clusters["peace_of_mind"]["warning"] is False
     assert [hit["item_no"] for hit in clusters["peace_of_mind"]["hits"]] == [2, 3]
     assert clusters["worth_it"]["count"] == 1
     assert clusters["keep_drinking"]["count"] == 1
     assert clusters["right_choice"]["count"] == 1
     assert clusters["right_choice"]["hits"][0]["phrases"] == ["判断没错", "选得还行"]
+
+
+def test_report_surfaces_history_similarity_watch_without_rewrite():
+    service = ContentBatchReportService(db=None)
+    items = [
+        ContentBatchReportItem(
+            item_id=1,
+            item_no=1,
+            status="generated",
+            body="第一段相同。第二段也相同。第三段继续相同。",
+            quality={
+                "similarity_watch": [
+                    {
+                        "similar_item_no": 8,
+                        "similar_batch_id": 99,
+                        "similar_batch_code": "batch_history",
+                        "similarity_score": 0.53,
+                        "scope": "history",
+                        "watch": True,
+                        "rewrite_required": False,
+                    }
+                ]
+            },
+        )
+    ]
+
+    service._attach_similarity_warnings(items)
+
+    assert items[0].similarity_warnings[0].scope == "history"
+    assert items[0].similarity_warnings[0].batch_id == 99
+    assert items[0].similarity_warnings[0].score == 0.53
 
 
 def test_article_pool_export_uses_final_postprocess_state():

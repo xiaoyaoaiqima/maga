@@ -33,6 +33,7 @@ describe('frontend controlled sidebar tabs', () => {
       '/content-agent/feedback',
       '/content-agent/system-prompt-keywords',
       '/content-agent/experts',
+      '/content-agent/prompt-debug',
       '/system/user',
       '/llm/provider',
     ]);
@@ -41,6 +42,7 @@ describe('frontend controlled sidebar tabs', () => {
       '评价反馈',
       '表达扩散语料',
       '生文 Expert',
+      '提示词调试',
       '用户管理',
       '模型配置',
     ]);
@@ -88,6 +90,7 @@ describe('frontend controlled sidebar tabs', () => {
       '/content-agent/feedback',
       '/content-agent/system-prompt-keywords',
       '/content-agent/experts',
+      '/content-agent/prompt-debug',
       '/system/user',
     ]);
 
@@ -122,6 +125,9 @@ describe('frontend controlled sidebar tabs', () => {
     const systemUser = rootRoute?.children?.find(
       (route) => route.path === 'system/user',
     );
+    const promptDebug = rootRoute?.children?.find(
+      (route) => route.path === 'content-agent/prompt-debug',
+    );
     const modelRoutes = rootRoute?.children?.find(
       (route) => route.path === 'llm/routes',
     );
@@ -135,6 +141,7 @@ describe('frontend controlled sidebar tabs', () => {
     expect(contentWorkbench?.meta?.hideInMenu).toBe(true);
     expect(systemPromptKeywords?.meta?.hideInMenu).toBe(true);
     expect(contentExperts?.meta?.hideInMenu).toBe(true);
+    expect(promptDebug?.meta?.hideInMenu).toBe(true);
     expect(systemUser?.meta?.hideInMenu).toBe(true);
     expect(modelManagement?.meta?.hideInMenu).toBe(true);
     expect(modelRoutes?.meta?.hideInMenu).toBe(true);
@@ -147,6 +154,7 @@ describe('frontend controlled sidebar tabs', () => {
       'content-agent/feedback',
       'content-agent/system-prompt-keywords',
       'content-agent/experts',
+      'content-agent/prompt-debug',
       'system/user',
     ]);
 

@@ -49,6 +49,53 @@ def test_prompt_allows_reply_style_comments():
     assert "不要求每条都独立成完整总结" in prompt
     assert "不要直接说其他奶粉品牌名" in prompt
     assert "生成 20 条评论" in prompt
+    assert "不要出现这些词" not in prompt
+    assert "不要说缺货、断粮等消极词" not in prompt
+    assert "焦虑" not in prompt
+    assert "断货" not in prompt
+
+
+def test_sentiment_news_prompt_omits_old_stock_negative_setup():
+    prompt = prompt_for(
+        "像评论区看到检测报告可查后的自然反应",
+        "刚去查了，真的！扫罐底二维码能看到检测报告",
+        20,
+        prompt_mode="sentiment_news",
+    )
+
+    assert "关于 a2 奶粉新消息的帖子" in prompt
+    assert "生成 20 条评论" in prompt
+    assert "前段时间" not in prompt
+    assert "缺货" not in prompt
+    assert "没货" not in prompt
+    assert "焦虑" not in prompt
+    assert "供应紧张" not in prompt
+
+
+def test_forbidden_terms_stay_in_post_generation_audit():
+    reason = audit("有货-直给到货情绪", "终于不焦虑了，a2有货我先去看看", set())
+
+    assert reason == "forbidden"
+
+
+def test_explicit_detection_values_stay_in_post_generation_audit():
+    assert audit("三方检测-直给", "0.03那个数字我记下来了", set()) == "forbidden"
+    assert audit("批批检-直给", "60+检测报告能看到", set()) == "forbidden"
+    assert audit("批批检-直给", "60多项检测报告能看到", set()) == "forbidden"
+
+
+def test_sentiment_news_audit_relaxes_batch_transparency_anchor():
+    text = "希望一直保持这种透明，让我们买得安心。"
+
+    assert audit("批批检-检测透明中立认可", text, set()) == "batch_no_anchor"
+    assert audit("批批检-检测透明中立认可", text, set(), audit_mode="sentiment_news") == ""
+
+
+def test_sentiment_news_audit_relaxes_transfer_bridge_terms():
+    text = "市场认可度高肯定有道理，娃喝习惯了我就不折腾了"
+
+    assert audit("转奶-老用户继续熟悉款", text, set()) == "transfer_pain_only"
+    assert audit("转奶-老用户继续熟悉款", text, set(), audit_mode="sentiment_news") == ""
 
 
 def test_near_duplicate_reason_uses_jaccard_threshold():

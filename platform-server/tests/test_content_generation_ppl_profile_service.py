@@ -2,15 +2,39 @@ from app.schemas.content_batch_report import ContentPPLRunStartRequest
 from app.services.content_generation_ppl_profile_service import ContentGenerationPPLProfileService
 
 
-def test_wangyue_alias_resolves_to_v2_profile_defaults():
+def test_wangyue_alias_resolves_to_v3_profile_defaults():
     service = ContentGenerationPPLProfileService()
 
     profile = service.require_profile("wangyue")
     request = service.build_article_request(profile, ContentPPLRunStartRequest(profile_code="wangyue"))
 
-    assert profile.profile_code == "wangyue_v2_0705_article"
-    assert request.asset_key == "wangyue_v2_core_storyline_article_rules"
+    assert profile.profile_code == "wangyue_v3_0705_article"
+    assert request.asset_key == "wangyue_v3_core_storyline_article_rules"
     assert request.keyword_asset_key == "wangyue_v2_minimal_generation_keywords"
+    assert request.prompt_mode == "rule_corpus_as_prompt"
+    assert request.count == 20
+    assert request.articles_per_prompt == 2
+
+
+def test_wangyue_article_profile_carries_draft_rule_override():
+    service = ContentGenerationPPLProfileService()
+    profile = service.require_profile("wangyue")
+
+    request = service.build_article_request(
+        profile,
+        ContentPPLRunStartRequest(
+            profile_code="wangyue",
+            rule_id="V3M-01",
+            source_row_no=1,
+            draft_corpus="替换后的 V3M-01 规则语料",
+            draft_rule_id="V3M-01",
+            draft_source_row_no=1,
+        ),
+    )
+
+    assert request.draft_corpus == "替换后的 V3M-01 规则语料"
+    assert request.draft_rule_id == "V3M-01"
+    assert request.draft_source_row_no == 1
     assert request.count == 20
     assert request.articles_per_prompt == 2
 

@@ -234,4 +234,9 @@ async def test_bootstrap_seed_updates_existing_a2_term_reason():
     assert active_asset.version_no == 2
     assert active_asset.content_json["terms"][0]["term"] == "小程序"
     assert active_asset.content_json["terms"][0]["reason"] == "小红书不能出现微信生态的词"
+    seeded_terms = {entry["term"]: entry["reason"] for entry in active_asset.content_json["terms"]}
+    assert seeded_terms["0.03"] == "业务新要求：暂不露出蜡样/蜡毒检测的明确数值"
+    assert seeded_terms["60+"] == "业务新要求：暂不露出检测报告/检测项目的明确数量"
+    assert seeded_terms["60多项"] == "业务新要求：暂不露出检测报告/检测项目的明确数量"
+    assert active_asset.metadata_json["added_term_count"] == 3
     assert active_asset.metadata_json["updated_term_count"] == 1

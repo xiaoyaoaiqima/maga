@@ -272,7 +272,7 @@ def _mock_article_multi_output_count(input_payload: dict[str, Any]) -> int:
         if value > 1:
             return max(1, min(value, 2))
     rendered_prompt = str(input_payload.get("rendered_prompt") or "")
-    match = re.search(r"一次生成\s*(\\d+)\\s*篇", rendered_prompt)
+    match = re.search(r"items\s*必须正好\s*(\d+)\s*个", rendered_prompt)
     if match:
         return max(1, min(int(match.group(1)), 2))
     return 1
@@ -831,12 +831,13 @@ def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -
             raise ValueError("content.generate produced empty comment")
         return {"comment": comment}
 
-    parsed = _parse_json_object(raw)
-    multi_items = _article_items_from_parsed_json(parsed)
+    parsed_value = _parse_json_value(raw)
+    multi_items = _article_items_from_parsed_json(parsed_value)
     if multi_items:
         first = multi_items[0]
         return {"title": first["title"], "body": first["body"], "items": multi_items}
 
+    parsed = parsed_value if isinstance(parsed_value, dict) else {}
     title = _clean_generated_article_text(parsed.get("title") or parsed.get("标题"))
     body = _clean_generated_article_text(parsed.get("body") or parsed.get("正文"))
     if not title or not body:
@@ -970,16 +971,41 @@ def _flatten_nested_article_json(title: str, body: str) -> tuple[str, str]:
     return nested_title or str(title or "").strip(), nested_body
 
 
-def _article_items_from_parsed_json(parsed: dict[str, Any]) -> list[dict[str, str]]:
-    raw_items = parsed.get("items") or parsed.get("文章列表") or parsed.get("内容列表")
+def _article_items_from_parsed_json(parsed: Any) -> list[dict[str, str]]:
+    if isinstance(parsed, list):
+        raw_items = parsed
+    elif isinstance(parsed, dict):
+        raw_items = (
+            parsed.get("items")
+            or parsed.get("articles")
+            or parsed.get("posts")
+            or parsed.get("文章列表")
+            or parsed.get("内容列表")
+        )
+        if raw_items is None:
+            for field in ("body", "正文", "content", "内容", "text"):
+                nested_value = parsed.get(field)
+                if not isinstance(nested_value, str):
+                    continue
+                nested_items = _article_items_from_parsed_json(_parse_json_value(nested_value))
+                if nested_items:
+                    return nested_items
+    else:
+        raw_items = []
+    if isinstance(raw_items, str):
+        reparsed = _parse_json_value(raw_items)
+        raw_items = reparsed if isinstance(reparsed, list) else []
     if not isinstance(raw_items, list):
         return []
     items: list[dict[str, str]] = []
     for raw_item in raw_items:
-        if not isinstance(raw_item, dict):
-            continue
-        title = _clean_generated_article_text(raw_item.get("title") or raw_item.get("标题"))
-        body = _clean_generated_article_text(raw_item.get("body") or raw_item.get("正文"))
+        if isinstance(raw_item, dict):
+            title = _clean_generated_article_text(raw_item.get("title") or raw_item.get("标题"))
+            body = _clean_generated_article_text(raw_item.get("body") or raw_item.get("正文"))
+        else:
+            title, body = _title_body_from_text(str(raw_item or ""))
+            title = _clean_generated_article_text(title)
+            body = _clean_generated_article_text(body)
         if body:
             items.append({"title": title or "今天这点变化", "body": body})
     return items
@@ -1015,6 +1041,11 @@ def _parse_json_value(raw: str) -> Any:
     try:
         return json.loads(value)
     except json.JSONDecodeError:
+        if value.startswith("{") and not value.endswith("}"):
+            try:
+                return json.loads(value + "}")
+            except json.JSONDecodeError:
+                pass
         match = re.search(r"(\{.*\}|\[.*\])", value, flags=re.DOTALL)
         if not match:
             return None

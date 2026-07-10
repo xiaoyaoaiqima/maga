@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 import re
@@ -9,6 +10,7 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
 from app.models.content_agent import ContentBatchItem, ContentBatchJob
@@ -64,16 +66,11 @@ TITLE_GUARD_FORBIDDEN_SUBSTRINGS = (
     "【标题】",
     "这杯",
     "安排上",
-    "不用纠结",
     "留着",
-    "省心",
-    "踏实",
-    "安心",
     "老母亲",
     "搭子",
     "别踩坑",
     "我这样",
-    "选对了",
     "悄悄",
     "成长关键期",
     "日常保护力",
@@ -92,7 +89,6 @@ TITLE_GUARD_FORBIDDEN_SUBSTRINGS = (
     "长高",
     "窜个",
     "旺玥4段",
-    "没选错",
     "全靠",
     "防风",
     "身体也稳",
@@ -119,6 +115,20 @@ TITLE_GUARD_FORBIDDEN_SUBSTRINGS = (
     "美和健康，我选了后者",
     "这钱我掏了",
     "选到我心坎里",
+)
+TITLE_GUARD_WATCH_ONLY_SUBSTRINGS = (
+    "不用纠结",
+)
+TITLE_GUARD_WATCH_ONLY_CLOSURE_TERMS = (
+    "省心",
+    "踏实",
+    "安心",
+    "放心",
+    "心里有底",
+    "心里有数",
+    "选对了",
+    "没选错",
+    "选对",
 )
 TITLE_GUARD_BAD_PATTERNS = (
     re.compile(r"(?:我家|孩子|娃).{0,6}(?:快|刚)?[0-9一二三四五六七八九十]+个?月了"),
@@ -269,6 +279,18 @@ class BatchExecutionResult:
 
 
 @dataclass(frozen=True)
+class BatchBusinessUsabilityReviewResult:
+    batch_id: int
+    reviewed_count: int
+    skipped_count: int
+    failed_count: int
+    reviewed_item_nos: list[int]
+    skipped_item_nos: list[int]
+    failed_items: list[dict[str, Any]]
+    tier_counts: dict[str, int]
+
+
+@dataclass(frozen=True)
 class _ItemExecutionResult:
     item_id: int
     generated: bool
@@ -335,7 +357,12 @@ class ContentBatchExecutionService:
         items = await self._planned_items(batch_id, limit)
         item_ids = [item.id for item in items]
         execution_groups = _multi_output_execution_groups(items)
-        job_context = {"id": job.id, "batch_code": job.batch_code, "count": job.count}
+        job_context = {
+            "id": job.id,
+            "batch_code": job.batch_code,
+            "count": job.count,
+            "postprocess_mode": _postprocess_mode(job),
+        }
         semaphore = asyncio.Semaphore(concurrency)
 
         async def run_group(group_item_ids: list[int]) -> _ItemExecutionResult:
@@ -360,9 +387,18 @@ class ContentBatchExecutionService:
             job.status = "failed"
         await self.db.flush()
 
+        if _generate_only_postprocess_enabled(job):
+            return BatchExecutionResult(
+                batch_id=batch_id,
+                requested_limit=limit,
+                generated_count=generated,
+                failed_count=failed,
+                item_ids=item_ids,
+            )
+
         postprocess_errors = []
         postprocess_steps = [
-            ("similarity_rewrite", self._rewrite_similar_generated_items),
+            ("similarity_watch", self._watch_similar_generated_items),
             ("product_experience_phrase_rewrite", self._rewrite_product_experience_phrase_items),
             ("mouth_phrase_budget_rewrite", self._rewrite_mouth_phrase_budget_items),
             ("article_length_repair", self._repair_article_length_items),
@@ -396,6 +432,108 @@ class ContentBatchExecutionService:
             failed_count=failed,
             item_ids=item_ids,
         )
+
+    async def review_business_usability_items(
+        self,
+        batch_id: int,
+        *,
+        force: bool = False,
+        limit: int | None = None,
+        concurrency: int = POSTPROCESS_REWRITE_CONCURRENCY,
+    ) -> BatchBusinessUsabilityReviewResult:
+        if limit is not None and limit <= 0:
+            raise ValueError("limit must be positive")
+        if concurrency <= 0:
+            raise ValueError("concurrency must be positive")
+        await self._require_job(batch_id)
+        result = await self.db.execute(
+            select(ContentBatchItem.id)
+            .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
+            .order_by(ContentBatchItem.item_no)
+            .limit(limit)
+        )
+        item_ids = [int(item_id) for item_id in result.scalars().all()]
+        if not item_ids:
+            return BatchBusinessUsabilityReviewResult(
+                batch_id=batch_id,
+                reviewed_count=0,
+                skipped_count=0,
+                failed_count=0,
+                reviewed_item_nos=[],
+                skipped_item_nos=[],
+                failed_items=[],
+                tier_counts={},
+            )
+
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def run_item(item_id: int) -> dict[str, Any]:
+            async with semaphore:
+                return await self._review_business_usability_item(item_id, force=force)
+
+        results = await asyncio.gather(*(run_item(item_id) for item_id in item_ids))
+        reviewed = [item for item in results if item.get("status") == "reviewed"]
+        skipped = [item for item in results if item.get("status") == "skipped"]
+        failed = [item for item in results if item.get("status") == "failed"]
+        tier_counts = Counter(str(item.get("business_usability_tier") or "") for item in reviewed)
+        tier_counts.pop("", None)
+        return BatchBusinessUsabilityReviewResult(
+            batch_id=batch_id,
+            reviewed_count=len(reviewed),
+            skipped_count=len(skipped),
+            failed_count=len(failed),
+            reviewed_item_nos=[int(item["item_no"]) for item in reviewed],
+            skipped_item_nos=[int(item["item_no"]) for item in skipped],
+            failed_items=[
+                {"item_no": int(item["item_no"]), "error_message": str(item.get("error_message") or "")}
+                for item in failed
+            ],
+            tier_counts=dict(tier_counts),
+        )
+
+    async def _review_business_usability_item(self, item_id: int, *, force: bool) -> dict[str, Any]:
+        async with self.session_factory() as db:
+            item = await self._require_item(db, item_id)
+            quality = dict(item.quality_json or {})
+            if item.status != "generated" or not _should_review_product_experience_llm_quality(item.plan_json):
+                return {"status": "skipped", "item_no": item.item_no}
+            if not force and isinstance(quality.get("product_experience_llm_quality_review"), dict):
+                return {"status": "skipped", "item_no": item.item_no}
+
+            orchestrator = ContentAgentOrchestrator(
+                db,
+                invocation_client=self.invocation_client,
+                callback_base_url=self.callback_base_url,
+            )
+            phrase_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+            ai_flavor_review = review_ai_flavor(title=item.title, body=item.body, plan=item.plan_json)
+            self._mark_ai_flavor_review(item, ai_flavor_review)
+            review_plan = await self._plan_with_provider_config_for_llm_review(
+                item.plan_json,
+                orchestrator=orchestrator,
+            )
+            try:
+                review = await self.product_experience_llm_reviewer.review(
+                    title=item.title,
+                    body=item.body,
+                    plan=review_plan,
+                    phrase_review=phrase_review,
+                    ai_flavor_review=ai_flavor_review,
+                )
+            except Exception as exc:  # noqa: BLE001 - reviewer failure should be visible but non-destructive
+                self._mark_product_experience_llm_review_failure(item, str(exc))
+                flag_modified(item, "quality_json")
+                await db.commit()
+                return {"status": "failed", "item_no": item.item_no, "error_message": str(exc)}
+
+            self._mark_product_experience_llm_review(item, review, mark_rewrite_required=False)
+            flag_modified(item, "quality_json")
+            await db.commit()
+            return {
+                "status": "reviewed",
+                "item_no": item.item_no,
+                "business_usability_tier": review.business_usability_tier,
+            }
 
     async def _require_job(self, batch_id: int) -> ContentBatchJob:
         result = await self.db.execute(select(ContentBatchJob).where(ContentBatchJob.id == batch_id))
@@ -523,26 +661,32 @@ class ContentBatchExecutionService:
                 item.diversity_json = {
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                 }
-                await self._rewrite_item_for_persona_style(
-                    item=item,
-                    orchestrator=orchestrator,
-                    run_id=result.run.id,
-                )
-                forbidden_review = await ForbiddenTermReviewService(db).review_and_rewrite_item(
-                    item=item,
-                    asset_key=item.plan_json.get("asset_key"),
-                    orchestrator=orchestrator,
-                    executor_code=self.executor_code,
-                    content_type="article",
-                )
-                if forbidden_review.get("final_hits"):
-                    self._mark_forbidden_term_blocking_failure(
-                        item,
-                        list(forbidden_review.get("final_hits") or []),
+                if _generate_only_postprocess_enabled_for_context(job_context):
+                    item.quality_json["postprocess_mode"] = "generate_only"
+                    item.quality_json["hard_pass"] = False
+                    item.quality_json["audit_skipped"] = True
+                    item.quality_json["review_report"]["audit_skipped"] = True
+                else:
+                    await self._rewrite_item_for_persona_style(
+                        item=item,
+                        orchestrator=orchestrator,
+                        run_id=result.run.id,
                     )
-                    await db.commit()
-                    return _ItemExecutionResult(item_id=item_id, generated=True, failed=False)
-                ActivityQualityGuardService().review_item(item)
+                    forbidden_review = await ForbiddenTermReviewService(db).review_and_rewrite_item(
+                        item=item,
+                        asset_key=item.plan_json.get("asset_key"),
+                        orchestrator=orchestrator,
+                        executor_code=self.executor_code,
+                        content_type="article",
+                    )
+                    if forbidden_review.get("final_hits"):
+                        self._mark_forbidden_term_blocking_failure(
+                            item,
+                            list(forbidden_review.get("final_hits") or []),
+                        )
+                        await db.commit()
+                        return _ItemExecutionResult(item_id=item_id, generated=True, failed=False)
+                    ActivityQualityGuardService().review_item(item)
                 item.error_message = None
                 await db.commit()
                 return _ItemExecutionResult(item_id=item_id, generated=True, failed=False)
@@ -627,16 +771,49 @@ class ContentBatchExecutionService:
                 result = await orchestrator.run_single_capability(task_request, capability=CONTENT_GENERATE_CAPABILITY)
                 final = result.output or {}
                 generated_items = _generated_article_items(final)
-                if len(generated_items) < output_count:
-                    raise ValueError(
-                        f"content.generate returned {len(generated_items)} articles for {output_count} planned items"
-                    )
+                if not generated_items:
+                    raise ValueError(f"content.generate returned 0 articles for {output_count} planned items")
+                generated_count = 0
+                failed_count = 0
                 for index, item in enumerate(items):
+                    if index >= len(generated_items):
+                        item.status = "failed"
+                        item.task_id = result.run.task_id
+                        item.run_id = result.run.id
+                        item.error_message = (
+                            f"content.generate returned {len(generated_items)} articles for "
+                            f"{output_count} planned items"
+                        )
+                        item.quality_json = _multi_output_parse_failure_quality(
+                            executor=self._executor_label(result.stage_calls),
+                            stage_call_count=len(result.stage_calls),
+                            run_status=result.run.status,
+                            selected_keywords=unified.input_snapshot.get("selected_keywords") or [],
+                            expert_config_code=(unified.input_snapshot.get("expert") or {}).get("expert_config_code"),
+                            returned_items=generated_items,
+                            selected_index=index,
+                        )
+                        failed_count += 1
+                        continue
                     article = generated_items[index]
                     title = str(article.get("title") or "").strip()
                     body = str(article.get("body") or "").strip()
                     if not title or not body:
-                        raise ValueError("content.generate returned empty article in multi-output group")
+                        item.status = "failed"
+                        item.task_id = result.run.task_id
+                        item.run_id = result.run.id
+                        item.error_message = "content.generate returned empty article in multi-output group"
+                        item.quality_json = _multi_output_parse_failure_quality(
+                            executor=self._executor_label(result.stage_calls),
+                            stage_call_count=len(result.stage_calls),
+                            run_status=result.run.status,
+                            selected_keywords=unified.input_snapshot.get("selected_keywords") or [],
+                            expert_config_code=(unified.input_snapshot.get("expert") or {}).get("expert_config_code"),
+                            returned_items=generated_items,
+                            selected_index=index,
+                        )
+                        failed_count += 1
+                        continue
                     item.status = "generated"
                     item.task_id = result.run.task_id
                     item.run_id = result.run.id
@@ -663,36 +840,57 @@ class ContentBatchExecutionService:
                     item.diversity_json = {
                         "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                     }
-                    await self._rewrite_item_for_persona_style(
-                        item=item,
-                        orchestrator=orchestrator,
-                        run_id=result.run.id,
-                    )
-                    forbidden_review = await ForbiddenTermReviewService(db).review_and_rewrite_item(
-                        item=item,
-                        asset_key=item.plan_json.get("asset_key"),
-                        orchestrator=orchestrator,
-                        executor_code=self.executor_code,
-                        content_type="article",
-                    )
-                    if forbidden_review.get("final_hits"):
-                        self._mark_forbidden_term_blocking_failure(
-                            item,
-                            list(forbidden_review.get("final_hits") or []),
+                    if _generate_only_postprocess_enabled_for_context(job_context):
+                        item.quality_json["postprocess_mode"] = "generate_only"
+                        item.quality_json["hard_pass"] = False
+                        item.quality_json["audit_skipped"] = True
+                        item.quality_json["review_report"]["audit_skipped"] = True
+                    else:
+                        await self._rewrite_item_for_persona_style(
+                            item=item,
+                            orchestrator=orchestrator,
+                            run_id=result.run.id,
                         )
-                    ActivityQualityGuardService().review_item(item)
+                        forbidden_review = await ForbiddenTermReviewService(db).review_and_rewrite_item(
+                            item=item,
+                            asset_key=item.plan_json.get("asset_key"),
+                            orchestrator=orchestrator,
+                            executor_code=self.executor_code,
+                            content_type="article",
+                        )
+                        if forbidden_review.get("final_hits"):
+                            self._mark_forbidden_term_blocking_failure(
+                                item,
+                                list(forbidden_review.get("final_hits") or []),
+                            )
+                        ActivityQualityGuardService().review_item(item)
                     item.error_message = None
+                    generated_count += 1
                 await db.commit()
                 return _ItemExecutionResult(
                     item_id=item_id,
-                    generated=True,
-                    failed=False,
-                    generated_count=output_count,
-                    failed_count=0,
+                    generated=generated_count > 0,
+                    failed=failed_count > 0,
+                    generated_count=generated_count,
+                    failed_count=failed_count,
                 )
             except Exception as exc:  # noqa: BLE001 - persist failed status for operator inspection
                 for item in items:
                     item.status = "failed"
+                    if "result" in locals():
+                        item.task_id = result.run.task_id
+                        item.run_id = result.run.id
+                        item.quality_json = _multi_output_parse_failure_quality(
+                            executor=self._executor_label(result.stage_calls),
+                            stage_call_count=len(result.stage_calls),
+                            run_status=result.run.status,
+                            selected_keywords=unified.input_snapshot.get("selected_keywords") or [],
+                            expert_config_code=(unified.input_snapshot.get("expert") or {}).get("expert_config_code"),
+                            returned_items=[],
+                            selected_index=int(
+                                ((item.plan_json or {}).get("multi_output_group") or {}).get("selected_index") or 0
+                            ),
+                        )
                     item.error_message = str(exc)
                 await db.commit()
                 return _ItemExecutionResult(
@@ -702,6 +900,47 @@ class ContentBatchExecutionService:
                     generated_count=0,
                     failed_count=output_count,
                 )
+
+    async def _watch_similar_generated_items(self, batch_id: int, job: ContentBatchJob) -> int:
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(ContentBatchItem)
+                .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
+                .order_by(ContentBatchItem.item_no)
+            )
+            items = list(result.scalars().all())
+            history_items = await self._history_items_for_similarity(db, job)
+            watch_count = 0
+            for index, item in enumerate(items):
+                if _is_postprocess_blocked(item) or not item.body:
+                    continue
+                best_match = self._most_similar_candidate(item, [*items[:index], *history_items])
+                if not best_match or best_match["score"] < self._similarity_threshold(best_match):
+                    continue
+                quality = dict(item.quality_json or {})
+                watches = list(quality.get("similarity_watch") or [])
+                watch_payload = {
+                    **self._similarity_rewrite_meta(item, best_match),
+                    "watch": True,
+                    "rewrite_required": False,
+                }
+                if not any(
+                    isinstance(existing, dict)
+                    and existing.get("similar_item_no") == watch_payload["similar_item_no"]
+                    and existing.get("scope") == watch_payload["scope"]
+                    and existing.get("similar_batch_id") == watch_payload["similar_batch_id"]
+                    for existing in watches
+                ):
+                    watches.append(watch_payload)
+                quality["similarity_watch"] = watches
+                review_report = dict(quality.get("review_report") or {})
+                review_report["similarity_watch"] = watches
+                quality["review_report"] = review_report
+                item.quality_json = quality
+                watch_count += 1
+            if watch_count:
+                await db.commit()
+            return watch_count
 
     async def _repair_article_length_items(self, batch_id: int, job: ContentBatchJob) -> int:
         async def worker(item_id: int) -> int:
@@ -1340,7 +1579,7 @@ class ContentBatchExecutionService:
                 "本轮问题：" + ("；".join(issue_lines) if issue_lines else review.overall_reason),
                 f"业务入池档位：{review.business_usability_tier}；原因：{review.business_usability_reason or review.overall_reason}。",
                 "如果是 light_fix_usable，只做轻修：修错字、断句、病句、旧模板词、轻微强因果或安全降调；保留原种草内核和强正向产品价值，不要整篇重写。",
-                "如果是 hold_out，优先修事实错误、产品形态错误、成分-效果错配、医疗/保证倾向或文本断裂；修不顺就宁可保留问题标记，不要编新事实。",
+                "如果是 hold_out，优先修事实错误、产品形态错误、医疗/保证倾向或文本断裂；修不顺就宁可保留问题标记，不要编新事实。",
                 "质检问题只用于定位，不要照搬质检里的压缩式改写方向；尤其不要因为有完整链路问题就机械删到只剩产品和一个反馈。",
                 age_stage_instruction,
                 "核心目标：保留本篇产品一个明确、正向、可种草的产品价值；效果证明可以保留为主种草点。改写只处理已被质检指出的广告链、突兀产品出现或模板腔，不把正文压缩成提纲。",
@@ -1569,6 +1808,7 @@ class ContentBatchExecutionService:
             history_titles = await self._recent_title_norms_for_title_guard(db, job, batch_id)
             used_titles: set[str] = set()
             repair_count = 0
+            metadata_changed = False
             for item in items:
                 if _is_postprocess_blocked(item):
                     continue
@@ -1585,6 +1825,20 @@ class ContentBatchExecutionService:
 
                 reasons = _title_guard_reasons(item.title or "", used_titles | history_titles, item)
                 if not reasons:
+                    watch_reasons = _title_guard_watch_reasons(item.title or "")
+                    if watch_reasons:
+                        quality = dict(item.quality_json or {})
+                        watches = list(quality.get("title_guard_watch") or [])
+                        watches.append({"title": item.title or "", "reasons": watch_reasons})
+                        quality["title_guard_watch"] = watches
+                        quality["title_guard"] = {
+                            "pass": True,
+                            "repair_count": len(quality.get("title_guard_repairs") or []),
+                            "history_title_count": len(history_titles),
+                            "watch_count": len(watches),
+                        }
+                        item.quality_json = quality
+                        metadata_changed = True
                     used_titles.add(_normalize_title(item.title or ""))
                     continue
 
@@ -1605,7 +1859,7 @@ class ContentBatchExecutionService:
                     review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
                     self._mark_product_experience_phrase_review(item, review)
                 repair_count += 1
-            if repair_count:
+            if repair_count or metadata_changed:
                 await db.commit()
             return repair_count
 
@@ -2000,13 +2254,12 @@ class ContentBatchExecutionService:
             else "写配方/成分时要让信息载体符合现实：罐装奶粉适合写看罐身、扫一眼营养成分；不要把奶粉罐动作硬写成翻配方表。"
         )
         ingredient_benefit_instruction = (
-            "本轮命中旺玥成分-好处错配："
+            "本轮命中旺玥成分和正向效果承接："
             f"{'/'.join(review.ingredient_benefit_mismatch_hits)}。"
-            "改写时保留强正向效果证明，但换正确承接关系：乳铁蛋白/免疫球蛋白/HMO只承接保护力、少中招、状态稳这类保护力观察；"
-            "抱起来沉、背上有肉、衣服撑起来、跑跳有劲、身形结实这类成长身体变化，要由阶段营养、整体营养配置、钙铁锌或营养丰富承接。"
-            "不要把强效果洗成“还在观察/不一定/每家不同”，也不要新增第二套成分清单。"
+            "这类表达不作为硬性错误；如需改写，只按当前业务规则控制卖点侧重和语气强度。"
+            "不要把强效果洗成“还在观察/不一定/每家不同”，也不要新增第二套成分清单或医疗事实。"
             if review.ingredient_benefit_mismatch_hits
-            else "旺玥成分和好处要匹配：乳铁蛋白/免疫球蛋白/HMO不解释长肉、抱沉、衣服撑起来；成长类变化用阶段营养、整体营养配置或钙铁锌承接。"
+            else "旺玥成分可以承接保护力、精神头、状态稳和正向成长观察；具体卖点侧重服从本篇业务规则，不因成分和积极结果相连而硬改写。"
         )
         supplement_replacement_instruction = (
             "本轮命中旺玥营养替代暗示："
@@ -3241,6 +3494,19 @@ def _light_postprocess_enabled(job: ContentBatchJob) -> bool:
     return _light_postprocess_enabled_for_asset(str(job.asset_key or ""))
 
 
+def _postprocess_mode(job: ContentBatchJob) -> str:
+    strategy = job.strategy_json if isinstance(job.strategy_json, dict) else {}
+    return str(strategy.get("postprocess_mode") or "").strip()
+
+
+def _generate_only_postprocess_enabled(job: ContentBatchJob) -> bool:
+    return _postprocess_mode(job) == "generate_only"
+
+
+def _generate_only_postprocess_enabled_for_context(job_context: dict[str, Any]) -> bool:
+    return str(job_context.get("postprocess_mode") or "").strip() == "generate_only"
+
+
 def _light_postprocess_enabled_for_asset(asset_key: str) -> bool:
     return (
         asset_key.startswith("wangyue_v152_")
@@ -3311,11 +3577,22 @@ def _persona_style_rewrite_input(item: ContentBatchItem, *, preset: dict[str, st
 
 def _mouth_phrase_budget_hits(item: ContentBatchItem) -> list[str]:
     avoid_terms = _mouth_phrase_budget_avoid_terms(item)
-    text = f"{item.title or ''}\n{item.body or ''}"
+    title = str(item.title or "")
+    body = str(item.body or "")
     for allowed_term in _mouth_phrase_budget_allowed_terms(item):
         if allowed_term:
-            text = text.replace(allowed_term, "")
-    return [term for term in avoid_terms if term and term in text]
+            title = title.replace(allowed_term, "")
+            body = body.replace(allowed_term, "")
+    hits: list[str] = []
+    for term in avoid_terms:
+        if not term:
+            continue
+        if term in body:
+            hits.append(term)
+            continue
+        if term in title and term not in TITLE_GUARD_WATCH_ONLY_CLOSURE_TERMS:
+            hits.append(term)
+    return hits
 
 
 def _mouth_phrase_budget_rewrite_input(item: ContentBatchItem, hits: list[str]) -> dict[str, Any]:
@@ -3428,6 +3705,14 @@ def _title_guard_reasons(title: str, used_titles: set[str], item: ContentBatchIt
         reasons.append("awkward_title_pattern")
     if _is_low_natural_title_score(title):
         reasons.append("low_natural_title_score")
+    return reasons
+
+
+def _title_guard_watch_reasons(title: str) -> list[str]:
+    reasons: list[str] = []
+    for phrase in TITLE_GUARD_WATCH_ONLY_SUBSTRINGS:
+        if phrase in title:
+            reasons.append(f"watch_title_phrase:{phrase}")
     return reasons
 
 
@@ -4050,7 +4335,9 @@ def _is_postprocess_blocked(item: ContentBatchItem) -> bool:
 def _generated_article_items(final_output: dict[str, Any]) -> list[dict[str, str]]:
     raw_items = final_output.get("items") if isinstance(final_output, dict) else None
     if not isinstance(raw_items, list):
-        return []
+        title = str((final_output or {}).get("title") or (final_output or {}).get("标题") or "").strip()
+        body = str((final_output or {}).get("body") or (final_output or {}).get("正文") or "").strip()
+        return [{"title": title, "body": body}] if body else []
     items: list[dict[str, str]] = []
     for raw_item in raw_items:
         if not isinstance(raw_item, dict):
@@ -4060,6 +4347,54 @@ def _generated_article_items(final_output: dict[str, Any]) -> list[dict[str, str
         if body:
             items.append({"title": title, "body": body})
     return items
+
+
+def _multi_output_parse_failure_quality(
+    *,
+    executor: str | None,
+    stage_call_count: int,
+    run_status: str,
+    selected_keywords: list[Any],
+    expert_config_code: str | None,
+    returned_items: list[dict[str, str]],
+    selected_index: int,
+) -> dict[str, Any]:
+    review_report = _default_unified_review_report()
+    review_report.update(
+        {
+            "hard_results": [
+                {
+                    "ae_code": "multi_output_parse_guard",
+                    "pass": False,
+                    "risk_level": "high",
+                    "feedback": "多篇输出数量不足，未生成该位置对应的文章",
+                    "evidence": {
+                        "returned_count": len(returned_items),
+                        "selected_index": selected_index,
+                    },
+                }
+            ],
+            "rewrite_required": False,
+        }
+    )
+    return {
+        "executor": executor,
+        "stage_call_count": stage_call_count,
+        "run_status": run_status,
+        "review_report": review_report,
+        "hard_pass": False,
+        "soft_score_avg": None,
+        "selected_keywords": selected_keywords,
+        "expert_config_code": expert_config_code,
+        "multi_output": {
+            "mode": "items_json",
+            "returned_count": len(returned_items),
+            "selected_index": selected_index,
+            "items": returned_items,
+            "materialized_to_batch_items": False,
+            "parse_error": "insufficient_multi_output_items",
+        },
+    }
 
 
 def _multi_output_execution_groups(items: list[ContentBatchItem]) -> list[list[int]]:

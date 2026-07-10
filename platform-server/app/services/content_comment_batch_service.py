@@ -189,7 +189,7 @@ COMMENT_MICRO_BATCH_CHECK_REPLY_MARKERS = (
     "Not Detected",
 )
 COMMENT_MICRO_BATCH_CHECK_FORBIDDEN_CERTAINTY_TERMS = ("保证没问题", "绝对安全", "无风险")
-COMMENT_MICRO_BATCH_CHECK_PROFESSIONAL_TERMS = ("60多项", "0.03", "三方数据")
+COMMENT_MICRO_BATCH_CHECK_PROFESSIONAL_TERMS = ("60+", "60多项", "0.03", "三方数据")
 COMMENT_MICRO_BATCH_CHECK_AWKWARD_PHRASES = ("刚转门店", "转门店")
 COMMENT_MICRO_BATCH_CHECK_REPEAT_LIMITED_PHRASES = ("店员说这批也检过", "报告能点开")
 COMMENT_MICRO_BATCH_CHECK_DANGLING_SUFFIXES = ("批", "批批", "报告能", "每批", "这批")
@@ -1541,7 +1541,7 @@ class ContentCommentBatchService:
         if str(plan.get("quality_guard_profile_key") or "").strip() == A2_NEGATIVE_POST_COMMENT_PROFILE_KEY:
             return 45
         if str(plan.get("quality_guard_profile_key") or "").strip() == A2_SENTIMENT_COMMENT_PROFILE_KEY:
-            return 45
+            return 80
         if str(plan.get("quality_guard_profile_key") or "").strip() == A2_SENTIMENT_POST_PROFILE_KEY:
             return 100
         return 35

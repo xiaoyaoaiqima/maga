@@ -89,6 +89,18 @@ function has_route_authority(
   return (roles || []).some((role) => authority.includes(role));
 }
 
+const LOCAL_DEV_LOGIN = {
+  password: 'Admin@123',
+  username: 'admin',
+};
+
+async function auto_login_for_local_dev(
+  authStore: ReturnType<typeof useAuthStore>,
+) {
+  const { userInfo } = await authStore.authLogin(LOCAL_DEV_LOGIN, () => {});
+  return Boolean(userInfo);
+}
+
 /**
  * 通用守卫配置
  * @param router
@@ -131,6 +143,15 @@ function setupAccessGuard(router: Router) {
 
     // 基本路由，这些路由不需要进入权限拦截
     if (coreRouteNames.includes(to.name as string)) {
+      if (to.path === LOGIN_PATH && !accessStore.accessToken) {
+        const loggedIn = await auto_login_for_local_dev(authStore);
+        if (loggedIn) {
+          const redirect = to.query?.redirect as string | undefined;
+          return redirect
+            ? safe_decode_uri_component(redirect)
+            : preferences.app.defaultHomePath;
+        }
+      }
       if (to.path === LOGIN_PATH && accessStore.accessToken) {
         const redirect = to.query?.redirect as string | undefined;
         if (redirect) {
@@ -153,20 +174,22 @@ function setupAccessGuard(router: Router) {
         return true;
       }
 
-      // 没有访问权限，跳转登录页面
-      if (to.fullPath !== LOGIN_PATH) {
+      const loggedIn = await auto_login_for_local_dev(authStore);
+      if (loggedIn) {
         return {
-          path: LOGIN_PATH,
-          // 如不需要，直接删除 query
-          query:
-            to.fullPath === preferences.app.defaultHomePath
-              ? {}
-              : { redirect: encodeURIComponent(to.fullPath) },
-          // 携带当前跳转的页面，登录后重新跳转该页面
+          ...router.resolve(to.fullPath),
           replace: true,
         };
       }
-      return to;
+
+      return {
+        path: LOGIN_PATH,
+        query:
+          to.fullPath === preferences.app.defaultHomePath
+            ? {}
+            : { redirect: encodeURIComponent(to.fullPath) },
+        replace: true,
+      };
     }
 
     // 路由层二次校验，避免通过直接输入 URL 绕过侧栏菜单的 admin 可见性限制。

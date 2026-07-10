@@ -123,8 +123,8 @@ class UnifiedContentGenerationService:
             )
             rendered_prompt = _normalize_comment_prompt_labels(rendered_prompt)
         else:
-            if _is_wangyue_v2_minimal_rule(business_rule):
-                rendered_prompt = _wangyue_v2_minimal_article_prompt(
+            if _uses_rule_corpus_as_prompt(business_rule):
+                rendered_prompt = _rule_corpus_as_prompt_article_prompt(
                     variables,
                     selected_keywords=selected_keywords,
                 )
@@ -477,7 +477,7 @@ def _business_rule_text(rule: dict[str, Any], *, content_type: str | None = None
 
     lines: list[str] = []
     if content_type == "article":
-        if _is_wangyue_v2_minimal_rule(rule):
+        if _uses_rule_corpus_as_prompt(rule):
             corpus_text = str(rule.get("corpus") or "").strip()
             return _sanitize_wangyue_business_rule_text(corpus_text) if corpus_text else ""
         # 文章业务规则由运营直接写成可读的写作规则；prompt 里不再重复渲染
@@ -508,8 +508,6 @@ def _business_rule_text(rule: dict[str, Any], *, content_type: str | None = None
         rule_name = (
             rule.get("business_rule")
             or rule.get("comment_" + "angle")
-            or rule.get("article_rule")
-            or rule.get("topic")
         )
         if rule_name:
             lines.append(f"- 业务规则：{rule_name}")
@@ -709,6 +707,7 @@ def _comment_prompt_text(
     major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
     context = _comment_context_line(rule, product_name)
     focus = _comment_focus_line(rule)
+    direction = _comment_rule_direction_line(rule)
     notes = _comment_prompt_notes(rule)
     examples = _comment_prompt_examples(rule)
     output_format = output_format or _comment_output_format_config(rule)
@@ -728,6 +727,8 @@ def _comment_prompt_text(
         ]
     if focus:
         lines.extend(["", focus])
+    if direction:
+        lines.extend(["", direction])
     for slot in selected_prompt_slots or []:
         rendered_slot = _render_comment_prompt_slot(slot)
         if rendered_slot:
@@ -949,6 +950,19 @@ def _comment_focus_line(rule: dict[str, Any]) -> str:
     if major == "会员权益":
         return "可以围绕会员权益、集罐、积分、换礼或老客活动这些信息来写。"
     return f"可以围绕这个意思来写：{corpus}"
+
+
+def _comment_rule_direction_line(rule: dict[str, Any]) -> str:
+    if not _is_a2_sentiment_comment_rule(rule):
+        return ""
+    business_rule = str(rule.get("business_rule") or "").strip()
+    major, separator, detail = business_rule.partition("-")
+    if major.strip() == "有货" or not separator or not detail.strip():
+        return ""
+    direction = _generalize_a2_comment_competitor_terms(detail.strip())
+    direction = re.sub(r"(?:三份|三个)报告", "报告", direction)
+    direction = direction.replace("0.03", "蜡样检测").replace("60多项", "质检报告项目")
+    return f"本条方向：{direction}。"
 
 
 def _comment_prompt_notes(rule: dict[str, Any]) -> list[str]:
@@ -1299,7 +1313,7 @@ def _keyword_corpus_text(
             "具体信息只按本条要求和参考示例已经给出的范围，不新增事实。"
             "不要照搬语料，也不要把语料扩成新的事实、固定结构、现实季节或疾病大环境。"
         )
-    elif isinstance(business_rule, dict) and _is_wangyue_v2_minimal_rule(business_rule):
+    elif isinstance(business_rule, dict) and _uses_rule_corpus_as_prompt(business_rule):
         boundary = "表达扩散语料使用边界：以下只用于同批发散和语气变化；正文事实只按“这篇要写的事”。"
     else:
         boundary = (
@@ -1365,7 +1379,7 @@ def _article_low_priority_expression_guidance(
 ) -> str | None:
     if content_type != "article" or output_fields != ["title", "body"] or not isinstance(business_rule, dict):
         return None
-    if _is_wangyue_v2_minimal_rule(business_rule):
+    if _uses_rule_corpus_as_prompt(business_rule):
         return None
     lines: list[str] = []
     structure_hint = _structure_slot_soft_guidance(business_rule)
@@ -1517,7 +1531,7 @@ def _generation_requirements(
     selected_keywords: list[dict[str, Any]],
 ) -> str:
     parts = []
-    if _is_wangyue_v2_minimal_rule(business_rule):
+    if _uses_rule_corpus_as_prompt(business_rule):
         parts.extend(_selected_generation_requirements(selected_keywords, business_rule=business_rule))
         configured = str(business_rule.get("generation_requirements") or "").strip()
         if configured:
@@ -1590,15 +1604,12 @@ def _article_output_format_requirement(
     multi_output_count = _article_multi_output_count(business_rule)
     if multi_output_count > 1:
         return (
-            f"一次生成 {multi_output_count} 篇。"
-            "只输出 JSON 对象，字段只能包含 items；"
-            "items 是数组，每个元素只能包含 title 和 body；"
+            '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。'
             f"items 必须正好 {multi_output_count} 个；"
-            f"{multi_output_count} 篇之间不要互相续写，不要编号，不要写成同一个模板换词；"
+            "items 之间不要互相续写，不要编号，不要写成同一个模板换词；"
             "每篇都像独立妈妈发的一条笔记；"
             "不要输出 Markdown 标题、编号、解释、前后缀；"
             "不要写“标题：”“正文：”“### 标题”“### 正文”；"
-            '格式为 {"items":[{"title":"...","body":"..."}]}。'
         )
     return (
         "只输出 JSON 对象，字段只能包含 title 和 body；"
@@ -2111,7 +2122,6 @@ def _is_wangyue_article_rule(business_rule: dict[str, Any]) -> bool:
         for key in (
             "asset_key",
             "business_rule",
-            "topic",
             "product_appearance_mode",
             "product_role",
             "corpus",
@@ -2120,23 +2130,23 @@ def _is_wangyue_article_rule(business_rule: dict[str, Any]) -> bool:
     return "wangyue" in text.lower() or "旺玥" in text
 
 
-def _is_wangyue_v2_minimal_rule(business_rule: dict[str, Any] | None) -> bool:
+def _uses_rule_corpus_as_prompt(business_rule: dict[str, Any] | None) -> bool:
     if not isinstance(business_rule, dict):
         return False
-    text = " ".join(
-        str(business_rule.get(key) or "")
-        for key in (
-            "asset_key",
-            "keyword_asset_key",
-            "generation_prompt_mode",
-            "prompt_mode",
-        )
-    ).lower()
-    return (
-        "wangyue_v2_core_storyline" in text
-        or "wangyue_v2_minimal_generation_keywords" in text
-        or "wangyue_v2_minimal" in text
+    mode = _normalize_prompt_mode(
+        business_rule.get("prompt_mode") or business_rule.get("generation_prompt_mode")
     )
+    return mode == "rule_corpus_as_prompt"
+
+
+def _normalize_prompt_mode(value: Any) -> str | None:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    aliases = {
+        "rule_corpus_as_prompt": "rule_corpus_as_prompt",
+        "minimal_rule_prompt": "rule_corpus_as_prompt",
+        "rule_as_prompt": "rule_corpus_as_prompt",
+    }
+    return aliases.get(normalized, normalized or None)
 
 
 def _sanitize_wangyue_prompt_layer_text(text: str) -> str:
@@ -2401,7 +2411,7 @@ def _render_template(template: str, variables: dict[str, Any]) -> str:
     return _TEMPLATE_PATTERN.sub(replace, template).strip()
 
 
-def _wangyue_v2_minimal_article_prompt(
+def _rule_corpus_as_prompt_article_prompt(
     variables: dict[str, Any],
     *,
     selected_keywords: list[dict[str, Any]],
@@ -2426,7 +2436,7 @@ def _wangyue_v2_minimal_article_prompt(
     generation_block = "\n".join(
         [
             "【生成要求】",
-            f"一次生成 {output_count} 篇。{diversity_line}",
+            diversity_line,
             '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。',
             f"items 必须正好 {output_count} 个。",
         ]

@@ -1266,7 +1266,7 @@ class ContentBatchReportService:
                 )
             count = len(hits)
             ratio = round(count / len(checked_items), 4) if checked_items else 0.0
-            warning = count >= CLOSURE_CLUSTER_WARNING_MIN_COUNT or (
+            watch = count >= CLOSURE_CLUSTER_WARNING_MIN_COUNT or (
                 len(checked_items) >= 5 and count >= 2 and ratio > CLOSURE_CLUSTER_WARNING_RATIO
             )
             clusters.append(
@@ -1275,7 +1275,8 @@ class ContentBatchReportService:
                     "cluster_name": definition["name"],
                     "count": count,
                     "ratio": ratio,
-                    "warning": bool(count and warning),
+                    "watch": bool(count and watch),
+                    "warning": False,
                     "phrases": definition["phrases"],
                     "hits": hits,
                 }
@@ -1607,6 +1608,7 @@ class ContentBatchReportService:
                 left.similarity_warnings.append(warning_for_left)
                 right.similarity_warnings.append(warning_for_right)
         self._attach_rewrite_similarity_warnings(items)
+        self._attach_quality_similarity_watch_warnings(items)
 
     def _attach_rewrite_similarity_warnings(self, items: list[ContentBatchReportItem]) -> None:
         for item in items:
@@ -1633,6 +1635,33 @@ class ContentBatchReportService:
                         reason="与历史批次正文 2-gram 相似度偏高",
                         batch_id=rewrite.get("similar_batch_id"),
                         batch_code=rewrite.get("similar_batch_code"),
+                        scope="history",
+                    )
+                )
+
+    def _attach_quality_similarity_watch_warnings(self, items: list[ContentBatchReportItem]) -> None:
+        for item in items:
+            quality = item.quality or {}
+            watches = quality.get("similarity_watch") or []
+            if not isinstance(watches, list):
+                continue
+            for watch in watches:
+                if not isinstance(watch, dict):
+                    continue
+                scope = str(watch.get("scope") or "current_batch")
+                if scope != "history":
+                    continue
+                similar_item_no = watch.get("similar_item_no")
+                score = watch.get("similarity_score")
+                if not isinstance(similar_item_no, int) or not isinstance(score, (int, float)):
+                    continue
+                item.similarity_warnings.append(
+                    ContentBatchSimilarityWarning(
+                        item_no=similar_item_no,
+                        score=round(float(score), 4),
+                        reason="与历史批次正文 2-gram 相似度偏高",
+                        batch_id=watch.get("similar_batch_id"),
+                        batch_code=watch.get("similar_batch_code"),
                         scope="history",
                     )
                 )
@@ -1854,14 +1883,12 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
 
 
 def _write_article_pool_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
-    headers = ["ID", "Content ID", "标题", "正文", "上下文变量(context_list)"]
+    headers = ["标题", "正文", "上下文变量(context_list)"]
     sheet.append(headers)
     for item in _article_pool_export_items(report.items):
         context_list = _article_pool_context_list(item)
         sheet.append(
             [
-                "",
-                "",
                 item.title or "",
                 item.body or "",
                 json.dumps(context_list, ensure_ascii=False),
@@ -1869,11 +1896,9 @@ def _write_article_pool_sheet(sheet: Any, report: ContentBatchReportResponse) ->
         )
     _style_table_header(sheet, header_row=1, column_count=len(headers))
     sheet.freeze_panes = "A2"
-    sheet.column_dimensions["A"].width = 12
-    sheet.column_dimensions["B"].width = 16
-    sheet.column_dimensions["C"].width = 18
-    sheet.column_dimensions["D"].width = 56
-    sheet.column_dimensions["E"].width = 72
+    sheet.column_dimensions["A"].width = 18
+    sheet.column_dimensions["B"].width = 56
+    sheet.column_dimensions["C"].width = 72
     for row in sheet.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)

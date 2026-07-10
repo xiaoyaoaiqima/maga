@@ -130,7 +130,7 @@ async def test_ppl_profile_list_exposes_brand_generation_profiles(content_agent_
     assert {
         "royal_friso_ugc_article",
         "wangyue_0705_article",
-        "wangyue_v2_0705_article",
+        "wangyue_v3_0705_article",
         "a2_sentiment_post_article",
         "a2_sentiment_comment",
     }.issubset(profile_codes)
@@ -138,11 +138,12 @@ async def test_ppl_profile_list_exposes_brand_generation_profiles(content_agent_
     assert royal["content_type"] == "article"
     assert royal["asset_key"] == "royal_friso_ugc_post_rules_v1"
     assert royal["keyword_asset_key"] == "royal_friso_ugc_post_keywords_v1"
-    wangyue_v2 = next(profile for profile in profiles if profile["profile_code"] == "wangyue_v2_0705_article")
-    assert wangyue_v2["asset_key"] == "wangyue_v2_core_storyline_article_rules"
-    assert wangyue_v2["keyword_asset_key"] == "wangyue_v2_minimal_generation_keywords"
-    assert wangyue_v2["default_count"] == 20
-    assert wangyue_v2["default_articles_per_prompt"] == 2
+    wangyue_v3 = next(profile for profile in profiles if profile["profile_code"] == "wangyue_v3_0705_article")
+    assert wangyue_v3["asset_key"] == "wangyue_v3_core_storyline_article_rules"
+    assert wangyue_v3["keyword_asset_key"] == "wangyue_v2_minimal_generation_keywords"
+    assert wangyue_v3["prompt_mode"] == "rule_corpus_as_prompt"
+    assert wangyue_v3["default_count"] == 20
+    assert wangyue_v3["default_articles_per_prompt"] == 2
 
 
 def test_comment_rule_selection_balances_angles_when_rule_pool_is_large():
@@ -505,16 +506,20 @@ def test_comment_length_default_caps_at_thirty_five_chars():
     assert len(comment) <= 35
 
 
-def test_a2_comment_length_allows_combo_information_density():
+def test_a2_comment_length_caps_at_eighty_chars():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
     item = ContentBatchItem(plan_json={"quality_guard_profile_key": "a2_sentiment_comment_202606"})
-    comment = "刚转奶先看物流码报告，爱他美样批也看，a2报告里那项0.03再结合肚肚便便状态"
+    comment = "刚转奶先看物流码报告，爱他美样批也看，a2报告里蜡样那项再结合肚肚便便状态"
 
     fitted = service._fit_comment_length(comment, max_chars=service._comment_max_chars(item))
 
     assert fitted == comment
     assert len(fitted) > 35
-    assert service._comment_max_chars(item) == 45
+    assert service._comment_max_chars(item) == 80
+
+    overlong = comment * 3
+    normalized = service._normalize_comment_length(item, overlong)
+    assert len(normalized) <= 80
 
 
 def test_comment_micro_reply_caps_generated_comment_at_ten_chars():
@@ -2509,10 +2514,8 @@ def test_a2_activity_guard_repairs_marker_and_entry_terms():
     payload = ActivityQualityGuardService().review_item(item)
 
     assert payload is not None
-    assert payload["pass"] is True
+    assert payload["pass"] is False
     assert payload["context_list"]["关键词"] == "有货+批批检"
-    assert "0.03" in item.body
-    assert "a2报告里那项0.03" in item.body
     assert "爱他美" not in item.body
     assert "其他品牌" in item.body
     assert "物流码" in item.body
@@ -2525,7 +2528,7 @@ def test_a2_activity_guard_repairs_marker_and_entry_terms():
     assert "慌" not in item.body
     assert "担心" not in item.body
     assert "补货" in item.body or "有货" in item.body or "到货" in item.body
-    assert not payload["issues"]
+    assert any(issue["code"] == "activity_forbidden_terms" and "0.03" in issue["evidence"] for issue in payload["issues"])
     assert payload["repairs"]
 
 
@@ -2539,12 +2542,10 @@ def test_a2_activity_guard_repairs_60_plus_and_detection_project_wording():
     payload = ActivityQualityGuardService().review_item(item)
 
     assert payload is not None
-    assert payload["pass"] is True
-    assert "60+" not in item.body
+    assert payload["pass"] is False
+    assert "60+" in item.body
     assert "检测项目" not in item.body
-    assert "60多项检测项" in item.body
-    assert not payload["issues"]
-    assert any(repair["source"] == "60+" for repair in payload["repairs"])
+    assert any(issue["code"] == "activity_forbidden_terms" and "60+" in issue["evidence"] for issue in payload["issues"])
     assert any(repair["source"] == "检测项目" for repair in payload["repairs"])
 
 
@@ -3253,10 +3254,14 @@ def test_a2_activity_guard_repairs_lab_notation():
     repaired_payload = ActivityQualityGuardService().review_item(repaired)
 
     assert repaired_payload is not None
-    assert repaired_payload["pass"] is True
+    assert repaired_payload["pass"] is False
     assert "μg/kg" not in repaired.body
     assert "<0.03" in repaired.body
     assert "0.03" in repaired.body
+    assert any(
+        issue["code"] == "activity_forbidden_terms" and "0.03" in issue["evidence"]
+        for issue in repaired_payload["issues"]
+    )
     assert repaired_payload["repairs"]
 
 
@@ -3549,7 +3554,7 @@ def test_a2_activity_guard_rejects_truncated_comment_tail():
 
 def test_a2_activity_guard_generalizes_out_of_scope_competitor_terms():
     item = ContentBatchItem(
-        body="补货时我看美素和美赞臣，也看a2报告里那项0.03和物流码报告。",
+        body="补货时我看美素和美赞臣，也看a2物流码报告。",
         plan_json=_a2_guard_plan("补货前先扫物流码：\n关键词方向是有货+批批检，像妈妈分享到货后先看报告。"),
         quality_json={},
     )
@@ -3574,10 +3579,12 @@ def test_a2_activity_guard_repairs_unconfirmed_nestle_value_attribution():
     payload = ActivityQualityGuardService().review_item(item)
 
     assert payload is not None
-    assert payload["pass"] is True
+    assert payload["pass"] is False
     assert "超启能恩和a2的0.03" not in item.body
     assert "超启能恩" not in item.body
-    assert "其他品牌也看，a2报告里那项0.03" in item.body
+    assert "其他品牌" in item.body
+    assert "蜡样检测报告" in item.body
+    assert any(issue["code"] == "activity_forbidden_terms" and "0.03" in issue["evidence"] for issue in payload["issues"])
 
 
 def test_a2_activity_guard_repairs_ambiguous_competitor_003_comparison():
@@ -3590,13 +3597,14 @@ def test_a2_activity_guard_repairs_ambiguous_competitor_003_comparison():
     payload = ActivityQualityGuardService().review_item(item)
 
     assert payload is not None
-    assert payload["pass"] is True
+    assert payload["pass"] is False
     assert "达能和0.03" not in item.body
     assert "拿达能也看" not in item.body
     assert "达能" not in item.body
     assert "还会看其他品牌" in item.body
     assert "0.03对比肚肚" not in item.body
-    assert "a2报告里那项0.03" in item.body
+    assert "a2报告里蜡样那项" in item.body
+    assert any(issue["code"] == "activity_forbidden_terms" and "0.03" in issue["evidence"] for issue in payload["issues"])
 
 
 def test_a2_activity_guard_rejects_hard_003_competitor_number_comparison_and_repeated_wax_term():
@@ -3727,10 +3735,11 @@ def test_a2_activity_guard_repairs_competitor_report_003_attribution():
     payload = ActivityQualityGuardService().review_item(item)
 
     assert payload is not None
-    assert payload["pass"] is True
+    assert payload["pass"] is False
     assert "爱他美报告里那项0.03" not in item.body
     assert "爱他美" not in item.body
-    assert "其他品牌的样批也看，a2报告里那项0.03" in item.body
+    assert "其他品牌的样批也看，a2报告里蜡样那项" in item.body
+    assert any(issue["code"] == "activity_forbidden_terms" and "0.03" in issue["evidence"] for issue in payload["issues"])
 
 
 def test_a2_activity_guard_rejects_unconfirmed_competitor_batch_report():
@@ -3841,12 +3850,13 @@ def test_a2_activity_guard_repairs_duplicate_report_reference_and_batch_wording(
     payload = ActivityQualityGuardService().review_item(item)
 
     assert payload is not None
-    assert payload["pass"] is True
+    assert payload["pass"] is False
     assert "报告里报告里那项" not in item.body
     assert "0.03那项" not in item.body
     assert "a2每罐" not in item.body
-    assert "a2报告里那项0.03" in item.body
+    assert "a2报告里蜡样那项" in item.body
     assert "a2每批报告" in item.body
+    assert any(issue["code"] == "activity_forbidden_terms" and "0.03" in issue["evidence"] for issue in payload["issues"])
 
 
 def test_a2_activity_guard_repairs_duplicate_logistics_code_suffix():
@@ -3933,8 +3943,8 @@ def test_article_pool_export_writes_title_when_item_has_title():
 
     _write_article_pool_sheet(sheet, report)
 
-    assert sheet["C2"].value == "补货顺便扫了下罐底码"
-    assert sheet["D2"].value == "去门店拿了一罐a2至初，店员说这批报告都能查到。"
+    assert sheet["A2"].value == "补货顺便扫了下罐底码"
+    assert sheet["B2"].value == "去门店拿了一罐a2至初，店员说这批报告都能查到。"
 
 
 def test_article_pool_filename_uses_generated_topic_and_time():
@@ -4123,7 +4133,8 @@ async def test_a2_comment_realness_rewrites_stiff_003_value_wording():
 
     assert "数值0.03" in payload["initial_hits"]
     assert "数值0.03" not in item.body
-    assert "<0.03这个数" in item.body
+    assert "蜡样那项" in item.body
+    assert "0.03" not in item.body
 
 
 @pytest.mark.asyncio
@@ -4492,6 +4503,81 @@ async def test_batch_workbench_can_start_batch_then_list_and_open_report(content
 
 
 @pytest.mark.asyncio
+async def test_batch_workbench_exposes_business_usability_review_endpoint(
+    content_agent_workbench_client,
+    monkeypatch,
+):
+    client, session_factory = content_agent_workbench_client
+
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="batch_business_review_api",
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            product_topic="0705旺玥活动",
+            count=1,
+            status="generated",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(
+            ContentBatchItem(
+                batch_id=job.id,
+                item_no=1,
+                status="generated",
+                title="饭后那杯奶",
+                body="孩子喝旺玥快一个月了，晚饭后那杯还是照常冲好。",
+                plan_json={"asset_key": "wangyue_v3_core_storyline_article_rules"},
+                quality_json={
+                    "hard_pass": True,
+                    "review_report": {"rewrite_required": False},
+                    "product_experience_llm_quality_review": {
+                        "business_usability_tier": "direct_pool",
+                        "business_usability_reason": "业务判断稳定入池",
+                    },
+                },
+            )
+        )
+        batch_id = job.id
+        await session.commit()
+
+    class FakeExecutionService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def review_business_usability_items(self, batch_id, *, force=False, limit=None, concurrency=10):
+            assert force is True
+            assert limit == 1
+            assert concurrency == 3
+            return SimpleNamespace(
+                batch_id=batch_id,
+                reviewed_count=1,
+                skipped_count=0,
+                failed_count=0,
+                reviewed_item_nos=[1],
+                skipped_item_nos=[],
+                failed_items=[],
+                tier_counts={"direct_pool": 1},
+            )
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.content_agent.ContentBatchExecutionService",
+        FakeExecutionService,
+    )
+
+    response = await client.post(
+        f"/api/v1/content-agent/batches/{batch_id}/business-usability-review",
+        json={"force": True, "limit": 1, "concurrency": 3},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["reviewed_count"] == 1
+    assert data["tier_counts"] == {"direct_pool": 1}
+    assert data["report"]["batch_id"] == batch_id
+    assert data["report"]["items"][0]["business_usability_tier"] == "direct_pool"
+
+
+@pytest.mark.asyncio
 async def test_batch_workbench_uses_default_executor_when_form_sends_blank_code(content_agent_workbench_client):
     client, _session_factory = content_agent_workbench_client
     response = await client.post(
@@ -4717,21 +4803,21 @@ async def test_a2_comment_batch_applies_activity_quality_guard_and_article_pool_
                             "rule_id": "a2_001",
                             "business_rule": "A2舆情改善评论",
                             "corpus": "补货前先扫物流码：\n关键词方向是有货+批批检，像妈妈分享到货后先看报告。",
-                            "examples": ["有货我先扫物流码，爱他美样批也看，a2报告里那项0.03一起看"],
+                            "examples": ["有货我先扫罐底码，爱他美样批也看，a2这批报告能点开"],
                             "source_row_no": 1,
                         },
                         {
                             "rule_id": "a2_002",
                             "business_rule": "A2舆情改善评论",
                             "corpus": "转奶前看肚肚和报告：\n关键词方向是批批检+转奶，像妈妈转奶前看报告。",
-                            "examples": ["转奶前看物流码报告，美素也看，a2报告里那项0.03我会留意"],
+                            "examples": ["转奶前我先看这罐报告，娃肚肚适应再慢慢来"],
                             "source_row_no": 2,
                         },
                         {
                             "rule_id": "a2_003",
                             "business_rule": "A2舆情改善评论",
                             "corpus": "有货后准备转奶：\n关键词方向是有货+转奶，像妈妈看到有货后先做转奶功课。",
-                            "examples": ["有货了想转奶，先看物流码报告，达能也看，a2报告里那项0.03"],
+                            "examples": ["到货先拿一罐，转奶这事按家里节奏来"],
                             "source_row_no": 3,
                         },
                     ],
@@ -4769,9 +4855,21 @@ async def test_a2_comment_batch_applies_activity_quality_guard_and_article_pool_
     report = data["report"]
     assert report["product_topic"] == "A2舆情改善评论"
     first, second, third = report["items"]
-    first_guard = first["quality"]["activity_quality_guard"]
-    second_guard = second["quality"]["activity_quality_guard"]
-    third_guard = third["quality"]["activity_quality_guard"]
+    assert first["hard_pass"] is True
+    assert second["hard_pass"] is True
+    assert third["hard_pass"] is True
+
+    full_report_response = await client.get(
+        f"/api/v1/content-agent/batches/{data['batch_id']}/report",
+        params={"full": True},
+    )
+
+    assert full_report_response.status_code == 200
+    full_report = full_report_response.json()["data"]
+    full_first, full_second, full_third = full_report["items"]
+    first_guard = full_first["quality"]["activity_quality_guard"]
+    second_guard = full_second["quality"]["activity_quality_guard"]
+    third_guard = full_third["quality"]["activity_quality_guard"]
     assert first_guard["profile_key"] == "a2_sentiment_comment_202606"
     assert first_guard["context_list"]["关键词"] == "有货+批批检"
     assert "蜡毒" not in json.dumps(first_guard["context_list"], ensure_ascii=False)
@@ -4782,9 +4880,6 @@ async def test_a2_comment_batch_applies_activity_quality_guard_and_article_pool_
     assert not second_guard["issues"]
     assert third_guard["context_list"]["关键词"] == "有货+转奶"
     assert third_guard["pass"] is True
-    assert first["hard_pass"] is True
-    assert second["hard_pass"] is True
-    assert third["hard_pass"] is True
 
     async with session_factory() as session:
         persisted_items = (
@@ -4794,6 +4889,12 @@ async def test_a2_comment_batch_applies_activity_quality_guard_and_article_pool_
                 .order_by(ContentBatchItem.item_no)
             )
         ).scalars().all()
+
+    assert [item.quality_json["activity_quality_guard"] for item in persisted_items] == [
+        first_guard,
+        second_guard,
+        third_guard,
+    ]
 
     first_plan = persisted_items[0].plan_json
     assert first_plan["keyword_selection"]["persona"] == [
@@ -4818,19 +4919,17 @@ async def test_a2_comment_batch_applies_activity_quality_guard_and_article_pool_
     workbook = load_workbook(BytesIO(export_response.content))
     assert workbook.sheetnames == ["文章池数据"]
     sheet = workbook["文章池数据"]
-    assert [sheet.cell(1, column).value for column in range(1, 6)] == [
-        "ID",
-        "Content ID",
+    assert [sheet.cell(1, column).value for column in range(1, 4)] == [
         "标题",
         "正文",
         "上下文变量(context_list)",
     ]
-    assert sheet["C2"].value is None
-    assert sheet["D2"].value == first["body"]
-    exported_context = json.loads(sheet["E2"].value)
+    assert sheet["A2"].value == first["title"]
+    assert sheet["B2"].value == first["body"]
+    exported_context = json.loads(sheet["C2"].value)
     assert exported_context["关键词"] == "有货+批批检"
     assert exported_context["业务规则"].startswith("A2舆情改善评论，有货+批批检-")
-    assert "蜡毒" not in sheet["E2"].value
+    assert "蜡毒" not in sheet["C2"].value
 
 
 @pytest.mark.asyncio
@@ -4912,8 +5011,43 @@ async def test_article_batch_start_supports_two_articles_per_prompt(content_agen
     assert len({item.run_id for item in items}) == 1
     assert [item.quality_json["multi_output"]["selected_index"] for item in items] == [0, 1]
     assert all(item.quality_json["multi_output"]["materialized_to_batch_items"] for item in items)
-    assert "一次生成 2 篇" in items[0].plan_json["unified_generation"]["rendered_prompt"]
+    assert "一次生成 2 篇" not in items[0].plan_json["unified_generation"]["rendered_prompt"]
+    assert "items 必须正好 2 个" in items[0].plan_json["unified_generation"]["rendered_prompt"]
     assert items[0].plan_json["multi_output_group"]["group_id"] == items[1].plan_json["multi_output_group"]["group_id"]
+
+
+@pytest.mark.asyncio
+async def test_article_batch_start_applies_draft_rule_corpus(content_agent_workbench_client):
+    client, session_factory = content_agent_workbench_client
+    response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue_product_experience",
+            "rule_id": "business_rule_001",
+            "source_row_no": 1,
+            "draft_corpus": "草稿里的奶量补充语料，只用于本次测试。",
+            "draft_rule_id": "business_rule_001",
+            "draft_source_row_no": 1,
+            "count": 1,
+            "created_by": "ops",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    async with session_factory() as session:
+        item = (
+            await session.execute(
+                select(ContentBatchItem).where(ContentBatchItem.batch_id == data["batch_id"])
+            )
+        ).scalar_one()
+
+    assert item.plan_json["corpus"] == "草稿里的奶量补充语料，只用于本次测试。"
+    assert item.plan_json["draft_rule_override"] == {
+        "enabled": True,
+        "rule_id": "business_rule_001",
+        "source_row_no": 1,
+    }
 
 
 @pytest.mark.asyncio

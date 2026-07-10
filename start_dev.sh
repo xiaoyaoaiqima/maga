@@ -21,11 +21,19 @@ REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 
 BACKEND_PORT="${BACKEND_PORT:-5100}"
-FRONTEND_PORT="${FRONTEND_PORT:-3102}"
+FRONTEND_PORT="${FRONTEND_PORT:-3104}"
 
 BACKEND_PID_FILE="$PID_DIR/backend.pid"
 FRONTEND_PID_FILE="$PID_DIR/frontend.pid"
 MYSQL_PID_FILE="$MYSQL_RUN_DIR/mysql.pid"
+PYTHON_BIN="${PYTHON_BIN:-$ROOT_DIR/.venv/bin/python}"
+if [[ -z "${PNPM_BIN:-}" ]]; then
+  if [[ -x "/opt/homebrew/bin/pnpm" ]]; then
+    PNPM_BIN="/opt/homebrew/bin/pnpm"
+  else
+    PNPM_BIN="$(command -v pnpm || true)"
+  fi
+fi
 
 mkdir -p "$LOG_DIR" "$PID_DIR" "$MYSQL_RUN_DIR"
 
@@ -165,11 +173,15 @@ SQL
 
 start_backend() {
   stop_pid "backend" "$BACKEND_PID_FILE"
+  if [[ ! -x "$PYTHON_BIN" ]]; then
+    echo "Python binary not found: $PYTHON_BIN" >&2
+    exit 1
+  fi
   echo "Starting backend on http://localhost:$BACKEND_PORT ..."
 
   (
     cd "$ROOT_DIR/platform-server"
-    env \
+    nohup env \
       MYSQL_HOST="$MYSQL_HOST" \
       MYSQL_PORT="$MYSQL_PORT" \
       MYSQL_USER="$MYSQL_USER" \
@@ -179,25 +191,29 @@ start_backend() {
       REDIS_PORT="$REDIS_PORT" \
       APP_PORT="$BACKEND_PORT" \
       PYTHONPATH=. \
-      python app/main.py
-  ) >"$LOG_DIR/backend.log" 2>&1 &
-
-  echo $! >"$BACKEND_PID_FILE"
+      "$PYTHON_BIN" -m uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" \
+      >"$LOG_DIR/backend.log" 2>&1 &
+    echo $! >"$BACKEND_PID_FILE"
+  )
 }
 
 start_frontend() {
   stop_pid "frontend" "$FRONTEND_PID_FILE"
+  if [[ -z "$PNPM_BIN" || ! -x "$PNPM_BIN" ]]; then
+    echo "pnpm binary not found. Set PNPM_BIN=/path/to/pnpm." >&2
+    exit 1
+  fi
   echo "Starting frontend on http://localhost:$FRONTEND_PORT ..."
 
   (
     cd "$ROOT_DIR/platform-console"
-    env \
+    nohup env \
       VITE_PORT="$FRONTEND_PORT" \
       VITE_PROXY_TARGET="http://localhost:$BACKEND_PORT" \
-      pnpm dev
-  ) >"$LOG_DIR/frontend.log" 2>&1 &
-
-  echo $! >"$FRONTEND_PID_FILE"
+      "$PNPM_BIN" dev \
+      >"$LOG_DIR/frontend.log" 2>&1 &
+    echo $! >"$FRONTEND_PID_FILE"
+  )
 }
 
 start_all() {

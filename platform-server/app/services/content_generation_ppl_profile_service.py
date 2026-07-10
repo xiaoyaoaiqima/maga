@@ -23,6 +23,7 @@ class ContentGenerationPPLProfile:
     content_type: PPLContentType
     asset_key: str
     keyword_asset_key: str | None = None
+    prompt_mode: str | None = None
     quality_guard_profile_key: str | None = None
     description: str = ""
     default_count: int = 10
@@ -36,6 +37,7 @@ class ContentGenerationPPLProfile:
             content_type=self.content_type,
             asset_key=self.asset_key,
             keyword_asset_key=self.keyword_asset_key,
+            prompt_mode=self.prompt_mode,
             quality_guard_profile_key=self.quality_guard_profile_key,
             description=self.description,
             default_count=self.default_count,
@@ -64,15 +66,16 @@ PPL_PROFILES: tuple[ContentGenerationPPLProfile, ...] = (
         aliases=("wangyue_legacy", "wangyue_v353"),
     ),
     ContentGenerationPPLProfile(
-        profile_code="wangyue_v2_0705_article",
-        label="旺玥0705活动帖子-v2",
+        profile_code="wangyue_v3_0705_article",
+        label="旺玥0705活动帖子-v3",
         content_type="article",
-        asset_key="wangyue_v2_core_storyline_article_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         keyword_asset_key="wangyue_v2_minimal_generation_keywords",
-        description="旺玥0705 v2帖子生文：核心故事线规则语料 + 最小表达扩散语料，适合固定调试闭环。",
+        prompt_mode="rule_corpus_as_prompt",
+        description="旺玥0705 v3帖子生文：核心故事线规则语料 + 最小表达扩散语料，适合固定调试闭环。",
         default_count=20,
         default_articles_per_prompt=2,
-        aliases=("wangyue", "wangyue_article", "wangyue_v2"),
+        aliases=("wangyue", "wangyue_article", "wangyue_v3"),
     ),
     ContentGenerationPPLProfile(
         profile_code="a2_sentiment_post_article",
@@ -129,8 +132,12 @@ class ContentGenerationPPLProfileService:
         return ContentBatchStartRequest(
             asset_key=profile.asset_key,
             keyword_asset_key=request.keyword_asset_key or profile.keyword_asset_key,
+            prompt_mode=request.prompt_mode or profile.prompt_mode,
             rule_id=request.rule_id,
             source_row_no=request.source_row_no,
+            draft_corpus=request.draft_corpus,
+            draft_rule_id=request.draft_rule_id,
+            draft_source_row_no=request.draft_source_row_no,
             count=request.count or profile.default_count,
             articles_per_prompt=request.articles_per_prompt or profile.default_articles_per_prompt,
             executor_code=request.executor_code or DEFAULT_EXECUTOR_CODE,

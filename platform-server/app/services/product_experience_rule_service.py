@@ -493,7 +493,6 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
     return {
         "rule_id": f"business_rule_{index:03d}",
         "business_rule": raw_rule,
-        "topic": raw_rule,
         "corpus": corpus,
         "examples": examples,
         "supplements": [],
@@ -618,13 +617,6 @@ def _warnings_for_items(items: list[dict[str, Any]]) -> list[str]:
     ]
     if sparse_examples:
         warnings.append(f"{len(sparse_examples)} 条规则示例少于3条")
-    malformed_keys = [
-        item["business_rule"]
-        for item in items
-        if not item.get("topic")
-    ]
-    if malformed_keys:
-        warnings.append(f"{len(malformed_keys)} 条规则未填写体验主题")
     return warnings
 
 

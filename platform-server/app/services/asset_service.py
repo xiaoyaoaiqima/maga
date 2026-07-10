@@ -5,7 +5,7 @@ import copy
 import re
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.maga_assets import AssetChangeProposal, AssetChangeRequest, AssetImportRun, AssetRegistry
@@ -45,39 +45,57 @@ class AssetService:
         latest_only: bool = True,
         include_hidden: bool = False,
     ) -> list[AssetRegistry]:
-        stmt = select(AssetRegistry)
+        filters = []
         if asset_type:
-            stmt = stmt.where(AssetRegistry.asset_type == asset_type)
+            filters.append(AssetRegistry.asset_type == asset_type)
         if asset_key:
-            stmt = stmt.where(AssetRegistry.asset_key == asset_key)
+            filters.append(AssetRegistry.asset_key == asset_key)
         if status:
-            stmt = stmt.where(AssetRegistry.status == status)
+            filters.append(AssetRegistry.status == status)
         if asset_stage:
-            stmt = stmt.where(AssetRegistry.asset_stage == asset_stage)
+            filters.append(AssetRegistry.asset_stage == asset_stage)
         if latest_only:
-            latest_versions_stmt = (
-                select(
-                    AssetRegistry.asset_type.label("asset_type"),
-                    AssetRegistry.asset_key.label("asset_key"),
-                    AssetRegistry.asset_stage.label("asset_stage"),
-                    func.max(AssetRegistry.version_no).label("version_no"),
+            latest_rows = (
+                await self.db.execute(
+                    select(
+                        AssetRegistry.id,
+                        AssetRegistry.asset_type,
+                        AssetRegistry.asset_key,
+                        AssetRegistry.asset_stage,
+                        AssetRegistry.version_no,
+                    ).where(*filters)
                 )
-                .where(AssetRegistry.status == status)
-                .group_by(AssetRegistry.asset_type, AssetRegistry.asset_key, AssetRegistry.asset_stage)
+            ).all()
+            latest_by_key: dict[tuple[str, str, str], tuple[int, int]] = {}
+            for row in latest_rows:
+                key = (row.asset_type, row.asset_key, row.asset_stage)
+                current = latest_by_key.get(key)
+                candidate = (int(row.version_no or 0), int(row.id))
+                if current is None or candidate > current:
+                    latest_by_key[key] = candidate
+            latest_ids = [asset_id for _version_no, asset_id in latest_by_key.values()]
+            if not latest_ids:
+                return []
+            stmt = select(AssetRegistry).where(AssetRegistry.id.in_(latest_ids))
+        else:
+            stmt = select(AssetRegistry)
+            if filters:
+                stmt = stmt.where(*filters)
+            stmt = stmt.order_by(
+                AssetRegistry.asset_type,
+                AssetRegistry.asset_key,
+                AssetRegistry.version_no.desc(),
             )
-            if asset_stage:
-                latest_versions_stmt = latest_versions_stmt.where(AssetRegistry.asset_stage == asset_stage)
-            latest_versions = latest_versions_stmt.subquery()
-            stmt = stmt.join(
-                latest_versions,
-                (AssetRegistry.asset_type == latest_versions.c.asset_type)
-                & (AssetRegistry.asset_key == latest_versions.c.asset_key)
-                & (AssetRegistry.asset_stage == latest_versions.c.asset_stage)
-                & (AssetRegistry.version_no == latest_versions.c.version_no),
-            )
-        stmt = stmt.order_by(AssetRegistry.asset_type, AssetRegistry.asset_key, AssetRegistry.version_no.desc())
         result = await self.db.execute(stmt)
         assets = list(result.scalars().all())
+        if latest_only:
+            assets.sort(
+                key=lambda asset: (
+                    asset.asset_type or "",
+                    asset.asset_key or "",
+                    -(asset.version_no or 0),
+                )
+            )
         if include_hidden:
             return assets
         # 历史 probe/focus 资产不删除，只通过 metadata_json.hidden 从运营默认视图隐藏。
@@ -895,14 +913,9 @@ def _find_business_rule_item(
 
 
 def _business_rule_name(item: dict[str, Any]) -> str | None:
-    """Prefer the new field while allowing existing production assets to keep working."""
     value = item.get("business_rule")
     if value is None:
         value = item.get("comment_" + "angle")
-    if value is None:
-        value = item.get("article_rule")
-    if value is None:
-        value = item.get("topic")
     normalized = str(value or "").strip()
     return normalized or None
 

@@ -57,6 +57,59 @@ def test_normalize_article_output_accepts_items_json_and_strips_topic_tags():
     ]
 
 
+def test_normalize_article_output_accepts_top_level_array():
+    output = _normalize_unified_content_output(
+        """
+        [
+          {"title": "第一篇#旺玥#", "body": "孩子喝着还顺，饭量也稳。"},
+          {"title": "第二篇", "body": "放学回来精神头还挺足。"}
+        ]
+        """,
+        {"content_type": "article", "output_fields": ["title", "body"]},
+    )
+
+    assert output["items"] == [
+        {"title": "第一篇", "body": "孩子喝着还顺，饭量也稳。"},
+        {"title": "第二篇", "body": "放学回来精神头还挺足。"},
+    ]
+
+
+def test_normalize_article_output_accepts_stringified_items():
+    output = _normalize_unified_content_output(
+        '{"items":"[{\\"title\\":\\"第一篇\\",\\"body\\":\\"正文一\\"},{\\"title\\":\\"第二篇\\",\\"body\\":\\"正文二\\"}]"}',
+        {"content_type": "article", "output_fields": ["title", "body"]},
+    )
+
+    assert output["items"] == [
+        {"title": "第一篇", "body": "正文一"},
+        {"title": "第二篇", "body": "正文二"},
+    ]
+
+
+def test_normalize_article_output_accepts_items_json_nested_in_body():
+    output = _normalize_unified_content_output(
+        '{"title":"今天这点变化","body":"{\\"items\\":[{\\"title\\":\\"喝旺玥一个月\\",\\"body\\":\\"饭量稳了。\\"},{\\"title\\":\\"又开一罐\\",\\"body\\":\\"这次继续喝。\\"}]}"}',
+        {"content_type": "article", "output_fields": ["title", "body"]},
+    )
+
+    assert output["items"] == [
+        {"title": "喝旺玥一个月", "body": "饭量稳了。"},
+        {"title": "又开一罐", "body": "这次继续喝。"},
+    ]
+
+
+def test_normalize_article_output_repairs_nested_body_items_missing_outer_brace():
+    output = _normalize_unified_content_output(
+        '{"title":"今天这点变化","body":"{\\"items\\":[{\\"title\\":\\"挑了一圈\\",\\"body\\":\\"最后选了旺玥。\\"},{\\"title\\":\\"每天一杯\\",\\"body\\":\\"冲杯奶粉就好。\\"}]"}',
+        {"content_type": "article", "output_fields": ["title", "body"]},
+    )
+
+    assert output["items"] == [
+        {"title": "挑了一圈", "body": "最后选了旺玥。"},
+        {"title": "每天一杯", "body": "冲杯奶粉就好。"},
+    ]
+
+
 def test_normalize_article_output_keeps_single_article_contract():
     output = _normalize_unified_content_output(
         '{"title":"标题#话题#","body":"正文内容 #收尾话题"}',

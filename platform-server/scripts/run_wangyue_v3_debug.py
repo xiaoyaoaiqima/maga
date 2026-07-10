@@ -12,7 +12,7 @@ import run_content_ppl_profile as ppl
 
 
 DEFAULT_OUTPUT_DIR = Path("/Users/luxifa/maga/outputs/0705_wangyue_product_relation_evidence")
-DEFAULT_PROFILE_CODE = "wangyue_v2_0705_article"
+DEFAULT_PROFILE_CODE = "wangyue_v3_0705_article"
 
 
 def _item_no(item: dict[str, Any]) -> int:

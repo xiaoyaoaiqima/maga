@@ -18,7 +18,7 @@ from app.models.agent import Agent
 from app.models.maga_assets import AssetRegistry
 from app.services.business_forbidden_term_service import (
     A2_SENTIMENT_COMMENT_ASSET_KEY,
-    A2_SENTIMENT_COMMENT_SEED_TERM,
+    A2_SENTIMENT_COMMENT_SEED_TERMS,
     BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
     BUSINESS_FORBIDDEN_TERMS_SCHEMA_VERSION,
 )
@@ -141,33 +141,54 @@ async def seed_a2_sentiment_comment_forbidden_terms(conn: AsyncConnection) -> No
         )
     ).scalar_one_or_none()
     existing_entries = _business_forbidden_seed_entries(existing or {})
-    seed_term = A2_SENTIMENT_COMMENT_SEED_TERM["term"]
-    existing_seed = next((entry for entry in existing_entries if entry.get("term") == seed_term), None)
-    if existing_seed and existing_seed.get("reason") == A2_SENTIMENT_COMMENT_SEED_TERM["reason"]:
+    existing_by_term = {entry.get("term"): entry for entry in existing_entries}
+    seed_terms_by_term = {entry["term"]: entry for entry in A2_SENTIMENT_COMMENT_SEED_TERMS}
+    if all(
+        (existing_by_term.get(term) or {}).get("reason") == seed_entry["reason"]
+        and (existing_by_term.get(term) or {}).get("enabled") is not False
+        for term, seed_entry in seed_terms_by_term.items()
+    ):
         return
 
     now = datetime.now(timezone.utc).isoformat()
-    if existing_seed:
-        next_entries = [
+    next_entries = [
+        (
             {
                 **entry,
-                **A2_SENTIMENT_COMMENT_SEED_TERM,
+                **seed_terms_by_term[entry["term"]],
                 "created_at": entry.get("created_at") or now,
                 "updated_at": now,
                 "updated_by": "system",
             }
-            if entry.get("term") == seed_term
+            if entry.get("term") in seed_terms_by_term
             else entry
-            for entry in existing_entries
-        ]
-    else:
+        )
+        for entry in existing_entries
+    ]
+    existing_terms = {entry.get("term") for entry in next_entries}
+    added_seed_entries = [
+        {
+            **seed_entry,
+            "created_at": now,
+        }
+        for seed_entry in A2_SENTIMENT_COMMENT_SEED_TERMS
+        if seed_entry["term"] not in existing_terms
+    ]
+    if added_seed_entries:
         next_entries = [
-            *existing_entries,
-            {
-                **A2_SENTIMENT_COMMENT_SEED_TERM,
-                "created_at": now,
-            },
+            *next_entries,
+            *added_seed_entries,
         ]
+    updated_term_count = sum(
+        1
+        for term, seed_entry in seed_terms_by_term.items()
+        if term in existing_by_term
+        and (
+            existing_by_term[term].get("reason") != seed_entry["reason"]
+            or existing_by_term[term].get("enabled") is False
+        )
+    )
+    added_term_count = len(added_seed_entries)
     if existing is not None:
         await conn.execute(
             update(AssetRegistry)
@@ -202,8 +223,8 @@ async def seed_a2_sentiment_comment_forbidden_terms(conn: AsyncConnection) -> No
             metadata_json={
                 "schema_version": BUSINESS_FORBIDDEN_TERMS_SCHEMA_VERSION,
                 "term_count": len([entry for entry in next_entries if entry.get("enabled") is not False]),
-                "added_term_count": 0 if existing_seed else 1,
-                "updated_term_count": 1 if existing_seed else 0,
+                "added_term_count": added_term_count,
+                "updated_term_count": updated_term_count,
             },
             created_by="system",
         )

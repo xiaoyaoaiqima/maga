@@ -66,6 +66,10 @@ A2_SENTIMENT_COMMENT_FORBIDDEN_TERMS = (
     "旧批次",
     "μg/kg",
     "ug/kg",
+    # 业务新要求：暂不露出蜡样/蜡毒检测数值和检测报告/检测项目的明确数量。
+    "0.03",
+    "60+",
+    "60多项",
     "高于中国标准",
     "全球最严格",
 )
@@ -431,7 +435,7 @@ A2_SPECIFIC_ADVANTAGE_MARKERS = (
             "a2有批次报告",
             "a2有检测报告",
             "a2有报告",
-            "a2报告里那项0.03",
+            "a2报告里蜡样那项",
     "a2自己扫",
     "a2能自己扫",
     "a2自己能扫",
@@ -448,23 +452,23 @@ A2_SPECIFIC_ADVANTAGE_MARKERS = (
     "a2自己这罐报告",
     "自己扫a2",
     "自己扫出来",
-    "蜡样检测0.03",
-    "那个检测0.03",
-    "报告里那项0.03",
+    "蜡样检测未检出",
+    "那个检测未检出",
+    "报告里蜡样那项",
 )
 A2_DIRECTION_MARKER_GROUPS: dict[str, dict[str, tuple[str, ...]]] = {
     "有货+批批检": {
         "有货信息": ("有货", "到货", "补货", "问货", "快喝完", "新到", "店里", "能买", "能拍", "买到", "来货", "发货", "上架"),
-        "批批检信息": ("批批检", "物流码", "报告", "批次", "质检", "蜡样", "检测", "0.03"),
+        "批批检信息": ("批批检", "物流码", "报告", "批次", "质检", "蜡样", "检测", "未检出"),
     },
     "批批检+转奶": {
-        "批批检信息": ("批批检", "物流码", "报告", "批次", "质检", "蜡样", "检测", "0.03"),
+        "批批检信息": ("批批检", "物流码", "报告", "批次", "质检", "蜡样", "检测", "未检出"),
         "转奶动作": ("转奶", "刚转", "想转", "准备转", "转过来", "慢慢转", "换奶", "过渡", "适应"),
     },
     "有货+转奶": {
         "有货信息": ("有货", "到货", "补货", "问货", "快喝完", "新到", "店里", "能买", "能拍", "买到", "来货", "发货", "上架"),
         "转奶动作": ("转奶", "刚转", "想转", "准备转", "转过来", "慢慢转", "换奶", "过渡", "适应"),
-        "批次报告": ("物流码", "报告", "批次", "检测", "0.03"),
+        "批次报告": ("物流码", "报告", "批次", "检测", "未检出"),
     },
 }
 A2_LAB_NOTATION_TERMS = ("μg/kg", "ug/kg")
@@ -625,43 +629,44 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
             "新西兰报告标准": "报告里",
             "高于中国标准": "标准细节更值得看",
             "全球最严格": "标准看着更细",
-            "0.03报告": "蜡样检测0.03报告",
-            "爱他美0.03": "爱他美样批也看，a2报告里那项0.03",
-            "达能0.03": "达能也看，a2报告里那项0.03",
-            "美素0.03": "美素也看，a2报告里那项0.03",
-            "皇家美素0.03": "皇家美素也看，a2报告里那项0.03",
-            "皇美0.03": "皇美也看，a2报告里那项0.03",
-            "雀巢0.03": "雀巢也看，a2报告里那项0.03",
-            "超启能恩0.03": "超启能恩也看，a2报告里那项0.03",
-            "爱他美的0.03": "爱他美样批也看，a2报告里那项0.03",
-            "达能的0.03": "达能也看，a2报告里那项0.03",
-            "美素的0.03": "美素也看，a2报告里那项0.03",
-            "皇家美素的0.03": "皇家美素也看，a2报告里那项0.03",
-            "皇美的0.03": "皇美也看，a2报告里那项0.03",
-            "雀巢的0.03": "雀巢也看，a2报告里那项0.03",
-            "超启能恩的0.03": "超启能恩也看，a2报告里那项0.03",
-            "爱他美和a2的0.03": "爱他美样批也看，a2报告里那项0.03",
-            "达能和a2的0.03": "达能也看，a2报告里那项0.03",
-            "美素和a2的0.03": "美素也看，a2报告里那项0.03",
-            "皇家美素和a2的0.03": "皇家美素也看，a2报告里那项0.03",
-            "皇美和a2的0.03": "皇美也看，a2报告里那项0.03",
-            "雀巢和a2的0.03": "雀巢也看，a2报告里那项0.03",
-            "超启能恩和a2的0.03": "超启能恩也看，a2报告里那项0.03",
-            "爱他美和0.03": "爱他美样批也看，a2报告里那项0.03",
-            "达能和0.03": "达能也看，a2报告里那项0.03",
-            "美素和0.03": "美素也看，a2报告里那项0.03",
-            "皇家美素和0.03": "皇家美素也看，a2报告里那项0.03",
-            "皇美和0.03": "皇美也看，a2报告里那项0.03",
-            "雀巢和0.03": "雀巢也看，a2报告里那项0.03",
-            "超启能恩和0.03": "超启能恩也看，a2报告里那项0.03",
-            "a2的0.03": "a2报告里那项0.03",
-            "a2这边0.03": "a2报告里那项0.03",
-            "报告里的0.03": "报告里那项0.03",
-            "批次报告里0.03": "批次报告里那项0.03",
-            "a2那项报告里那项0.03": "a2报告里那项0.03",
+            "0.03报告": "蜡样检测报告",
+            "爱他美0.03": "爱他美样批也看，a2报告里蜡样那项",
+            "达能0.03": "达能也看，a2报告里蜡样那项",
+            "美素0.03": "美素也看，a2报告里蜡样那项",
+            "皇家美素0.03": "皇家美素也看，a2报告里蜡样那项",
+            "皇美0.03": "皇美也看，a2报告里蜡样那项",
+            "雀巢0.03": "雀巢也看，a2报告里蜡样那项",
+            "超启能恩0.03": "超启能恩也看，a2报告里蜡样那项",
+            "爱他美的0.03": "爱他美样批也看，a2报告里蜡样那项",
+            "达能的0.03": "达能也看，a2报告里蜡样那项",
+            "美素的0.03": "美素也看，a2报告里蜡样那项",
+            "皇家美素的0.03": "皇家美素也看，a2报告里蜡样那项",
+            "皇美的0.03": "皇美也看，a2报告里蜡样那项",
+            "雀巢的0.03": "雀巢也看，a2报告里蜡样那项",
+            "超启能恩的0.03": "超启能恩也看，a2报告里蜡样那项",
+            "爱他美和a2的0.03": "爱他美样批也看，a2报告里蜡样那项",
+            "达能和a2的0.03": "达能也看，a2报告里蜡样那项",
+            "美素和a2的0.03": "美素也看，a2报告里蜡样那项",
+            "皇家美素和a2的0.03": "皇家美素也看，a2报告里蜡样那项",
+            "皇美和a2的0.03": "皇美也看，a2报告里蜡样那项",
+            "雀巢和a2的0.03": "雀巢也看，a2报告里蜡样那项",
+            "超启能恩和a2的0.03": "超启能恩也看，a2报告里蜡样那项",
+            "爱他美和0.03": "爱他美样批也看，a2报告里蜡样那项",
+            "达能和0.03": "达能也看，a2报告里蜡样那项",
+            "美素和0.03": "美素也看，a2报告里蜡样那项",
+            "皇家美素和0.03": "皇家美素也看，a2报告里蜡样那项",
+            "皇美和0.03": "皇美也看，a2报告里蜡样那项",
+            "雀巢和0.03": "雀巢也看，a2报告里蜡样那项",
+            "超启能恩和0.03": "超启能恩也看，a2报告里蜡样那项",
+            "a2的0.03": "a2报告里蜡样那项",
+            "a2这边0.03": "a2报告里蜡样那项",
+            "报告里的0.03": "报告里蜡样那项",
+            "批次报告里0.03": "批次报告里蜡样那项",
+            "a2那项报告里那项0.03": "a2报告里蜡样那项",
             "a2那项报告里那项": "a2报告里那项",
             "报告里报告里那项": "报告里那项",
-            "0.03那项": "0.03",
+            "0.03那项": "蜡样那项",
+            "报告里那项蜡样那项": "报告里蜡样那项",
             "a2每罐": "a2每批",
             "每罐": "这罐",
             "补一罐": "补货",
@@ -691,7 +696,6 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
             "码的码": "码",
             "批次码": "物流码",
             "那批报告": "这批报告",
-            "60+": "60多项",
             "蜡样报告细节": "蜡样检测标准",
             "检测项目": "检测项",
             "重金属报告": "报告细节",
@@ -850,13 +854,14 @@ class ActivityQualityGuardService:
         profile = resolve_quality_guard_profile(profile_key or _plan_profile_key(item))
         if profile is None:
             return None
+        initial_body = str(getattr(item, "body", "") or "")
         context = build_article_pool_context_list(item, profile.profile_key)
         repairs = self._repair_item_body(item, profile, context)
         title_repairs = self._repair_item_title(item, profile)
         repairs.extend(title_repairs)
         if repairs:
             context = build_article_pool_context_list(item, profile.profile_key)
-        issues = self._item_issues(item, profile, context)
+        issues = self._item_issues(item, profile, context, initial_body=initial_body)
         payload = _guard_payload(profile, context=context, issues=issues, repairs=repairs)
         _attach_guard_payload(item, payload)
         return payload
@@ -873,11 +878,21 @@ class ActivityQualityGuardService:
         for item in generated_items:
             self.review_item(item, profile.profile_key)
 
-    def _item_issues(self, item: Any, profile: QualityGuardProfile, context: dict[str, str]) -> list[dict[str, Any]]:
+    def _item_issues(
+        self,
+        item: Any,
+        profile: QualityGuardProfile,
+        context: dict[str, str],
+        *,
+        initial_body: str = "",
+    ) -> list[dict[str, Any]]:
         body = str(getattr(item, "body", "") or "")
         context_text = json.dumps(context, ensure_ascii=False)
         issues: list[dict[str, Any]] = []
         hits = _profile_forbidden_term_hits(profile, body=body, context_text=context_text)
+        for initial_hit in _profile_forbidden_term_hits(profile, body=initial_body, context_text=""):
+            if initial_hit not in hits:
+                hits.append(initial_hit)
         if hits:
             issues.append(
                 {
@@ -961,7 +976,7 @@ class ActivityQualityGuardService:
                     }
                 )
         if profile.profile_key == A2_SENTIMENT_COMMENT_PROFILE_KEY:
-            # A2 的 0.03 必须回到“报告里的蜡样检测那项”，避免模型把数值写成竞品归因或悬空卖点。
+            # A2 蜡样相关表达必须回到“报告里的蜡样检测那项”，避免模型把数值写成竞品归因或悬空卖点。
             a2_repaired = _repair_a2_003_reference(repaired)
             if a2_repaired != repaired:
                 repaired = a2_repaired
@@ -1208,38 +1223,38 @@ def _collapse_repeated_activity_terms(text: str) -> str:
 def _repair_a2_003_reference(text: str) -> str:
     value = str(text or "")
     competitor = r"(爱他美|达能|美素|皇家美素|皇美|雀巢|超启能恩)"
-    value = re.sub(r"(?<!<)(?<!小于)0\.03这点", "蜡样检测0.03这点", value)
-    value = re.sub(r"(?<!<)(?<!小于)0\.03这个细节", "蜡样检测0.03这个细节", value)
-    value = re.sub(r"(?<!<)(?<!小于)0\.03这个数值", "蜡样检测0.03这个数值", value)
-    value = re.sub(r"(?<!<)(?<!小于)0\.03这条线", "报告里那项0.03", value)
+    value = re.sub(r"(?<!<)(?<!小于)0\.03这点", "蜡样检测这点", value)
+    value = re.sub(r"(?<!<)(?<!小于)0\.03这个细节", "蜡样检测这个细节", value)
+    value = re.sub(r"(?<!<)(?<!小于)0\.03这个数值", "蜡样检测这个细节", value)
+    value = re.sub(r"(?<!<)(?<!小于)0\.03这条线", "报告里蜡样那项", value)
     value = re.sub(rf"(?:拿|把){competitor}也看，", r"\1也看，", value)
     value = re.sub(
         rf"{competitor}(?:和|跟)a2的(?:蜡样检测)?(?:报告里那项)?0\.03(?:报告)?",
-        r"\1也看，a2报告里那项0.03",
+        r"\1也看，a2报告里蜡样那项",
         value,
     )
     value = re.sub(
         rf"{competitor}[^，。！？；;]{{0,12}}报告里那项0\.03",
-        r"\1也看，a2报告里那项0.03",
+        r"\1也看，a2报告里蜡样那项",
         value,
     )
     value = re.sub(
         rf"(?:拿|把){competitor}和(?:蜡样检测)?0\.03(?:一起)?(?:对比|比|看)?",
-        r"\1也看，a2报告里那项0.03",
+        r"\1也看，a2报告里蜡样那项",
         value,
     )
     value = re.sub(
         rf"{competitor}(?:那边|这边|这里)(?:蜡样检测)?0\.03(?:这个数值)?",
-        r"\1也看，a2报告里那项0.03",
+        r"\1也看，a2报告里蜡样那项",
         value,
     )
     value = re.sub(
         rf"{competitor}和(?:蜡样检测)?0\.03(?:一起)?(?:对比|比|看)?",
-        r"\1也看，a2报告里那项0.03",
+        r"\1也看，a2报告里蜡样那项",
         value,
     )
     value = re.sub(
-        r"(a2报告里那项0\.03)(?:一起)?(?:对比|比)(肚肚|便便|奶量|适应|喝奶|反应)",
+        r"(a2报告里蜡样那项)(?:一起)?(?:对比|比)(肚肚|便便|奶量|适应|喝奶|反应)",
         r"\1，再看\2",
         value,
     )
@@ -1249,8 +1264,8 @@ def _repair_a2_003_reference(text: str) -> str:
         value,
     )
     if "0.03" in value and not A2_003_CONTEXT_PATTERN.search(value):
-        value = re.sub(r"(?<!<)(?<!小于)0\.03", "报告里那项0.03", value, count=1)
-    value = value.replace("爱他美也看，a2报告里那项0.03", "爱他美样批也看，a2报告里那项0.03")
+        value = re.sub(r"(?<!<)(?<!小于)0\.03", "报告里蜡样那项", value, count=1)
+    value = value.replace("爱他美也看，a2报告里蜡样那项", "爱他美样批也看，a2报告里蜡样那项")
     return value
 
 
@@ -2227,14 +2242,12 @@ def _a2_has_wax_standard_advantage_for_rule(item: Any, body: str) -> bool:
             _corpus_heading(plan.get("corpus")),
         )
     )
-    if "蜡样检测0.03" not in source and "蜡样检测标准" not in source:
+    if "蜡样检测标准" not in source and "蜡样" not in source and "蜡毒" not in source:
         return False
     normalized = re.sub(r"\s+", "", str(body or ""))
     if not re.search(r"a2|A2|至初", normalized):
         return False
-    if "0.03" not in normalized:
-        return False
-    return bool(re.search(r"蜡样|蜡毒|检测标准|未检出标准", normalized))
+    return bool(re.search(r"蜡样|蜡毒|检测标准|未检出|报告里那项", normalized))
 
 
 def _a2_has_third_party_data_advantage_for_rule(item: Any, body: str) -> bool:
@@ -2247,17 +2260,15 @@ def _a2_has_third_party_data_advantage_for_rule(item: Any, body: str) -> bool:
             _corpus_heading(plan.get("corpus")),
         )
     )
-    if "对雀巢打新西兰三方和60多项" not in source:
+    if "新西兰三方" not in source and "三方检测" not in source and "第三方检测" not in source:
         return False
     normalized = re.sub(r"\s+", "", str(body or ""))
     if not re.search(r"a2|A2|至初", normalized):
         return False
-    # 027 业务规则主打三方检测/实验室/60多项数据，允许不强制带扫码或批次报告。
+    # 027 业务规则主打三方检测/实验室检测数据，允许不强制带扫码或批次报告。
     third_party_markers = ("新西兰三方", "三方检测", "第三方检测", "第三方实验室", "三方检测数据", "第三方检测数据")
-    data_markers = ("60多项", "六十多项", "检测数据", "质检数据", "检测", "质检", "实验室", "数据")
+    data_markers = ("检测数据", "质检数据", "检测", "质检", "实验室", "数据")
     if any(marker in normalized for marker in third_party_markers) and any(marker in normalized for marker in data_markers):
-        return True
-    if "60多项" in normalized and any(marker in normalized for marker in ("数据", "检测", "质检", "指标")):
         return True
     return False
 
@@ -2288,7 +2299,7 @@ def _a2_has_self_scan_report_action_chain(normalized: str) -> bool:
         "看物流码",
         "查物流码",
     )
-    report_markers = ("报告", "批次", "每批", "检测", "质检", "蜡样", "0.03")
+    report_markers = ("报告", "批次", "每批", "检测", "质检", "蜡样", "未检出")
     own_can_markers = ("自己这罐", "手里这罐", "这罐", "对应批次")
     if any(scan in normalized for scan in scan_markers) and any(marker in normalized for marker in report_markers):
         return True
