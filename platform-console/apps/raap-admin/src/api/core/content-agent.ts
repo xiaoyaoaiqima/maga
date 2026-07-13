@@ -102,6 +102,14 @@ export namespace ContentAgentApi {
     execution_stages?: Array<Record<string, any>>;
   }
 
+  export interface TaskSnapshotResponse {
+    task_id: number;
+    run_id?: null | number;
+    task_type: string;
+    input: GenerationSnapshot;
+    asset_refs: Record<string, any>;
+  }
+
   export interface BatchReportItem {
     item_id: number;
     item_no: number;
@@ -403,6 +411,16 @@ export async function getContentBatchListApi(params?: {
 export async function getContentBatchReportApi(batchId: number) {
   return requestClient.get<ContentAgentApi.BatchReport>(
     `/v1/content-agent/batches/${batchId}/report`,
+  );
+}
+
+export async function getContentAgentTaskSnapshotApi(
+  taskId: number,
+  runId?: null | number,
+) {
+  return requestClient.get<ContentAgentApi.TaskSnapshotResponse>(
+    `/v1/content-agent/tasks/${taskId}/snapshot`,
+    { params: runId ? { run_id: runId } : undefined },
   );
 }
 

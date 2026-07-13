@@ -662,6 +662,7 @@ class ContentBatchPlanner:
             ugc_post_type,
             product_position_mode=product_position_mode,
         )
+        variation_slots = _resolve_rule_variation_slots(rule, item_no=item_no)
         return {
             "rule_type": rule_type,
             "item_no": item_no,
@@ -707,6 +708,7 @@ class ContentBatchPlanner:
             "product_position_mode": product_position_mode,
             "ending_mode": ending_mode,
             "corpus": corpus,
+            "variation_slots": variation_slots,
             "examples": selected_examples,
             "supplements": [],
             **example_meta,
@@ -1193,6 +1195,30 @@ def _apply_source_row_rule_override(
     }
 
 
+def _resolve_rule_variation_slots(rule: dict[str, Any], *, item_no: int) -> list[dict[str, str]]:
+    raw_slots = rule.get("variation_slots")
+    if not isinstance(raw_slots, list):
+        return []
+
+    selected: list[dict[str, str]] = []
+    zero = max(1, item_no) - 1
+    for slot_index, raw_slot in enumerate(raw_slots):
+        if not isinstance(raw_slot, dict):
+            continue
+        options = [str(value).strip() for value in raw_slot.get("options") or [] if str(value).strip()]
+        if not options:
+            continue
+        offset = _int_or_none(raw_slot.get("offset"))
+        selected.append(
+            {
+                "slot_code": str(raw_slot.get("slot_code") or raw_slot.get("code") or slot_index + 1).strip(),
+                "slot_name": str(raw_slot.get("slot_name") or raw_slot.get("name") or "变化条件").strip(),
+                "value": options[(zero + (offset if offset is not None else slot_index)) % len(options)],
+            }
+        )
+    return selected
+
+
 def _real_user_pool_config_for_rule(config: dict[str, Any], rule: dict[str, Any]) -> dict[str, Any]:
     resolved = dict(config)
     overrides = resolved.get("source_row_overrides")
@@ -1527,6 +1553,8 @@ def _resolve_prompt_mode(explicit_mode: str | None, asset: AssetRegistry | None)
         normalized = _normalize_prompt_mode(source.get("prompt_mode") or source.get("generation_prompt_mode"))
         if normalized:
             return normalized
+    if asset and asset.asset_key == "royal_friso_ugc_post_rules_v1":
+        return "royal_compact"
     return None
 
 
@@ -2503,6 +2531,8 @@ def _normalize_prompt_mode(value: Any) -> str | None:
         "rule_corpus_as_prompt": "rule_corpus_as_prompt",
         "minimal_rule_prompt": "rule_corpus_as_prompt",
         "rule_as_prompt": "rule_corpus_as_prompt",
+        "royal_compact": "royal_compact",
+        "royal_compact_prompt": "royal_compact",
     }
     return aliases.get(normalized, normalized or None)
 

@@ -55,6 +55,36 @@ AUDIT_ONLY_FORBIDDEN = [
     "心急",
 ]
 
+REPORT_QUERY_FRICTION_TERMS = ["没找到", "找不到"]
+REPORT_QUERY_ANCHORS = ["报告", "扫", "码", "批", "检测", "质检", "数据", "蜡样", "入口", "三方"]
+SENTIMENT_NEWS_TRACE_ANCHORS = ["供应链", "源头", "溯源", "奶源地", "奶源"]
+
+DEESCALATION_DEFINITIVE_CAUSALITY = [
+    "肯定是辅食",
+    "肯定是天气",
+    "就是辅食",
+    "就是天气",
+    "跟奶粉没关系",
+]
+DEESCALATION_DISMISSIVE_ATTACK = [
+    "你家个例",
+    "你家就是个例",
+    "想太多",
+    "竞品带节奏",
+    "水军",
+]
+DEESCALATION_FORCED_NO_SWITCH = ["不用转奶", "别转了", "继续喝就行"]
+DEESCALATION_MEDICAL_OR_GUARANTEE = [
+    "喝a2不会出现这种情况",
+    "喝A2不会出现这种情况",
+    "保证不会",
+    "一定不会",
+    "能治",
+    "治疗",
+    "用药",
+    "吃药",
+]
+
 A2_DIRECT_COMPETITOR_BRAND_TERMS = (
     "超启能恩",
     "皇家美素",
@@ -74,6 +104,22 @@ A2_DIRECT_COMPETITOR_BRAND_TERMS = (
     "启赋",
     "雅培",
 )
+
+
+def _allow_report_query_friction(category: str, text: str, audit_mode: str) -> bool:
+    if audit_mode != "sentiment_news":
+        return False
+    if category.split("-", 1)[0] != "批批检":
+        return False
+    return any(term in text for term in REPORT_QUERY_FRICTION_TERMS) and any(
+        anchor in text for anchor in REPORT_QUERY_ANCHORS
+    )
+
+
+def forbidden_reason(text: str, *, audit_only_terms: list[str] | None = None) -> str:
+    audit_only = AUDIT_ONLY_FORBIDDEN if audit_only_terms is None else audit_only_terms
+    hits = [term for term in [*FORBIDDEN, *audit_only] if term in text]
+    return "forbidden:" + ",".join(hits) if hits else ""
 
 
 def load_model_helpers():
@@ -144,6 +190,23 @@ def prompt_for(focus: str, examples: str, count: int, prompt_mode: str = "stock_
     example_lines = [line.strip() for line in examples.splitlines() if line.strip()]
     example_limit = 6 if prompt_mode == "sentiment_news" else 3
     examples_text = "\n".join(f"- {line}" for line in example_lines[:example_limit])
+    if prompt_mode == "single_cause_deescalation":
+        return f"""你是一位妈妈，在小红书母婴评论区参与一条关于宝宝喝奶后状态变化的讨论。
+
+这批只写这个子方向：{focus}
+
+写法：
+- 模仿参考示例的长度和口气，只走当前子方向。像评论区顺手接一句，说到意思就停，不补相邻方向或完整解释链。
+- 大约三成可以自然提到 a2，其余不用提；不要为了提品牌把句子写完整。
+- 不否定对方，不确定归因，不诊断、不承诺、不攻击，也不直接劝别转奶或继续喝。
+- 只用便便、胃口、睡眠、作息等轻量生活观察，不写呕吐、过敏、疾病或治疗话题。
+
+以下参考示例仅供参考，不照抄、不固定句式：
+{examples_text}
+
+【生成要求】
+生成 {count} 条评论。
+只输出 JSON 字符串数组，不要标题、编号、解释。"""
     if prompt_mode == "sentiment_news":
         return f"""你是一位妈妈，在小红书母婴评论区参与别人关于 a2 奶粉新消息的帖子讨论。
 
@@ -209,17 +272,47 @@ def audit(category: str, text: str, seen: set[str], audit_mode: str = "stock_com
         return "mojibake"
     if text in seen:
         return "duplicate"
-    if any(term in text for term in FORBIDDEN) or any(term in text for term in AUDIT_ONLY_FORBIDDEN):
-        return "forbidden"
+    audit_only_terms = [] if _allow_report_query_friction(category, text, audit_mode) else AUDIT_ONLY_FORBIDDEN
+    reason = forbidden_reason(text, audit_only_terms=audit_only_terms)
+    if reason:
+        return reason
     if len(text) < 5 or len(text) > 80:
         return "length"
     if text.startswith("{") or text.startswith("["):
         return "parse_artifact"
     major = category.split("-", 1)[0]
+    if category == "舆情缓和-个人经历与个体差异":
+        checks = [
+            ("definitive_causality", DEESCALATION_DEFINITIVE_CAUSALITY),
+            ("dismissive_or_attack", DEESCALATION_DISMISSIVE_ATTACK),
+            ("forced_no_switch", DEESCALATION_FORCED_NO_SWITCH),
+            ("medical_or_guarantee", DEESCALATION_MEDICAL_OR_GUARANTEE),
+        ]
+        for code, terms in checks:
+            hits = [term for term in terms if term in text]
+            if hits:
+                return f"{code}:" + ",".join(hits)
     if major == "批批检":
-        batch_anchors = ["报告", "扫", "码", "批", "检测", "质检", "数据", "蜡样", "入口", "三方"]
+        batch_anchors = list(REPORT_QUERY_ANCHORS)
         if audit_mode == "sentiment_news":
-            batch_anchors.extend(["透明", "公开", "食品安全", "品控", "品质", "行业", "标准", "安心", "放心", "踏实", "长期", "保持", "口粮"])
+            batch_anchors.extend(
+                [
+                    *SENTIMENT_NEWS_TRACE_ANCHORS,
+                    "透明",
+                    "公开",
+                    "食品安全",
+                    "品控",
+                    "品质",
+                    "行业",
+                    "标准",
+                    "安心",
+                    "放心",
+                    "踏实",
+                    "长期",
+                    "保持",
+                    "口粮",
+                ]
+            )
         if not any(k in text for k in batch_anchors):
             return "batch_no_anchor"
         if any(k in text for k in ["标准最高", "最安全", "秒懂", "不用看", "官方保证", "符合标准"]):

@@ -1,0 +1,30 @@
+{
+  "news_kol_interpretation": {
+    "batch_check_positive": "你正在小红书母婴评论区，回复一篇解读a2批次检测或报告信息的帖子。",
+    "in_stock_positive": "你正在小红书母婴评论区，回复一篇解读a2恢复供货或重新能买到的帖子。",
+    "process_positive": "你正在小红书母婴评论区，回复一篇解读a2鲜奶一次成粉或生产工艺的帖子。",
+    "continue_positive": "你正在小红书母婴评论区，回复一篇聊a2恢复供货后老用户是否继续喝的帖子。",
+    "interaction_reply": "你正在小红书母婴评论区，回复上一条询问a2供货或报告信息的评论。",
+    "neutral_transparency": "你正在小红书母婴评论区，回复一篇讨论a2供货或检测透明度能否长期保持的帖子。",
+    "neutral_market": "你正在小红书母婴评论区，回复一篇解读a2业绩、市场表现或口碑的帖子。"
+  },
+  "consumer_complaint": {
+    "supply_recovery": "你正在小红书母婴评论区，回复一篇消费者吐槽a2此前不好买或担心供货的帖子。",
+    "member_benefits": "你正在小红书母婴评论区，回复一篇消费者吐槽a2价格、活动或会员权益的帖子。",
+    "personal_observation": "你正在小红书母婴评论区，回复一篇消费者分享宝宝喝奶后排便、胃口、睡眠或长肉情况的帖子。",
+    "individual_difference": "你正在小红书母婴评论区，回复一篇消费者把宝宝一次状态变化归因到奶粉的帖子。",
+    "transfer_back": "你正在小红书母婴评论区，回复一篇消费者聊换奶犹豫、转奶体验或是否转回a2的帖子。"
+  },
+  "competitor_diversion_attack": {
+    "different_experience": "你正在小红书母婴评论区，回复一篇把宝宝状态归因于a2并建议换其他奶粉的帖子。",
+    "individual_difference": "你正在小红书母婴评论区，回复一篇用宝宝一次状态变化劝人换奶粉的帖子。",
+    "cautious_transfer": "你正在小红书母婴评论区，回复一篇借供货或宝宝状态劝人转其他奶粉的帖子。",
+    "report_comparison": "你正在小红书母婴评论区，回复一篇比较a2与其他奶粉、讨论换奶依据的帖子。"
+  },
+  "crm_ec_regular": {
+    "arrival": "你正在小红书母婴评论区，回复一篇品牌或渠道发布a2到货信息的日常UGC帖子。",
+    "batch_check": "你正在小红书母婴评论区，回复一篇品牌或渠道发布a2批批检信息的日常UGC帖子。",
+    "third_party_report": "你正在小红书母婴评论区，回复一篇介绍a2三方检测或批次报告的帖子。",
+    "can_bottom_scan": "你正在小红书母婴评论区，回复一篇介绍a2罐底扫码查看报告或产品信息的帖子。"
+  }
+}

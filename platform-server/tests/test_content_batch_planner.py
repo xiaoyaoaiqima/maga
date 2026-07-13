@@ -63,6 +63,16 @@ def test_prompt_mode_resolves_from_explicit_or_asset_config():
     assert _resolve_prompt_mode(None, asset) == "rule_corpus_as_prompt"
 
 
+def test_royal_article_asset_defaults_to_compact_prompt_mode():
+    asset = AssetRegistry(
+        asset_key="royal_friso_ugc_post_rules_v1",
+        content_json={},
+        metadata_json={},
+    )
+
+    assert _resolve_prompt_mode(None, asset) == "royal_compact"
+
+
 def test_article_business_rule_draft_override_replaces_only_target_corpus():
     rules = [
         {
@@ -447,6 +457,62 @@ def test_article_business_rule_override_does_not_apply_to_other_rows():
     assert plan["corpus"] == "row19原始表达纹理"
     assert "source_row_rule_override_key" not in plan
     assert "source_row_rule_variant_key" not in plan
+
+
+def test_article_business_rule_plan_rotates_rule_variation_slots_by_item_no():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_002",
+        "business_rule": "渠道和场景轮换",
+        "corpus": "写一次自然使用记录。",
+        "source_row_no": 2,
+        "variation_slots": [
+            {
+                "slot_code": "info_source",
+                "slot_name": "信息来源",
+                "options": ["朋友聊天", "门店导购", "小红书分享", "朋友圈讨论"],
+            },
+            {
+                "slot_code": "life_scene",
+                "slot_name": "生活场景",
+                "options": ["亲子活动", "兴趣课", "家庭聚会"],
+            },
+        ],
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="royal_friso_ugc_post_rules_v1",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+
+    first = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key="royal_keywords",
+        prompt_mode="royal_compact",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+    second = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=2,
+        keyword_asset_key="royal_keywords",
+        prompt_mode="royal_compact",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert first["variation_slots"] == [
+        {"slot_code": "info_source", "slot_name": "信息来源", "value": "朋友聊天"},
+        {"slot_code": "life_scene", "slot_name": "生活场景", "value": "兴趣课"},
+    ]
+    assert second["variation_slots"] == [
+        {"slot_code": "info_source", "slot_name": "信息来源", "value": "门店导购"},
+        {"slot_code": "life_scene", "slot_name": "生活场景", "value": "家庭聚会"},
+    ]
 
 
 def test_article_business_rule_override_ignores_disallowed_product_fact_fields():

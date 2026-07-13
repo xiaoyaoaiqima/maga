@@ -164,7 +164,7 @@ def _generate_content_with_runtime_fallback(
         prompt,
         (
             f"{prompt}\n\n"
-            "再次提醒：必须输出非空结果。评论只输出一条评论正文；文章输出标题和正文。"
+            f"{_nonempty_output_reminder(input_payload)}"
         ),
     ]
     last_raw = ""
@@ -207,6 +207,21 @@ def _generate_content_with_runtime_fallback(
         "raw_output_length": len(last_raw),
     }
     return output
+
+
+def _nonempty_output_reminder(input_payload: dict[str, Any]) -> str:
+    if str(input_payload.get("content_type") or "") == "comment":
+        mode = str(input_payload.get("output_format_mode") or "").strip()
+        try:
+            count = int(input_payload.get("expansion_count") or 1)
+        except (TypeError, ValueError):
+            count = 1
+        if mode == "json_string_array" and count > 1:
+            return f"再次提醒：必须输出非空结果，并且只输出正好 {count} 条评论组成的 JSON 字符串数组。"
+        if mode == "json_object_array" and count > 1:
+            return f'再次提醒：必须输出非空结果，并且只输出正好 {count} 个含 "comment" 字段的 JSON 对象数组。'
+        return "再次提醒：必须输出非空结果。评论只输出一条评论正文。"
+    return "再次提醒：必须输出非空结果。文章输出标题和正文。"
 
 
 def _handle_content_rewrite(input_payload: dict[str, Any]) -> dict[str, Any]:

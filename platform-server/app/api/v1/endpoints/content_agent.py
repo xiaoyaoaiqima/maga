@@ -326,14 +326,18 @@ async def start_comment_batch_generation(
             executor_code=executor_code,
         ).create_and_execute_batch(
             asset_key=request.asset_key,
+            scenario_code=request.scenario_code,
             keyword_asset_key=request.keyword_asset_key,
             quality_guard_profile_key=request.quality_guard_profile_key,
             business_rule=request.business_rule,
             rule_id=request.rule_id,
+            rule_ids=request.rule_ids,
             source_row_no=request.source_row_no,
             draft_corpus=request.draft_corpus,
             draft_rule_id=request.draft_rule_id,
             draft_source_row_no=request.draft_source_row_no,
+            comment_prompt_slots=request.comment_prompt_slots,
+            comment_post_context=request.comment_post_context,
             count=request.count,
             created_by=request.created_by,
         )

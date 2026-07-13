@@ -15,6 +15,7 @@ from app.services.unified_content_generation_service import (
     _business_rule_text,
     _comment_prompt_text,
     _normalize_model_config,
+    _royal_compact_article_prompt,
 )
 
 
@@ -137,6 +138,111 @@ def test_rule_corpus_as_prompt_mode_skips_legacy_article_layers():
     assert "一次生成 2 篇" not in prompt
     assert '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。' in prompt
     assert "items 必须正好 2 个。" in prompt
+
+
+def test_royal_compact_prompt_keeps_rule_mainline_and_drops_random_scenes():
+    prompt = _royal_compact_article_prompt(
+        {
+            "corpus": (
+                "写游乐区回来后的一个生活动作。皇家美素佳儿只作为家里这段时间的口粮带一下，"
+                "可以轻写这顿接得顺一点。"
+            )
+        },
+        selected_keywords=[
+            {
+                "category_code": "persona",
+                "corpus": ["早上上班前冲奶和收拾孩子都很赶。"],
+            },
+            {
+                "category_code": "article_scene",
+                "corpus": ["从电商到货、拆箱、核对清单进入。"],
+            },
+            {
+                "category_code": "article_speaking_style",
+                "corpus": ["像边带娃边写的短记录，允许有一点跳跃。"],
+            },
+            {
+                "category_code": "perturbation_rule",
+                "corpus": ["同批文章不要写成同一个模板换词。"],
+            },
+        ],
+        output_format="只输出 JSON 对象，字段只能包含 title 和 body。",
+    )
+
+    assert prompt.startswith("任务：写一篇小红书妈妈UGC生活记录")
+    assert "写游乐区回来后的一个生活动作" in prompt
+    assert "像边带娃边写的短记录" in prompt
+    assert "业务规则指定的核心卖点要写出来" in prompt
+    assert "只展开一个选择理由和一个自家反馈" in prompt
+    assert "不自行新增业务规则未指定的专业成分" in prompt
+    assert "情绪必须由选择前后的具体事情推动" in prompt
+    assert "同批内容只在措辞和节奏上发散" in prompt
+    assert "同批文章不要写成同一个模板换词" not in prompt
+    assert "早上上班前冲奶" not in prompt
+    assert "电商到货" not in prompt
+    assert "【生成要求】" not in prompt
+    assert "【本次自动选中的表达扩散语料】" not in prompt
+    assert "只输出 JSON 对象" in prompt
+
+
+def test_royal_compact_prompt_renders_only_preselected_rule_variation_slots():
+    prompt = _royal_compact_article_prompt(
+        {
+            "corpus": "写孩子最近活动变多后的一次普通生活观察。",
+            "variation_slots": [
+                {"slot_code": "info_source", "slot_name": "信息来源", "value": "门店导购"},
+                {"slot_code": "life_scene", "slot_name": "生活场景", "value": "家庭聚会"},
+            ],
+        },
+        selected_keywords=[],
+        output_format="只输出 JSON 对象，字段只能包含 title 和 body。",
+    )
+
+    assert "本篇已抽中的变化条件" in prompt
+    assert "- 信息来源：门店导购" in prompt
+    assert "- 生活场景：家庭聚会" in prompt
+    assert "朋友聊天" not in prompt
+    assert "亲子活动" not in prompt
+    assert "不要把多个选项写进同一篇" not in prompt
+
+
+def test_royal_compact_prompt_can_take_task_instruction_from_rule_corpus():
+    prompt = _royal_compact_article_prompt(
+        {
+            "corpus": (
+                "任务：写小红书妈妈UGC正向种草笔记。\n\n"
+                "写妈妈选奶后的真实使用反馈。"
+            ),
+        },
+        selected_keywords=[],
+        output_format="只输出 JSON 对象，字段只能包含 title 和 body。",
+    )
+
+    assert prompt.startswith("任务：写小红书妈妈UGC正向种草笔记。")
+    assert "写妈妈选奶后的真实使用反馈" in prompt
+    assert "UGC生活记录" not in prompt
+    assert prompt.count("任务：") == 1
+
+
+def test_royal_compact_prompt_can_separate_generation_instruction_from_business_rule():
+    prompt = _royal_compact_article_prompt(
+        {
+            "corpus": (
+                "## 生文指令\n"
+                "写一篇种草文，要求口语化，活人感十足，不分段。"
+                "文中必须表述对产品或品牌的推荐。带1-2个emoji\n\n"
+                "前段时间选奶粉，妈妈了解到皇家美素佳儿。"
+            ),
+        },
+        selected_keywords=[],
+        output_format="只输出 JSON 对象，字段只能包含 title 和 body。",
+    )
+
+    assert prompt.startswith("任务：按本篇生文指令写一篇小红书妈妈UGC内容")
+    assert "生文指令：\n写一篇种草文" in prompt
+    assert "这篇要写的事：\n前段时间选奶粉" in prompt
+    assert "是否推荐、是否使用emoji、是否分段，按本篇生文指令执行" in prompt
+    assert "不额外补推荐" not in prompt
 
 
 @pytest.mark.asyncio
@@ -1766,8 +1872,9 @@ async def test_unified_comment_generation_does_not_add_a2_business_boundaries(un
     )
 
     prompt = snapshot.input_snapshot["rendered_prompt"]
-    assert "你是一位妈妈，在小红书母婴评论区回复别人关于a2奶粉的帖子" in prompt
-    assert "评论内容不用很丰富，简单表达含义和情绪即可" in prompt
+    assert prompt.startswith("你正在小红书母婴评论区，回复一篇聊a2奶粉的帖子。")
+    assert "评论内容不用很丰富，简单表达含义和情绪即可" not in prompt
+    assert "【生成要求】" not in prompt
     assert "只输出评论正文，不要标题、编号、解释" in prompt
     assert "A2评论不要为了凑组合关键词强行补信息" not in prompt
     assert "不要自行补具体检测数值" not in prompt
@@ -1784,36 +1891,90 @@ async def test_unified_comment_generation_does_not_add_a2_business_boundaries(un
     assert "0.03" not in prompt
 
 
-def test_a2_comment_direction_uses_safe_sub_rule_name_only():
-    from app.services.unified_content_generation_service import _comment_rule_direction_line
-
-    assert (
-        _comment_rule_direction_line(
-            {"asset_key": "a2_sentiment_comment_activity", "business_rule": "有货-渠道线索"}
-        )
-        == ""
-    )
-    assert (
-        _comment_rule_direction_line(
-            {"asset_key": "a2_sentiment_comment_activity", "business_rule": "批批检-蜡样/蜡毒报告轻提"}
-        )
-        == "本条方向：蜡样/蜡毒报告轻提。"
-    )
-    assert (
-        _comment_rule_direction_line(
-            {"asset_key": "a2_sentiment_comment_activity", "business_rule": "转奶-爱他美/达能转奶对比"}
-        )
-        == "本条方向：其他品牌转奶对比。"
-    )
-    assert (
-        _comment_rule_direction_line(
-            {
+@pytest.mark.asyncio
+async def test_unified_a2_member_comment_keeps_brand_anchor_requirement(unified_session_factory):
+    async with unified_session_factory() as session:
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="comment",
+            business_rule={
                 "asset_key": "a2_sentiment_comment_activity",
-                "business_rule": "批批检-对比皇家美素后看a2三份报告",
-            }
+                "quality_guard_profile_key": "a2_sentiment_comment_202606",
+                "rule_type": "business_rule",
+                "business_rule": "会员权益-积分换礼",
+                "corpus": "评论里要出现 a2 或至初，不要只写泛泛的会员活动。",
+                "examples": ["a2积分可以换礼品，我准备去看看"],
+            },
+            item_no=1,
+            output_fields=["comment"],
         )
-        == "本条方向：对比其他品牌后看a2报告。"
+
+    prompt = snapshot.input_snapshot["rendered_prompt"]
+    assert "评论里要出现 a2 或至初，不要只写泛泛的会员活动" in prompt
+    assert "评论正文必须自然出现a2或至初，不要只写泛泛的会员活动" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_unified_a2_member_comment_keeps_full_rule_detail_and_fact_boundary(unified_session_factory):
+    corpus = "像妈妈看到a2会员活动里可以集罐换奶粉、攒罐换礼、空罐先留着之后的评论。评论里要出现a2或至初，不要只写泛泛的会员活动。"
+    async with unified_session_factory() as session:
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="comment",
+            business_rule={
+                "asset_key": "a2_sentiment_comment_activity",
+                "quality_guard_profile_key": "a2_sentiment_comment_202606",
+                "rule_type": "business_rule",
+                "business_rule": "会员权益-集罐换礼",
+                "corpus": corpus,
+                "examples": ["a2集罐能换奶粉，我先把空罐留着。"],
+            },
+            item_no=1,
+            output_fields=["comment"],
+        )
+
+    prompt = snapshot.input_snapshot["rendered_prompt"]
+    assert "本条要写的事：" in prompt
+    assert corpus in prompt
+    assert "可以围绕会员权益、集罐、积分、换礼或老客活动这些信息来写。" not in prompt
+    assert "会员权益、集罐或积分活动" not in prompt
+    assert "本条方向：" not in prompt
+    assert "具体长短参考示例" not in prompt
+    assert "【生成要求】" not in prompt
+    assert "不把礼品、门槛、领取或中奖结果扩成新事实" in prompt
+
+
+def test_a2_stock_comment_uses_compact_context_without_shortage_backstory():
+    prompt = _comment_prompt_text(
+        {
+            "asset_key": "a2_sentiment_comment_activity",
+            "business_rule": "有货-直给到货情绪",
+            "corpus": "像刷到a2到货后的一句自然接话。",
+            "examples": ["a2终于到货了，我去看看"],
+        }
     )
+
+    assert prompt.startswith("你正在小红书母婴评论区，回复一篇聊a2奶粉到货或能否买到的帖子。")
+    assert "前段时间a2奶粉没货" not in prompt
+    assert "今天突然发现有货" not in prompt
+
+
+@pytest.mark.parametrize(
+    ("business_rule", "expected_context"),
+    [
+        ("批批检-自己这批报告可查", "回复一篇聊a2奶粉检测报告或扫码信息的帖子"),
+        ("转奶-按自家节奏慢慢试", "回复一篇讨论转奶或换奶选择的帖子"),
+        ("会员权益-集罐换礼", "回复一篇聊a2奶粉会员活动或权益的帖子"),
+    ],
+)
+def test_a2_comment_context_falls_back_to_business_category(business_rule, expected_context):
+    prompt = _comment_prompt_text(
+        {
+            "asset_key": "a2_sentiment_comment_activity",
+            "business_rule": business_rule,
+            "corpus": "本条测试语料。",
+        }
+    )
+
+    assert expected_context in prompt.splitlines()[0]
 
 
 @pytest.mark.asyncio

@@ -53,6 +53,7 @@ PPL_PROFILES: tuple[ContentGenerationPPLProfile, ...] = (
         content_type="article",
         asset_key="royal_friso_ugc_post_rules_v1",
         keyword_asset_key="royal_friso_ugc_post_keywords_v1",
+        prompt_mode="royal_compact",
         description="皇家美素佳儿帖子生文：低浓度生活UGC，使用皇家专属规则和表达扩散语料。",
         aliases=("royal", "royal_friso"),
     ),

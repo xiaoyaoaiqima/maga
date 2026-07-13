@@ -246,27 +246,38 @@ class ContentCommentBatchService:
         self,
         *,
         asset_key: str,
+        scenario_code: str | None = None,
         keyword_asset_key: str | None = None,
         quality_guard_profile_key: str | None = None,
         business_rule: str | None = None,
         rule_id: str | None = None,
+        rule_ids: list[str] | None = None,
         source_row_no: int | None = None,
         draft_corpus: str | None = None,
         draft_rule_id: str | None = None,
         draft_source_row_no: int | None = None,
+        comment_prompt_slots: dict[str, list[str]] | None = None,
+        comment_post_context: str | None = None,
         count: int | None = None,
         created_by: str | None = None,
     ) -> CommentBatchExecutionResult:
         asset = await self._require_rule_asset(asset_key)
         all_rules = self._rule_items(asset)
+        scenario = _comment_scenario_from_asset(asset, scenario_code)
         focus_business_rule = _normalize_business_rule(business_rule)
-        rules = self._rules_for_business_rule(all_rules, focus_business_rule) if focus_business_rule else all_rules
+        rules = self._rules_for_scenario(all_rules, scenario) if scenario else all_rules
+        rules = self._rules_for_business_rule(rules, focus_business_rule) if focus_business_rule else rules
         focus_rule_id = str(rule_id or "").strip() or None
+        focus_rule_ids = _normalized_rule_ids(rule_ids)
+        if focus_rule_id and focus_rule_id not in focus_rule_ids:
+            focus_rule_ids.insert(0, focus_rule_id)
         focus_source_row_no = _int_or_none(source_row_no)
-        if focus_rule_id or focus_source_row_no is not None:
+        if focus_rule_ids:
+            rules = self._rules_for_multiple_items(rules, rule_ids=focus_rule_ids)
+        if focus_source_row_no is not None:
             rules = self._rules_for_single_item(
                 rules,
-                rule_id=focus_rule_id,
+                rule_id=None,
                 source_row_no=focus_source_row_no,
             )
         draft_override = _normalize_draft_rule_override(
@@ -276,24 +287,37 @@ class ContentCommentBatchService:
         )
         if draft_override:
             rules = self._rules_with_draft_override(rules, draft_override)
-        focus_single_rule = bool(focus_rule_id) or focus_source_row_no is not None
+        prompt_slots_override = _normalize_comment_prompt_slots_override(comment_prompt_slots)
+        if prompt_slots_override:
+            rules = self._rules_with_prompt_slots_override(rules, prompt_slots_override)
+        post_context_override = _normalize_comment_post_context_override(comment_post_context)
+        if post_context_override:
+            rules = self._rules_with_post_context_override(rules, post_context_override)
+        focus_single_rule = len(focus_rule_ids) == 1 or focus_source_row_no is not None
+        focus_multiple_rules = len(focus_rule_ids) > 1
         limit = self._generation_limit(
             asset,
             rules,
             requested_count=count,
-            allow_repeat=bool(focus_business_rule) or focus_single_rule,
+            allow_repeat=bool(focus_business_rule) or focus_single_rule or focus_multiple_rules or bool(scenario),
         )
         resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, asset)
         resolved_quality_guard_profile_key = quality_guard_profile_key or quality_guard_profile_key_from_asset(asset)
         quality_guard_profile = resolve_quality_guard_profile(resolved_quality_guard_profile_key)
         if resolved_quality_guard_profile_key and not quality_guard_profile:
             raise ValueError(f"unknown quality_guard_profile_key: {resolved_quality_guard_profile_key}")
-        selected_rules, selection_mode = self._select_rules_for_batch(
-            rules,
-            limit,
-            focus_business_rule=focus_business_rule,
-            profile=quality_guard_profile,
-        )
+        if scenario:
+            selected_rules, selection_mode = self._select_rules_for_scenario(rules, scenario, limit)
+        elif focus_multiple_rules:
+            selected_rules = self._select_rules_even_repetition_with_remainder(rules, limit)
+            selection_mode = "focused_rule_ids_even_repetition"
+        else:
+            selected_rules, selection_mode = self._select_rules_for_batch(
+                rules,
+                limit,
+                focus_business_rule=focus_business_rule,
+                profile=quality_guard_profile,
+            )
         if not selected_rules:
             suffix = f" for business_rule={focus_business_rule}" if focus_business_rule else ""
             raise ValueError(f"comment business rule set has no usable rules{suffix}")
@@ -313,10 +337,16 @@ class ContentCommentBatchService:
                 "keyword_asset_key": resolved_keyword_asset_key,
                 "keyword_selection": _keyword_selection_from_asset(asset),
                 "quality_guard_profile_key": resolved_quality_guard_profile_key,
+                "scenario_code": scenario.get("scenario_code") if scenario else None,
+                "scenario_name": scenario.get("scenario_name") if scenario else None,
+                "scenario_policy": _comment_scenario_policy(scenario),
                 "business_rule_filter": focus_business_rule,
                 "rule_id_filter": focus_rule_id,
+                "rule_ids_filter": focus_rule_ids,
                 "source_row_no_filter": focus_source_row_no,
                 "draft_rule_override": _draft_override_summary(draft_override),
+                "comment_prompt_slots_override": prompt_slots_override,
+                "comment_post_context_override": post_context_override,
                 "executor": self.executor_code,
             },
             diversity_plan_json={
@@ -325,10 +355,18 @@ class ContentCommentBatchService:
                 "filtered_rule_count": len(rules),
                 "selected_count": len(selected_rules),
                 "selection_mode": selection_mode,
+                "scenario_code": scenario.get("scenario_code") if scenario else None,
+                "scenario_name": scenario.get("scenario_name") if scenario else None,
+                "scenario_directions": [
+                    str(rule.get("scenario_direction") or "") for rule in selected_rules
+                ],
                 "business_rule_filter": focus_business_rule,
                 "rule_id_filter": focus_rule_id,
+                "rule_ids_filter": focus_rule_ids,
                 "source_row_no_filter": focus_source_row_no,
                 "draft_rule_override": _draft_override_summary(draft_override),
+                "comment_prompt_slots_override": prompt_slots_override,
+                "comment_post_context_override": post_context_override,
                 "selected_source_row_nos": [rule.get("source_row_no") for rule in selected_rules],
             },
             created_by=created_by,
@@ -389,13 +427,25 @@ class ContentCommentBatchService:
         CommentBatchVariationReviewService().review_batch(items)
         await self.db.flush()
         await self.db.commit()
-        generated_items = [item for item in items if item.status == "generated"]
+        # 并发 item 使用独立 session 写回；最终计数也用新 session 读取，避免主 session
+        # 在 MySQL repeatable-read 事务里继续看到 planned 快照，出现正文已生成但计数为 0。
+        async with self.session_factory() as result_db:
+            persisted_items = list(
+                (
+                    await result_db.execute(
+                        select(ContentBatchItem)
+                        .where(ContentBatchItem.batch_id == job_id)
+                        .order_by(ContentBatchItem.item_no)
+                    )
+                ).scalars().all()
+            )
+        generated_items = [item for item in persisted_items if item.status == "generated"]
         return CommentBatchExecutionResult(
             batch_id=job_id,
             requested_limit=requested_output_count,
             generated_count=len(generated_items),
             failed_count=failed,
-            item_ids=[item.id for item in items],
+            item_ids=[item.id for item in persisted_items],
         )
 
     async def _require_rule_asset(self, asset_key: str) -> AssetRegistry:
@@ -462,6 +512,20 @@ class ContentCommentBatchService:
             if _normalize_business_rule(_business_rule_name(rule)) == business_rule
         ]
 
+    def _rules_for_scenario(
+        self,
+        rules: list[dict[str, Any]],
+        scenario: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        rule_ids = {
+            str(rule_id).strip()
+            for direction in scenario.get("directions") or []
+            if isinstance(direction, dict)
+            for rule_id in direction.get("rule_ids") or []
+            if str(rule_id).strip()
+        }
+        return [rule for rule in rules if str(rule.get("rule_id") or "").strip() in rule_ids]
+
     def _rules_for_single_item(
         self,
         rules: list[dict[str, Any]],
@@ -476,6 +540,18 @@ class ContentCommentBatchService:
             if (not rule_id or str(rule.get("rule_id") or "").strip() == rule_id)
             and (source_row_no is None or _int_or_none(rule.get("source_row_no")) == source_row_no)
         ]
+
+    def _rules_for_multiple_items(
+        self,
+        rules: list[dict[str, Any]],
+        *,
+        rule_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        by_id = {str(rule.get("rule_id") or "").strip(): rule for rule in rules}
+        missing = [rule_id for rule_id in rule_ids if rule_id not in by_id]
+        if missing:
+            raise ValueError(f"comment business rule ids not found: {', '.join(missing)}")
+        return [by_id[rule_id] for rule_id in rule_ids]
 
     def _rules_with_draft_override(
         self,
@@ -501,6 +577,20 @@ class ContentCommentBatchService:
         if not matched:
             raise ValueError("draft corpus target rule not found; pass draft_rule_id or draft_source_row_no matching the selected rule")
         return updated
+
+    @staticmethod
+    def _rules_with_prompt_slots_override(
+        rules: list[dict[str, Any]],
+        prompt_slots: dict[str, list[str]],
+    ) -> list[dict[str, Any]]:
+        return [{**rule, "prompt_slots": prompt_slots} for rule in rules]
+
+    @staticmethod
+    def _rules_with_post_context_override(
+        rules: list[dict[str, Any]],
+        post_context: str,
+    ) -> list[dict[str, Any]]:
+        return [{**rule, "scenario_post_context": post_context} for rule in rules]
 
     def _select_rules_for_batch(
         self,
@@ -531,6 +621,57 @@ class ContentCommentBatchService:
         if use_replacement:
             return self._select_rules_with_replacement(rules, limit), "random_with_replacement"
         return self._select_rules(rules, limit), "balanced_random"
+
+    def _select_rules_for_scenario(
+        self,
+        rules: list[dict[str, Any]],
+        scenario: dict[str, Any],
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], str]:
+        by_id = {str(rule.get("rule_id") or "").strip(): rule for rule in rules}
+        eligible_directions: list[dict[str, Any]] = []
+        for direction in scenario.get("directions") or []:
+            if not isinstance(direction, dict):
+                continue
+            direction_rules = [
+                by_id[rule_id]
+                for raw_rule_id in direction.get("rule_ids") or []
+                if (rule_id := str(raw_rule_id or "").strip()) in by_id
+            ]
+            if direction_rules:
+                eligible_directions.append({**direction, "_rules": direction_rules})
+        if not eligible_directions:
+            return [], "scenario_no_eligible_rules"
+
+        allocations = _weighted_comment_scenario_allocations(eligible_directions, limit)
+        rng = SystemRandom()
+        selected: list[dict[str, Any]] = []
+        uses_seed_expansion = False
+        for direction, count in zip(eligible_directions, allocations):
+            bucket = list(direction["_rules"])
+            rng.shuffle(bucket)
+            output_batch_size = _comment_scenario_output_batch_size(direction)
+            if output_batch_size <= 1:
+                for index in range(count):
+                    selected.append(_rule_with_comment_scenario(bucket[index % len(bucket)], scenario, direction))
+                continue
+            uses_seed_expansion = True
+            remaining = count
+            chunk_index = 0
+            while remaining > 0:
+                chunk_count = min(output_batch_size, remaining)
+                selected_rule = _rule_with_comment_scenario(
+                    bucket[chunk_index % len(bucket)],
+                    scenario,
+                    direction,
+                )
+                selected_rule["output_format_mode"] = "json_string_array"
+                selected_rule["expansion_count"] = chunk_count
+                selected.append(selected_rule)
+                remaining -= chunk_count
+                chunk_index += 1
+        rng.shuffle(selected)
+        return selected, "scenario_weighted_seed_expansion" if uses_seed_expansion else "scenario_weighted"
 
     def _select_rules_balanced_by_profile_keyword(
         self,
@@ -620,6 +761,17 @@ class ContentCommentBatchService:
         # 活动抽样明确要求“每条业务规则 N 条”时，整轮重复规则，避免带放回抽样漏掉某个业务规则。
         return [rule for _ in range(repeat_count) for rule in rules][:limit]
 
+    def _select_rules_even_repetition_with_remainder(
+        self,
+        rules: list[dict[str, Any]],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        if not rules:
+            return []
+        selected = [rules[index % len(rules)] for index in range(limit)]
+        SystemRandom().shuffle(selected)
+        return selected
+
     def _plan_from_rule(
         self,
         rule: dict[str, Any],
@@ -635,6 +787,10 @@ class ContentCommentBatchService:
             rule,
             item_no=item_no,
         )
+        generation_requirements = _merge_comment_generation_requirements(
+            _generation_requirements_from_asset(asset),
+            rule.get("scenario_generation_requirements"),
+        )
         plan = {
             "rule_type": "business_rule",
             "render_reference_examples": True,
@@ -642,7 +798,7 @@ class ContentCommentBatchService:
             "asset_key": asset.asset_key,
             "keyword_asset_key": keyword_asset_key,
             "keyword_selection": keyword_selection,
-            "generation_requirements": _generation_requirements_from_asset(asset),
+            "generation_requirements": generation_requirements,
             "batch_variation_review": _batch_variation_review_from_asset(asset),
             "quality_guard_profile_key": quality_guard_profile_key,
             "rule_asset_id": asset.id,
@@ -656,8 +812,18 @@ class ContentCommentBatchService:
             **example_meta,
             **keyword_selection_meta,
             "source_row_no": rule.get("source_row_no"),
+            "scenario_code": rule.get("scenario_code"),
+            "scenario_name": rule.get("scenario_name"),
+            "scenario_post_context": rule.get("scenario_post_context"),
+            "scenario_direction": rule.get("scenario_direction"),
+            "scenario_direction_name": rule.get("scenario_direction_name"),
+            "scenario_sentiment": rule.get("scenario_sentiment"),
+            "scenario_interaction_reply": bool(rule.get("scenario_interaction_reply")),
+            "scenario_guard_keyword": rule.get("scenario_guard_keyword"),
             "output_fields": ["comment"],
         }
+        if isinstance(rule.get("model_config"), dict):
+            plan["model_config"] = dict(rule["model_config"])
         output_config = _comment_generation_output_config(rule, asset)
         if output_config:
             plan["output_format"] = output_config
@@ -671,7 +837,14 @@ class ContentCommentBatchService:
     def _selected_prompt_examples(self, rule: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
         examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
         supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
-        pool = examples or supplements
+        examples = _filter_member_rule_prompt_examples(rule, examples)
+        supplements = _filter_member_rule_prompt_examples(rule, supplements)
+        scenario_examples = [
+            str(item).strip() for item in rule.get("scenario_examples") or [] if str(item).strip()
+        ]
+        # 场景只补充帖子背景，不覆盖本条业务规则的参考示例；否则会把细规则
+        # 拉回场景大类事实。只有底层规则完全没有示例时，才兜底使用场景示例。
+        pool = examples or supplements or scenario_examples
         selected_indices = _sample_indices(len(pool), COMMENT_RULE_EXAMPLE_SAMPLE_COUNT)
         # 重要逻辑：评论也只把少量抽样示例放进 prompt，保留真人语气颗粒，
         # 避免旧式全量示例池把模型拉回模板复刻。
@@ -680,7 +853,15 @@ class ContentCommentBatchService:
             "example_pool_count": len(examples),
             "supplement_pool_count": len(supplements),
             "example_sample_count": len(selected),
-            "selected_example_source": "examples" if examples else ("supplements" if supplements else "none"),
+            "selected_example_source": (
+                "examples"
+                if examples
+                else "supplements"
+                if supplements
+                else "scenario_examples"
+                if scenario_examples
+                else "none"
+            ),
             "selected_example_indices": selected_indices,
         }
 
@@ -1901,6 +2082,110 @@ def _generation_requirements_from_asset(asset: AssetRegistry | None) -> str | No
     return None
 
 
+def _comment_scenario_from_asset(
+    asset: AssetRegistry,
+    scenario_code: str | None,
+) -> dict[str, Any] | None:
+    code = str(scenario_code or "").strip()
+    if not code:
+        return None
+    scenarios = (asset.content_json or {}).get("comment_scenarios")
+    for scenario in scenarios or []:
+        if not isinstance(scenario, dict):
+            continue
+        if str(scenario.get("scenario_code") or "").strip() == code:
+            return scenario
+    available = [
+        str(scenario.get("scenario_code") or "").strip()
+        for scenario in scenarios or []
+        if isinstance(scenario, dict) and str(scenario.get("scenario_code") or "").strip()
+    ]
+    suffix = f"; available={','.join(available)}" if available else ""
+    raise ValueError(f"comment scenario not found: {code}{suffix}")
+
+
+def _comment_scenario_policy(scenario: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not scenario:
+        return None
+    return {
+        "sentiment_mix": scenario.get("sentiment_mix") or {},
+        "interaction_reply_ratio": scenario.get("interaction_reply_ratio") or 0,
+        "style_hint": str(scenario.get("style_hint") or "").strip() or None,
+    }
+
+
+def _weighted_comment_scenario_allocations(
+    directions: list[dict[str, Any]],
+    limit: int,
+) -> list[int]:
+    weights = [max(0.0, float(direction.get("weight") or 0)) for direction in directions]
+    total = sum(weights)
+    if total <= 0:
+        weights = [1.0] * len(directions)
+        total = float(len(directions))
+    raw = [limit * weight / total for weight in weights]
+    allocations = [int(value) for value in raw]
+    remaining = limit - sum(allocations)
+    order = sorted(range(len(raw)), key=lambda index: (raw[index] - allocations[index], -index), reverse=True)
+    for index in order[:remaining]:
+        allocations[index] += 1
+    return allocations
+
+
+def _comment_scenario_output_batch_size(direction: dict[str, Any]) -> int:
+    raw_value = direction.get("output_batch_size")
+    if raw_value in (None, ""):
+        return 1
+    return _comment_positive_int(raw_value, default=1, maximum=20)
+
+
+def _rule_with_comment_scenario(
+    rule: dict[str, Any],
+    scenario: dict[str, Any],
+    direction: dict[str, Any],
+) -> dict[str, Any]:
+    next_rule = dict(rule)
+    scenario_name = str(scenario.get("scenario_name") or "").strip()
+    direction_name = str(direction.get("direction_name") or "").strip()
+    style_hint = str(scenario.get("style_hint") or "").strip()
+    next_rule.update(
+        {
+            "scenario_code": str(scenario.get("scenario_code") or "").strip(),
+            "scenario_name": scenario_name,
+            "scenario_direction": str(direction.get("direction_code") or "").strip(),
+            "scenario_direction_name": direction_name,
+            "scenario_sentiment": str(direction.get("sentiment") or "positive").strip(),
+            "scenario_interaction_reply": bool(direction.get("interaction_reply")),
+            "scenario_guard_keyword": str(direction.get("guard_keyword") or "").strip() or None,
+            "scenario_examples": [
+                str(item).strip() for item in direction.get("examples") or [] if str(item).strip()
+            ],
+            "scenario_post_context": str(
+                direction.get("post_context")
+                or scenario.get("post_context")
+                or rule.get("scenario_post_context")
+                or ""
+            ).strip()
+            or None,
+            "scenario_generation_requirements": _merge_comment_generation_requirements(
+                style_hint,
+            ),
+        }
+    )
+    if isinstance(direction.get("model_config"), dict):
+        next_rule["model_config"] = dict(direction["model_config"])
+    return next_rule
+
+
+def _merge_comment_generation_requirements(*values: Any) -> str | None:
+    parts: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in parts:
+            parts.append(text)
+    return "\n".join(parts) or None
+
+
 def _batch_variation_review_from_asset(asset: AssetRegistry | None) -> dict[str, Any] | None:
     for source in _asset_json_sources(asset):
         value = source.get("batch_variation_review")
@@ -1974,11 +2259,81 @@ def _normalize_business_rule(value: Any) -> str | None:
     return normalized or None
 
 
+def _normalized_rule_ids(values: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    for value in values or []:
+        rule_id = str(value or "").strip()
+        if rule_id and rule_id not in normalized:
+            normalized.append(rule_id)
+    return normalized
+
+
+def _normalize_comment_prompt_slots_override(
+    value: dict[str, list[str]] | None,
+) -> dict[str, list[str]] | None:
+    if not value:
+        return None
+    normalized: dict[str, list[str]] = {}
+    for raw_name, raw_entries in value.items():
+        name = str(raw_name or "").strip()
+        entries = [str(entry or "").strip() for entry in raw_entries or [] if str(entry or "").strip()]
+        if name and entries:
+            normalized[name] = entries
+    if not normalized:
+        raise ValueError("comment_prompt_slots must contain at least one non-empty slot")
+    return normalized
+
+
+def _normalize_comment_post_context_override(value: str | None) -> str | None:
+    normalized = re.sub(r"\s+", " ", str(value or "")).strip()
+    return normalized or None
+
+
 def _business_rule_name(rule: dict[str, Any]) -> str | None:
     value = rule.get("business_rule")
     if value is None:
         value = rule.get("comment_" + "angle")
     return _normalize_business_rule(value)
+
+
+def _filter_member_rule_prompt_examples(rule: dict[str, Any], examples: list[str]) -> list[str]:
+    business_rule = str(_business_rule_name(rule) or "")
+    major, _, detail = business_rule.partition("-")
+    if major.strip() != "会员权益" or not detail.strip():
+        return examples
+
+    detail_markers = {
+        "集罐换礼": ("集罐", "空罐", "攒罐"),
+        "积分换礼": ("积分",),
+        "老客礼": ("老客", "老用户"),
+        "抽奖活动": ("抽奖",),
+        "活动礼品": ("礼品", "礼盒", "奖品"),
+        "权益升级": ("权益升级", "升级", "加码"),
+    }
+    required_markers = detail_markers.get(detail)
+    if not required_markers:
+        return [example for example in examples if not _member_example_has_unconfirmed_claim(example)]
+
+    other_markers = {
+        "集罐换礼": ("积分", "抽奖", "老客", "检测", "报告"),
+        "积分换礼": ("集罐", "空罐", "抽奖", "老客", "检测", "报告"),
+        "老客礼": ("集罐", "空罐", "积分", "抽奖", "检测", "报告", "礼盒"),
+        "抽奖活动": ("集罐", "空罐", "积分", "老客", "检测", "报告"),
+        "活动礼品": ("集罐", "空罐", "积分", "抽奖", "老客", "检测", "报告"),
+        "权益升级": ("集罐", "空罐", "积分", "抽奖", "老客", "检测", "报告"),
+    }.get(detail, ())
+    filtered = [
+        example
+        for example in examples
+        if any(marker in example for marker in required_markers)
+        and not any(marker in example for marker in other_markers)
+        and not _member_example_has_unconfirmed_claim(example)
+    ]
+    return filtered or [example for example in examples if not _member_example_has_unconfirmed_claim(example)]
+
+
+def _member_example_has_unconfirmed_claim(example: str) -> bool:
+    return any(marker in example for marker in ("符合条件", "领取", "领礼盒", "积分翻倍", "正装", "门槛"))
 
 
 def _int_or_none(value: Any) -> int | None:

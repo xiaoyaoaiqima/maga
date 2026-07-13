@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import re
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,10 @@ DEFAULT_RULE_BANK = Path(
     "outputs/a2_sentiment_comments_20260709_new_demo_clean/"
     "a2_sentiment_news_comment_rule_bank_8cats_20260709.csv"
 )
-REVIEW_SYSTEM_PROMPT = "你是A2舆情改善评论的业务审核员，只按给定规则和示例判断，不补充品牌事实。"
+REVIEW_SYSTEM_PROMPT = (
+    "你是A2舆情改善评论的业务可用性审核员。输入内容已经通过机器审核，"
+    "不要复核违禁词或其他机器硬规则；只按给定业务规则和示例判断，不补充品牌事实。"
+)
 
 
 def load_trace(path: Path) -> list[dict[str, str]]:
@@ -37,20 +41,79 @@ def extract_json_array(raw: str) -> list[dict[str, Any]]:
     value = re.sub(r"^```(?:json)?\s*", "", value, flags=re.I)
     value = re.sub(r"\s*```$", "", value).strip()
     try:
-        payload = json.loads(value)
+        payload = json.loads(value, strict=False)
     except json.JSONDecodeError:
         match = re.search(r"\[\s*\{.*\}\s*\]", value, flags=re.S)
         if not match:
             raise
-        payload = json.loads(match.group(0))
+        payload = json.loads(match.group(0), strict=False)
     if not isinstance(payload, list):
         raise ValueError("LLM review response is not a JSON array")
     return [item for item in payload if isinstance(item, dict)]
 
 
+def align_review_item_numbers(
+    reviews: list[dict[str, Any]], expected: list[int]
+) -> list[dict[str, Any]]:
+    actual = [int(item.get("item_no") or 0) for item in reviews]
+    if actual == expected:
+        return reviews
+    if actual == list(range(1, len(reviews) + 1)):
+        for item, item_no in zip(reviews, expected, strict=True):
+            item["item_no"] = item_no
+        return reviews
+    raise ValueError(f"review item order mismatch: {actual}")
+
+
 def review_prompt(rule: dict[str, str], rows: list[dict[str, str]]) -> str:
     comments = "\n".join(f"{row['item_no']}. {row['内容']}" for row in rows)
-    return f"""请审核下面20条小红书A2舆情改善评论。
+    if rule["category"] == "舆情缓和-个人经历与个体差异":
+        return f"""请审核下面{len(rows)}条已通过机器审核的小红书A2舆情改善评论。
+
+【本批分类】
+{rule['category']}
+
+【这批要表达的意思】
+{rule['focus']}
+
+【可参考的真实评论形态】
+{rule['examples']}
+
+【业务分档】
+- direct_pool：原文可以直接交付。主要意思落在当前子方向，像真实妈妈顺手接一句，不诊断、不承诺、不替品牌辩护；长度和信息密度接近参考示例。允许自然带半句相邻方向。
+- light_fix_usable：主体方向可用，但有一处局部问题，例如口气稍硬、替代原因写得略像结论、过于完整像客服，做小改即可。
+- hold_out：不建议使用。明显否定或压制对方，确定归因，给医疗建议，攻击竞品/评论者，强行阻止转奶，承诺产品效果，或主体像品牌辩护。
+
+【只审核以下业务维度】
+- 是否主要贴合当前子方向；问句、“可能/说不准”的陈述句、个人时间顺序都可以，不要机械要求固定句式。
+- 相邻子方向自然带半句可以保留；只有因此形成冗长完整解释链时才降档。
+- 是否避免诊断、明确确定因果、医疗建议和产品效果承诺。个人经历中的先后变化、正向生活感受、其他奶粉对比本身不是确定因果，不应仅因此降档。
+- 是否像真实评论，而不是品牌辩护、客服话术或完整科普。
+- 是否足够简短，一条只说一个重点；把个人经历、替代变量、个体差异混在一句，通常应判为light_fix_usable。
+- 是否出现“像妈妈、提醒一句、当前子方向”等生成指令泄漏；出现时不得判direct_pool。
+- 是否贴合本批子方向，但允许同一条自然带到相邻子方向。
+
+【审核边界】
+- 这些评论已经通过机器审核。不要复核违禁词、硬禁词、长度、重复或关键词命中，不要输出机器审核结论。
+- 不得仅凭“便便、胃口、辅食、天气、没遇到”等单个词语判错，必须结合整句语义判断。
+- 只审核原文，不脑补竞品背景，不要求每条提到 a2。
+
+【待审核评论】
+{comments}
+
+只输出JSON数组，必须正好{len(rows)}项并按item_no排序：
+[
+  {{
+    "item_no": 1,
+    "business_usability_tier": "direct_pool|light_fix_usable|hold_out",
+    "severity": "pass|minor|rewrite",
+    "issue_codes": ["off_rule|dismissive_tone|definitive_causality|medical_advice|competitor_attack|forced_no_switch|product_guarantee|brand_defense_tone|generic_brief_tone|ai_like"],
+    "reason": "一句具体理由",
+    "evidence": "原文中的短证据",
+    "rewrite_direction": "无需修改或一句修改方向"
+  }}
+]"""
+    return f"""请审核下面{len(rows)}条已通过机器审核的小红书A2舆情改善评论。
 
 【本批分类】
 {rule['category']}
@@ -64,25 +127,30 @@ def review_prompt(rule: dict[str, str], rows: list[dict[str, str]]) -> str:
 【业务分档】
 - direct_pool：原文可以直接交付。符合本批分类，像真实评论区表达，不依赖未提供的品牌事实，没有明显客服教程、运营总结腔或负面舆情回忆。
 - light_fix_usable：方向和主体可用，但有一个局部问题，做小改即可。例如略泛、稍专业、轻微像教程、一个未经支持的推测或口气偏硬。
-- hold_out：不建议使用。明显跑题、凭空新增具体产品事实/检测结论、带出负面供应回忆或禁词、像客服操作说明、广告/运营话术，或需要重写主体。
+- hold_out：不建议使用。核心意思明显跑题、凭空新增具体产品事实/检测结论、像客服操作说明、广告/运营话术，或需要重写主体。
+
+【只审核以下业务维度】
+- 分类贴合：评论表达是否属于本批分类和 focus，允许围绕同一主题做自然追问或信息延伸。
+- 事实支持：可以保留未知感和个人感受，但不能把规则、示例未提供的具体事实写成已确认结论。
+- 评论质感：是否像真实评论区表达，避免客服教程、后台总结、广告文案和明显 AI 腔。
+- 修改成本：原文能否直用、只需局部轻改，还是必须重写主体。
 
 【审核边界】
+- 这些评论已经通过机器审核。不要复核违禁词、硬禁词、长度、重复或分类关键词命中，不要输出机器审核结论。
+- 不得仅凭单个词语判错，必须结合整句语义以及本批规则、focus 和示例判断。
 - 必须以本批规则和示例为最高标准，不要用通用广告审美替代 demo。
-- `报告、检测、食品安全、业绩、市场认可、品质、品控、供应稳定、放心、安心、踏实、回复：`可以自然出现，不得仅因这些词判错。
-- 追问可以保留未知感；但不能把 prompt 未提供的具体事实当成已确认事实。
-- `没找到、找不到、微信、小程序、断货、缺货`按当前硬审核边界判 hold_out。
 - 只审核原文，不替模型脑补上下文。
 
 【待审核评论】
 {comments}
 
-只输出JSON数组，必须正好20项并按item_no排序：
+只输出JSON数组，必须正好{len(rows)}项并按item_no排序：
 [
   {{
     "item_no": 1,
     "business_usability_tier": "direct_pool|light_fix_usable|hold_out",
-    "severity": "pass|minor|rewrite|hard",
-    "issue_codes": ["off_rule|unsupported_fact|tutorial_tone|generic_brief_tone|hard_forbidden|negative_context|ai_like|format_mismatch"],
+    "severity": "pass|minor|rewrite",
+    "issue_codes": ["off_rule|unsupported_fact|tutorial_tone|generic_brief_tone|ai_like|format_mismatch"],
     "reason": "一句具体理由",
     "evidence": "原文中的短证据",
     "rewrite_direction": "无需修改或一句修改方向"
@@ -97,23 +165,56 @@ def run_review(
     model: str,
     maga_url: str,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if not rows:
+        return [], {"success": True, "provider_code": "not_run", "provider_model": "not_run"}
     prompt = review_prompt(rule, rows)
-    response = call_system_deepseek(
-        prompt,
-        model=model,
-        base_url=maga_url,
-        temperature=0.1,
-        max_tokens=6000,
-        system_prompt=REVIEW_SYSTEM_PROMPT,
-    )
-    reviews = extract_json_array(str(response.get("content") or ""))
-    if len(reviews) != len(rows):
-        raise ValueError(f"expected {len(rows)} reviews, got {len(reviews)}")
-    expected = list(range(1, len(rows) + 1))
-    actual = [int(item.get("item_no") or 0) for item in reviews]
-    if actual != expected:
-        raise ValueError(f"review item order mismatch: {actual}")
-    return reviews, response
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            response = call_system_deepseek(
+                prompt
+                + (
+                    "\n\n上一次输出不是合法JSON。字符串内容中的双引号必须转义；"
+                    "不要输出JSON之外的任何文字。"
+                    if attempt
+                    else ""
+                ),
+                model=model,
+                base_url=maga_url,
+                temperature=0.1,
+                max_tokens=6000,
+                system_prompt=REVIEW_SYSTEM_PROMPT,
+            )
+            reviews = extract_json_array(str(response.get("content") or ""))
+            if len(reviews) != len(rows):
+                raise ValueError(f"expected {len(rows)} reviews, got {len(reviews)}")
+            expected = [int(row["item_no"]) for row in rows]
+            return align_review_item_numbers(reviews, expected), response
+        except (TimeoutError, json.JSONDecodeError, ValueError) as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(2)
+                continue
+            raise
+    raise RuntimeError("LLM review failed") from last_error
+
+
+def machine_blocked_reviews(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    reviews: list[dict[str, Any]] = []
+    for row in rows:
+        reason = row["失败原因"] or "machine audit blocked"
+        reviews.append(
+            {
+                "item_no": int(row["item_no"]),
+                "business_usability_tier": "not_run",
+                "severity": "machine_blocked",
+                "issue_codes": ["machine_blocked", reason],
+                "reason": f"机器审核未通过，未进入LLM review：{reason}",
+                "evidence": row["内容"],
+                "rewrite_direction": "先修复机器审核原因，再进入LLM review",
+            }
+        )
+    return reviews
 
 
 def write_review_csv(path: Path, rows: list[dict[str, str]], reviews: list[dict[str, Any]]) -> None:
@@ -140,6 +241,21 @@ def write_review_csv(path: Path, rows: list[dict[str, str]], reviews: list[dict[
 
 def tier_counts(reviews: list[dict[str, Any]]) -> Counter[str]:
     return Counter(str(item.get("business_usability_tier") or "hold_out") for item in reviews)
+
+
+def effective_tier_counts(
+    rows: list[dict[str, str]],
+    reviews: list[dict[str, Any]],
+) -> Counter[str]:
+    review_by_no = {int(item["item_no"]): item for item in reviews}
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row["是否通过"] != "是":
+            counts["machine_blocked"] += 1
+            continue
+        review = review_by_no[int(row["item_no"])]
+        counts[str(review.get("business_usability_tier") or "not_run")] += 1
+    return counts
 
 
 def normalized_items(
@@ -200,11 +316,23 @@ def main() -> int:
         qwen_review_call = qwen_review_payload["reviewer"]
         deepseek_review_call = deepseek_review_payload["reviewer"]
     else:
+        qwen_passed_rows = [row for row in qwen_rows if row["是否通过"] == "是"]
+        qwen_blocked_rows = [row for row in qwen_rows if row["是否通过"] != "是"]
+        deepseek_passed_rows = [row for row in deepseek_rows if row["是否通过"] == "是"]
+        deepseek_blocked_rows = [row for row in deepseek_rows if row["是否通过"] != "是"]
         qwen_reviews, qwen_review_call = run_review(
-            rule=rule, rows=qwen_rows, model=args.review_model, maga_url=args.maga_url
+            rule=rule, rows=qwen_passed_rows, model=args.review_model, maga_url=args.maga_url
         )
         deepseek_reviews, deepseek_review_call = run_review(
-            rule=rule, rows=deepseek_rows, model=args.review_model, maga_url=args.maga_url
+            rule=rule, rows=deepseek_passed_rows, model=args.review_model, maga_url=args.maga_url
+        )
+        qwen_reviews = sorted(
+            [*qwen_reviews, *machine_blocked_reviews(qwen_blocked_rows)],
+            key=lambda item: int(item["item_no"]),
+        )
+        deepseek_reviews = sorted(
+            [*deepseek_reviews, *machine_blocked_reviews(deepseek_blocked_rows)],
+            key=lambda item: int(item["item_no"]),
         )
         qwen_review_path.write_text(
             json.dumps(
@@ -227,8 +355,8 @@ def main() -> int:
     write_review_csv(qwen_review_csv, qwen_rows, qwen_reviews)
     write_review_csv(deepseek_review_csv, deepseek_rows, deepseek_reviews)
 
-    qwen_counts = tier_counts(qwen_reviews)
-    deepseek_counts = tier_counts(deepseek_reviews)
+    qwen_counts = effective_tier_counts(qwen_rows, qwen_reviews)
+    deepseek_counts = effective_tier_counts(deepseek_rows, deepseek_reviews)
     qwen_raw = json.loads((args.output_dir / "qwen3_4b_ollama_raw.json").read_text(encoding="utf-8"))
     deepseek_raw = json.loads((args.output_dir / "deepseek_v4_flash_system_raw.json").read_text(encoding="utf-8"))
     batch_id = str(qwen_raw["config"]["batch_id"])
@@ -237,11 +365,12 @@ def main() -> int:
     preview_path = args.output_dir / "a2_qwen3_4b_vs_deepseek_v4_flash_preview.md"
     qwen_direct = qwen_counts["direct_pool"]
     deepseek_direct = deepseek_counts["direct_pool"]
-    conclusion = (
-        "LLM review 明显偏向 Qwen，但需结合机器无锚点结果检查 reviewer 是否过宽，不能只按 direct_pool 数量替换模型。"
-        if qwen_direct > deepseek_direct
-        else "本轮 LLM review 仍更支持 DeepSeek；Qwen 暂不直接替换。"
-    )
+    if qwen_direct > deepseek_direct:
+        conclusion = "按机器先过、再进入LLM review的门禁口径，Qwen 本轮有效 direct 高于 DeepSeek，但仍有机器拦截项需要回看。"
+    elif qwen_direct < deepseek_direct:
+        conclusion = "本轮 LLM review 仍更支持 DeepSeek；Qwen 暂不直接替换。"
+    else:
+        conclusion = "按机器先过、再进入LLM review的门禁口径，两组本轮有效 direct 持平，暂不能仅凭本批决定替换模型。"
     experiment = {
         "experiment_id": batch_id,
         "title": f"A2 Model A/B Review｜{rule['category']}",
@@ -269,8 +398,8 @@ def main() -> int:
         ],
         "group_conclusions": [
             "本实验为同一条规则的一次20条聚合生成，两组 item_no 只是展示顺序，不视为逐条随机种子配对。",
+            "机器审核是LLM review前置门禁；机器未过的item不进入有效LLM可用统计。",
             "LLM review 与机器审核必须分开展示；运营最终判断尚未执行。",
-            "若 reviewer 放行机器判定无分类锚点的内容，应视为 reviewer 校准问题。",
         ],
         "arms": [
             {

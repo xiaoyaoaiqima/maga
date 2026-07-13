@@ -9,7 +9,13 @@ from pathlib import Path
 from typing import Any
 
 
-TIER_ORDER = {"hold_out": 0, "light_fix_usable": 1, "not_run": 1.5, "direct_pool": 2}
+TIER_ORDER = {
+    "machine_blocked": -1,
+    "hold_out": 0,
+    "light_fix_usable": 1,
+    "not_run": 1.5,
+    "direct_pool": 2,
+}
 
 
 def _text(value: Any, default: str = "-") -> str:
@@ -32,6 +38,12 @@ def _machine_pass(item: dict[str, Any]) -> bool:
     return bool(review.get("pass"))
 
 
+def _review_tier(item: dict[str, Any]) -> str:
+    if not _item_failed(item) and not _machine_pass(item):
+        return "machine_blocked"
+    return _llm_tier(item)
+
+
 def _item_failed(item: dict[str, Any]) -> bool:
     return item.get("status") == "failed" or not str(item.get("content") or "").strip()
 
@@ -39,7 +51,9 @@ def _item_failed(item: dict[str, Any]) -> bool:
 def _marker(item: dict[str, Any]) -> tuple[str, str]:
     if _item_failed(item):
         return "⛔", "生成失败"
-    tier = _llm_tier(item)
+    tier = _review_tier(item)
+    if tier == "machine_blocked":
+        return "💣", "机器拦截"
     if tier == "hold_out":
         return "💣", "需修"
     if tier == "light_fix_usable":
@@ -55,9 +69,9 @@ def _item_ref(item: dict[str, Any]) -> str:
 
 def _arm_metrics(arm: dict[str, Any]) -> dict[str, Any]:
     items = _items(arm)
-    counts = {"direct_pool": 0, "light_fix_usable": 0, "hold_out": 0, "not_run": 0}
+    counts = {"machine_blocked": 0, "direct_pool": 0, "light_fix_usable": 0, "hold_out": 0, "not_run": 0}
     for item in items:
-        counts[_llm_tier(item)] += 1
+        counts[_review_tier(item)] += 1
     failed = sum(_item_failed(item) for item in items)
     machine_pass = sum(_machine_pass(item) for item in items)
     return {
@@ -70,7 +84,7 @@ def _arm_metrics(arm: dict[str, Any]) -> dict[str, Any]:
 
 
 def _join_refs(items: list[dict[str, Any]], tier: str) -> str:
-    refs = [_item_ref(item) for item in items if _llm_tier(item) == tier]
+    refs = [_item_ref(item) for item in items if _review_tier(item) == tier]
     return ", ".join(refs) if refs else "-"
 
 
@@ -108,8 +122,8 @@ def _controlled_lines(experiment: dict[str, Any]) -> list[str]:
 
 def _metrics_table(experiment: dict[str, Any]) -> list[str]:
     lines = [
-        "| 组别 | attempted | generated | failed | machine pass | LLM直接可用 | LLM小改可用 | LLM需修 | LLM未运行 |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| 组别 | attempted | generated | failed | machine pass | machine blocked | LLM直接可用 | LLM小改可用 | LLM需修 | LLM未运行 |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for arm in experiment["arms"]:
         metrics = _arm_metrics(arm)
@@ -122,6 +136,7 @@ def _metrics_table(experiment: dict[str, Any]) -> list[str]:
                     str(metrics["generated"]),
                     str(metrics["failed"]),
                     str(metrics["machine_pass"]),
+                    str(metrics["machine_blocked"]),
                     str(metrics["direct_pool"]),
                     str(metrics["light_fix_usable"]),
                     str(metrics["hold_out"]),
@@ -140,7 +155,18 @@ def _extra_metrics(experiment: dict[str, Any]) -> list[str]:
         extras = {
             key: value
             for key, value in metrics.items()
-            if key not in {"attempted", "generated", "failed", "machine_pass", "direct_pool", "light_fix_usable", "hold_out"}
+            if key
+            not in {
+                "attempted",
+                "generated",
+                "failed",
+                "machine_pass",
+                "machine_blocked",
+                "direct_pool",
+                "light_fix_usable",
+                "hold_out",
+                "not_run",
+            }
         }
         if extras:
             lines.append(f"- {_text(arm.get('label') or arm.get('arm_id'))}：" + "；".join(f"{key}={_format_value(value)}" for key, value in extras.items()))
@@ -154,10 +180,17 @@ def _review_lines(item: dict[str, Any]) -> list[str]:
     machine_text = "通过" if machine.get("pass") else "未通过"
     if machine.get("reason"):
         machine_text += f"：{machine['reason']}"
-    issue_codes = ", ".join(str(code) for code in llm.get("issue_codes") or []) or "无"
+    if not _item_failed(item) and not _machine_pass(item):
+        llm_tier = "not_run"
+        llm_reason = f"机器审核未通过，未进入LLM review：{_text(machine.get('reason'), 'machine audit blocked')}"
+        issue_codes = "machine_blocked"
+    else:
+        llm_tier = _llm_tier(item)
+        llm_reason = _text(llm.get("reason"), "not run")
+        issue_codes = ", ".join(str(code) for code in llm.get("issue_codes") or []) or "无"
     lines = [
         f"- 机器审核：{machine_text}",
-        f"- LLM review：{_llm_tier(item)}；{_text(llm.get('reason'), 'not run')}",
+        f"- LLM review：{llm_tier}；{llm_reason}",
         f"- LLM问题码：`{issue_codes}`",
         f"- 修改方向：{_text(llm.get('rewrite_direction'), '无需修改')}",
     ]
@@ -175,7 +208,7 @@ def _aggregate_sections(experiment: dict[str, Any]) -> list[str]:
         lines.extend([f"## {label} 明细", ""])
         items = sorted(
             _items(arm),
-            key=lambda item: (TIER_ORDER.get(_llm_tier(item), 0), _item_ref(item)),
+            key=lambda item: (TIER_ORDER.get(_review_tier(item), 0), _item_ref(item)),
         )
         for item in items:
             marker, status = _marker(item)
@@ -195,7 +228,9 @@ def _aggregate_sections(experiment: dict[str, Any]) -> list[str]:
 def _pair_status(items: list[dict[str, Any]]) -> tuple[str, str]:
     if any(_item_failed(item) for item in items):
         return "⛔", "存在生成失败"
-    worst = min(TIER_ORDER.get(_llm_tier(item), 0) for item in items)
+    worst = min(TIER_ORDER.get(_review_tier(item), 0) for item in items)
+    if worst == TIER_ORDER["machine_blocked"]:
+        return "💣", "至少一组机器拦截"
     if worst == TIER_ORDER["hold_out"]:
         return "💣", "至少一组需修"
     if worst == TIER_ORDER["light_fix_usable"]:
@@ -286,7 +321,7 @@ def render_experiment_preview(experiment: dict[str, Any]) -> str:
     for arm in experiment["arms"]:
         items = _items(arm)
         lines.append(
-            f"- {_text(arm.get('label') or arm.get('arm_id'))}：direct `{_join_refs(items, 'direct_pool')}`；watch `{_join_refs(items, 'light_fix_usable')}`；needs-fix `{_join_refs(items, 'hold_out')}`；LLM not-run `{_join_refs(items, 'not_run')}`"
+            f"- {_text(arm.get('label') or arm.get('arm_id'))}：machine-blocked `{_join_refs(items, 'machine_blocked')}`；direct `{_join_refs(items, 'direct_pool')}`；watch `{_join_refs(items, 'light_fix_usable')}`；needs-fix `{_join_refs(items, 'hold_out')}`；LLM not-run `{_join_refs(items, 'not_run')}`"
         )
     lines.append("")
     if experiment.get("comparison_mode") == "paired":

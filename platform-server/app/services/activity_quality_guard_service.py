@@ -611,7 +611,7 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
         profile_key=A2_SENTIMENT_COMMENT_PROFILE_KEY,
         label="A2舆情改善评论专项守卫",
         forbidden_terms=A2_SENTIMENT_COMMENT_FORBIDDEN_TERMS,
-        context_required_fields=("人设", "关键词", "扰动规则", "生文指令", "业务规则", "生文输出格式"),
+        context_required_fields=("关键词", "扰动规则", "生文指令", "业务规则", "生文输出格式"),
         context_keyword_allowlist=A2_SENTIMENT_COMMENT_KEYWORDS,
         keyword_markers={
             A2_STOCK_ONLY_KEYWORD: ("有货", "到货", "补货", "问货", "快喝完", "新到", "店里", "能买", "能拍", "买到", "来货", "发货", "上架"),
@@ -953,7 +953,21 @@ class ActivityQualityGuardService:
             return []
         repaired = body
         repairs: list[dict[str, Any]] = []
+        plan = _dict_value(getattr(item, "plan_json", None))
+        preserve_crm_report_terms = (
+            str(plan.get("scenario_code") or "").strip() == "crm_ec_regular"
+            and str(plan.get("scenario_direction") or "").strip() in {"third_party_report", "can_bottom_scan"}
+        )
         for source, replacement in profile.body_replacements.items():
+            if preserve_crm_report_terms and source in {
+                "罐底码",
+                "扫罐",
+                "三方检测报告",
+                "第三方检测报告",
+                "三方报告",
+                "第三方报告",
+            }:
+                continue
             if source and source in repaired:
                 repaired = repaired.replace(source, replacement)
                 repairs.append(
@@ -1097,6 +1111,11 @@ def _sync_guard_to_review_report(quality: dict[str, Any], payload: dict[str, Any
 def _derive_keyword(item: Any, plan: dict[str, Any], profile: QualityGuardProfile | None) -> str:
     if profile is None:
         return _keyword_name(_selected_keywords(plan, _dict_value(getattr(item, "quality_json", None))), names=("关键词",)) or ""
+    scenario_keyword = str(plan.get("scenario_guard_keyword") or "").strip()
+    if scenario_keyword and (
+        not profile.context_keyword_allowlist or scenario_keyword in profile.context_keyword_allowlist
+    ):
+        return scenario_keyword
     source = "\n".join(
         str(value or "")
         for value in (
@@ -1697,7 +1716,11 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
                 "risk_level": "high",
             }
         )
-    incomplete_reason = _a2_incomplete_comment_reason(body, keyword=keyword)
+    incomplete_reason = _a2_incomplete_comment_reason(
+        body,
+        keyword=keyword,
+        allow_short=_a2_is_complete_crm_short_comment(item, body),
+    )
     if incomplete_reason:
         issues.append(
             {
@@ -1799,14 +1822,19 @@ def _a2_feeding_anxiety_stock_hit(body: str) -> str | None:
     return match.group(0) if match else None
 
 
-def _a2_incomplete_comment_reason(body: str, *, keyword: str | None = None) -> str | None:
+def _a2_incomplete_comment_reason(
+    body: str,
+    *,
+    keyword: str | None = None,
+    allow_short: bool = False,
+) -> str | None:
     raw_text = str(body or "").strip()
     if raw_text.endswith(("，", ",", "、", "；", ";")):
         return "结尾标点像残句"
     text = raw_text.strip("，。！？,!?；;、 ")
     if not text:
         return "空正文"
-    if len(text) < 12 and not _a2_is_complete_supply_transfer_comment(text):
+    if len(text) < 12 and not allow_short and not _a2_is_complete_supply_transfer_comment(text):
         if keyword == "有货+转奶" and _a2_is_contextual_supply_transfer_short_reply(text):
             return None
         if _a2_has_report_detail_short_advantage(re.sub(r"\s+", "", text)):
@@ -1818,6 +1846,26 @@ def _a2_incomplete_comment_reason(body: str, *, keyword: str | None = None) -> s
                 continue
             return f"结尾残句：{suffix}"
     return None
+
+
+def _a2_is_complete_crm_short_comment(item: Any, body: str) -> bool:
+    plan = _dict_value(getattr(item, "plan_json", None))
+    if str(plan.get("scenario_code") or "").strip() != "crm_ec_regular":
+        return False
+    direction = str(plan.get("scenario_direction") or "").strip()
+    anchors_by_direction = {
+        "arrival": ("有货", "到货", "补货", "买到", "刚买", "货架", "线上", "线下", "山姆"),
+        "batch_check": ("批批检", "每批", "检测", "报告", "透明"),
+        "third_party_report": ("三方", "第三方", "检测机构", "批次", "来源", "报告"),
+        "can_bottom_scan": ("扫码", "扫了", "罐底", "二维码", "报告", "信息"),
+    }
+    anchors = anchors_by_direction.get(direction)
+    if not anchors:
+        return False
+    text = re.sub(r"\s+", "", str(body or "").strip("，。！？,!?；;、 "))
+    if len(text) < 5 or text in {"这个挺好", "挺好", "不错", "可以", "开心", "安心"}:
+        return False
+    return any(anchor in text for anchor in anchors)
 
 
 def _a2_vague_deictic_without_product_reason(body: str, *, keyword: str | None = None) -> str | None:

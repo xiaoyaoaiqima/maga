@@ -111,6 +111,21 @@ def test_royal_friso_structure_guard_catches_expanded_surface_patterns():
     }
 
 
+def test_royal_friso_structure_guard_allows_confirmed_non_forbidden_terms():
+    review = RoyalFrisoUGCStructureGuardService().review(
+        title="小脸肉嘟嘟",
+        body=(
+            "今天带娃回来，家里还是喝皇家美素佳儿。"
+            "他咕咚几口喝完，又跑去翻绘本，回头看像是又长大一截了。"
+        ),
+        plan={"asset_key": "royal_friso_ugc_post_rules_v1"},
+    )
+
+    assert review is not None
+    assert review.pass_ is True
+    assert review.issues == []
+
+
 def test_mouth_phrase_budget_hits_only_unassigned_terms():
     item = ContentBatchItem(
         item_no=1,
@@ -8560,7 +8575,7 @@ async def test_batch_execution_blocks_when_forbidden_terms_survive_rewrite():
 
 
 @pytest.mark.asyncio
-async def test_batch_execution_rewrites_royal_friso_structure_risks():
+async def test_batch_execution_blocks_royal_friso_structure_risks_without_rewrite():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(
@@ -8595,7 +8610,7 @@ async def test_batch_execution_rewrites_royal_friso_structure_risks():
 
         service = ContentBatchExecutionService(
             session,
-            invocation_client=RoyalFrisoStructureRewriteClient(),
+            invocation_client=RoyalFrisoStructureRiskClient(),
             callback_base_url="http://maga.test/api/v1/executor",
             session_factory=session_factory,
         )
@@ -8607,84 +8622,25 @@ async def test_batch_execution_rewrites_royal_friso_structure_risks():
         item = (await session.execute(select(ContentBatchItem))).scalar_one()
         stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
 
-    assert item.status == "generated"
-    assert item.quality_json["hard_pass"] is True
-    guard = item.quality_json["royal_friso_ugc_structure_guard"]
-    assert guard["pass"] is True
-    assert guard["rewrite_required"] is False
-    rewrite = item.quality_json["royal_friso_ugc_structure_rewrites"][0]
-    assert {issue["code"] for issue in rewrite["pre_review"]["issues"]} >= {
-        "child_self_handling_formula",
-        "milk_residual_or_drinking_claim",
-    }
-    assert "自己跑去拿奶瓶" not in item.body
-    assert "自己拿着奶瓶" not in item.body
-    assert "喝完" not in item.body
-    assert "皇家美素佳儿" in item.body
-    rewrite_stage = next(
-        stage
-        for stage in stage_calls
-        if stage.capability == "content.rewrite"
-        and (stage.input_snapshot or {}).get("rewrite_source") == "royal_friso_ugc_structure_guard"
-    )
-    assert "孩子自己接过/拿着/抱着/递回奶瓶或杯子" in "\n".join(
-        rewrite_stage.input_snapshot["rewrite_instructions"]
-    )
-
-
-@pytest.mark.asyncio
-async def test_batch_execution_blocks_royal_friso_structure_residue_after_rewrite():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            Base.metadata.create_all,
-            tables=_execution_tables(),
-        )
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    async with session_factory() as session:
-        session.add(
-            ExecutorRegistry(
-                executor_code="maga_direct_llm_executor",
-                executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
-                enabled=1,
-                config_json={},
-            )
-        )
-        job = ContentBatchJob(
-            batch_code="batch_royal_structure_residue",
-            asset_key="royal_friso_ugc_post_rules_v1",
-            product_topic="2026皇家美素佳儿UGC活动",
-            count=1,
-            status="planned",
-        )
-        session.add(job)
-        await session.flush()
-        plan = {**_plan(1), "asset_key": "royal_friso_ugc_post_rules_v1", "persona_style_rewrite_enabled": False}
-        session.add(ContentBatchItem(batch_id=job.id, item_no=1, status="planned", plan_json=plan))
-        await session.commit()
-
-        service = ContentBatchExecutionService(
-            session,
-            invocation_client=RoyalFrisoStructureStillBadRewriteClient(),
-            callback_base_url="http://maga.test/api/v1/executor",
-            session_factory=session_factory,
-        )
-        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
-        await session.commit()
-
-    assert result.generated_count == 1
-    async with session_factory() as session:
-        item = (await session.execute(select(ContentBatchItem))).scalar_one()
-
     assert item.status == "failed"
     assert item.quality_json["hard_pass"] is False
+    guard = item.quality_json["royal_friso_ugc_structure_guard"]
+    assert guard["pass"] is False
+    assert guard["rewrite_required"] is True
+    assert set(guard["reasons"]) >= {"child_self_handling_formula"}
+    assert "自己跑去拿奶瓶" in item.body
+    assert "自己拿着奶瓶" in item.body
+    assert "喝完" in item.body
+    assert "皇家美素佳儿" in item.body
     assert item.quality_json["postprocess_blocked"]["source"] == "royal_friso_ugc_structure_guard"
     assert "child_self_handling_formula" in item.quality_json["postprocess_blocked"]["reasons"]
     assert item.quality_json["review_report"]["blocking_failure"]["source"] == "royal_friso_ugc_structure_guard"
-    assert item.error_message.startswith("皇家UGC结构风险改写后仍命中：")
+    assert item.error_message.startswith("皇家UGC结构风险命中：")
+    assert not any(
+        stage.capability == "content.rewrite"
+        and (stage.input_snapshot or {}).get("rewrite_source") == "royal_friso_ugc_structure_guard"
+        for stage in stage_calls
+    )
 
 
 @pytest.mark.asyncio
@@ -8874,7 +8830,7 @@ async def test_multi_output_group_keeps_partial_article_when_model_returns_one()
     assert items[1].quality_json["multi_output"]["returned_count"] == 1
 
 
-class RoyalFrisoStructureRewriteClient(RuntimeFastDraftReviewClient):
+class RoyalFrisoStructureRiskClient(RuntimeFastDraftReviewClient):
     async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
         if envelope.get("capability") == "content.generate":
             output = {
@@ -8883,29 +8839,6 @@ class RoyalFrisoStructureRewriteClient(RuntimeFastDraftReviewClient):
                 "runtime_result": {"mode": "runtime_fast"},
             }
             return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
-        if envelope.get("capability") == "content.rewrite":
-            input_payload = envelope.get("input") or {}
-            if input_payload.get("rewrite_source") == "royal_friso_ugc_structure_guard":
-                output = {
-                    "title": "早上这一顿",
-                    "body": "小家伙醒了，我照例去冲奶。家里这罐还是皇家美素佳儿，这一顿喝着还顺。我转身去收拾小毯子。",
-                    "runtime_result": {"mode": "content_rewrite_runtime"},
-                }
-                return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
-        return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
-
-
-class RoyalFrisoStructureStillBadRewriteClient(RoyalFrisoStructureRewriteClient):
-    async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
-        if envelope.get("capability") == "content.rewrite":
-            input_payload = envelope.get("input") or {}
-            if input_payload.get("rewrite_source") == "royal_friso_ugc_structure_guard":
-                output = {
-                    "title": "早上这一顿",
-                    "body": "小家伙醒了，我照例去冲奶。家里这罐还是皇家美素佳儿，自己拿着奶瓶喝完就翻身玩去了。",
-                    "runtime_result": {"mode": "content_rewrite_runtime"},
-                }
-                return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
         return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
 
 

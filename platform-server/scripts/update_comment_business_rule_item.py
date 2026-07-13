@@ -64,6 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
     corpus.add_argument("--corpus-text", default=None, help="Inline corpus text")
     parser.add_argument("--new-business-rule", default=None, help="Optional replacement for item.business_rule")
     parser.add_argument(
+        "--variation-slots-json",
+        default=None,
+        help="Optional JSON array written to item.variation_slots.",
+    )
+    parser.add_argument(
         "--sync-examples-from-corpus",
         action="store_true",
         help="Extract '- ...' lines under '示例：' from the corpus block and write item.examples too.",
@@ -179,6 +184,7 @@ def _content_with_updated_corpus(
     old_corpus = str(item.get("corpus") or "")
     old_business_rule = str(_business_rule_name(item) or "")
     old_examples = list(item.get("examples") or []) if isinstance(item.get("examples"), list) else []
+    old_variation_slots = copy.deepcopy(item.get("variation_slots") or [])
     if new_corpus is not None:
         # 重要逻辑：business_rule 会单独渲染进生成 prompt，必要时要和语料标题一起改。
         if new_corpus:
@@ -188,6 +194,12 @@ def _content_with_updated_corpus(
         new_business_rule = getattr(args, "new_business_rule", None)
         if new_business_rule is not None:
             item["business_rule"] = new_business_rule.strip()
+        raw_variation_slots = getattr(args, "variation_slots_json", None)
+        if raw_variation_slots is not None:
+            variation_slots = json.loads(raw_variation_slots)
+            if not isinstance(variation_slots, list):
+                raise ValueError("--variation-slots-json must be a JSON array")
+            item["variation_slots"] = variation_slots
     summary = {
         "index": index,
         "rule_id": item.get("rule_id"),
@@ -198,8 +210,14 @@ def _content_with_updated_corpus(
         "new_corpus": item.get("corpus"),
         "old_example_count": len(old_examples),
         "new_example_count": len(item.get("examples") or []) if isinstance(item.get("examples"), list) else 0,
+        "old_variation_slots": old_variation_slots,
+        "new_variation_slots": item.get("variation_slots") or [],
         "changed": new_corpus is not None
-        and (old_corpus != str(item.get("corpus") or "") or old_business_rule != str(_business_rule_name(item) or "")),
+        and (
+            old_corpus != str(item.get("corpus") or "")
+            or old_business_rule != str(_business_rule_name(item) or "")
+            or old_variation_slots != (item.get("variation_slots") or [])
+        ),
     }
     return updated, summary
 

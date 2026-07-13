@@ -197,6 +197,39 @@ def test_content_generate_runtime_keeps_empty_comment_when_model_returns_empty(m
     assert runtime["model_attempts"] == 2
 
 
+def test_content_generate_batch_retry_keeps_json_array_contract(monkeypatch):
+    monkeypatch.delenv("MAGA_WORKER_RUNTIME_FAST_FAKE", raising=False)
+    prompts = []
+
+    def empty_model(*args, **kwargs):
+        prompts.append(kwargs["user"])
+        return ""
+
+    monkeypatch.setattr("maga_worker.llm_runtime.call_model", empty_model)
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/invoke",
+        json=_envelope(
+            "content.generate",
+            {
+                "content_type": "comment",
+                "output_fields": ["comment"],
+                "output_format_mode": "json_string_array",
+                "expansion_count": 20,
+                "model_config": {"model_code": "test-model"},
+                "rendered_prompt": "生成 20 条评论",
+            },
+        ),
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert len(prompts) == 2
+    assert "正好 20 条评论组成的 JSON 字符串数组" in prompts[1]
+    assert "评论只输出一条评论正文" not in prompts[1]
+
+
 def test_content_generate_runtime_uses_model_config_provider(monkeypatch):
     monkeypatch.delenv("MAGA_WORKER_RUNTIME_FAST_FAKE", raising=False)
     calls = []

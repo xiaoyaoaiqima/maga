@@ -219,14 +219,18 @@ class ContentBatchStartRequest(BaseSchema):
 
 class ContentCommentBatchStartRequest(BaseSchema):
     asset_key: str = Field(default="yuanyue_comment_activity", max_length=128)
+    scenario_code: str | None = Field(default=None, max_length=128)
     keyword_asset_key: str | None = Field(default=None, max_length=128)
     quality_guard_profile_key: str | None = Field(default=None, max_length=128)
     business_rule: str | None = Field(default=None, max_length=255)
     rule_id: str | None = Field(default=None, max_length=128)
+    rule_ids: list[str] = Field(default_factory=list, max_length=50)
     source_row_no: int | None = Field(default=None, ge=1)
     draft_corpus: str | None = None
     draft_rule_id: str | None = Field(default=None, max_length=128)
     draft_source_row_no: int | None = Field(default=None, ge=1)
+    comment_prompt_slots: dict[str, list[str]] | None = None
+    comment_post_context: str | None = Field(default=None, max_length=500)
     count: int | None = Field(default=None, ge=1, le=100)
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     created_by: str | None = Field(default=None, max_length=100)

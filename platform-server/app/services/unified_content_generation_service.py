@@ -123,7 +123,13 @@ class UnifiedContentGenerationService:
             )
             rendered_prompt = _normalize_comment_prompt_labels(rendered_prompt)
         else:
-            if _uses_rule_corpus_as_prompt(business_rule):
+            if _uses_royal_compact_prompt(business_rule):
+                rendered_prompt = _royal_compact_article_prompt(
+                    business_rule,
+                    selected_keywords=selected_keywords,
+                    output_format=str(variables.get("output_format_requirement") or ""),
+                )
+            elif _uses_rule_corpus_as_prompt(business_rule):
                 rendered_prompt = _rule_corpus_as_prompt_article_prompt(
                     variables,
                     selected_keywords=selected_keywords,
@@ -707,7 +713,7 @@ def _comment_prompt_text(
     major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
     context = _comment_context_line(rule, product_name)
     focus = _comment_focus_line(rule)
-    direction = _comment_rule_direction_line(rule)
+    rule_detail = str(rule.get("corpus") or "").strip() if _is_a2_sentiment_comment_rule(rule) else ""
     notes = _comment_prompt_notes(rule)
     examples = _comment_prompt_examples(rule)
     output_format = output_format or _comment_output_format_config(rule)
@@ -717,7 +723,9 @@ def _comment_prompt_text(
         generation_lines.append(configured)
     generation_lines.extend(_comment_generation_lines(output_format))
 
-    if major == "有货":
+    if _is_a2_sentiment_comment_rule(rule):
+        lines = [context]
+    elif major == "有货":
         lines = [context]
     else:
         lines = [
@@ -725,10 +733,10 @@ def _comment_prompt_text(
             "",
             context,
         ]
-    if focus:
+    if rule_detail:
+        lines.extend(["", "本条要写的事：", rule_detail])
+    elif focus:
         lines.extend(["", focus])
-    if direction:
-        lines.extend(["", direction])
     for slot in selected_prompt_slots or []:
         rendered_slot = _render_comment_prompt_slot(slot)
         if rendered_slot:
@@ -737,7 +745,10 @@ def _comment_prompt_text(
         lines.extend(["", "注意：", *[f"- {note}" for note in notes]])
     if examples:
         lines.extend(["", "以下参考示例仅供参考，不照抄、不固定句式：", *[f"- {item}" for item in examples]])
-    lines.extend(["", "【生成要求】", *generation_lines])
+    if _is_a2_sentiment_comment_rule(rule):
+        lines.extend(["", *generation_lines])
+    else:
+        lines.extend(["", "【生成要求】", *generation_lines])
     return "\n".join(line for line in lines if line is not None).strip()
 
 
@@ -921,6 +932,19 @@ def _comment_product_name(rule: dict[str, Any]) -> str:
 
 def _comment_context_line(rule: dict[str, Any], product_name: str) -> str:
     major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
+    if _is_a2_sentiment_comment_rule(rule):
+        scenario_post_context = str(rule.get("scenario_post_context") or "").strip()
+        if scenario_post_context:
+            return scenario_post_context
+        if major == "有货":
+            return f"你正在小红书母婴评论区，回复一篇聊{product_name}到货或能否买到的帖子。"
+        if major == "批批检":
+            return f"你正在小红书母婴评论区，回复一篇聊{product_name}检测报告或扫码信息的帖子。"
+        if major == "转奶":
+            return "你正在小红书母婴评论区，回复一篇讨论转奶或换奶选择的帖子。"
+        if major == "会员权益":
+            return f"你正在小红书母婴评论区，回复一篇聊{product_name}会员活动或权益的帖子。"
+        return f"你正在小红书母婴评论区，回复一篇聊{product_name}的帖子。"
     if major == "有货":
         return (
             f"你是一位妈妈，之前一直买{product_name}，但前段时间{product_name}没货了，一直没买到，"
@@ -932,7 +956,7 @@ def _comment_context_line(rule: dict[str, Any], product_name: str) -> str:
     if major == "转奶":
         return f"你看到有人在聊转奶或换奶，想结合自己对{product_name}的选择回一条自然评论。"
     if major == "会员权益":
-        return f"你看到有人在聊{product_name}会员权益、集罐或积分活动，想把自己看到的权益信息顺手说一下。"
+        return f"你看到有人在聊{product_name}会员权益活动，想把自己看到的信息顺手说一下。"
     return f"你看到有人在聊{product_name}，想结合自己的真实想法回一条自然评论。"
 
 
@@ -952,33 +976,21 @@ def _comment_focus_line(rule: dict[str, Any]) -> str:
     return f"可以围绕这个意思来写：{corpus}"
 
 
-def _comment_rule_direction_line(rule: dict[str, Any]) -> str:
-    if not _is_a2_sentiment_comment_rule(rule):
-        return ""
-    business_rule = str(rule.get("business_rule") or "").strip()
-    major, separator, detail = business_rule.partition("-")
-    if major.strip() == "有货" or not separator or not detail.strip():
-        return ""
-    direction = _generalize_a2_comment_competitor_terms(detail.strip())
-    direction = re.sub(r"(?:三份|三个)报告", "报告", direction)
-    direction = direction.replace("0.03", "蜡样检测").replace("60多项", "质检报告项目")
-    return f"本条方向：{direction}。"
-
-
 def _comment_prompt_notes(rule: dict[str, Any]) -> list[str]:
     major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
-    notes = [
-        "评论内容不用很丰富，简单表达含义和情绪即可。",
-    ]
+    is_a2_comment = _is_a2_sentiment_comment_rule(rule)
+    notes = [] if is_a2_comment else ["评论内容不用很丰富，简单表达含义和情绪即可。"]
     if major != "有货":
         notes.append("不要写成品牌公告、客服回复、科普说明或广告口播。")
-    if _is_a2_sentiment_comment_rule(rule):
+    if is_a2_comment:
         notes.append("不要说缺货、断粮等消极词。")
         notes.append("不要直接说其他奶粉品牌名，如需提到对比或转奶对象，用其他品牌、别的牌子、其他奶粉、之前的奶粉这类泛化说法。")
+        if major == "会员权益":
+            notes.append("具体活动事实只按“本条要写的事”中明确内容说；参考示例只学表达，不把礼品、门槛、领取或中奖结果扩成新事实。")
     if major == "有货":
         notes.append("字数在10到20字之间。")
     else:
-        notes.append("字数不要超过80字，具体长短参考示例。")
+        notes.append("字数不要超过80字。" if is_a2_comment else "字数不要超过80字，具体长短参考示例。")
     return notes
 
 
@@ -2139,12 +2151,23 @@ def _uses_rule_corpus_as_prompt(business_rule: dict[str, Any] | None) -> bool:
     return mode == "rule_corpus_as_prompt"
 
 
+def _uses_royal_compact_prompt(business_rule: dict[str, Any] | None) -> bool:
+    if not isinstance(business_rule, dict):
+        return False
+    mode = _normalize_prompt_mode(
+        business_rule.get("prompt_mode") or business_rule.get("generation_prompt_mode")
+    )
+    return mode == "royal_compact"
+
+
 def _normalize_prompt_mode(value: Any) -> str | None:
     normalized = str(value or "").strip().lower().replace("-", "_")
     aliases = {
         "rule_corpus_as_prompt": "rule_corpus_as_prompt",
         "minimal_rule_prompt": "rule_corpus_as_prompt",
         "rule_as_prompt": "rule_corpus_as_prompt",
+        "royal_compact": "royal_compact",
+        "royal_compact_prompt": "royal_compact",
     }
     return aliases.get(normalized, normalized or None)
 
@@ -2442,6 +2465,93 @@ def _rule_corpus_as_prompt_article_prompt(
         ]
     )
     return (base_prompt + "\n\n" + generation_block).strip()
+
+
+def _royal_compact_article_prompt(
+    business_rule: dict[str, Any],
+    *,
+    selected_keywords: list[dict[str, Any]],
+    output_format: str,
+) -> str:
+    task_instruction, generation_instruction, corpus = _split_royal_prompt_opening(
+        str(business_rule.get("corpus") or "")
+    )
+    speaking_style = ""
+    variation_slots = [
+        item
+        for item in business_rule.get("variation_slots") or []
+        if isinstance(item, dict) and str(item.get("value") or "").strip()
+    ]
+    diversity_line = "同批内容只在措辞和节奏上发散，不新增业务规则之外的场景或产品事实。"
+    for item in selected_keywords:
+        category_code = str(item.get("category_code") or "").strip()
+        lines = [str(line or "").strip() for line in item.get("corpus") or [] if str(line or "").strip()]
+        if category_code == "article_speaking_style" and lines and not speaking_style:
+            speaking_style = lines[0]
+
+    lines = [
+        task_instruction,
+    ]
+    if generation_instruction:
+        lines.extend(["", "生文指令：", generation_instruction])
+    lines.extend(["", "这篇要写的事：", corpus])
+    if variation_slots:
+        lines.extend(
+            [
+                "",
+                "本篇已抽中的变化条件：",
+                *[
+                    f"- {str(item.get('slot_name') or '变化条件').strip()}：{str(item.get('value') or '').strip()}"
+                    for item in variation_slots
+                ],
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "写法：",
+            "- 只围绕上面的一个生活入口写，不叠加表达语料里的其他场景、人设故事、补货动作或第二条主线。",
+            "- 皇家美素佳儿是生活现场里的当前口粮；产品名出现一次，业务规则指定的核心卖点要写出来，只展开一个选择理由和一个自家反馈，不补第二套好处。",
+            "- 标题从正文自然提炼，不超过20字；正文80-160字，可以有1-3个自然小段。",
+            "- 不写具体年龄和段数，不自行新增业务规则未指定的专业成分；不写季节疾病、医疗诊断、孩子自己操作奶具或喝完马上安静、睡着等即时结果。",
+            "- 情绪变化按业务规则自然写出来，可以从担心、犹豫写到松下来或庆幸；情绪必须由选择前后的具体事情推动，不单独喊安心、值得或选对了。",
+            (
+                "- 是否推荐、是否使用emoji、是否分段，按本篇生文指令执行；"
+                "除此之外不额外补购买判断、品牌总结或漂亮结尾。"
+                if generation_instruction
+                else "- 说清这件事就停，不额外补推荐、购买判断、品牌总结或漂亮结尾。"
+            ),
+        ]
+    )
+    if speaking_style:
+        lines.append(f"- 说话感觉：{speaking_style}")
+    lines.append(f"- 发散边界：{diversity_line}")
+
+    cleaned_output_format = str(output_format or "").strip()
+    if cleaned_output_format:
+        lines.extend(["", "输出格式：", cleaned_output_format])
+    return "\n".join(lines).strip()
+
+
+def _split_royal_prompt_opening(corpus: str) -> tuple[str, str, str]:
+    default_task = "任务：写一篇小红书妈妈UGC生活记录，正文自然提到一次皇家美素佳儿。"
+    lines = str(corpus or "").strip().splitlines()
+    if not lines:
+        return default_task, "", ""
+    if lines[0].strip() == "## 生文指令":
+        instruction_index = next(
+            (index for index in range(1, len(lines)) if lines[index].strip()),
+            None,
+        )
+        if instruction_index is not None:
+            return (
+                "任务：按本篇生文指令写一篇小红书妈妈UGC内容，正文自然提到皇家美素佳儿。",
+                lines[instruction_index].strip(),
+                "\n".join(lines[instruction_index + 1 :]).strip(),
+            )
+    if lines[0].strip().startswith("任务："):
+        return lines[0].strip(), "", "\n".join(lines[1:]).strip()
+    return default_task, "", str(corpus or "").strip()
 
 
 def _append_final_output_format(prompt: str, output_format: str) -> str:

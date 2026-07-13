@@ -44,7 +44,6 @@ from app.services.product_experience_llm_review_service import (
 from app.services.royal_friso_ugc_structure_guard_service import (
     RoyalFrisoUGCStructureGuardService,
     RoyalFrisoUGCStructureReview,
-    royal_friso_structure_rewrite_instructions,
 )
 from app.services.unified_content_generation_service import (
     CONTENT_GENERATE_CAPABILITY,
@@ -57,7 +56,6 @@ MAX_SIMILARITY_REWRITE_ROUNDS = 2
 MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS = 2
 MAX_PRODUCT_EXPERIENCE_LLM_REWRITE_ROUNDS = 1
 MAX_AI_FLAVOR_REWRITE_ROUNDS = 2
-MAX_ROYAL_FRISO_STRUCTURE_REWRITE_ROUNDS = 1
 POSTPROCESS_REWRITE_CONCURRENCY = 10
 POST_DELETE_CLEANUP_FLUENCY_REASON = "post_delete_cleanup_fluency_check"
 HISTORY_SIMILARITY_LOOKBACK_LIMIT = 50
@@ -404,7 +402,7 @@ class ContentBatchExecutionService:
             ("article_length_repair", self._repair_article_length_items),
             ("ai_flavor_rewrite", self._rewrite_ai_flavor_items),
             ("product_experience_llm_quality_rewrite", self._rewrite_product_experience_llm_quality_items),
-            ("royal_friso_structure_rewrite", self._rewrite_royal_friso_structure_items),
+            ("royal_friso_structure_review", self._review_royal_friso_structure_items),
             ("title_repair", self._repair_generated_titles),
         ]
         for step_name, step in postprocess_steps:
@@ -1332,7 +1330,7 @@ class ContentBatchExecutionService:
 
         return await self._run_generated_item_workers(batch_id, worker)
 
-    async def _rewrite_royal_friso_structure_items(self, batch_id: int, job: ContentBatchJob) -> int:
+    async def _review_royal_friso_structure_items(self, batch_id: int, job: ContentBatchJob) -> int:
         guard = RoyalFrisoUGCStructureGuardService()
 
         async def worker(item_id: int) -> int:
@@ -1344,122 +1342,12 @@ class ContentBatchExecutionService:
                 if review is None:
                     return 0
                 self._mark_royal_friso_structure_review(item, review)
-                rewrite_count = 0
-                orchestrator = ContentAgentOrchestrator(
-                    db,
-                    invocation_client=self.invocation_client,
-                    callback_base_url=self.callback_base_url,
-                )
-                while (
-                    review.rewrite_required
-                    and item.run_id
-                    and item.body
-                    and self._royal_friso_structure_rewrite_rounds(item) < MAX_ROYAL_FRISO_STRUCTURE_REWRITE_ROUNDS
-                ):
-                    rewritten = await self._rewrite_item_for_royal_friso_structure(
-                        item,
-                        review,
-                        orchestrator=orchestrator,
-                    )
-                    if not rewritten:
-                        break
-                    rewrite_count += 1
-                    review = guard.review(title=item.title, body=item.body, plan=item.plan_json)
-                    if review is None:
-                        break
-                    self._mark_royal_friso_structure_review(item, review)
-                if review and review.rewrite_required:
+                if review.rewrite_required:
                     self._mark_royal_friso_structure_blocking_failure(item, review)
                 await db.commit()
-                return rewrite_count
+                return 0
 
         return await self._run_generated_item_workers(batch_id, worker)
-
-    async def _rewrite_item_for_royal_friso_structure(
-        self,
-        item: ContentBatchItem,
-        review: RoyalFrisoUGCStructureReview,
-        *,
-        orchestrator: ContentAgentOrchestrator,
-    ) -> bool:
-        try:
-            input_payload = self._royal_friso_structure_rewrite_input(item, review)
-            result = await orchestrator.run_content_rewrite_stage(
-                run_id=item.run_id,
-                executor_code=self.executor_code,
-                input_payload=input_payload,
-            )
-            final = result.output or {}
-            final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
-            title = str(final.get("title") or final_content.get("title") or "").strip()
-            body = str(final.get("body") or final_content.get("body") or "").strip()
-            if not title or not body:
-                raise ValueError("content.rewrite returned empty article")
-            before = {"title": item.title or "", "body": item.body or ""}
-            after = {"title": title, "body": body}
-            if before["body"] and "皇家美素佳儿" in before["body"] and "皇家美素佳儿" not in after["body"]:
-                raise ValueError("rewrite_removed_required_royal_friso_product")
-            item.title = title
-            item.body = body
-            quality = dict(item.quality_json or {})
-            rewrites = list(quality.get("royal_friso_ugc_structure_rewrites") or [])
-            rewrites.append(
-                {
-                    "pre_review": review.model_dump(),
-                    "before": before,
-                    "after": after,
-                    "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
-                }
-            )
-            quality["royal_friso_ugc_structure_rewrites"] = rewrites
-            quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + len(result.stage_calls)
-            quality["run_status"] = result.run.status
-            item.quality_json = quality
-            forbidden_review = await self._repair_forbidden_terms_after_post_rewrite(
-                item,
-                orchestrator=orchestrator,
-            )
-            if forbidden_review and forbidden_review.get("final_hits"):
-                self._mark_forbidden_term_blocking_failure(
-                    item,
-                    list(forbidden_review.get("final_hits") or []),
-                )
-                await orchestrator.db.flush()
-                return False
-            item.error_message = None
-            await orchestrator.db.flush()
-            return True
-        except Exception as exc:  # noqa: BLE001 - keep generated content if rewrite fails
-            quality = dict(item.quality_json or {})
-            failures = list(quality.get("royal_friso_ugc_structure_failures") or [])
-            failures.append({"review": review.model_dump(), "error_message": str(exc)})
-            quality["royal_friso_ugc_structure_failures"] = failures
-            item.quality_json = quality
-            await orchestrator.db.flush()
-            return False
-
-    def _royal_friso_structure_rewrite_input(
-        self,
-        item: ContentBatchItem,
-        review: RoyalFrisoUGCStructureReview,
-    ) -> dict[str, Any]:
-        unified_generation = (item.plan_json or {}).get("unified_generation") or {}
-        return {
-            "previous_content": {"title": item.title or "", "body": item.body or ""},
-            "content_type": "article",
-            "output_fields": ["title", "body"],
-            "business_rule": rewrite_business_rule_context(item.plan_json),
-            "selected_keywords": unified_generation.get("selected_keywords") or [],
-            "model_config": dict((item.plan_json or {}).get("model_config") or {}),
-            "rewrite_source": "royal_friso_ugc_structure_guard",
-            "review_report": {
-                "rewrite_required": True,
-                "rewrite_reason": "皇家UGC结构风险需要改写",
-                "royal_friso_ugc_structure_guard": review.model_dump(),
-            },
-            "rewrite_round": self._royal_friso_structure_rewrite_rounds(item) + 1,
-            "rewrite_instructions": royal_friso_structure_rewrite_instructions(review),
-        }
 
     async def _plan_with_provider_config_for_llm_review(
         self,
@@ -2620,10 +2508,10 @@ class ContentBatchExecutionService:
             review_report.update(
                 {
                     "rewrite_required": True,
-                    "rewrite_reason": "皇家UGC结构风险需要改写",
+                    "rewrite_reason": "皇家UGC结构风险命中，需要人工复核",
                 }
             )
-        elif review_report.get("rewrite_reason") == "皇家UGC结构风险需要改写":
+        elif review_report.get("rewrite_reason") == "皇家UGC结构风险命中，需要人工复核":
             review_report["rewrite_required"] = False
             review_report.pop("rewrite_reason", None)
         quality["review_report"] = review_report
@@ -2642,7 +2530,7 @@ class ContentBatchExecutionService:
         review_report.update(
             {
                 "rewrite_required": True,
-                "rewrite_reason": "皇家UGC结构风险改写失败，需要人工复核",
+                "rewrite_reason": "皇家UGC结构风险命中，需要人工复核",
                 "blocking_failure": {
                     "source": "royal_friso_ugc_structure_guard",
                     "reasons": payload["reasons"],
@@ -2659,7 +2547,7 @@ class ContentBatchExecutionService:
         }
         item.quality_json = quality
         item.status = "failed"
-        item.error_message = "皇家UGC结构风险改写后仍命中：" + "、".join(payload["hits"] or payload["reasons"])
+        item.error_message = "皇家UGC结构风险命中：" + "、".join(payload["hits"] or payload["reasons"])
 
     def _mark_forbidden_term_blocking_failure(self, item: ContentBatchItem, hits: list[str]) -> None:
         quality = dict(item.quality_json or {})
@@ -3061,11 +2949,6 @@ class ContentBatchExecutionService:
     def _product_experience_phrase_rewrite_rounds(item: ContentBatchItem) -> int:
         quality = item.quality_json or {}
         return len(quality.get("product_experience_phrase_rewrites") or [])
-
-    @staticmethod
-    def _royal_friso_structure_rewrite_rounds(item: ContentBatchItem) -> int:
-        quality = item.quality_json or {}
-        return len(quality.get("royal_friso_ugc_structure_rewrites") or [])
 
     async def _history_items_for_similarity(self, db: AsyncSession, job: ContentBatchJob) -> list[ContentBatchItem]:
         result = await db.execute(

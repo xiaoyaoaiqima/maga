@@ -118,6 +118,18 @@ def test_comment_batch_start_request_allows_one_hundred_items():
         ContentCommentBatchStartRequest(count=101)
 
 
+def test_comment_batch_start_request_accepts_multi_rule_prompt_slot_probe():
+    request = ContentCommentBatchStartRequest(
+        rule_ids=["a2_direct_28", "a2_direct_29"],
+        comment_prompt_slots={"开头方式": ["不要用固定开头，直接接话。"]},
+        comment_post_context="你正在回复一篇消费者吐槽价格的帖子。",
+    )
+
+    assert request.rule_ids == ["a2_direct_28", "a2_direct_29"]
+    assert request.comment_prompt_slots == {"开头方式": ["不要用固定开头，直接接话。"]}
+    assert request.comment_post_context == "你正在回复一篇消费者吐槽价格的帖子。"
+
+
 @pytest.mark.asyncio
 async def test_ppl_profile_list_exposes_brand_generation_profiles(content_agent_workbench_client):
     client, _session_factory = content_agent_workbench_client
@@ -138,6 +150,7 @@ async def test_ppl_profile_list_exposes_brand_generation_profiles(content_agent_
     assert royal["content_type"] == "article"
     assert royal["asset_key"] == "royal_friso_ugc_post_rules_v1"
     assert royal["keyword_asset_key"] == "royal_friso_ugc_post_keywords_v1"
+    assert royal["prompt_mode"] == "royal_compact"
     wangyue_v3 = next(profile for profile in profiles if profile["profile_code"] == "wangyue_v3_0705_article")
     assert wangyue_v3["asset_key"] == "wangyue_v3_core_storyline_article_rules"
     assert wangyue_v3["keyword_asset_key"] == "wangyue_v2_minimal_generation_keywords"
@@ -275,6 +288,74 @@ def test_comment_focus_selection_repeats_rules_for_requested_count():
     assert limit == 5
     assert len(selected) == 5
     assert all(rule["business_rule"] == "整体适应" for rule in selected)
+
+
+def test_comment_multi_rule_probe_repeats_rules_evenly_with_remainder():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rules = [
+        {
+            "rule_id": f"a2_direct_{index}",
+            "business_rule": f"会员权益-方向{index}",
+            "corpus": f"方向{index}",
+        }
+        for index in range(28, 35)
+    ]
+
+    selected_rules = service._rules_for_multiple_items(
+        rules,
+        rule_ids=[rule["rule_id"] for rule in rules],
+    )
+    selected = service._select_rules_even_repetition_with_remainder(selected_rules, 30)
+
+    counts = Counter(rule["rule_id"] for rule in selected)
+    assert len(selected) == 30
+    assert set(counts) == {rule["rule_id"] for rule in rules}
+    assert max(counts.values()) - min(counts.values()) == 1
+    assert sorted(counts.values()) == [4, 4, 4, 4, 4, 5, 5]
+
+
+def test_comment_prompt_slots_override_does_not_mutate_source_rules():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rules = [{"rule_id": "a2_direct_28", "business_rule": "会员权益-集罐换礼", "corpus": "集罐"}]
+    slots = {"开头方式": ["直接从自己的动作切入。"]}
+
+    updated = service._rules_with_prompt_slots_override(rules, slots)
+
+    assert updated[0]["prompt_slots"] == slots
+    assert "prompt_slots" not in rules[0]
+
+
+def test_comment_post_context_override_does_not_mutate_source_rules():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rules = [{"rule_id": "a2_direct_01", "business_rule": "有货-直给到货情绪"}]
+
+    updated = service._rules_with_post_context_override(
+        rules,
+        "你正在回复一篇解读a2恢复供货消息的帖子。",
+    )
+
+    assert updated[0]["scenario_post_context"] == "你正在回复一篇解读a2恢复供货消息的帖子。"
+    assert "scenario_post_context" not in rules[0]
+
+
+def test_member_rule_prompt_examples_do_not_mix_other_member_benefits():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rule = {
+        "business_rule": "会员权益-集罐换礼",
+        "corpus": "集罐换奶粉",
+        "examples": [
+            "a2集罐能换奶粉，我先留空罐。",
+            "a2积分换礼还挺实在。",
+            "a2老客礼可以问问条件。",
+            "a2会员有抽奖活动。",
+            "a2集罐换正装奶粉。",
+        ],
+    }
+
+    selected, meta = service._selected_prompt_examples(rule)
+
+    assert selected == ["a2集罐能换奶粉，我先留空罐。"]
+    assert meta["selected_example_source"] == "examples"
 
 
 def test_a2_supply_transfer_short_reply_rule_overrides_half_item_keyword_selection():
@@ -990,7 +1071,7 @@ def test_a2_sentiment_post_guard_accepts_complete_shunshou_sentence():
 
 def test_a2_sentiment_post_guard_rejects_incomplete_data_sentence():
     item = ContentBatchItem(
-        body="今天记录选奶粉的一点观察。a2至初有三方检测数据和60多项数据列出来，虽然不会每条细",
+        body="今天记录选奶粉的一点观察。a2至初有三方检测数据和多项检测信息列出来，虽然不会每条细",
         plan_json={"quality_guard_profile_key": "a2_sentiment_post_202606"},
         quality_json={},
     )
@@ -1004,7 +1085,7 @@ def test_a2_sentiment_post_guard_rejects_incomplete_data_sentence():
 
 def test_a2_sentiment_post_guard_rejects_incomplete_for_me_tail():
     item = ContentBatchItem(
-        body="刚转a2至初，这次留意到能查到的数据挺全。除了三方检测数据，里面还有60多项具体数据列出来。对我们这种爱较真的妈妈来说",
+        body="刚转a2至初，这次留意到能查到的数据挺全。除了三方检测数据，里面还有多项检测信息列出来。对我们这种爱较真的妈妈来说",
         plan_json={"quality_guard_profile_key": "a2_sentiment_post_202606"},
         quality_json={},
     )
@@ -2535,7 +2616,7 @@ def test_a2_activity_guard_repairs_marker_and_entry_terms():
 def test_a2_activity_guard_repairs_60_plus_and_detection_project_wording():
     item = ContentBatchItem(
         body="有货了先补a2，60+检测项目能看到，报告出来就放心了",
-        plan_json=_a2_guard_plan("60多项质检数据：\n关键词方向是有货+批批检，像妈妈看到报告数据后放心补货。"),
+        plan_json=_a2_guard_plan("多项质检信息：\n关键词方向是有货+批批检，像妈妈看到报告信息后补货。"),
         quality_json={},
     )
 
@@ -2552,7 +2633,7 @@ def test_a2_activity_guard_repairs_60_plus_and_detection_project_wording():
 def test_a2_activity_guard_still_rejects_professional_indicator_wording():
     item = ContentBatchItem(
         body="有货了先补a2，专业指标能看到，报告出来就放心了",
-        plan_json=_a2_guard_plan("60多项质检数据：\n关键词方向是有货+批批检，像妈妈看到报告数据后放心补货。"),
+        plan_json=_a2_guard_plan("多项质检信息：\n关键词方向是有货+批批检，像妈妈看到报告信息后补货。"),
         quality_json={},
     )
 
@@ -2610,8 +2691,8 @@ def test_a2_activity_guard_repairs_bad_kan_shuo_wording():
 
 def test_a2_activity_guard_repairs_bad_a2_code_wording():
     item = ContentBatchItem(
-        body="这罐a2码一查报告60多项都在，比导购说得具体",
-        plan_json=_a2_guard_plan("60多项质检数据看得见：\n关键词方向是有货+批批检，像妈妈看到报告数据后放心补货。"),
+        body="这罐a2码一查报告信息都在，比导购说得具体",
+        plan_json=_a2_guard_plan("批次质检信息看得见：\n关键词方向是有货+批批检，像妈妈看到报告信息后补货。"),
         quality_json={},
     )
 
@@ -2620,7 +2701,7 @@ def test_a2_activity_guard_repairs_bad_a2_code_wording():
     assert payload is not None
     assert payload["pass"] is True
     assert "a2码" not in item.body
-    assert "这罐a2一查报告60多项都在" in item.body
+    assert "这罐a2一查报告信息都在" in item.body
     assert not payload["issues"]
     assert any(repair["source"] == "a2码" and repair["replacement"] == "a2" for repair in payload["repairs"])
 
@@ -2661,7 +2742,7 @@ def test_a2_activity_guard_repairs_bad_waxy_report_detail_wording():
 def test_a2_activity_guard_accepts_batch_quality_data_wording():
     item = ContentBatchItem(
         body="我们家转奶时也对比过雀巢，a2这罐能直接扫出这批的质检数据，感觉更透明些。",
-        plan_json=_a2_guard_plan("对雀巢打新西兰三方和60多项：\n关键词方向是批批检+转奶。"),
+        plan_json=_a2_guard_plan("对比后看新西兰三方检测信息：\n关键词方向是批批检+转奶。"),
         quality_json={},
     )
 
@@ -2903,26 +2984,10 @@ def test_a2_activity_guard_accepts_new_batch_detection_without_brand_when_contex
     assert not payload["issues"]
 
 
-def test_a2_activity_guard_accepts_third_party_data_angle_without_scan_wording():
-    item = ContentBatchItem(
-        body="准备转奶时也看了超启能恩，不过a2的60多项检测数据列得比较清楚，会多参考这个。",
-        plan_json=_a2_guard_plan("对雀巢打新西兰三方和60多项：\n关键词方向是批批检+转奶。"),
-        quality_json={},
-    )
-
-    payload = ActivityQualityGuardService().review_item(item)
-
-    assert payload is not None
-    assert payload["pass"] is True
-    assert not any(issue["code"] == "activity_body_missing_combo_marker" for issue in payload["issues"])
-    assert not any(issue["code"] == "activity_body_missing_a2_specific_advantage" for issue in payload["issues"])
-    assert not payload["issues"]
-
-
 def test_a2_activity_guard_accepts_new_zealand_third_party_data_without_report_wording():
     item = ContentBatchItem(
         body="功课做了几圈，a2的三方检测数据列得明明白白，选起来更踏实",
-        plan_json=_a2_guard_plan("对雀巢打新西兰三方和60多项：\n关键词方向是批批检+转奶。"),
+        plan_json=_a2_guard_plan("对比后看新西兰三方检测信息：\n关键词方向是批批检+转奶。"),
         quality_json={},
     )
 
@@ -2938,7 +3003,7 @@ def test_a2_activity_guard_accepts_new_zealand_third_party_data_without_report_w
 def test_a2_activity_guard_replaces_third_party_report_wording_with_data():
     item = ContentBatchItem(
         body="功课做了几圈，a2的三方检测报告列得明明白白，选起来更踏实",
-        plan_json=_a2_guard_plan("对雀巢打新西兰三方和60多项：\n关键词方向是批批检+转奶。"),
+        plan_json=_a2_guard_plan("对比后看新西兰三方检测信息：\n关键词方向是批批检+转奶。"),
         quality_json={},
     )
 
@@ -3311,7 +3376,7 @@ def test_a2_activity_guard_accepts_check_logistics_code_wording():
 def test_a2_activity_guard_accepts_can_bottom_scan_wording():
     item = ContentBatchItem(
         body="我们家宝宝刚转a2，罐底扫出来看到自己那罐的报告，比雀巢的更细一点。",
-        plan_json=_a2_guard_plan("对雀巢打新西兰三方和60多项：\n关键词方向是批批检+转奶。"),
+        plan_json=_a2_guard_plan("对比后看新西兰三方检测信息：\n关键词方向是批批检+转奶。"),
         quality_json={},
     )
 

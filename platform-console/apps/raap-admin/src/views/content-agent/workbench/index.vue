@@ -26,6 +26,7 @@ import {
 
 import {
   downloadContentBatchReportExcelApi,
+  getContentAgentTaskSnapshotApi,
   getContentBatchListApi,
   getContentBatchReportApi,
 } from '#/api/core/content-agent';
@@ -38,6 +39,7 @@ const router = useRouter();
 const batchLoading = ref(false);
 const reportLoading = ref(false);
 const exportLoading = ref(false);
+const promptLoadingTaskId = ref<null | number>(null);
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
 const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
 const batchTotal = ref(0);
@@ -288,7 +290,29 @@ const snapshotPre = (value: unknown, emptyText = '无') =>
   );
 
 const snapshotTextPre = (value?: null | string, emptyText = '无') =>
-  h('pre', { class: 'snapshot-pre snapshot-prompt' }, value || emptyText);
+  h(
+    'pre',
+    {
+      class: 'snapshot-pre snapshot-prompt',
+      style: {
+        background: '#fafafa',
+        borderRadius: '6px',
+        color: '#262626',
+        fontFamily:
+          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        fontSize: '12px',
+        lineHeight: '1.7',
+        margin: '0',
+        maxHeight: '70vh',
+        overflow: 'auto',
+        overflowWrap: 'anywhere',
+        padding: '12px',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      },
+    },
+    value || emptyText,
+  );
 
 const snapshotSection = (title: string, children: any[]) =>
   h('section', { class: 'snapshot-section' }, [
@@ -409,6 +433,47 @@ const showGenerationSnapshot = (item: ContentAgentApi.BatchReportItem) => {
         ...snapshotRewriteNodes(snapshot.rewrite_records),
       ]),
       snapshotSection('执行阶段', [snapshotPre(snapshot.execution_stages)]),
+    ]),
+    okText: '关闭',
+  });
+};
+
+const showGenerationPrompt = async (
+  item: ContentAgentApi.BatchReportItem,
+) => {
+  let prompt = item.generation_snapshot?.rendered_prompt || '';
+  if (!prompt && item.task_id) {
+    promptLoadingTaskId.value = item.task_id;
+    try {
+      const snapshot = await getContentAgentTaskSnapshotApi(
+        item.task_id,
+        item.run_id,
+      );
+      prompt = snapshot.input?.rendered_prompt || '';
+    } catch {
+      message.error('生成 Prompt 加载失败');
+      return;
+    } finally {
+      promptLoadingTaskId.value = null;
+    }
+  }
+  if (!prompt) {
+    message.warning('这条历史记录没有保存生成 Prompt');
+    return;
+  }
+  Modal.info({
+    title: `第 ${item.item_no} 条生成 Prompt`,
+    width: 980,
+    content: h('div', { class: 'snapshot-modal' }, [
+      h(
+        Button,
+        {
+          size: 'small',
+          onClick: () => copyText(prompt),
+        },
+        () => '复制 Prompt',
+      ),
+      snapshotTextPre(prompt),
     ]),
     okText: '关闭',
   });
@@ -678,6 +743,14 @@ watch(
                           @click="copyArticle(item)"
                         >
                           复制
+                        </Button>
+                        <Button
+                          v-if="item.task_id || item.generation_snapshot?.rendered_prompt"
+                          size="small"
+                          :loading="promptLoadingTaskId === item.task_id"
+                          @click="showGenerationPrompt(item)"
+                        >
+                          生成 Prompt
                         </Button>
                         <Button
                           v-if="item.trace_run_id || item.run_id"

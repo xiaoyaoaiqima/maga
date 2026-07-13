@@ -8,6 +8,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from scripts.generate_a2_direct_from_rule_bank import (  # noqa: E402
     audit,
     build_plan,
+    forbidden_reason,
     generalize_competitor_brand_terms,
     near_duplicate_reason,
     prompt_for,
@@ -75,13 +76,72 @@ def test_sentiment_news_prompt_omits_old_stock_negative_setup():
 def test_forbidden_terms_stay_in_post_generation_audit():
     reason = audit("有货-直给到货情绪", "终于不焦虑了，a2有货我先去看看", set())
 
-    assert reason == "forbidden"
+    assert reason == "forbidden:焦虑"
 
 
 def test_explicit_detection_values_stay_in_post_generation_audit():
-    assert audit("三方检测-直给", "0.03那个数字我记下来了", set()) == "forbidden"
-    assert audit("批批检-直给", "60+检测报告能看到", set()) == "forbidden"
-    assert audit("批批检-直给", "60多项检测报告能看到", set()) == "forbidden"
+    assert audit("三方检测-直给", "0.03那个数字我记下来了", set()) == "forbidden:0.03"
+    assert audit("批批检-直给", "60+检测报告能看到", set()) == "forbidden:60+"
+    assert audit("批批检-直给", "60多项检测报告能看到", set()) == "forbidden:60多项"
+
+
+def test_forbidden_reason_includes_audit_only_hits():
+    assert forbidden_reason("我扫了二维码但没找到入口") == "forbidden:没找到"
+
+
+def test_report_query_friction_is_allowed_in_sentiment_news_batch_comments():
+    text = "蹲一下，怎么查报告啊？我扫了二维码但没找到入口。"
+
+    assert audit("批批检-报告查询互动", text, set()) == "forbidden:没找到"
+    assert audit("批批检-报告查询互动", text, set(), audit_mode="sentiment_news") == ""
+
+
+def test_non_report_audit_only_terms_stay_blocked_in_sentiment_news():
+    text = "这次还是难买，等得我心焦。"
+
+    assert audit("批批检-报告查询互动", text, set(), audit_mode="sentiment_news") == "forbidden:难买,心焦"
+
+
+def test_supply_chain_source_query_is_allowed_in_sentiment_news_batch_comments():
+    text = "能查到供应链信息吗？想看看源头。"
+
+    assert audit("批批检-报告查询互动", text, set()) == "batch_no_anchor"
+    assert audit("批批检-报告查询互动", text, set(), audit_mode="sentiment_news") == ""
+
+
+def test_single_cause_deescalation_machine_audit_keeps_soft_life_observations():
+    category = "舆情缓和-个人经历与个体差异"
+
+    assert audit(category, "我们家喝了快一年暂时没遇到，不过每个宝宝情况确实不一样。", set()) == ""
+    assert audit(category, "我家有一阵便便也偏干，刚好那段时间辅食变化挺大，也说不准是哪一个。", set()) == ""
+    assert audit(category, "会不会也和最近天气、辅食节奏有关呀？我们家之前也碰到过类似情况。", set()) == ""
+
+
+def test_single_cause_deescalation_machine_audit_blocks_only_clear_dangerous_structures():
+    category = "舆情缓和-个人经历与个体差异"
+
+    assert audit(category, "肯定是辅食导致的，跟奶粉没关系。", set()).startswith("definitive_causality:")
+    assert audit(category, "你家就是个例，别被竞品带节奏。", set()).startswith("dismissive_or_attack:")
+    assert audit(category, "不用转奶，继续喝a2就行。", set()).startswith("forced_no_switch:")
+    assert audit(category, "喝a2不会出现这种情况。", set()).startswith("medical_or_guarantee:")
+
+
+def test_single_cause_deescalation_prompt_does_not_expose_competitor_background():
+    prompt = prompt_for(
+        "分享个人经历，提醒个体差异",
+        "我们家暂时没遇到，不过每个娃不一样",
+        10,
+        "single_cause_deescalation",
+    )
+
+    assert "大约三成可以自然提到 a2" in prompt
+    assert "不直接劝别转奶或继续喝" in prompt
+    assert "竞品利用" not in prompt
+    assert "断货事件" not in prompt
+    assert "这批只写这个子方向" in prompt
+    assert "说到意思就停" in prompt
+    assert "不补相邻方向或完整解释链" in prompt
+    assert "先安慰、再解释、最后总结" not in prompt
 
 
 def test_sentiment_news_audit_relaxes_batch_transparency_anchor():

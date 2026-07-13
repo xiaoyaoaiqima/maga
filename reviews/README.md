@@ -7,6 +7,7 @@
 - `yuanyue_product_content_review_rules.md`：源悦生文，记录产品使用体验、月龄/周期、功效表达、真人感和运营打回点。
 - `yuanyue_comment_review_rules.md`：源悦评论，记录业务规则、短评口吻、产品向评论、购买/活动/渠道表达和同质化问题。
 - `a2_plot_discussion_review_rules.md`：A2 剧情讨论评论，记录剧情事实、孩子视角、对讲机活动边界和专属剧情口径。
+- `a2_sentiment_comment_review_rules.md`：A2 舆情改善评论，记录 machine audit、LLM review 与运营判断的职责边界。
 
 ## 迭代方式
 

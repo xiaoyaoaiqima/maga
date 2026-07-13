@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -106,3 +107,31 @@ def test_extract_examples_from_corpus_stops_before_note():
     corpus = "标题：\n\n示例：\n- A\n- B\n\n注意：不要抽我\n- C"
 
     assert _extract_examples_from_corpus(corpus) == ["A", "B"]
+
+
+def test_update_comment_business_rule_item_can_set_variation_slots():
+    content = {
+        "items": [
+            {
+                "rule_id": "business_rule_002",
+                "business_rule": "渠道和场景轮换",
+                "source_row_no": 2,
+                "corpus": "旧语料",
+            }
+        ]
+    }
+    slots = [
+        {"slot_code": "info_source", "slot_name": "信息来源", "options": ["朋友", "导购"]}
+    ]
+    args = SimpleNamespace(
+        rule_id="business_rule_002",
+        source_row_no=None,
+        business_rule=None,
+        variation_slots_json=json.dumps(slots, ensure_ascii=False),
+    )
+
+    updated, summary = _content_with_updated_corpus(content, args, new_corpus="新语料")
+
+    assert updated["items"][0]["variation_slots"] == slots
+    assert summary["new_variation_slots"] == slots
+    assert summary["changed"] is True

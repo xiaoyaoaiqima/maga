@@ -1,0 +1,47 @@
+{
+  "news_kol_interpretation": {
+    "batch_check_positive": "deepseek",
+    "in_stock_positive": "deepseek",
+    "process_positive": "deepseek",
+    "continue_positive": "qwen",
+    "interaction_reply": "qwen",
+    "neutral_transparency": "deepseek",
+    "neutral_market": "qwen"
+  },
+  "consumer_complaint": {
+    "supply_recovery": "deepseek",
+    "member_benefits": "qwen",
+    "personal_observation": "deepseek",
+    "individual_difference": "deepseek",
+    "transfer_back": "deepseek"
+  },
+  "competitor_diversion_attack": {
+    "different_experience": "deepseek",
+    "individual_difference": "deepseek",
+    "cautious_transfer": "deepseek",
+    "report_comparison": "deepseek"
+  },
+  "crm_ec_regular": {
+    "arrival": "qwen",
+    "batch_check": "qwen",
+    "third_party_report": "qwen",
+    "can_bottom_scan": "qwen"
+  },
+  "model_configs": {
+    "qwen": {
+      "provider_code": "ollama_local",
+      "model_code": "qwen3-4b-instruct-2507",
+      "temperature": 0.8,
+      "timeout": 180,
+      "max_retries": 2
+    },
+    "deepseek": {
+      "provider_code": "deepseek",
+      "model_code": "deepseek-v4-flash",
+      "temperature": 0.8,
+      "timeout": 180,
+      "max_retries": 2
+    }
+  },
+  "output_batch_size": 20
+}

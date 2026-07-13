@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import copy
 import hashlib
 import io
 import json
@@ -59,6 +60,19 @@ async def import_comment_business_rule_set(
     if not items:
         raise ValueError("comment business rule set is empty")
 
+    previous_asset = (
+        await db.execute(
+            select(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type.in_(COMMENT_BUSINESS_RULE_ASSET_TYPES),
+                AssetRegistry.asset_key == normalized_asset_key,
+                AssetRegistry.status == "active",
+            )
+            .order_by(AssetRegistry.version_no.desc(), AssetRegistry.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
     example_count = sum(len(item.get("examples") or []) + len(item.get("supplements") or []) for item in items)
     warnings = _warnings_for_items(items)
     activity_name = _activity_name_for_import(normalized_asset_key, display_name)
@@ -70,6 +84,10 @@ async def import_comment_business_rule_set(
         "default_generation_count": DEFAULT_COMMENT_BATCH_LIMIT,
         "items": items,
     }
+    previous_content = previous_asset.content_json if previous_asset and isinstance(previous_asset.content_json, dict) else {}
+    for field in ("comment_scenarios", "default_comment_scenario_code"):
+        if field in previous_content:
+            content_json[field] = copy.deepcopy(previous_content[field])
     normalized_keyword_asset_key = _normalize_keyword_asset_key(keyword_asset_key)
     if normalized_keyword_asset_key:
         content_json["keyword_asset_key"] = normalized_keyword_asset_key
