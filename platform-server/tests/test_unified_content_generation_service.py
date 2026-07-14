@@ -15,6 +15,7 @@ from app.services.unified_content_generation_service import (
     _business_rule_text,
     _comment_prompt_text,
     _normalize_model_config,
+    _render_comment_prompt_slot,
     _royal_compact_article_prompt,
 )
 
@@ -1940,6 +1941,8 @@ async def test_unified_a2_member_comment_keeps_full_rule_detail_and_fact_boundar
     assert "具体长短参考示例" not in prompt
     assert "【生成要求】" not in prompt
     assert "不把礼品、门槛、领取或中奖结果扩成新事实" in prompt
+    assert "其他奶粉品牌名" not in prompt
+    assert "转奶对象" not in prompt
 
 
 def test_a2_stock_comment_uses_compact_context_without_shortage_backstory():
@@ -2613,6 +2616,15 @@ async def test_comment_prompt_slot_randomizes_corpus_inside_fixed_slot(unified_s
     assert second.input_snapshot["selected_prompt_slots"][0]["text"] == "像评论区接楼，短一点，顺手补一句。"
     assert "说话风格：适当加几个网络热词，不要过度。" in first.input_snapshot["rendered_prompt"]
     assert "说话风格：像评论区接楼，短一点，顺手补一句。" in second.input_snapshot["rendered_prompt"]
+
+
+def test_comment_activity_fact_slot_renders_without_redundant_label():
+    assert _render_comment_prompt_slot(
+        {
+            "slot_name": "本条活动事实",
+            "text": "集罐可换：扭扭车",
+        }
+    ) == "集罐可换：扭扭车"
 
 
 @pytest.mark.asyncio

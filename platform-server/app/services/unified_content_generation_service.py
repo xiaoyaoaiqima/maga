@@ -913,6 +913,8 @@ def _render_comment_prompt_slot(slot: dict[str, Any]) -> str:
     text = str(slot.get("text") or "").strip()
     if not slot_name or not text:
         return ""
+    if slot_name == "本条活动事实":
+        return text
     if text.startswith(f"{slot_name}：") or text.startswith(f"{slot_name}:"):
         return text
     return f"{slot_name}：{text}"
@@ -984,7 +986,8 @@ def _comment_prompt_notes(rule: dict[str, Any]) -> list[str]:
         notes.append("不要写成品牌公告、客服回复、科普说明或广告口播。")
     if is_a2_comment:
         notes.append("不要说缺货、断粮等消极词。")
-        notes.append("不要直接说其他奶粉品牌名，如需提到对比或转奶对象，用其他品牌、别的牌子、其他奶粉、之前的奶粉这类泛化说法。")
+        if major != "会员权益":
+            notes.append("不要直接说其他奶粉品牌名，如需提到对比或转奶对象，用其他品牌、别的牌子、其他奶粉、之前的奶粉这类泛化说法。")
         if major == "会员权益":
             notes.append("具体活动事实只按“本条要写的事”中明确内容说；参考示例只学表达，不把礼品、门槛、领取或中奖结果扩成新事实。")
     if major == "有货":

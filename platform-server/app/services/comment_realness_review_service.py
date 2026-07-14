@@ -381,10 +381,19 @@ def _rewrite_input_payload(
     replacements: dict[str, str],
     rewrite_round: int,
 ) -> dict[str, Any]:
+    plan = dict(item.plan_json or {})
+    is_member_benefit = (
+        str(plan.get("scenario_guard_keyword") or "").strip() == "会员权益"
+        or str(plan.get("business_rule") or "").split("-", 1)[0].strip() == "会员权益"
+    )
     instructions = [
         f"命中这些AI感或不口语表达：{'、'.join(hits)}",
         "这不是风控替换，要按评论区真人说法重写命中句，不要只做同义词替换",
-        "优先换成一个具体小事实、动作或观察，比如拉的时候没那么费劲、喝得挺痛快、愿意喝几口",
+        (
+            "只改命中的说法，保留原评论里的会员活动、集罐、抽奖和本条礼品；不要补转奶、其他品牌、宝宝状态或喝奶体验"
+            if is_member_benefit
+            else "优先换成一个具体小事实、动作或观察，比如拉的时候没那么费劲、喝得挺痛快、愿意喝几口"
+        ),
         "改写后不要再出现上述命中表达",
         "只输出一条评论正文，不要解释改写过程",
     ]
@@ -397,7 +406,7 @@ def _rewrite_input_payload(
         "previous_content": {"comment": item.body or ""},
         "content_type": "comment",
         "output_fields": ["comment"],
-        "business_rule": dict(item.plan_json or {}),
+        "business_rule": plan,
         "selected_keywords": _selected_keywords_from_item(item),
         "forbidden_hits": [],
         "forbidden_replacements": {},

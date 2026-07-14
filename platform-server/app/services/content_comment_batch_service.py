@@ -374,7 +374,11 @@ class ContentCommentBatchService:
         self.db.add(job)
         await self.db.flush()
 
+        rule_occurrences: dict[str, int] = {}
         for item_no, rule in enumerate(selected_rules, start=1):
+            occurrence_key = str(rule.get("rule_id") or rule.get("source_row_no") or "")
+            rule_occurrence_no = rule_occurrences.get(occurrence_key, 0)
+            rule_occurrences[occurrence_key] = rule_occurrence_no + 1
             self.db.add(
                 ContentBatchItem(
                     batch_id=job.id,
@@ -384,6 +388,7 @@ class ContentCommentBatchService:
                         rule,
                         asset=asset,
                         item_no=item_no,
+                        rule_occurrence_no=rule_occurrence_no,
                         keyword_asset_key=resolved_keyword_asset_key,
                         quality_guard_profile_key=resolved_quality_guard_profile_key,
                     ),
@@ -778,9 +783,11 @@ class ContentCommentBatchService:
         *,
         asset: AssetRegistry,
         item_no: int,
+        rule_occurrence_no: int = 0,
         keyword_asset_key: str = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
         quality_guard_profile_key: str | None = None,
     ) -> dict[str, Any]:
+        rule = _rule_with_rotated_prompt_slots(rule, rule_occurrence_no=rule_occurrence_no)
         selected_examples, example_meta = self._selected_prompt_examples(rule)
         keyword_selection, keyword_selection_meta = _keyword_selection_with_rule_overrides(
             _keyword_selection_from_asset(asset),
@@ -837,11 +844,20 @@ class ContentCommentBatchService:
     def _selected_prompt_examples(self, rule: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
         examples = [str(item).strip() for item in rule.get("examples") or [] if str(item).strip()]
         supplements = [str(item).strip() for item in rule.get("supplements") or [] if str(item).strip()]
-        examples = _filter_member_rule_prompt_examples(rule, examples)
-        supplements = _filter_member_rule_prompt_examples(rule, supplements)
         scenario_examples = [
             str(item).strip() for item in rule.get("scenario_examples") or [] if str(item).strip()
         ]
+        selected_gift = _selected_gift_prompt_slot_value(rule)
+        if selected_gift:
+            examples = _filter_selected_gift_prompt_examples(examples, selected_gift=selected_gift)
+            supplements = _filter_selected_gift_prompt_examples(supplements, selected_gift=selected_gift)
+            scenario_examples = _filter_selected_gift_prompt_examples(
+                scenario_examples,
+                selected_gift=selected_gift,
+            )
+        else:
+            examples = _filter_member_rule_prompt_examples(rule, examples)
+            supplements = _filter_member_rule_prompt_examples(rule, supplements)
         # 场景只补充帖子背景，不覆盖本条业务规则的参考示例；否则会把细规则
         # 拉回场景大类事实。只有底层规则完全没有示例时，才兜底使用场景示例。
         pool = examples or supplements or scenario_examples
@@ -2008,6 +2024,18 @@ def _keyword_selection_with_rule_overrides(
     item_no: int,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     normalized = _copy_keyword_selection(keyword_selection)
+    if _is_member_benefit_comment_rule(rule):
+        if normalized is None:
+            normalized = {}
+        normalized["comment_writing_instruction"] = ["natural_comment"]
+        normalized["comment_format_control"] = ["comment_short_clean"]
+        return normalized, {
+            "keyword_selection_override": {
+                "reason": "member_benefit_activity_only",
+                "comment_writing_instruction": ["natural_comment"],
+                "comment_format_control": ["comment_short_clean"],
+            }
+        }
     if not _should_force_thread_short_reply(rule, item_no=item_no):
         return normalized, {}
 
@@ -2025,6 +2053,13 @@ def _keyword_selection_with_rule_overrides(
             "comment_speaking_style": list(COMMENT_THREAD_SHORT_REPLY_STYLE_CODES),
         }
     }
+
+
+def _is_member_benefit_comment_rule(rule: dict[str, Any]) -> bool:
+    return (
+        str(rule.get("scenario_guard_keyword") or "").strip() == "会员权益"
+        or _business_rule_name(rule).split("-", 1)[0].strip() == "会员权益"
+    )
 
 
 def _copy_keyword_selection(keyword_selection: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -2167,9 +2202,10 @@ def _rule_with_comment_scenario(
                 or ""
             ).strip()
             or None,
-            "scenario_generation_requirements": _merge_comment_generation_requirements(
-                style_hint,
-            ),
+            "scenario_generation_requirements": str(
+                direction.get("generation_requirements") or style_hint
+            ).strip()
+            or None,
         }
     )
     if isinstance(direction.get("model_config"), dict):
@@ -2330,6 +2366,83 @@ def _filter_member_rule_prompt_examples(rule: dict[str, Any], examples: list[str
         and not _member_example_has_unconfirmed_claim(example)
     ]
     return filtered or [example for example in examples if not _member_example_has_unconfirmed_claim(example)]
+
+
+def _rule_with_rotated_prompt_slots(
+    rule: dict[str, Any],
+    *,
+    rule_occurrence_no: int,
+) -> dict[str, Any]:
+    if str(rule.get("prompt_slot_selection_mode") or "").strip() != "round_robin":
+        return rule
+    raw_slots = rule.get("prompt_slots")
+    if not isinstance(raw_slots, dict):
+        return rule
+    selected_slots: dict[str, list[str]] = {}
+    selected_meta: dict[str, dict[str, Any]] = {}
+    for raw_name, raw_entries in raw_slots.items():
+        slot_name = str(raw_name or "").strip()
+        entries = [str(item).strip() for item in raw_entries or [] if str(item).strip()]
+        if not slot_name or not entries:
+            continue
+        selected_index = rule_occurrence_no % len(entries)
+        selected_slots[slot_name] = [entries[selected_index]]
+        selected_meta[slot_name] = {
+            "selected_index": selected_index,
+            "candidate_count": len(entries),
+            "text": entries[selected_index],
+        }
+    if not selected_slots:
+        return rule
+    next_rule = dict(rule)
+    next_rule["prompt_slots"] = selected_slots
+    next_rule["preselected_prompt_slots"] = selected_meta
+    return next_rule
+
+
+def _selected_gift_prompt_slot_value(rule: dict[str, Any]) -> str | None:
+    raw_slots = rule.get("prompt_slots")
+    if not isinstance(raw_slots, dict):
+        return None
+    for raw_name, raw_entries in raw_slots.items():
+        slot_name = str(raw_name or "").strip()
+        if (
+            "礼品" not in slot_name
+            and "奖品" not in slot_name
+            and slot_name not in {"集罐可换", "本条活动事实"}
+        ):
+            continue
+        entries = [str(item).strip() for item in raw_entries or [] if str(item).strip()]
+        if len(entries) != 1:
+            continue
+        return entries[0].rsplit("：", 1)[-1].strip() or None
+    return None
+
+
+def _filter_selected_gift_prompt_examples(
+    examples: list[str],
+    *,
+    selected_gift: str,
+) -> list[str]:
+    aliases = {
+        "a2&小马宝莉黄金手串": ("小马宝莉黄金手串", "黄金手串"),
+        "a2营养全家礼": ("a2营养全家礼", "营养全家礼"),
+        "宝宝夏凉被": ("宝宝夏凉被", "夏凉被"),
+    }.get(selected_gift, (selected_gift,))
+    gift_markers = (
+        "扭扭车",
+        "自行车",
+        "婴儿推车",
+        "新西兰溯源",
+        "黄金手串",
+        "夏凉被",
+        "营养全家礼",
+        "积分",
+    )
+    matched = [example for example in examples if any(alias in example for alias in aliases)]
+    if matched:
+        return matched
+    return [example for example in examples if not any(marker in example for marker in gift_markers)]
 
 
 def _member_example_has_unconfirmed_claim(example: str) -> bool:

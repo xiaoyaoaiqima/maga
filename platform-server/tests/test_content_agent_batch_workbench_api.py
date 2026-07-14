@@ -55,6 +55,7 @@ from app.services.comment_realness_review_service import (
     CommentRealnessReviewService,
     STATIC_COMMENT_REALNESS_REPLACEMENTS,
     _remove_or_replace_realness_terms,
+    _rewrite_input_payload,
     find_comment_realness_hits,
 )
 
@@ -4057,6 +4058,28 @@ def test_comment_realness_sanitize_keeps_poop_wording_natural():
     assert "软一点软的" not in text
     assert "黄黄软软" in text
     assert "金黄色，软软的" in text
+
+
+def test_member_benefit_realness_rewrite_preserves_activity_fact_boundary():
+    item = ContentBatchItem(
+        body="a2抽奖有宝宝夏凉被，这个挺顺手",
+        plan_json={
+            "business_rule": "会员权益-抽奖活动",
+            "scenario_guard_keyword": "会员权益",
+        },
+    )
+
+    payload = _rewrite_input_payload(
+        item,
+        hits=["挺顺"],
+        replacements={"挺顺": "没那么费劲"},
+        rewrite_round=1,
+    )
+
+    instructions = "\n".join(payload["rewrite_instructions"])
+    assert "保留原评论里的会员活动、集罐、抽奖和本条礼品" in instructions
+    assert "不要补转奶、其他品牌、宝宝状态或喝奶体验" in instructions
+    assert "拉的时候没那么费劲" not in instructions
 
 
 @pytest.mark.asyncio

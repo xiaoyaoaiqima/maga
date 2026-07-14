@@ -12,6 +12,7 @@ from app.services.content_comment_batch_service import (
     ContentCommentBatchService,
     _comment_plan_output_count,
     _comment_scenario_from_asset,
+    _keyword_selection_with_rule_overrides,
     _rule_with_comment_scenario,
     _weighted_comment_scenario_allocations,
 )
@@ -230,6 +231,79 @@ def test_request_post_context_override_survives_scenario_merge():
     assert merged["scenario_post_context"] == rule["scenario_post_context"]
     assert merged["scenario_generation_requirements"] == "先接住博主正在吐槽的点。"
     assert "当前是" not in merged["scenario_generation_requirements"]
+
+
+def test_direction_generation_requirements_override_scenario_style_hint():
+    merged = _rule_with_comment_scenario(
+        {"asset_key": "a2_sentiment_comment_activity", "business_rule": "会员权益-抽奖活动"},
+        {
+            "scenario_code": "consumer_complaint",
+            "scenario_name": "素人消费者吐槽类",
+            "style_hint": "分享一条自己的当前经历。",
+        },
+        {
+            "direction_code": "member_benefits",
+            "generation_requirements": "只说自己看到或了解到的活动信息，不写已经中奖或领取。",
+        },
+    )
+
+    assert merged["scenario_generation_requirements"] == (
+        "只说自己看到或了解到的活动信息，不写已经中奖或领取。"
+    )
+
+
+def test_round_robin_gift_slot_is_selected_before_example_sampling():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rule = {
+        "rule_id": "a2_direct_28",
+        "business_rule": "会员权益-集罐换礼",
+        "corpus": "像在聊集罐换礼。",
+        "examples": [
+            "a2集罐能换奶粉",
+            "a2集罐礼里有自行车",
+            "a2集罐换礼可以问问规则",
+        ],
+        "prompt_slot_selection_mode": "round_robin",
+        "prompt_slots": {"集罐可换": ["奶粉", "自行车"]},
+    }
+    asset = SimpleNamespace(
+        asset_key="a2_sentiment_comment_activity",
+        id=1,
+        version_no=45,
+        content_json={},
+        metadata_json={},
+    )
+
+    first = service._plan_from_rule(rule, asset=asset, item_no=1, rule_occurrence_no=0)
+    second = service._plan_from_rule(rule, asset=asset, item_no=2, rule_occurrence_no=1)
+
+    assert first["prompt_slots"] == {"集罐可换": ["奶粉"]}
+    assert second["prompt_slots"] == {"集罐可换": ["自行车"]}
+    assert first["examples"] == ["a2集罐能换奶粉"]
+    assert second["examples"] == ["a2集罐礼里有自行车"]
+
+
+def test_member_benefit_rule_uses_activity_only_keyword_selection():
+    base = {
+        "comment_writing_instruction": ["natural_comment", "light_comment_experience"],
+        "comment_format_control": ["comment_two_sentence"],
+    }
+
+    selected, meta = _keyword_selection_with_rule_overrides(
+        base,
+        {
+            "business_rule": "会员权益-抽奖活动",
+            "scenario_guard_keyword": "会员权益",
+        },
+        item_no=1,
+    )
+
+    assert selected == {
+        "comment_writing_instruction": ["natural_comment"],
+        "comment_format_control": ["comment_short_clean"],
+    }
+    assert meta["keyword_selection_override"]["reason"] == "member_benefit_activity_only"
+    assert base["comment_writing_instruction"] == ["natural_comment", "light_comment_experience"]
 
 
 def test_scenario_selection_batches_target_outputs_without_multiplying_requested_count():
