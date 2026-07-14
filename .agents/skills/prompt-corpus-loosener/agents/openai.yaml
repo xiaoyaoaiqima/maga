@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prompt Corpus Loosener"
+  short_description: "Loosen prompt corpus rules while preserving real examples."
+  default_prompt: "Analyze and revise prompt corpus CSV entries to reduce homogeneous, over-constrained generation while preserving real example tone."

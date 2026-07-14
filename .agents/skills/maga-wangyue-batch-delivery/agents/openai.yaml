@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAGA 旺玥批量交付"
+  short_description: "固定旺玥/MAGA批量生成后的预览报告和随机完整提示词交付格式。"
+  default_prompt: "按旺玥批量生成交付格式跑一批内容，并输出生成预览版 Markdown 与随机一篇完整生成提示词。"
