@@ -203,7 +203,6 @@ COMMENT_MICRO_BATCH_CHECK_DETAIL_GROUPS = (
 )
 LOW_INFORMATION_COMMENT_REWRITE_INSTRUCTIONS = [
     "上一轮评论只有空泛开头，信息量太低",
-    "只输出一条35字以内的评论正文",
     "保留当前业务规则，从业务规则或参考示例里借一个具体观察点",
     "不要只输出“我们家”“我家”“同款”“加一”这类空短句",
 ]
@@ -789,9 +788,14 @@ class ContentCommentBatchService:
     ) -> dict[str, Any]:
         rule = _rule_with_rotated_prompt_slots(rule, rule_occurrence_no=rule_occurrence_no)
         selected_examples, example_meta = self._selected_prompt_examples(rule)
+        keyword_rule = {
+            **rule,
+            "asset_key": asset.asset_key,
+            "quality_guard_profile_key": quality_guard_profile_key,
+        }
         keyword_selection, keyword_selection_meta = _keyword_selection_with_rule_overrides(
             _keyword_selection_from_asset(asset),
-            rule,
+            keyword_rule,
             item_no=item_no,
         )
         generation_requirements = _merge_comment_generation_requirements(
@@ -1312,7 +1316,10 @@ class ContentCommentBatchService:
             "selected_keywords": unified_generation.get("selected_keywords") or [],
             "forbidden_hits": [],
             "forbidden_replacements": {},
-            "rewrite_instructions": LOW_INFORMATION_COMMENT_REWRITE_INSTRUCTIONS,
+            "rewrite_instructions": [
+                f"只输出一条{self._comment_max_chars(item)}字以内的评论正文",
+                *LOW_INFORMATION_COMMENT_REWRITE_INSTRUCTIONS,
+            ],
             "model_config": model_config or {"temperature": 0.72, "max_tokens": 512},
         }
 
@@ -1490,7 +1497,7 @@ class ContentCommentBatchService:
             },
             "rewrite_round": 1,
             "rewrite_instructions": [
-                "只输出一条35字以内的评论正文",
+                f"只输出一条{self._comment_max_chars(item)}字以内的评论正文",
                 "避开已交付评论的完整句子，不要只改标点或前后空格",
                 "保留当前业务规则和合规边界，不扩大功效表达",
             ],
@@ -1652,7 +1659,7 @@ class ContentCommentBatchService:
             },
             "rewrite_round": self._similarity_rewrite_rounds(item) + 1,
             "rewrite_instructions": [
-                "只输出一条35字以内的评论正文",
+                f"只输出一条{self._comment_max_chars(item)}字以内的评论正文",
                 "避开相似评论的开头、核心短语和句式",
                 "换一个生活细节或提问入口，不要只做同义词替换",
                 "保留当前业务规则和合规边界，不扩大功效表达",
@@ -2024,20 +2031,22 @@ def _keyword_selection_with_rule_overrides(
     item_no: int,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     normalized = _copy_keyword_selection(keyword_selection)
-    if _is_member_benefit_comment_rule(rule):
+    route_family = _a2_comment_route_family(rule)
+    route_override = _a2_route_keyword_selection(route_family)
+    route_meta: dict[str, Any] = {}
+    if route_override:
         if normalized is None:
             normalized = {}
-        normalized["comment_writing_instruction"] = ["natural_comment"]
-        normalized["comment_format_control"] = ["comment_short_clean"]
-        return normalized, {
+        normalized.update(route_override)
+        normalized.pop("comment_format_control", None)
+        route_meta = {
             "keyword_selection_override": {
-                "reason": "member_benefit_activity_only",
-                "comment_writing_instruction": ["natural_comment"],
-                "comment_format_control": ["comment_short_clean"],
+                "reason": f"a2_{route_family}_route_only",
+                **route_override,
             }
         }
     if not _should_force_thread_short_reply(rule, item_no=item_no):
-        return normalized, {}
+        return normalized, route_meta
 
     if normalized is None:
         normalized = {}
@@ -2055,11 +2064,35 @@ def _keyword_selection_with_rule_overrides(
     }
 
 
-def _is_member_benefit_comment_rule(rule: dict[str, Any]) -> bool:
-    return (
-        str(rule.get("scenario_guard_keyword") or "").strip() == "会员权益"
-        or _business_rule_name(rule).split("-", 1)[0].strip() == "会员权益"
-    )
+def _a2_comment_route_family(rule: dict[str, Any]) -> str | None:
+    if not _is_a2_comment_rule(rule):
+        return None
+    guard_keyword = str(rule.get("scenario_guard_keyword") or "").strip()
+    major = _business_rule_name(rule).split("-", 1)[0].strip()
+    if guard_keyword == "会员权益" or major == "会员权益":
+        return "member_benefit"
+    if "转奶" in guard_keyword or major in {"转奶", "舆情缓和"}:
+        return "transfer"
+    if "批批检" in guard_keyword or major in {"批批检", "工艺", "舆情讨论"}:
+        return "batch_check"
+    if guard_keyword == "有货" or major == "有货":
+        return "stock"
+    return None
+
+
+def _is_a2_comment_rule(rule: dict[str, Any]) -> bool:
+    asset_key = str(rule.get("asset_key") or "").strip()
+    profile_key = str(rule.get("quality_guard_profile_key") or "").strip()
+    if asset_key == "a2_sentiment_comment_activity" or profile_key.startswith("a2_"):
+        return True
+    text = " ".join(str(rule.get(key) or "") for key in ("business_rule", "corpus"))
+    return "a2" in text.lower() or "至初" in text
+
+
+def _a2_route_keyword_selection(route_family: str | None) -> dict[str, list[str]]:
+    if route_family not in {"member_benefit", "stock", "batch_check", "transfer"}:
+        return {}
+    return {"comment_writing_instruction": ["natural_comment"]}
 
 
 def _copy_keyword_selection(keyword_selection: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -2203,7 +2236,9 @@ def _rule_with_comment_scenario(
             ).strip()
             or None,
             "scenario_generation_requirements": str(
-                direction.get("generation_requirements") or style_hint
+                direction.get("generation_requirements")
+                or direction.get("prompt_hint")
+                or style_hint
             ).strip()
             or None,
         }

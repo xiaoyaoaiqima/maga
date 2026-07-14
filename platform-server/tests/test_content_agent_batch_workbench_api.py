@@ -603,6 +603,16 @@ def test_a2_comment_length_caps_at_eighty_chars():
     normalized = service._normalize_comment_length(item, overlong)
     assert len(normalized) <= 80
 
+    low_information = service._low_information_rewrite_input(item)
+    delivery_duplicate = service._delivery_duplicate_rewrite_input(item, {"body": "历史评论"})
+    similarity = service._similarity_rewrite_input(
+        item,
+        {"item_no": 1, "body": "相似评论", "score": 0.8, "scope": "current_batch"},
+    )
+    assert "只输出一条80字以内的评论正文" in low_information["rewrite_instructions"]
+    assert "只输出一条80字以内的评论正文" in delivery_duplicate["rewrite_instructions"]
+    assert "只输出一条80字以内的评论正文" in similarity["rewrite_instructions"]
+
 
 def test_comment_micro_reply_caps_generated_comment_at_ten_chars():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
@@ -4064,6 +4074,7 @@ def test_member_benefit_realness_rewrite_preserves_activity_fact_boundary():
     item = ContentBatchItem(
         body="a2抽奖有宝宝夏凉被，这个挺顺手",
         plan_json={
+            "asset_key": "a2_sentiment_comment_activity",
             "business_rule": "会员权益-抽奖活动",
             "scenario_guard_keyword": "会员权益",
         },
@@ -4079,6 +4090,42 @@ def test_member_benefit_realness_rewrite_preserves_activity_fact_boundary():
     instructions = "\n".join(payload["rewrite_instructions"])
     assert "保留原评论里的会员活动、集罐、抽奖和本条礼品" in instructions
     assert "不要补转奶、其他品牌、宝宝状态或喝奶体验" in instructions
+    assert "拉的时候没那么费劲" not in instructions
+
+
+@pytest.mark.parametrize(
+    ("business_rule", "guard_keyword", "preserve_text", "blocked_text"),
+    [
+        ("有货-渠道线索", "有货", "到货、能买、门店、下单或发货事实", "不要补检测报告、转奶过程、宝宝状态或喝奶效果"),
+        ("批批检-自己这批报告可查", "有货+批批检", "扫码、批次、报告、检测、工艺或市场信息", "不要补到货抢购、转奶过程、宝宝状态或喝奶效果"),
+        ("转奶-按自家节奏慢慢试", "有货+转奶", "转奶决定、个体差异、生活变量、报告依据或自家观察", "不要新增排便、胃口、睡眠、宝宝状态或喝奶效果"),
+    ],
+)
+def test_a2_realness_rewrite_preserves_route_facts(
+    business_rule,
+    guard_keyword,
+    preserve_text,
+    blocked_text,
+):
+    item = ContentBatchItem(
+        body="原评论",
+        plan_json={
+            "asset_key": "a2_sentiment_comment_activity",
+            "business_rule": business_rule,
+            "scenario_guard_keyword": guard_keyword,
+        },
+    )
+
+    payload = _rewrite_input_payload(
+        item,
+        hits=["挺顺"],
+        replacements={"挺顺": "没那么费劲"},
+        rewrite_round=1,
+    )
+
+    instructions = "\n".join(payload["rewrite_instructions"])
+    assert preserve_text in instructions
+    assert blocked_text in instructions
     assert "拉的时候没那么费劲" not in instructions
 
 

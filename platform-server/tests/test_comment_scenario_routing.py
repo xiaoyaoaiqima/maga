@@ -137,7 +137,7 @@ def test_scenario_selection_adds_direction_prompt_and_uses_scenario_examples():
     assert batch_rule["scenario_examples"] == ["我刚扫了下，报告真能看到"]
     assert batch_rule["scenario_guard_keyword"] == "有货+批批检"
     assert batch_rule["scenario_post_context"] == "你正在小红书母婴评论区，回复一篇解读a2检测信息的帖子。"
-    assert batch_rule["scenario_generation_requirements"] == "像普通妈妈看完解读后顺手评论。"
+    assert batch_rule["scenario_generation_requirements"] == "说一个自己看到的报告信息。"
     assert "批批检正向" not in batch_rule["scenario_generation_requirements"]
 
 
@@ -156,15 +156,15 @@ def test_scenario_examples_do_not_replace_rule_examples():
     assert meta["selected_example_source"] == "examples"
 
 
-def test_scenario_prompt_only_carries_context_and_style_not_direction_facts():
+def test_scenario_prompt_prefers_direction_hint_over_broad_style():
     scenario = _scenario()
     direction = scenario["directions"][0]
     rule = _rules()[0]
 
     merged = _rule_with_comment_scenario(rule, scenario, direction)
 
-    assert merged["scenario_generation_requirements"] == "像普通妈妈看完解读后顺手评论。"
-    assert "说一个自己看到的报告信息" not in merged["scenario_generation_requirements"]
+    assert merged["scenario_generation_requirements"] == "说一个自己看到的报告信息。"
+    assert "像普通妈妈看完解读后顺手评论" not in merged["scenario_generation_requirements"]
     assert "批批检正向" not in merged["scenario_generation_requirements"]
 
 
@@ -252,6 +252,23 @@ def test_direction_generation_requirements_override_scenario_style_hint():
     )
 
 
+def test_direction_prompt_hint_overrides_broad_scenario_style_hint():
+    merged = _rule_with_comment_scenario(
+        {"asset_key": "a2_sentiment_comment_activity", "business_rule": "有货-渠道线索"},
+        {
+            "scenario_code": "consumer_complaint",
+            "scenario_name": "素人消费者吐槽类",
+            "style_hint": "分享一条自己的当前经历。",
+        },
+        {
+            "direction_code": "supply_recovery",
+            "prompt_hint": "只回应现在能稳定买到，不展开其他经历。",
+        },
+    )
+
+    assert merged["scenario_generation_requirements"] == "只回应现在能稳定买到，不展开其他经历。"
+
+
 def test_round_robin_gift_slot_is_selected_before_example_sampling():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
     rule = {
@@ -292,6 +309,7 @@ def test_member_benefit_rule_uses_activity_only_keyword_selection():
     selected, meta = _keyword_selection_with_rule_overrides(
         base,
         {
+            "asset_key": "a2_sentiment_comment_activity",
             "business_rule": "会员权益-抽奖活动",
             "scenario_guard_keyword": "会员权益",
         },
@@ -300,10 +318,65 @@ def test_member_benefit_rule_uses_activity_only_keyword_selection():
 
     assert selected == {
         "comment_writing_instruction": ["natural_comment"],
-        "comment_format_control": ["comment_short_clean"],
     }
-    assert meta["keyword_selection_override"]["reason"] == "member_benefit_activity_only"
+    assert meta["keyword_selection_override"]["reason"] == "a2_member_benefit_route_only"
     assert base["comment_writing_instruction"] == ["natural_comment", "light_comment_experience"]
+
+
+@pytest.mark.parametrize(
+    ("rule", "expected_reason"),
+    [
+        (
+            {"asset_key": "a2_sentiment_comment_activity", "business_rule": "有货-渠道线索"},
+            "a2_stock_route_only",
+        ),
+        (
+            {"asset_key": "a2_sentiment_comment_activity", "business_rule": "批批检-自己这批报告可查"},
+            "a2_batch_check_route_only",
+        ),
+        (
+            {"asset_key": "a2_sentiment_comment_activity", "business_rule": "转奶-按自家节奏慢慢试"},
+            "a2_transfer_route_only",
+        ),
+    ],
+)
+def test_a2_routes_use_length_neutral_keyword_selection(rule, expected_reason):
+    selected, meta = _keyword_selection_with_rule_overrides(None, rule, item_no=1)
+
+    assert selected == {"comment_writing_instruction": ["natural_comment"]}
+    assert meta["keyword_selection_override"]["reason"] == expected_reason
+
+
+def test_a2_plan_applies_length_neutral_selection_to_generic_named_rules():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    asset = SimpleNamespace(
+        asset_key="a2_sentiment_comment_activity",
+        id=1,
+        version_no=51,
+        content_json={
+            "keyword_selection": {
+                "comment_writing_instruction": ["light_comment_experience"],
+                "comment_format_control": ["comment_21_35"],
+            }
+        },
+        metadata_json={},
+    )
+
+    plan = service._plan_from_rule(
+        {
+            "rule_id": "a2_direct_40",
+            "business_rule": "舆情缓和-轻问其他生活变量",
+            "corpus": "轻问一个生活变量。",
+            "examples": ["会不会也和最近作息变化有关"],
+            "scenario_guard_keyword": "有货+转奶",
+        },
+        asset=asset,
+        item_no=1,
+        quality_guard_profile_key="a2_sentiment_comment_202606",
+    )
+
+    assert plan["keyword_selection"] == {"comment_writing_instruction": ["natural_comment"]}
+    assert plan["keyword_selection_override"]["reason"] == "a2_transfer_route_only"
 
 
 def test_scenario_selection_batches_target_outputs_without_multiplying_requested_count():

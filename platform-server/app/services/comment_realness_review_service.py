@@ -382,18 +382,12 @@ def _rewrite_input_payload(
     rewrite_round: int,
 ) -> dict[str, Any]:
     plan = dict(item.plan_json or {})
-    is_member_benefit = (
-        str(plan.get("scenario_guard_keyword") or "").strip() == "会员权益"
-        or str(plan.get("business_rule") or "").split("-", 1)[0].strip() == "会员权益"
-    )
+    scope_instruction = _a2_rewrite_scope_instruction(plan)
     instructions = [
         f"命中这些AI感或不口语表达：{'、'.join(hits)}",
         "这不是风控替换，要按评论区真人说法重写命中句，不要只做同义词替换",
-        (
-            "只改命中的说法，保留原评论里的会员活动、集罐、抽奖和本条礼品；不要补转奶、其他品牌、宝宝状态或喝奶体验"
-            if is_member_benefit
-            else "优先换成一个具体小事实、动作或观察，比如拉的时候没那么费劲、喝得挺痛快、愿意喝几口"
-        ),
+        scope_instruction
+        or "优先换成一个具体小事实、动作或观察，比如拉的时候没那么费劲、喝得挺痛快、愿意喝几口",
         "改写后不要再出现上述命中表达",
         "只输出一条评论正文，不要解释改写过程",
     ]
@@ -432,6 +426,24 @@ def _rewrite_input_payload(
         "rewrite_round": rewrite_round,
         "rewrite_instructions": instructions,
     }
+
+
+def _a2_rewrite_scope_instruction(plan: dict[str, Any]) -> str | None:
+    asset_key = str(plan.get("asset_key") or "").strip()
+    profile_key = str(plan.get("quality_guard_profile_key") or "").strip()
+    if asset_key != "a2_sentiment_comment_activity" and profile_key not in A2_COMMENT_PROFILE_KEYS:
+        return None
+    guard_keyword = str(plan.get("scenario_guard_keyword") or "").strip()
+    major = str(plan.get("business_rule") or "").split("-", 1)[0].strip()
+    if guard_keyword == "会员权益" or major == "会员权益":
+        return "只改命中的说法，保留原评论里的会员活动、集罐、抽奖和本条礼品；不要补转奶、其他品牌、宝宝状态或喝奶体验"
+    if "转奶" in guard_keyword or major in {"转奶", "舆情缓和"}:
+        return "只改命中的说法，保留原评论已有的转奶决定、个体差异、生活变量、报告依据或自家观察；不要新增排便、胃口、睡眠、宝宝状态或喝奶效果"
+    if "批批检" in guard_keyword or major in {"批批检", "工艺", "舆情讨论"}:
+        return "只改命中的说法，保留原评论已有的扫码、批次、报告、检测、工艺或市场信息；没有原文依据时不要补到货抢购、转奶过程、宝宝状态或喝奶效果"
+    if guard_keyword == "有货" or major == "有货":
+        return "只改命中的说法，保留原评论已有的到货、能买、门店、下单或发货事实；没有原文依据时不要补检测报告、转奶过程、宝宝状态或喝奶效果"
+    return None
 
 
 def _quality_with_realness_review(quality_json: dict[str, Any], review_payload: dict[str, Any]) -> dict[str, Any]:

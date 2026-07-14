@@ -389,6 +389,30 @@ def test_a2_comment_prompt_generalizes_competitor_names_in_examples():
     assert "其他品牌" in prompt
 
 
+def test_a2_stock_and_batch_check_prompts_skip_irrelevant_transfer_note():
+    stock_prompt = _comment_prompt_text(
+        {
+            "asset_key": "a2_sentiment_comment_activity",
+            "business_rule": "有货-渠道线索",
+            "corpus": "像看到a2到货后顺手报个信。",
+            "examples": ["a2线上能拍了，我刚看到"],
+        }
+    )
+    batch_prompt = _comment_prompt_text(
+        {
+            "asset_key": "a2_sentiment_comment_activity",
+            "business_rule": "批批检-自己这批报告可查",
+            "corpus": "像妈妈扫罐底码看自己这批报告。",
+            "examples": ["a2这罐报告能扫出来"],
+        }
+    )
+
+    assert "转奶对象" not in stock_prompt
+    assert "其他奶粉品牌名" not in stock_prompt
+    assert "转奶对象" not in batch_prompt
+    assert "其他奶粉品牌名" not in batch_prompt
+
+
 def test_keyword_selection_skips_disabled_categories_before_subkeywords():
     from app.services.unified_content_generation_service import _select_keyword_bundle
 
@@ -1958,6 +1982,8 @@ def test_a2_stock_comment_uses_compact_context_without_shortage_backstory():
     assert prompt.startswith("你正在小红书母婴评论区，回复一篇聊a2奶粉到货或能否买到的帖子。")
     assert "前段时间a2奶粉没货" not in prompt
     assert "今天突然发现有货" not in prompt
+    assert "字数不要超过80字" in prompt
+    assert "字数在10到20字之间" not in prompt
 
 
 @pytest.mark.parametrize(

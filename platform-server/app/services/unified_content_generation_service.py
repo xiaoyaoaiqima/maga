@@ -986,15 +986,40 @@ def _comment_prompt_notes(rule: dict[str, Any]) -> list[str]:
         notes.append("不要写成品牌公告、客服回复、科普说明或广告口播。")
     if is_a2_comment:
         notes.append("不要说缺货、断粮等消极词。")
-        if major != "会员权益":
+        if _a2_comment_needs_competitor_generalization_note(rule):
             notes.append("不要直接说其他奶粉品牌名，如需提到对比或转奶对象，用其他品牌、别的牌子、其他奶粉、之前的奶粉这类泛化说法。")
         if major == "会员权益":
             notes.append("具体活动事实只按“本条要写的事”中明确内容说；参考示例只学表达，不把礼品、门槛、领取或中奖结果扩成新事实。")
-    if major == "有货":
+    if major == "有货" and not is_a2_comment:
         notes.append("字数在10到20字之间。")
     else:
         notes.append("字数不要超过80字。" if is_a2_comment else "字数不要超过80字，具体长短参考示例。")
     return notes
+
+
+def _a2_comment_needs_competitor_generalization_note(rule: dict[str, Any]) -> bool:
+    if not _is_a2_sentiment_comment_rule(rule):
+        return False
+    source = "\n".join(
+        [
+            str(rule.get("business_rule") or ""),
+            str(rule.get("scenario_guard_keyword") or ""),
+            *[str(item) for item in rule.get("examples") or []],
+        ]
+    )
+    markers = (
+        "转奶",
+        "转回",
+        "其他品牌",
+        "其他奶粉",
+        "别的牌子",
+        "爱他美",
+        "达能",
+        "美素",
+        "皇美",
+        "皇家",
+    )
+    return any(marker in source for marker in markers) or bool(re.search(r"换奶(?!粉)", source))
 
 
 def _comment_prompt_examples(rule: dict[str, Any]) -> list[str]:
