@@ -798,6 +798,7 @@ class ContentCommentBatchService:
             keyword_rule,
             item_no=item_no,
         )
+        comment_persona_options = _comment_persona_options_from_asset(asset, keyword_rule)
         generation_requirements = _merge_comment_generation_requirements(
             _generation_requirements_from_asset(asset),
             rule.get("scenario_generation_requirements"),
@@ -833,6 +834,8 @@ class ContentCommentBatchService:
             "scenario_guard_keyword": rule.get("scenario_guard_keyword"),
             "output_fields": ["comment"],
         }
+        if comment_persona_options:
+            plan["comment_persona_options"] = comment_persona_options
         if isinstance(rule.get("model_config"), dict):
             plan["model_config"] = dict(rule["model_config"])
         output_config = _comment_generation_output_config(rule, asset)
@@ -2093,6 +2096,74 @@ def _a2_route_keyword_selection(route_family: str | None) -> dict[str, list[str]
     if route_family not in {"member_benefit", "stock", "batch_check", "transfer"}:
         return {}
     return {"comment_writing_instruction": ["natural_comment"]}
+
+
+def _comment_persona_options_from_asset(
+    asset: AssetRegistry | None,
+    rule: dict[str, Any],
+) -> list[dict[str, str]]:
+    route_family = _a2_comment_persona_family(rule)
+    if not route_family:
+        return []
+    for source in _asset_json_sources(asset):
+        configured = source.get("comment_persona_options")
+        if not isinstance(configured, dict):
+            continue
+        raw_options = configured.get(route_family) or configured.get("default")
+        if not isinstance(raw_options, list):
+            continue
+        options: list[dict[str, str]] = []
+        for index, raw_option in enumerate(raw_options, start=1):
+            if isinstance(raw_option, str):
+                prompt = raw_option.strip()
+                if prompt:
+                    options.append(
+                        {
+                            "persona_code": f"{route_family}_{index}",
+                            "persona_label": prompt.split("：", 1)[0].strip() or f"人设{index}",
+                            "prompt": prompt,
+                        }
+                    )
+                continue
+            if not isinstance(raw_option, dict):
+                continue
+            prompt = str(raw_option.get("prompt") or raw_option.get("text") or "").strip()
+            if not prompt:
+                continue
+            options.append(
+                {
+                    "persona_code": str(raw_option.get("persona_code") or raw_option.get("code") or f"{route_family}_{index}").strip(),
+                    "persona_label": str(raw_option.get("persona_label") or raw_option.get("label") or f"人设{index}").strip(),
+                    "prompt": prompt,
+                }
+            )
+        if options:
+            return options
+    return []
+
+
+def _a2_comment_persona_family(rule: dict[str, Any]) -> str | None:
+    if not _is_a2_comment_rule(rule):
+        return None
+    major = _business_rule_name(rule).split("-", 1)[0].strip()
+    if major == "会员权益":
+        return "member_benefit"
+    if major == "有货":
+        return "stock"
+    if major in {"批批检", "工艺", "舆情讨论"}:
+        return "batch_check"
+    if major in {"转奶", "舆情缓和"}:
+        return "transfer"
+    guard_keyword = str(rule.get("scenario_guard_keyword") or "").strip()
+    if guard_keyword == "会员权益":
+        return "member_benefit"
+    if "批批检" in guard_keyword:
+        return "batch_check"
+    if "转奶" in guard_keyword:
+        return "transfer"
+    if guard_keyword == "有货":
+        return "stock"
+    return None
 
 
 def _copy_keyword_selection(keyword_selection: dict[str, Any] | None) -> dict[str, Any] | None:

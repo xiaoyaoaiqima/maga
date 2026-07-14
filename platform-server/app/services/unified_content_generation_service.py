@@ -99,6 +99,11 @@ class UnifiedContentGenerationService:
             if content_type == "comment"
             else []
         )
+        selected_comment_persona = (
+            _select_comment_persona(business_rule, item_no=item_no)
+            if content_type == "comment"
+            else None
+        )
         expert = await self._expert_snapshot(
             expert_config_code or _default_expert_code(content_type),
             content_type=content_type,
@@ -119,6 +124,7 @@ class UnifiedContentGenerationService:
             rendered_prompt = _comment_prompt_text(
                 business_rule,
                 selected_prompt_slots=selected_prompt_slots,
+                comment_persona=selected_comment_persona,
                 output_format=comment_output_format,
             )
             rendered_prompt = _normalize_comment_prompt_labels(rendered_prompt)
@@ -149,6 +155,7 @@ class UnifiedContentGenerationService:
             "business_rule": business_rule,
             "selected_keywords": selected_keywords,
             "selected_prompt_slots": selected_prompt_slots,
+            "comment_persona": selected_comment_persona,
             "output_format": comment_output_format,
             "output_format_mode": comment_output_format.get("mode"),
             "expansion_count": comment_output_format.get("count"),
@@ -707,6 +714,7 @@ def _comment_prompt_text(
     rule: dict[str, Any],
     *,
     selected_prompt_slots: list[dict[str, Any]] | None = None,
+    comment_persona: dict[str, str] | None = None,
     output_format: dict[str, Any] | None = None,
 ) -> str:
     product_name = _comment_product_name(rule)
@@ -715,6 +723,11 @@ def _comment_prompt_text(
     focus = _comment_focus_line(rule)
     rule_detail = str(rule.get("corpus") or "").strip() if _is_a2_sentiment_comment_rule(rule) else ""
     notes = _comment_prompt_notes(rule)
+    if comment_persona:
+        notes = [
+            *notes,
+            "上面只是在模仿一种说话方式，不代表真实身份；不要因此新增购买经历、喂养方式、宝宝状态或使用结果。",
+        ]
     examples = _comment_prompt_examples(rule)
     output_format = output_format or _comment_output_format_config(rule)
     generation_lines: list[str] = []
@@ -737,6 +750,11 @@ def _comment_prompt_text(
         lines.extend(["", "本条要写的事：", rule_detail])
     elif focus:
         lines.extend(["", focus])
+    if comment_persona:
+        persona_label = str(comment_persona.get("persona_label") or "本条人设").strip()
+        persona_prompt = str(comment_persona.get("prompt") or "").strip()
+        if persona_prompt:
+            lines.extend(["", "本条语气参考（不代表真实身份）：", f"{persona_label}：{persona_prompt}"])
     for slot in selected_prompt_slots or []:
         rendered_slot = _render_comment_prompt_slot(slot)
         if rendered_slot:
@@ -815,6 +833,24 @@ def _select_comment_prompt_slots(rule: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return selected
+
+
+def _select_comment_persona(rule: dict[str, Any], *, item_no: int) -> dict[str, str] | None:
+    raw_options = rule.get("comment_persona_options")
+    if not isinstance(raw_options, list):
+        return None
+    options = [
+        {
+            "persona_code": str(item.get("persona_code") or "").strip(),
+            "persona_label": str(item.get("persona_label") or "").strip(),
+            "prompt": str(item.get("prompt") or "").strip(),
+        }
+        for item in raw_options
+        if isinstance(item, dict) and str(item.get("prompt") or "").strip()
+    ]
+    if not options:
+        return None
+    return options[(max(1, int(item_no)) - 1) % len(options)]
 
 
 def _normalize_comment_prompt_slots(raw_slots: Any) -> list[dict[str, Any]]:

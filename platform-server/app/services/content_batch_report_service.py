@@ -964,6 +964,7 @@ class ContentBatchReportService:
             or {}
         )
         rendered_prompt = self._string_or_none(source.get("rendered_prompt") or unified.get("rendered_prompt"))
+        comment_persona = self._dict_value(source.get("comment_persona")) or self._dict_value(unified.get("comment_persona")) or {}
         forbidden_review = self._forbidden_review(quality)
         realness_review = self._comment_realness_review(quality)
         activity_quality_guard = self._activity_quality_guard(quality)
@@ -984,6 +985,7 @@ class ContentBatchReportService:
             "output_fields": output_fields,
             "business_rule": business_rule,
             "selected_keywords": selected_keywords,
+            "comment_persona": comment_persona,
             "keyword_asset": self._dict_value(source.get("keyword_asset")) or self._dict_value(unified.get("keyword_asset")) or {},
             "expert": expert,
             "model_config": model_config,

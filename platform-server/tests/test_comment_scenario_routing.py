@@ -11,6 +11,8 @@ from app.services.activity_quality_guard_service import (
 from app.services.content_comment_batch_service import (
     ContentCommentBatchService,
     _comment_plan_output_count,
+    _comment_persona_options_from_asset,
+    _a2_comment_persona_family,
     _comment_scenario_from_asset,
     _keyword_selection_with_rule_overrides,
     _rule_with_comment_scenario,
@@ -354,6 +356,20 @@ def test_a2_plan_applies_length_neutral_selection_to_generic_named_rules():
         id=1,
         version_no=51,
         content_json={
+            "comment_persona_options": {
+                "transfer": [
+                    {
+                        "persona_code": "new_mom_style",
+                        "persona_label": "新手妈妈式",
+                        "prompt": "有点犹豫，会先确认一下",
+                    },
+                    {
+                        "persona_code": "second_child_style",
+                        "persona_label": "二胎妈妈式",
+                        "prompt": "语气直接，不铺垫",
+                    },
+                ]
+            },
             "keyword_selection": {
                 "comment_writing_instruction": ["light_comment_experience"],
                 "comment_format_control": ["comment_21_35"],
@@ -377,6 +393,28 @@ def test_a2_plan_applies_length_neutral_selection_to_generic_named_rules():
 
     assert plan["keyword_selection"] == {"comment_writing_instruction": ["natural_comment"]}
     assert plan["keyword_selection_override"]["reason"] == "a2_transfer_route_only"
+    assert plan["comment_persona_options"] == _comment_persona_options_from_asset(
+        asset,
+        {
+            "asset_key": asset.asset_key,
+            "business_rule": "舆情缓和-轻问其他生活变量",
+            "scenario_guard_keyword": "有货+转奶",
+        },
+    )
+    assert [item["persona_code"] for item in plan["comment_persona_options"]] == [
+        "new_mom_style",
+        "second_child_style",
+    ]
+
+
+def test_a2_persona_family_prefers_business_rule_over_combined_guard_keyword():
+    assert _a2_comment_persona_family(
+        {
+            "asset_key": "a2_sentiment_comment_activity",
+            "business_rule": "有货-继续熟悉款",
+            "scenario_guard_keyword": "有货+转奶",
+        }
+    ) == "stock"
 
 
 def test_scenario_selection_batches_target_outputs_without_multiplying_requested_count():

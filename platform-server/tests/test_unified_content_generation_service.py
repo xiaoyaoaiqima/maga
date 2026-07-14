@@ -14,6 +14,7 @@ from app.services.unified_content_generation_service import (
     _article_output_format_requirement,
     _business_rule_text,
     _comment_prompt_text,
+    _select_comment_persona,
     _normalize_model_config,
     _render_comment_prompt_slot,
     _royal_compact_article_prompt,
@@ -1984,6 +1985,38 @@ def test_a2_stock_comment_uses_compact_context_without_shortage_backstory():
     assert "今天突然发现有货" not in prompt
     assert "字数不要超过80字" in prompt
     assert "字数在10到20字之间" not in prompt
+
+
+def test_a2_comment_persona_rotates_and_renders_without_creating_facts():
+    rule = {
+        "asset_key": "a2_sentiment_comment_activity",
+        "business_rule": "有货-直给到货情绪",
+        "corpus": "像刷到a2到货后顺手接一句。",
+        "comment_persona_options": [
+            {
+                "persona_code": "new_mom_style",
+                "persona_label": "新手妈妈式",
+                "prompt": "有点好奇，会先确认一下",
+            },
+            {
+                "persona_code": "second_child_style",
+                "persona_label": "二胎妈妈式",
+                "prompt": "语气直接，不铺垫",
+            },
+        ],
+    }
+
+    first = _select_comment_persona(rule, item_no=1)
+    second = _select_comment_persona(rule, item_no=2)
+    third = _select_comment_persona(rule, item_no=3)
+    prompt = _comment_prompt_text(rule, comment_persona=first)
+
+    assert first["persona_code"] == "new_mom_style"
+    assert second["persona_code"] == "second_child_style"
+    assert third == first
+    assert "本条语气参考（不代表真实身份）：\n新手妈妈式：有点好奇，会先确认一下" in prompt
+    assert "上面只是在模仿一种说话方式，不代表真实身份" in prompt
+    assert "不要因此新增购买经历、喂养方式、宝宝状态或使用结果" in prompt
 
 
 @pytest.mark.parametrize(
