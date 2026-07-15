@@ -31,7 +31,6 @@ describe('frontend controlled sidebar tabs', () => {
     expect(paths).toEqual([
       '/business-rules',
       '/content-agent/workbench',
-      '/content-agent/feedback',
       '/content-agent/system-prompt-keywords',
       '/content-agent/experts',
       '/content-agent/prompt-debug',
@@ -41,7 +40,6 @@ describe('frontend controlled sidebar tabs', () => {
     expect(titles).toEqual([
       '生产工作台',
       '生成历史',
-      '评价反馈',
       '表达扩散语料',
       '生文 Expert',
       '提示词调试',
@@ -89,7 +87,6 @@ describe('frontend controlled sidebar tabs', () => {
 
   it('keeps admin-only operation tabs behind the admin authority', () => {
     const adminOnlyPaths = new Set([
-      '/content-agent/feedback',
       '/content-agent/system-prompt-keywords',
       '/content-agent/experts',
       '/content-agent/prompt-debug',
@@ -153,7 +150,6 @@ describe('frontend controlled sidebar tabs', () => {
   it('keeps admin-only core route mirrors behind the admin authority', () => {
     const rootRoute = coreRoutes.find((route) => route.path === '/');
     const adminOnlyCorePaths = new Set([
-      'content-agent/feedback',
       'content-agent/system-prompt-keywords',
       'content-agent/experts',
       'content-agent/prompt-debug',
@@ -165,5 +161,16 @@ describe('frontend controlled sidebar tabs', () => {
         expect(route.meta?.authority).toEqual(['admin']);
       }
     }
+  });
+
+  it('redirects the legacy feedback page to generation history', () => {
+    const rootRoute = coreRoutes.find((route) => route.path === '/');
+    const legacyFeedback = rootRoute?.children?.find(
+      (route) => route.path === 'content-agent/feedback',
+    );
+
+    expect(legacyFeedback?.component).toBeUndefined();
+    expect(legacyFeedback?.meta?.hideInMenu).toBe(true);
+    expect(legacyFeedback?.redirect).toBeTypeOf('function');
   });
 });

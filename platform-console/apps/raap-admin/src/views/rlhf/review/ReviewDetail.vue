@@ -15,7 +15,6 @@ import {
   CheckOutlined,
   CloseOutlined,
   DeleteOutlined,
-  RobotOutlined,
 } from '@ant-design/icons-vue';
 import {
   Alert,
@@ -41,8 +40,6 @@ import {
   getRLHFDetailApi,
   getRLHFHistoryApi,
   inspectionContentApi,
-  suggestRLHFTagsApi,
-  summarizeRLHFCommentApi,
   updateContentApi,
 } from '#/api/core/rlhf';
 import { getGenerationContextApi } from '#/api/core/trace';
@@ -86,7 +83,6 @@ const formState = reactive({
 });
 
 const allTags = ref<RLHFApi.RLHFIssueTag[]>([]);
-const suggesting = ref(false);
 
 const activeTab = ref('inspection');
 
@@ -468,58 +464,6 @@ function resetForm() {
   activeTab.value = 'inspection';
 }
 
-async function handleAISuggest() {
-  if (!data.id || !detail.value) return;
-
-  // 检查是否有划词评论或精修内容（两者至少有一个才能AI总结）
-  const hasAnnotations = annotations.value.length > 0;
-  const hasRefined = !!(
-    detail.value.modified_content?.trim() &&
-    detail.value.modified_content.trim() !== detail.value.content?.trim()
-  );
-
-  if (!hasAnnotations && !hasRefined) {
-    message.warning('请先添加划词评论或进行原文精修，才能生成 AI 意见');
-    return;
-  }
-
-  suggesting.value = true;
-  try {
-    // 并行调用 AI 意见总结和标签总结
-    const [commentRes, tagsRes] = await Promise.all([
-      summarizeRLHFCommentApi(data.id),
-      suggestRLHFTagsApi(data.id, {
-        comment: formState.inspection_comment,
-      }),
-    ]);
-
-    // 更新本地状态
-    const aiComment = commentRes.comment || '';
-    const newTags = new Set([...formState.issue_tag_names, ...tagsRes.tags]);
-    const tagNames = [...newTags];
-
-    formState.inspection_comment = aiComment || formState.inspection_comment;
-    formState.issue_tag_names = tagNames;
-
-    // 自动保存到数据库
-    try {
-      await updateContentApi(detail.value.id, {
-        improvement_suggestion: formState.inspection_comment,
-        issue_tag_names: formState.issue_tag_names,
-      });
-    } catch (saveError) {
-      console.error('[ReviewDetail] 保存失败:', saveError);
-      // 保存失败不影响 UI 显示，数据已在本地更新
-    }
-
-    message.success('AI 已完成意见和标签总结');
-  } catch (error: unknown) {
-    message.error(error instanceof Error ? error.message : 'AI 总结失败');
-  } finally {
-    suggesting.value = false;
-  }
-}
-
 async function handleSubmitInspection(result: 'FAILED' | 'PASSED') {
   if (!detail.value) return;
 
@@ -797,18 +741,7 @@ function handleGoToDebug() {
 
           <!-- 问题标签 -->
           <div class="mb-4">
-            <div class="mb-2 flex items-center justify-between">
-              <div class="text-base font-bold">🏷️ 问题标签</div>
-              <Button
-                type="link"
-                size="small"
-                :loading="suggesting"
-                @click="handleAISuggest"
-              >
-                <template #icon><RobotOutlined /></template>
-                AI 意见+标签总结
-              </Button>
-            </div>
+            <div class="mb-2 text-base font-bold">🏷️ 问题标签</div>
             <Select
               v-model:value="formState.issue_tag_names"
               mode="tags"

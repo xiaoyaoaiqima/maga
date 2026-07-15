@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any
 
-from app.services.llm_factory import LLMFactory
+from app.services.executor_invocation_service import call_direct_llm_text
 from app.services.product_experience_phrase_guard_service import ProductExperiencePhraseReview
 
 
@@ -52,8 +52,9 @@ class ProductExperienceLLMReviewService:
         ai_flavor_review: Any | None = None,
     ) -> ProductExperienceLLMReview:
         plan = plan or {}
-        response = await LLMFactory.call_llm(
-            config=_review_model_config(plan),
+        model_config = _review_model_config(plan)
+        response = await call_direct_llm_text(
+            model_config=model_config,
             system_prompt=_SYSTEM_PROMPT,
             user_prompt=_user_prompt(
                 title=title,
@@ -62,6 +63,8 @@ class ProductExperienceLLMReviewService:
                 phrase_review=phrase_review,
                 ai_flavor_review=ai_flavor_review,
             ),
+            temperature=0.1,
+            max_tokens=1200,
         )
         review = parse_product_experience_llm_review(str(response or ""))
         return _calibrate_review_with_context(

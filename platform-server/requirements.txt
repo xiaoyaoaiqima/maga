@@ -44,7 +44,3 @@ cos-python-sdk-v5==1.9.30
 
 # Scheduler
 apscheduler==3.10.4
-
-# SDK runtime dependencies
-langchain-core>=0.3.0
-langchain-openai>=0.1.0

@@ -81,3 +81,6 @@ def test_full_mode_keeps_legacy_routes_available():
     assert "/plugin-contexts" in paths
     assert "/ab-tests" in paths
     assert any(path.startswith("/rlhf") for path in paths)
+    assert not any(path.startswith("/__internal/critic") for path in paths)
+    assert not any(path.startswith("/__internal/generation") for path in paths)
+    assert not any(path.startswith("/v1.0/invoke/") for path in paths)

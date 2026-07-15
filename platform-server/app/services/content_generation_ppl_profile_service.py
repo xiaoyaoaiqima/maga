@@ -28,6 +28,7 @@ class ContentGenerationPPLProfile:
     description: str = ""
     default_count: int = 10
     default_articles_per_prompt: int = 1
+    allow_articles_per_prompt_override: bool = True
     aliases: tuple[str, ...] = ()
 
     def response(self) -> ContentPPLProfileResponse:
@@ -75,7 +76,8 @@ PPL_PROFILES: tuple[ContentGenerationPPLProfile, ...] = (
         prompt_mode="rule_corpus_as_prompt",
         description="旺玥0705 v3帖子生文：内容方向规则语料 + 最小表达扩散语料，适合固定调试闭环。",
         default_count=20,
-        default_articles_per_prompt=2,
+        default_articles_per_prompt=1,
+        allow_articles_per_prompt_override=False,
         aliases=("wangyue", "wangyue_article", "wangyue_v3"),
     ),
     ContentGenerationPPLProfile(
@@ -130,6 +132,9 @@ class ContentGenerationPPLProfileService:
     ) -> ContentBatchStartRequest:
         if profile.content_type != "article":
             raise ValueError(f"profile {profile.profile_code} is not an article profile")
+        articles_per_prompt = profile.default_articles_per_prompt
+        if profile.allow_articles_per_prompt_override and request.articles_per_prompt is not None:
+            articles_per_prompt = request.articles_per_prompt
         return ContentBatchStartRequest(
             asset_key=profile.asset_key,
             keyword_asset_key=request.keyword_asset_key or profile.keyword_asset_key,
@@ -140,7 +145,7 @@ class ContentGenerationPPLProfileService:
             draft_rule_id=request.draft_rule_id,
             draft_source_row_no=request.draft_source_row_no,
             count=request.count or profile.default_count,
-            articles_per_prompt=request.articles_per_prompt or profile.default_articles_per_prompt,
+            articles_per_prompt=articles_per_prompt,
             executor_code=request.executor_code or DEFAULT_EXECUTOR_CODE,
             generation_model_config=request.generation_model_config,
             model_config_rotation=list(request.model_config_rotation),

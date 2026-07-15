@@ -107,6 +107,8 @@ class TestCaseService:
             title=data.title,
             content=data.content,
             image_url=data.image_url,
+            meta=data.meta,
+            tags=data.tags,
             content_md5=content_md5,
             enabled=data.enabled,
             created_by=created_by,
@@ -207,6 +209,8 @@ class TestCaseService:
                 title=item.title,
                 content=item.content,
                 image_url=item.image_url,
+                meta=item.meta,
+                tags=item.tags,
                 content_md5=content_md5,
                 enabled=enabled,
                 created_by=created_by,
@@ -217,4 +221,3 @@ class TestCaseService:
 
         await self.db.commit()
         return success_count, skip_count
-

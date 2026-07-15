@@ -20,7 +20,7 @@ export namespace ContentAgentApi {
     style?: null | string;
     count?: number;
     articles_per_prompt?: number;
-    postprocess_mode?: null | 'generate_only';
+    postprocess_mode?: null | 'audit_only' | 'generate_only';
     executor_code?: string;
     model_config?: null | {
       ae_model?: null | string;
@@ -74,6 +74,7 @@ export namespace ContentAgentApi {
     generated_count: number;
     failed_count: number;
     hard_pass_count: number;
+    audit_skipped_count: number;
     rewrite_item_count: number;
     remaining_rewrite_required_count: number;
     forbidden_hit_count: number;
@@ -121,6 +122,7 @@ export namespace ContentAgentApi {
     body_preview?: null | string;
     body_chars: number;
     hard_pass?: boolean | null;
+    audit_skipped: boolean;
     rewrite_required?: boolean | null;
     rewrite_reason?: null | string;
     rewrite_rounds?: null | number;
@@ -252,78 +254,6 @@ export namespace ContentAgentApi {
     items: BatchListItem[];
   }
 
-  export interface FeedbackSample {
-    feedback_id: number;
-    batch_id?: null | number;
-    batch_code?: null | string;
-    item_id: number;
-    item_no: number;
-    version_id?: null | number;
-    action: string;
-    review_status: string;
-    comment?: null | string;
-    submitter?: null | string;
-    title?: null | string;
-    body_preview?: null | string;
-    product_topic?: null | string;
-    target_audience?: null | string;
-    persona_target?: null | string;
-    style?: null | string;
-    asset_key?: null | string;
-    metadata?: null | Record<string, any>;
-    create_time?: null | string;
-  }
-
-  export interface FeedbackSampleListResponse {
-    total: number;
-    items: FeedbackSample[];
-  }
-
-  export interface BatchFeedbackStat {
-    code: string;
-    label: string;
-    count: number;
-  }
-
-  export interface BatchFeedbackSample {
-    action: string;
-    comment?: null | string;
-    create_time?: null | string;
-    feedback_categories: string[];
-    feedback_id: number;
-    item_id: number;
-    item_no: number;
-    quoted_text?: null | string;
-    review_status: string;
-  }
-
-  export interface BatchFeedbackOptimizationSuggestion {
-    evidence: string[];
-    priority: 'high' | 'low' | 'medium';
-    reason: string;
-    suggestion_type:
-      | 'business_forbidden_term'
-      | 'business_rule'
-      | 'expert_prompt'
-      | 'system_keyword';
-    target: string;
-    title: string;
-  }
-
-  export interface BatchFeedbackInsight {
-    action_stats: BatchFeedbackStat[];
-    asset_key: string;
-    batch_code?: null | string;
-    batch_id: number;
-    category_stats: BatchFeedbackStat[];
-    product_topic: string;
-    review_status_stats: BatchFeedbackStat[];
-    rewrite_decision_stats: BatchFeedbackStat[];
-    samples: BatchFeedbackSample[];
-    suggestions: BatchFeedbackOptimizationSuggestion[];
-    total_feedback_count: number;
-  }
-
   export interface AssetGenerationOptionsResponse {
     asset_key?: null | string;
     asset_keys: string[];
@@ -411,6 +341,7 @@ export async function getContentBatchListApi(params?: {
 export async function getContentBatchReportApi(batchId: number) {
   return requestClient.get<ContentAgentApi.BatchReport>(
     `/v1/content-agent/batches/${batchId}/report`,
+    { params: { full: true } },
   );
 }
 
@@ -430,26 +361,9 @@ export async function downloadContentBatchReportExcelApi(batchId: number) {
   );
 }
 
-export async function downloadContentBatchArticlePoolExcelApi(batchId: number) {
+export async function downloadContentBatchArticlePoolCsvApi(batchId: number) {
   return requestClient.download<Blob>(
-    `/v1/content-agent/batches/${batchId}/export-article-pool.xlsx`,
-  );
-}
-
-export async function getContentBatchFeedbackInsightsApi(batchId: number) {
-  return requestClient.get<ContentAgentApi.BatchFeedbackInsight>(
-    `/v1/content-agent/batches/${batchId}/feedback-insights`,
-  );
-}
-
-export async function getFeedbackSamplesApi(params?: {
-  limit?: number;
-  offset?: number;
-  review_status?: string;
-}) {
-  return requestClient.get<ContentAgentApi.FeedbackSampleListResponse>(
-    '/v1/content-agent/feedback-samples',
-    { params },
+    `/v1/content-agent/batches/${batchId}/export-article-pool.csv`,
   );
 }
 

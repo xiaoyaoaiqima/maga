@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.content_agent_defaults import normalize_executor_code
 from app.core.database import get_db
+from app.models.llm_model_route import LLMModelRoute
 from app.models.llm_provider_config import LLMProviderConfig
 from app.schemas.base import ResponseData
 from app.schemas.content_batch_report import (
@@ -59,9 +60,12 @@ from app.services.content_batch_report_service import ContentBatchReportService
 from app.services.content_batch_review_service import ContentBatchReviewService
 from app.services.content_comment_batch_service import ContentCommentBatchService
 from app.services.content_generation_ppl_profile_service import ContentGenerationPPLProfileService
-from app.services.executor_invocation_service import ExecutorInvocationClient, MockExecutorInvocationClient
+from app.services.executor_invocation_service import (
+    ExecutorInvocationClient,
+    MockExecutorInvocationClient,
+    call_direct_llm,
+)
 from app.services.content_generation_preflight_service import ContentGenerationPreflightService
-from app.services.llm_factory import invoke_llm
 
 router = APIRouter()
 
@@ -146,6 +150,44 @@ async def _default_llm_provider_config(
     return result.scalar_one_or_none()
 
 
+async def _prompt_debug_model_config(
+    db: AsyncSession,
+    *,
+    model_code: str,
+) -> dict[str, Any]:
+    route_result = await db.execute(
+        select(LLMModelRoute)
+        .where(
+            LLMModelRoute.model_code == model_code,
+            LLMModelRoute.enabled == 1,
+            LLMModelRoute.is_deleted == 0,
+        )
+        .order_by(LLMModelRoute.priority.desc(), LLMModelRoute.id.asc())
+        .limit(1)
+    )
+    route = route_result.scalar_one_or_none()
+    provider = await _default_llm_provider_config(
+        db,
+        provider_code=route.provider_code if route else None,
+    )
+    provider_model = str((route.provider_model if route else None) or model_code)
+    config: dict[str, Any] = {
+        "model_code": provider_model,
+        "provider_model": provider_model,
+        "route_model_code": model_code,
+    }
+    if not provider:
+        return config
+    config.update(
+        {
+            "provider_code": provider.provider_code,
+            "base_url": provider.base_url,
+            "api_key": provider.api_key,
+        }
+    )
+    return config
+
+
 def _invocation_client_for_invoke_url(invoke_url: str | None):
     """Use the local deterministic mock only for explicit mock:// executor URLs."""
     if invoke_url and invoke_url.startswith("mock://"):
@@ -195,23 +237,16 @@ async def start_ppl_generation(
 @router.post("/prompt-debug/run", response_model=ResponseData[PromptDebugResponse])
 async def run_prompt_debug(
     request: PromptDebugRequest,
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseData[PromptDebugResponse]:
     """Run one raw prompt against the configured LLM router without batch side effects."""
-    messages: list[dict[str, str]] = []
-    if request.system_prompt:
-        messages.append({"role": "system", "content": request.system_prompt})
-    messages.append({"role": "user", "content": request.prompt})
-
     try:
-        result = await invoke_llm(
-            model_code=request.model_code,
-            messages=messages,
+        result = await call_direct_llm(
+            model_config=await _prompt_debug_model_config(db, model_code=request.model_code),
+            system_prompt=request.system_prompt or "",
+            user_prompt=request.prompt,
             temperature=request.temperature if request.temperature is not None else 0.7,
             max_tokens=request.max_tokens if request.max_tokens is not None else 1500,
-            context={
-                "trace_id": "prompt-debug",
-                "expert_config_code": "prompt_debug_workbench",
-            },
         )
     except Exception as exc:
         return ResponseData(
@@ -223,20 +258,16 @@ async def run_prompt_debug(
             ),
         )
 
-    result_data = result if isinstance(result, dict) else {}
-    usage = result_data.get("usage")
-    provider_code = str(result_data.get("provider_code") or "") or None
-    provider_model = str(result_data.get("provider_model") or "") or None
     return ResponseData(
         message="Prompt 调试完成",
         data=PromptDebugResponse(
             success=True,
-            content=str(result_data.get("content") or ""),
-            model_code=str(result_data.get("model_code") or request.model_code),
-            provider_code=provider_code,
-            provider_model=provider_model,
-            usage=PromptDebugTokenUsage(**usage) if isinstance(usage, dict) else None,
-            latency_ms=result_data.get("latency_ms"),
+            content=result.content,
+            model_code=result.model_code,
+            provider_code=result.provider_code,
+            provider_model=result.provider_model,
+            usage=PromptDebugTokenUsage(**result.usage),
+            latency_ms=result.latency_ms,
         ),
     )
 
@@ -528,20 +559,20 @@ async def export_batch_report_excel(
     )
 
 
-@router.get("/batches/{batch_id}/export-article-pool.xlsx")
-async def export_batch_article_pool_excel(
+@router.get("/batches/{batch_id}/export-article-pool.csv")
+async def export_batch_article_pool_csv(
     batch_id: int,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     service = ContentBatchReportService(db)
     try:
-        filename, content = await service.export_article_pool_excel(batch_id)
+        filename, content = await service.export_article_pool_csv(batch_id)
     except ValueError as exc:
         raise _map_protocol_error(exc) from exc
     quoted_filename = quote(filename)
     return Response(
         content=content,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        media_type="text/csv",
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
         },

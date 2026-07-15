@@ -1,34 +1,11 @@
-"""
-System Information API
-"""
-import asyncio
+"""System Information API."""
 from typing import Dict
-import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from app.core.config import settings
 from app.schemas.system_info import SystemInfoResponse, K8sInfo, DatabaseInfo, RedisInfo, ServiceHealth
 from app.schemas.base import ResponseData
 
 router = APIRouter(prefix="/info", tags=["系统信息"])
-
-
-async def check_service_health(app_id: str) -> ServiceHealth:
-    """
-    Check health of a service via Dapr sidecar
-    """
-    url = f"http://localhost:{settings.DAPR_HTTP_PORT}/v1.0/invoke/{app_id}/method/api/v1/health"
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                # 适配 ResponseModel 结构或直接返回 status
-                status = data.get("status") or data.get("data", {}).get("status") or "healthy"
-                version = data.get("version") or data.get("data", {}).get("version")
-                return ServiceHealth(status=status, version=version)
-            return ServiceHealth(status=f"error: {resp.status_code}")
-    except Exception as e:
-        return ServiceHealth(status=f"unreachable: {str(e)}")
 
 
 @router.get("", response_model=ResponseData[SystemInfoResponse], summary="获取系统信息")
@@ -66,26 +43,10 @@ async def get_system_info():
         insight_url=settings.REDIS_INSIGHT_URL
     )
 
-    # 3. 异步并行检查各微服务状态
-    services_to_check = {
-        "critic": "raap-service-ag",
-        "generation": "raap-service-generation-experts",
-    }
-
-    # 添加 orchestrator 自身状态
+    # 3. 当前 MAGA 服务状态
     health_results: Dict[str, ServiceHealth] = {
         "orchestrator": ServiceHealth(status="healthy", version="1.0.0")
     }
-
-    tasks = []
-    service_names = []
-    for key, app_id in services_to_check.items():
-        service_names.append(key)
-        tasks.append(check_service_health(app_id))
-
-    results = await asyncio.gather(*tasks)
-    for name, result in zip(service_names, results):
-        health_results[name] = result
 
     system_info = SystemInfoResponse(
         app_env=settings.APP_ENV,

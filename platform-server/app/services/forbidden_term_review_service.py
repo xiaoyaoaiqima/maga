@@ -113,6 +113,7 @@ class ForbiddenTermReviewService:
         executor_code: str | None,
         content_type: str,
         max_rounds: int = MAX_FORBIDDEN_TERM_REWRITE_ROUNDS,
+        allow_rewrite: bool = True,
     ) -> dict[str, Any]:
         audit = await self.audit_text(asset_key=asset_key, title=item.title, body=item.body)
         if not audit.hits:
@@ -128,6 +129,18 @@ class ForbiddenTermReviewService:
             return quality["forbidden_terms_review"]
 
         initial_hits = list(audit.hits)
+        if not allow_rewrite:
+            review_payload = _review_payload(
+                initial_hits=initial_hits,
+                final_hits=initial_hits,
+                rewrite_rounds=0,
+                rewrite_method="audit_only",
+                term_reasons={hit: audit.term_reasons[hit] for hit in initial_hits if audit.term_reasons.get(hit)},
+            )
+            quality = _quality_with_forbidden_review(item.quality_json or {}, review_payload)
+            item.quality_json = quality
+            return review_payload
+
         block_only_hits = [hit for hit in initial_hits if hit in _static_block_only_terms_for_asset(asset_key)]
         if block_only_hits:
             review_payload = _review_payload(
@@ -281,7 +294,9 @@ def _quality_with_forbidden_review(quality_json: dict[str, Any], review_payload:
         }
     )
     if review_payload["initial_hits"]:
-        if review_payload.get("rewrite_method") == "block_only":
+        if review_payload.get("rewrite_method") == "audit_only":
+            review_report["rewrite_reason"] = f"命中违禁词：{'、'.join(review_payload['final_hits'])}，仅审核不改写"
+        elif review_payload.get("rewrite_method") == "block_only":
             review_report["rewrite_reason"] = f"命中硬违禁词：{'、'.join(review_payload['final_hits'])}，直接阻断，不改写"
         else:
             review_report["rewrite_reason"] = (
@@ -317,6 +332,8 @@ def _hard_results_with_forbidden_guard(
 
 
 def _forbidden_feedback(review_payload: dict[str, Any]) -> str:
+    if review_payload.get("rewrite_method") == "audit_only":
+        return f"命中违禁词，仅审核不改写：{'、'.join(review_payload['final_hits'])}"
     if review_payload.get("rewrite_method") == "block_only":
         return f"命中硬违禁词，直接阻断不改写：{'、'.join(review_payload['final_hits'])}"
     if not review_payload["final_hits"]:

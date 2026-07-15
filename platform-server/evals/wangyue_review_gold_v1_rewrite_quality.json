@@ -1,0 +1,23 @@
+{
+  "dataset_code": "wangyue_review_gold_v1",
+  "slice": "rewrite_quality_v1",
+  "review_status": "approved",
+  "items": [
+    {
+      "case_code": "WYR-001",
+      "before": "回想之前换季总要请几天假，今年倒全勤了。",
+      "after": "回想之前时候交替总要请几天假，今年倒全勤了。",
+      "expected_label": "reject",
+      "issue_code": "fluency_regression",
+      "evidence": "时候交替不是自然中文搭配。"
+    },
+    {
+      "case_code": "WYR-002",
+      "before": "回想之前换季总要请几天假，今年倒全勤了。",
+      "after": "回想以前总要请几天假，今年倒是全勤了。",
+      "expected_label": "accept",
+      "issue_code": "none",
+      "evidence": "目标词已删除，前后时间关系和原意保留。"
+    }
+  ]
+}

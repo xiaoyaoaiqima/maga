@@ -15,7 +15,7 @@ from app.services.business_rule_chat_knowledge import (
     build_business_rule_system_prompt,
     is_business_rule_context,
 )
-from app.services.llm_factory import LLMFactory
+from app.services.executor_invocation_service import call_direct_llm_text
 from app.utils.model_config import DEFAULT_MODEL, normalize_default_model
 
 
@@ -48,14 +48,12 @@ class ChatService:
         )
         user_prompt = self._build_user_prompt(request)
 
-        reply = await LLMFactory.call_llm(
-            config=config,
+        reply = await call_direct_llm_text(
+            model_config=config,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            context={
-                "trace_id": "maga_realtime_chat",
-                "expert_config_code": agent.agent_code,
-            },
+            temperature=float(config.get("temperature", 0.7)),
+            max_tokens=int(config.get("max_tokens", 1500)),
         )
 
         reply_text, actions = self._parse_model_response(str(reply or "").strip(), request)

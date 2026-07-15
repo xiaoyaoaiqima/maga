@@ -13,35 +13,53 @@ os.chdir(SERVER_ROOT)
 sys.path.insert(0, str(SERVER_ROOT))
 
 from app.api.v1.endpoints import content_agent
+from app.core.database import get_db
+from app.services.executor_invocation_service import DirectLLMCallResult
+
+
+def _prompt_debug_app() -> FastAPI:
+    app = FastAPI()
+    app.include_router(content_agent.router, prefix="/api/v1/content-agent")
+
+    async def override_get_db():
+        yield object()
+
+    app.dependency_overrides[get_db] = override_get_db
+    return app
 
 
 @pytest.mark.asyncio
 async def test_prompt_debug_run_returns_raw_llm_output(monkeypatch):
-    async def fake_invoke_llm(**kwargs):
-        assert kwargs["model_code"] == "deepseek-v4-flash"
-        assert kwargs["temperature"] == 0.3
-        assert kwargs["max_tokens"] == 80
-        assert kwargs["messages"] == [
-            {"role": "system", "content": "只输出正文"},
-            {"role": "user", "content": "写一条评论"},
-        ]
+    async def fake_model_config(_db, *, model_code):
+        assert model_code == "deepseek-v4-flash"
         return {
-            "content": "我也刷到有货了，先拍两罐",
             "model_code": "deepseek-v4-flash",
             "provider_code": "deepseek",
-            "provider_model": "deepseek-v4-flash",
-            "usage": {
+        }
+
+    async def fake_call_direct_llm(**kwargs):
+        assert kwargs["temperature"] == 0.3
+        assert kwargs["max_tokens"] == 80
+        assert kwargs["system_prompt"] == "只输出正文"
+        assert kwargs["user_prompt"] == "写一条评论"
+        assert kwargs["model_config"]["provider_code"] == "deepseek"
+        return DirectLLMCallResult(
+            content="我也刷到有货了，先拍两罐",
+            model_code="deepseek-v4-flash",
+            provider_code="deepseek",
+            provider_model="deepseek-v4-flash",
+            usage={
                 "input_tokens": 12,
                 "output_tokens": 16,
                 "total_tokens": 28,
             },
-            "latency_ms": 321,
-        }
+            latency_ms=321,
+        )
 
-    monkeypatch.setattr(content_agent, "invoke_llm", fake_invoke_llm)
+    monkeypatch.setattr(content_agent, "_prompt_debug_model_config", fake_model_config)
+    monkeypatch.setattr(content_agent, "call_direct_llm", fake_call_direct_llm)
 
-    app = FastAPI()
-    app.include_router(content_agent.router, prefix="/api/v1/content-agent")
+    app = _prompt_debug_app()
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://testserver",
@@ -78,13 +96,16 @@ async def test_prompt_debug_run_returns_raw_llm_output(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_prompt_debug_run_returns_readable_model_error(monkeypatch):
-    async def fake_invoke_llm(**_kwargs):
+    async def fake_model_config(_db, *, model_code):
+        return {"model_code": model_code}
+
+    async def fake_call_direct_llm(**_kwargs):
         raise RuntimeError("未配置 API Key，无法调用模型")
 
-    monkeypatch.setattr(content_agent, "invoke_llm", fake_invoke_llm)
+    monkeypatch.setattr(content_agent, "_prompt_debug_model_config", fake_model_config)
+    monkeypatch.setattr(content_agent, "call_direct_llm", fake_call_direct_llm)
 
-    app = FastAPI()
-    app.include_router(content_agent.router, prefix="/api/v1/content-agent")
+    app = _prompt_debug_app()
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://testserver",
@@ -107,8 +128,7 @@ async def test_prompt_debug_run_returns_readable_model_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_prompt_debug_run_rejects_blank_prompt_and_model():
-    app = FastAPI()
-    app.include_router(content_agent.router, prefix="/api/v1/content-agent")
+    app = _prompt_debug_app()
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://testserver",

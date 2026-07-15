@@ -21,7 +21,7 @@ from app.models.agent import Agent
 from app.models.base import Base
 from app.models.llm_model_route import LLMModelRoute
 from app.models.llm_provider_config import LLMProviderConfig
-from app.services.llm_factory import LLMFactory
+from app.services import chat_service as chat_service_module
 
 
 @pytest_asyncio.fixture
@@ -34,14 +34,14 @@ async def chat_client(monkeypatch):
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    async def fake_call_llm(config, system_prompt, user_prompt, **kwargs):
-        assert config["model"] == "deepseek-v4-flash"
+    async def fake_call_llm(model_config, system_prompt, user_prompt, **kwargs):
+        assert model_config["model"] == "deepseek-v4-flash"
         assert system_prompt == "你是测试聊天 Agent"
         assert "用户: 上一轮问题" in user_prompt
         assert "用户: 继续说" in user_prompt
         return "测试回复"
 
-    monkeypatch.setattr(LLMFactory, "call_llm", fake_call_llm)
+    monkeypatch.setattr(chat_service_module, "call_direct_llm_text", fake_call_llm)
 
     app = FastAPI()
     app.include_router(router, prefix="/api/v1/chat")
@@ -128,7 +128,7 @@ async def test_send_chat_message_model_error_returns_bad_gateway(chat_client, mo
     async def fail_call_llm(*_args, **_kwargs):
         raise RuntimeError("未配置 API Key，无法调用模型")
 
-    monkeypatch.setattr(LLMFactory, "call_llm", fail_call_llm)
+    monkeypatch.setattr(chat_service_module, "call_direct_llm_text", fail_call_llm)
     async with session_factory() as session:
         session.add(
             Agent(
@@ -185,7 +185,7 @@ async def test_business_rule_context_injects_by_case_prompt_and_allows_fill_acti
     client, session_factory = chat_client
     captured = {}
 
-    async def fake_call_llm(config, system_prompt, user_prompt, **kwargs):
+    async def fake_call_llm(model_config, system_prompt, user_prompt, **kwargs):
         captured["system_prompt"] = system_prompt
         captured["user_prompt"] = user_prompt
         actions = {
@@ -209,7 +209,7 @@ async def test_business_rule_context_injects_by_case_prompt_and_allows_fill_acti
         }
         return f"这条规则偏硬，我给你一版更松的草稿。\n```json\n{json.dumps(actions, ensure_ascii=False)}\n```"
 
-    monkeypatch.setattr(LLMFactory, "call_llm", fake_call_llm)
+    monkeypatch.setattr(chat_service_module, "call_direct_llm_text", fake_call_llm)
     async with session_factory() as session:
         session.add(
             Agent(
@@ -294,7 +294,7 @@ async def test_article_business_rule_context_also_activates_copilot(chat_client,
     client, session_factory = chat_client
     captured = {}
 
-    async def fake_call_llm(config, system_prompt, user_prompt, **kwargs):
+    async def fake_call_llm(model_config, system_prompt, user_prompt, **kwargs):
         captured["system_prompt"] = system_prompt
         captured["user_prompt"] = user_prompt
         return json.dumps(
@@ -310,7 +310,7 @@ async def test_article_business_rule_context_also_activates_copilot(chat_client,
             ensure_ascii=False,
         )
 
-    monkeypatch.setattr(LLMFactory, "call_llm", fake_call_llm)
+    monkeypatch.setattr(chat_service_module, "call_direct_llm_text", fake_call_llm)
     async with session_factory() as session:
         session.add(
             Agent(
@@ -376,7 +376,7 @@ async def test_non_business_rule_context_drops_fill_action(chat_client, monkeypa
             ],
         }, ensure_ascii=False)
 
-    monkeypatch.setattr(LLMFactory, "call_llm", fake_call_llm)
+    monkeypatch.setattr(chat_service_module, "call_direct_llm_text", fake_call_llm)
     async with session_factory() as session:
         session.add(
             Agent(

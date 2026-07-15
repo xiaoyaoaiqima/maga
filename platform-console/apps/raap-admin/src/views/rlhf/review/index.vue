@@ -22,7 +22,6 @@ import { useUserStore } from '@vben/stores';
 import {
   AppstoreOutlined,
   BarChartOutlined,
-  BulbOutlined,
   CheckCircleOutlined,
   CheckOutlined,
   CloseCircleOutlined,
@@ -81,8 +80,6 @@ import {
   lockContentApi,
   refineContentApi,
   renewLocksApi,
-  suggestRLHFTagsApi,
-  summarizeRLHFCommentApi,
   unlockAllMyContentsApi,
   unlockContentApi,
   updateContentApi,
@@ -309,144 +306,19 @@ function handleRefineInput(itemId: number) {
   debouncedSaveRefine(itemId);
 }
 
-// ========== AI 评价总结弹窗 ==========
-interface AISummaryModalState {
-  visible: boolean;
-  loading: boolean;
-  progress: number;
-  record: null | RLHFApi.RLHFFeedback;
-  reviewStatus: 'DISLIKED' | 'LIKED' | null;
-  aiComment: string;
-  aiTags: string[];
-  error: string;
-}
-
-const aiSummaryModal = reactive<AISummaryModalState>({
-  visible: false,
-  loading: false,
-  progress: 0,
-  record: null,
-  reviewStatus: null,
-  aiComment: '',
-  aiTags: [],
-  error: '',
-});
-
-// 进度条动画定时器
-let progressTimer: null | ReturnType<typeof setInterval> = null;
-
-function startProgressAnimation() {
-  aiSummaryModal.progress = 0;
-  progressTimer = setInterval(() => {
-    if (aiSummaryModal.progress < 90) {
-      // 前90%逐渐变慢
-      const increment = Math.max(1, (90 - aiSummaryModal.progress) / 10);
-      aiSummaryModal.progress = Math.min(
-        90,
-        aiSummaryModal.progress + increment,
-      );
-    }
-  }, 200);
-}
-
-function stopProgressAnimation() {
-  if (progressTimer) {
-    clearInterval(progressTimer);
-    progressTimer = null;
-  }
-  aiSummaryModal.progress = 100;
-}
-
-async function openAISummaryModal(
+async function handleReviewWithAnimation(
   record: RLHFApi.RLHFFeedback,
   status: 'DISLIKED' | 'LIKED',
 ) {
-  // 重置状态
-  aiSummaryModal.visible = true;
-  aiSummaryModal.loading = true;
-  aiSummaryModal.progress = 0;
-  aiSummaryModal.record = record;
-  aiSummaryModal.reviewStatus = status;
-  aiSummaryModal.aiComment = '';
-  aiSummaryModal.aiTags = [];
-  aiSummaryModal.error = '';
-
-  // 开始进度动画
-  startProgressAnimation();
-
-  try {
-    // 并行调用 AI 总结意见和标签
-    const [commentRes, tagsRes] = await Promise.all([
-      summarizeRLHFCommentApi(record.id),
-      suggestRLHFTagsApi(record.id, { comment: getCardComment(record.id) }),
-    ]);
-
-    // 停止进度动画
-    stopProgressAnimation();
-
-    // 填充结果
-    aiSummaryModal.aiComment = commentRes.comment || '';
-    aiSummaryModal.aiTags = tagsRes.tags || [];
-  } catch (error: unknown) {
-    stopProgressAnimation();
-    aiSummaryModal.error =
-      error instanceof Error ? error.message : 'AI 总结失败';
-  } finally {
-    aiSummaryModal.loading = false;
-  }
-}
-
-async function handleAISummaryRegenerate() {
-  if (!aiSummaryModal.record) return;
-
-  aiSummaryModal.loading = true;
-  aiSummaryModal.error = '';
-  startProgressAnimation();
-
-  try {
-    const [commentRes, tagsRes] = await Promise.all([
-      summarizeRLHFCommentApi(aiSummaryModal.record.id),
-      suggestRLHFTagsApi(aiSummaryModal.record.id, {
-        comment: getCardComment(aiSummaryModal.record.id),
-      }),
-    ]);
-
-    stopProgressAnimation();
-    aiSummaryModal.aiComment = commentRes.comment || '';
-    aiSummaryModal.aiTags = tagsRes.tags || [];
-  } catch (error: unknown) {
-    stopProgressAnimation();
-    aiSummaryModal.error =
-      error instanceof Error ? error.message : 'AI 总结失败';
-  } finally {
-    aiSummaryModal.loading = false;
-  }
-}
-
-function handleAISummaryCancel() {
-  stopProgressAnimation();
-  aiSummaryModal.visible = false;
-  aiSummaryModal.record = null;
-  aiSummaryModal.reviewStatus = null;
-}
-
-async function handleAISummaryConfirm() {
-  if (!aiSummaryModal.record || !aiSummaryModal.reviewStatus) return;
-
-  const record = aiSummaryModal.record;
-  const status = aiSummaryModal.reviewStatus;
+  if (reviewedCards.value.has(record.id)) return;
 
   // 获取当前状态
   const currentLikeStatus = getLikeStatus(record);
   const wasLiked = currentLikeStatus === 1;
   const wasDisliked = currentLikeStatus === -1;
 
-  // 使用弹窗中编辑后的意见和标签
-  const comment = aiSummaryModal.aiComment;
-  const issueTags = aiSummaryModal.aiTags;
-
-  // 关闭弹窗
-  aiSummaryModal.visible = false;
+  const comment = getCardComment(record.id);
+  const issueTags = getCardIssueTags(record.id);
 
   try {
     // 0. 检查是否有精修内容需要保存
@@ -564,9 +436,6 @@ async function handleAISummaryConfirm() {
     }, 1300);
   } catch (error: unknown) {
     message.error(error instanceof Error ? error.message : '操作失败');
-  } finally {
-    aiSummaryModal.record = null;
-    aiSummaryModal.reviewStatus = null;
   }
 }
 
@@ -2233,20 +2102,6 @@ function onModalClose(changed: boolean) {
   }
 }
 
-// ========== 审核操作（带动画） ==========
-async function handleReviewWithAnimation(
-  record: RLHFApi.RLHFFeedback,
-  status: 'DISLIKED' | 'LIKED',
-) {
-  // 如果已经在审核中，忽略
-  if (reviewedCards.value.has(record.id)) {
-    return;
-  }
-
-  // 打开 AI 总结弹窗
-  openAISummaryModal(record, status);
-}
-
 // 表格视图的审核操作（无动画，直接刷新）
 async function handleReview(record: RLHFApi.RLHFFeedback, status: string) {
   // 获取当前状态
@@ -3427,100 +3282,6 @@ watch(
     </div>
 
     <ReviewDetailModal @close="onModalClose" />
-
-    <!-- AI 评价总结弹窗 -->
-    <Modal
-      v-model:open="aiSummaryModal.visible"
-      :title="
-        aiSummaryModal.reviewStatus === 'LIKED'
-          ? '👍 AI 评价总结 - 喜欢'
-          : '👎 AI 评价总结 - 不喜欢'
-      "
-      :width="600"
-      :mask-closable="false"
-      :keyboard="false"
-      :footer="null"
-      class="ai-summary-modal"
-      @cancel="handleAISummaryCancel"
-    >
-      <div class="ai-summary-content">
-        <!-- 加载状态 -->
-        <div v-if="aiSummaryModal.loading" class="ai-summary-loading">
-          <div class="loading-icon">
-            <BulbOutlined :spin="true" />
-          </div>
-          <div class="loading-text">AI 正在努力总结您的评价...</div>
-          <Progress
-            :percent="Math.round(aiSummaryModal.progress)"
-            :show-info="true"
-            status="active"
-            :stroke-color="{
-              '0%': '#1677ff',
-              '100%': '#52c41a',
-            }"
-          />
-        </div>
-
-        <!-- 错误状态 -->
-        <div v-else-if="aiSummaryModal.error" class="ai-summary-error">
-          <Alert type="error" :message="aiSummaryModal.error" show-icon />
-        </div>
-
-        <!-- 结果编辑区域 -->
-        <div v-else class="ai-summary-result">
-          <div class="result-section">
-            <div class="result-section-label"><BulbOutlined /> AI 意见总结</div>
-            <Input.TextArea
-              v-model:value="aiSummaryModal.aiComment"
-              :rows="5"
-              placeholder="AI 生成的修改意见..."
-              :maxlength="2000"
-              show-count
-            />
-          </div>
-
-          <div class="result-section">
-            <div class="result-section-label">
-              <AppstoreOutlined /> AI 总结标签
-            </div>
-            <Select
-              v-model:value="aiSummaryModal.aiTags"
-              mode="tags"
-              style="width: 100%"
-              placeholder="搜索、选择已有标签，或输入新标签按回车自动新增"
-              :options="
-                allIssueTags.map((t) => ({
-                  label: t.tag_name,
-                  value: t.tag_name,
-                }))
-              "
-              allow-clear
-            />
-          </div>
-        </div>
-
-        <!-- 底部按钮 -->
-        <div class="ai-summary-footer">
-          <Button @click="handleAISummaryCancel">取消</Button>
-          <Button
-            :loading="aiSummaryModal.loading"
-            :disabled="aiSummaryModal.loading"
-            @click="handleAISummaryRegenerate"
-          >
-            <template #icon><BulbOutlined /></template>
-            重新生成
-          </Button>
-          <Button
-            type="primary"
-            :disabled="aiSummaryModal.loading"
-            @click="handleAISummaryConfirm"
-          >
-            <template #icon><CheckOutlined /></template>
-            确认提交
-          </Button>
-        </div>
-      </div>
-    </Modal>
 
     <!-- 导出配置弹窗 -->
     <Modal
@@ -4787,113 +4548,4 @@ watch(
   color: hsl(var(--muted-foreground));
 }
 
-/* ========== AI 评价总结弹窗样式 ========== */
-.ai-summary-content {
-  padding: 8px 0;
-}
-
-.ai-summary-loading {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  align-items: center;
-  justify-content: center;
-  min-height: 200px;
-  padding: 24px;
-}
-
-.ai-summary-loading .loading-icon {
-  font-size: 48px;
-  color: hsl(var(--primary));
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-.ai-summary-loading .loading-text {
-  font-size: 16px;
-  font-weight: 500;
-  color: hsl(var(--foreground));
-}
-
-.ai-summary-error {
-  padding: 16px 0;
-}
-
-.ai-summary-result {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.result-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.result-section-label {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-size: 14px;
-}
-
-.result-section-label :deep(.anticon) {
-  color: hsl(var(--primary));
-}
-
-.ai-summary-footer {
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-  padding-top: 20px;
-  margin-top: 16px;
-  border-top: 1px solid hsl(var(--border));
-}
-
-/* AI 总结弹窗深色主题适配 */
-:deep(.ai-summary-modal .ant-modal-content) {
-  background: hsl(var(--background));
-}
-
-:deep(.ai-summary-modal .ant-modal-header) {
-  background: hsl(var(--background));
-  border-bottom: 1px solid hsl(var(--border));
-}
-
-:deep(.ai-summary-modal .ant-modal-title) {
-  color: hsl(var(--foreground));
-}
-
-:deep(.ai-summary-modal .ant-modal-close-x) {
-  color: hsl(var(--muted-foreground));
-}
-
-:deep(.ai-summary-modal .ant-input),
-:deep(.ai-summary-modal .ant-select-selector) {
-  background: hsl(var(--muted) / 30%) !important;
-  border-color: hsl(var(--border)) !important;
-}
-
-:deep(.ai-summary-modal .ant-input:focus),
-:deep(.ai-summary-modal .ant-select-focused .ant-select-selector) {
-  border-color: hsl(var(--primary)) !important;
-  box-shadow: 0 0 0 2px hsl(var(--primary) / 10%) !important;
-}
-
-:deep(.ai-summary-modal .ant-input::placeholder) {
-  color: hsl(var(--muted-foreground));
-}
-
-:deep(.ai-summary-modal .ant-input-textarea-show-count::after) {
-  color: hsl(var(--muted-foreground));
-}
-
-:deep(.ai-summary-modal .ant-select-selection-item) {
-  background: hsl(var(--primary) / 15%);
-  border-color: hsl(var(--primary) / 30%);
-}
-
-:deep(.ai-summary-modal .ant-progress-text) {
-  color: hsl(var(--foreground));
-}
 </style>

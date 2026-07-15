@@ -13,7 +13,7 @@ def test_wangyue_alias_resolves_to_v3_profile_defaults():
     assert request.keyword_asset_key == "wangyue_v2_minimal_generation_keywords"
     assert request.prompt_mode == "rule_corpus_as_prompt"
     assert request.count == 20
-    assert request.articles_per_prompt == 2
+    assert request.articles_per_prompt == 1
 
 
 def test_wangyue_article_profile_carries_draft_rule_override():
@@ -36,7 +36,24 @@ def test_wangyue_article_profile_carries_draft_rule_override():
     assert request.draft_rule_id == "V3M-01"
     assert request.draft_source_row_no == 1
     assert request.count == 20
-    assert request.articles_per_prompt == 2
+    assert request.articles_per_prompt == 1
+
+
+def test_wangyue_article_profile_forces_one_article_when_request_asks_for_two():
+    service = ContentGenerationPPLProfileService()
+    profile = service.require_profile("wangyue")
+
+    request = service.build_article_request(
+        profile,
+        ContentPPLRunStartRequest(
+            profile_code="wangyue",
+            articles_per_prompt=2,
+        ),
+    )
+
+    assert profile.default_articles_per_prompt == 1
+    assert profile.allow_articles_per_prompt_override is False
+    assert request.articles_per_prompt == 1
 
 
 def test_legacy_wangyue_profile_stays_available():

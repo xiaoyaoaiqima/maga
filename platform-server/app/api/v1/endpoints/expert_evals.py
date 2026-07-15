@@ -186,6 +186,8 @@ async def get_eval_result_detail(
             title=test_case.title,
             content=test_case.content,
             image_url=test_case.image_url,
+            meta=test_case.meta,
+            tags=test_case.tags,
         )
 
     return ResponseData(
@@ -211,4 +213,3 @@ async def get_eval_result_detail(
             test_case=tc,
         )
     )
-

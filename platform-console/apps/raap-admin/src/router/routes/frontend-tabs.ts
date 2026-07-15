@@ -30,18 +30,6 @@ const frontendTabRoutes: RouteRecordRaw[] = [
     },
   },
   {
-    name: 'ContentAgentFeedback',
-    path: '/content-agent/feedback',
-    component: () => import('#/views/content-agent/feedback/index.vue'),
-    meta: {
-      title: '评价反馈',
-      icon: 'lucide:message-square-check',
-      order: -80,
-      activeMenu: '/content-agent/feedback',
-      authority: ['admin'],
-    },
-  },
-  {
     name: 'ContentAgentSystemPromptKeywords',
     path: '/content-agent/system-prompt-keywords',
     component: () =>

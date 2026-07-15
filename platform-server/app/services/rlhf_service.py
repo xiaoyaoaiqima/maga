@@ -1,17 +1,13 @@
-import json
-import re
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 
-from sqlalchemy import select, update, func, desc, or_, and_
+from sqlalchemy import select, update, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.utils.expert_caller import ExpertCaller, TraceData
 from loguru import logger
 
 from app.models.rlhf_feedback import RLHFFeedback
 from app.models.rlhf_operation_history import RLHFOperationHistory
 from app.models.rlhf_issue_tag import RLHFIssueTag
-from app.models.rlhf_daily_stats import RLHFDailyStats
 from app.models.expert_call_trace import ExpertCallTrace
 from app.models.content import Content
 from app.models.expert_business_result import ExpertBusinessResult
@@ -25,8 +21,6 @@ from app.schemas.rlhf import (
     RLHFAdoptRequest,
     RLHFScoreRequest,
     RLHFInspectionRequest,
-    RLHFSummaryRequest,
-    RLHFSummarizeCommentRequest,
 )
 
 class RLHFService:
@@ -1187,125 +1181,6 @@ class RLHFService:
         await self._log_operation(feedback, "INSPECTION_LOCK", None, None, operator_id=user_id, operator_name=user_name)
         await self.db.commit()
         return True
-
-    async def suggest_tags(self, id: int, data: RLHFSummaryRequest) -> List[str]:
-        """AI 建议问题标签 - 通过 Dapr 调用 AG 专家服务"""
-        feedback = await self.get_raw(id)
-        if not feedback:
-            raise ValueError("Feedback not found")
-        
-        # 1. 准备请求参数
-        payload = {
-            "annotations": feedback.annotations or [],
-            "comment": data.comment,
-            "model_code": "deepseek-v4-flash"
-        }
-        
-        # 2. 调用 AG 专家系统
-        try:
-            # 使用 ExpertCaller 调用 raap-service-ag
-            result = await ExpertCaller.call_expert_http(
-                expert_app="raap-service-ag",
-                method_path="/api/v1/rlhf.RLHFExpertService/SummarizeTags",
-                payload=payload,
-                trace_data=TraceData(
-                    job_id=feedback.job_id,
-                    sub_job_id=feedback.sub_job_id,
-                    content_id=feedback.content_id,
-                    trace_id=feedback.trace_id
-                )
-            )
-            
-            # ExpertCaller 在 trace_info 存在时会包装一层 {"response": ..., "trace_info": ...}
-            real_result = result.get("response") if isinstance(result, dict) and "response" in result else result
-            
-            if isinstance(real_result, dict) and real_result.get("success"):
-                return real_result.get("tags", [])
-            else:
-                msg = real_result.get('message') if isinstance(real_result, dict) else "Unknown error"
-                logger.error(f"AG suggest tags failed: {msg}")
-                return []
-                
-        except Exception as e:
-            logger.error(f"Call AG suggest tags failed: {e}")
-            return []
-
-    async def summarize_comment(self, id: int, data: RLHFSummarizeCommentRequest) -> str:
-        """AI 总结意见 - 根据原文和划词评论/精修内容生成修改意见
-        
-        支持三种模式：
-        1. 划词评论模式：基于 annotations 生成意见
-        2. 精修内容模式：对比 content（原文）和 modified_content（精修内容）生成意见
-        3. 综合模式：两者都有时，结合生成综合意见
-        """
-        feedback = await self.get_raw(id)
-        if not feedback:
-            raise ValueError("Feedback not found")
-        
-        # 获取划词评论
-        annotations = feedback.annotations or []
-        
-        # 获取原文内容
-        original_content = feedback.content or ""
-        
-        # 获取精修内容
-        refined_content = feedback.modified_content
-        
-        # 判断是否有精修内容（精修内容需要与原文不同才有意义）
-        has_refined = (
-            refined_content is not None 
-            and refined_content.strip() 
-            and refined_content.strip() != original_content.strip()
-        )
-        
-        # 判断是否有划词评论
-        has_annotations = len(annotations) > 0
-        
-        # 检查：如果两者都没有，报错
-        if not has_annotations and not has_refined:
-            raise ValueError("请先添加划词评论或进行原文精修，才能生成 AI 意见")
-        
-        # 检查原文内容
-        if not original_content:
-            raise ValueError("原文内容为空，无法生成意见")
-        
-        # 准备请求参数（新版参数）
-        payload = {
-            "original_content": original_content,
-            "annotations": annotations,
-            "refined_content": refined_content if has_refined else None,
-            "model_code": data.model_code
-        }
-        
-        # 调用 AG 专家系统
-        try:
-            result = await ExpertCaller.call_expert_http(
-                expert_app="raap-service-ag",
-                method_path="/api/v1/rlhf.RLHFExpertService/SummarizeComment",
-                payload=payload,
-                trace_data=TraceData(
-                    job_id=feedback.job_id,
-                    sub_job_id=feedback.sub_job_id,
-                    content_id=feedback.content_id,
-                    trace_id=feedback.trace_id
-                )
-            )
-            
-            # ExpertCaller 在 trace_info 存在时会包装一层 {"response": ..., "trace_info": ...}
-            real_result = result.get("response") if isinstance(result, dict) and "response" in result else result
-            
-            if isinstance(real_result, dict) and real_result.get("success"):
-                return real_result.get("comment", "")
-            else:
-                msg = real_result.get('message') if isinstance(real_result, dict) else "Unknown error"
-                logger.error(f"AG summarize comment failed: {msg}")
-                raise ValueError(f"AI 总结失败: {msg}")
-                
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.error(f"Call AG summarize comment failed: {e}")
-            raise ValueError(f"调用 AI 服务失败: {str(e)}")
 
     # --- History ---
     

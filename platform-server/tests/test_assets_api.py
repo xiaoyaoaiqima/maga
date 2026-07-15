@@ -276,7 +276,7 @@ async def asset_client():
 def test_product_experience_rule_import_preserves_structure_and_scene_constraint_fields():
     item = _row_to_rule_item(
         {
-            "业务规则": "V152-01｜保护力关注种草",
+            "业务规则": "V3M-01｜进阶保护力｜使用反馈",
             "语料": "写一篇旺玥妈妈UGC。",
             "帖子类型": "使用反馈",
             "structure_slot": "先反馈后补产品",
@@ -1632,7 +1632,7 @@ async def test_upload_article_business_rule_set_infers_activity_and_word_count(a
     response = await asset_client.post(
         "/api/v1/assets/imports/article-business-rule-set",
         data={
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "display_name": "0705旺玥活动",
             "created_by": "ops",
         },
@@ -1641,7 +1641,7 @@ async def test_upload_article_business_rule_set_infers_activity_and_word_count(a
 
     assert response.status_code == 200
     detail_response = await asset_client.get(
-        "/api/v1/assets/article_business_rule_set/wangyue_article_business_rules"
+        "/api/v1/assets/article_business_rule_set/wangyue_v3_core_storyline_article_rules"
     )
     asset = detail_response.json()["data"]
     assert asset["content_json"]["activity_name"] == "0705旺玥活动"

@@ -1500,7 +1500,6 @@ WANGYUE_DIGESTIVE_EFFECT_PHRASES = (
     "肚子咕噜",
     "肚子咕噜咕噜",
     "肚子软软的",
-    "小肚子",
     "大便也规律",
     "大便规律",
     "便便也规律",
@@ -1516,6 +1515,16 @@ WANGYUE_DIGESTIVE_EFFECT_PHRASES = (
     "消化",
     "舌苔白",
     "舌苔",
+)
+WANGYUE_DIGESTIVE_EFFECT_PATTERNS = (
+    re.compile(
+        r"小肚子[^。！？；;\r\n]{0,10}"
+        r"(?:舒服|舒坦|软软|不胀|没胀|咕噜|规律|顺了|轻松)"
+    ),
+    re.compile(
+        r"(?:便便|大便|胀气|消化|肠胃|脾胃)"
+        r"[^。！？；;\r\n]{0,16}小肚子"
+    ),
 )
 
 CHILD_SUBJECT_PATTERN = r"(?:娃|孩子|宝贝|宝宝|小朋友|儿子|闺女|他|她)"
@@ -1579,6 +1588,35 @@ WANGYUE_CHILD_PRODUCT_PROMO_PATTERNS = (
     re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,30}}我家也有[^。！？；;]{{0,20}}(?:旺玥|奶|一杯|喝)"),
     re.compile(r"(?:跟人家说|跟旁边(?:的)?(?:小朋友|小孩|孩子)说|跟(?:别的|其他)(?:小朋友|小孩|孩子)说)[^。！？；;]{0,30}(?:我家也有|你也来一杯|要不要来一杯)"),
     re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,24}}(?:推荐|安利)[^。！？；;]{{0,20}}(?:旺玥|奶粉|这款|这个奶)"),
+    re.compile(
+        rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,18}}(?:给|替|帮)"
+        r"[^。！？；;]{0,12}(?:每个|旁边的|别的|其他|几个|一群)?(?:小朋友|小孩|孩子|同伴|同学|伙伴)"
+        r"[^。！？；;]{0,12}(?:倒|分|递|送)(?:了)?[^。！？；;]{0,12}"
+        r"(?:旺玥|皇家美素佳儿旺玥|一杯(?:旺玥|奶)|这杯奶)"
+    ),
+    re.compile(
+        rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,18}}(?:把)?"
+        r"(?:旺玥|皇家美素佳儿旺玥|一杯(?:旺玥|奶)|这杯奶)"
+        r"[^。！？；;]{0,12}(?:倒|分|递|送)(?:了)?(?:给|到)"
+        r"[^。！？；;]{0,10}(?:每个|旁边的|别的|其他|几个|一群)?(?:小朋友|小孩|孩子|同伴|同学|伙伴)"
+    ),
+    re.compile(
+        rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,18}}(?:向|给|跟)?"
+        r"(?:每个|旁边的|别的|其他|几个|一群)?(?:小朋友|小孩|孩子|同伴|同学|伙伴)"
+        r"[^。！？；;]{0,16}(?:介绍|推荐|安利)"
+        r"[^。！？；;]{0,20}(?:旺玥|皇家美素佳儿旺玥|这款奶粉|这个奶粉|这个奶)"
+    ),
+    re.compile(
+        rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,18}}(?:邀请|劝|叫|让)"
+        r"[^。！？；;]{0,12}(?:每个|旁边的|别的|其他|几个|一群)?(?:小朋友|小孩|孩子|同伴|同学|伙伴)"
+        r"[^。！？；;]{0,16}(?:也)?(?:喝|试|尝)"
+        r"[^。！？；;]{0,12}(?:旺玥|皇家美素佳儿旺玥|这款奶粉|这个奶粉|这个奶|一杯)"
+    ),
+    re.compile(
+        rf"{CHILD_SUBJECT_PATTERN}(?:自己|还|竟然|居然|主动|认真地|一本正经地)?"
+        r"(?:说|讲|介绍|告诉)[^。！？；;]{0,40}"
+        r"(?:乳铁蛋白|HMO|免疫球蛋白|保护力|钙铁锌|DHA|燕窝酸|营养(?:价值|成分|配置))"
+    ),
 )
 
 CURRENT_TEMPORAL_ANCHORS = (
@@ -1777,8 +1815,14 @@ WANGYUE_FORMULA_USAGE_FORM_PATTERNS = (
 )
 
 WANGYUE_PRODUCT_FACT_NUMBER_PATTERNS = (
-    re.compile(r"(?:十几种|十多种|二十多种|20多种|几十种)[^。！？；;，,\r\n]{0,8}(?:关键营养|营养)"),
-    re.compile(r"(?:关键营养|营养)[^。！？；;，,\r\n]{0,8}(?:十几种|十多种|二十多种|20多种|几十种)"),
+    re.compile(
+        r"(?<![一二三四五六七八九\d])(?:十几种|十多种|二十多种|20多种|几十种)"
+        r"[^。！？；;，,\r\n]{0,8}(?:关键营养|营养)"
+    ),
+    re.compile(
+        r"(?:关键营养|营养)[^。！？；;，,\r\n]{0,8}"
+        r"(?<![一二三四五六七八九\d])(?:十几种|十多种|二十多种|20多种|几十种)"
+    ),
 )
 
 WANGYUE_SLEEP_EFFECT_SCOPE_PATTERNS = (
@@ -1984,7 +2028,7 @@ def review_product_experience_phrase(
     wangyue_supplement_replacement_hits = (
         _wangyue_supplement_replacement_hits(text) if is_wangyue else []
     )
-    wangyue_digestive_effect_hits = _hits_prefer_longer(text, WANGYUE_DIGESTIVE_EFFECT_PHRASES) if is_wangyue else []
+    wangyue_digestive_effect_hits = _wangyue_digestive_effect_hits(text) if is_wangyue else []
     wangyue_missing_product_mention = is_wangyue and not any(
         term in text for term in ("旺玥", "皇家美素佳儿")
     )
@@ -2244,6 +2288,12 @@ def sanitize_temporal_context(value: str | None) -> str:
 
 def sanitize_wangyue_time_event_context(value: str | None) -> str:
     text = str(value or "")
+    text = re.sub(
+        r"((?:回想)?(?:之前|以前))季节交替(?:时|的时候)?",
+        r"\1",
+        text,
+    )
+    text = text.replace("季节交替", "有段时间")
     replacements = (
         ("户外踏青", "户外活动"),
         ("春游", "户外活动"),
@@ -2278,7 +2328,6 @@ def sanitize_wangyue_time_event_context(value: str | None) -> str:
         ("冬天", "平时"),
         ("天冷", "外面活动多"),
         ("流感", "小状况"),
-        ("季节", "时候"),
     )
     for old, new in replacements:
         text = text.replace(old, new)
@@ -2749,11 +2798,15 @@ def sanitize_wangyue_context_phrases(value: str | None) -> str:
     text = text.replace("便便也规律", "日常状态还顺")
     text = text.replace("便便规律了", "日常状态还顺")
     text = text.replace("便便规律", "日常状态还顺")
+    text = re.sub(
+        r"小肚子(?:看着|摸着)?(?:舒服|不舒服|舒坦|软软的?|不胀|没胀|胀|咕噜咕噜|咕噜|规律|顺了|轻松)",
+        "日常状态看着还顺",
+        text,
+    )
     text = text.replace("没闹过肚肚", "喝着还算顺")
     text = text.replace("闹过肚肚", "不太适应")
     text = text.replace("闹肚子", "不太适应")
     text = text.replace("肚肚", "状态")
-    text = text.replace("小肚子", "状态")
     text = text.replace("胀气", "不适应")
     text = text.replace("舌苔白", "不太适应")
     text = text.replace("舌苔", "状态")
@@ -2982,11 +3035,17 @@ def _physical_action_carrier_mismatch_hits(text: str) -> list[str]:
             r"(?:顺手)?(?:把|将)?(?:旺玥|皇家美素佳儿旺玥)[^。！？；;，,\r\n]{0,8}"
             r"(?:递过去|递给(?:他|她|孩子|娃)|递到(?:他|她|孩子|娃)(?:手里|面前))"
         ),
+        re.compile(
+            r"(?:冲泡|冲|泡)(?:了|好|完)?(?:一整?|这|那|整)罐"
+            r"(?:旺玥|奶粉|儿童奶粉)?"
+        ),
     )
     hits: list[tuple[int, str]] = []
     for pattern in patterns:
         for match in pattern.finditer(text or ""):
             hit = match.group(0).strip(" ，,。；;\n")
+            if "递" in hit and _is_prepared_formula_handoff(text or "", match.start(), match.end()):
+                continue
             if hit:
                 hits.append((match.start(), hit))
     ordered_hits: list[str] = []
@@ -2996,6 +3055,19 @@ def _physical_action_carrier_mismatch_hits(text: str) -> list[str]:
             ordered_hits.append(hit)
             seen.add(hit)
     return ordered_hits
+
+
+def _is_prepared_formula_handoff(text: str, start: int, end: int) -> bool:
+    context = text[max(0, start - 10) : min(len(text), end + 2)]
+    return bool(
+        re.search(
+            r"(?:"
+            r"(?:冲|泡)(?:好|完)(?:的)?[^。！？；;，,\r\n]{0,6}(?:旺玥|皇家美素佳儿旺玥)"
+            r"|(?:旺玥|皇家美素佳儿旺玥)[^。！？；;，,\r\n]{0,6}(?:冲|泡)(?:好|完)"
+            r")[^。！？；;，,\r\n]{0,8}递",
+            context,
+        )
+    )
 
 
 def _wangyue_product_fact_number_drift_hits(text: str) -> list[str]:
@@ -3053,6 +3125,16 @@ def _wangyue_public_disease_context_hits(text: str) -> list[str]:
             ordered_hits.append(hit)
             seen.add(hit)
     return ordered_hits
+
+
+def _wangyue_digestive_effect_hits(text: str) -> list[str]:
+    hits = _hits_prefer_longer(text, WANGYUE_DIGESTIVE_EFFECT_PHRASES)
+    for pattern in WANGYUE_DIGESTIVE_EFFECT_PATTERNS:
+        for match in pattern.finditer(text or ""):
+            hit = match.group(0).strip(" ，,。；;\n")
+            if hit and "小肚子" not in hits:
+                hits.append("小肚子")
+    return hits
 
 
 def _wangyue_ingredient_benefit_mismatch_hits(text: str) -> list[str]:
@@ -3407,6 +3489,8 @@ def _wangyue_temporary_remedy_chain_hits(text: str) -> list[str]:
         if not symptom_match:
             continue
         symptom_start = start + symptom_match.start()
+        if _is_other_child_symptom_context(text, symptom_start):
+            continue
         evidence_start = min(symptom_start, remedy_match.start())
         sentence_start = max(
             text.rfind("。", 0, evidence_start),
@@ -3431,6 +3515,25 @@ def _wangyue_temporary_remedy_chain_hits(text: str) -> list[str]:
         if hit and hit not in hits:
             hits.append(hit)
     return hits
+
+
+def _is_other_child_symptom_context(text: str, symptom_start: int) -> bool:
+    clause_start = max(
+        text.rfind("。", 0, symptom_start),
+        text.rfind("！", 0, symptom_start),
+        text.rfind("？", 0, symptom_start),
+        text.rfind("；", 0, symptom_start),
+        text.rfind(";", 0, symptom_start),
+        text.rfind("\n", 0, symptom_start),
+    ) + 1
+    context = text[clause_start : symptom_start + 1]
+    return bool(
+        re.search(
+            r"(?:朋友|闺蜜|同事|邻居|亲戚|别人|人家)(?:家|家的)?"
+            r"(?:娃|孩子|小朋友|儿子|女儿)|(?:她|他)家(?:娃|孩子|小朋友)",
+            context,
+        )
+    )
 
 
 def _wangyue_row2_drinking_action_regex_hits(text: str) -> list[str]:
@@ -3928,13 +4031,6 @@ def _is_wangyue_painpoint_selling_plan(plan: dict[str, Any]) -> bool:
 def _is_wangyue_growth_nutrition_plan(plan: dict[str, Any]) -> bool:
     if not _is_wangyue_plan(plan):
         return False
-    asset_key = str(plan.get("asset_key") or "")
-    row_no = plan.get("source_row_no")
-    try:
-        if asset_key == "wangyue_article_business_rules" and row_no is not None and int(row_no) == 4:
-            return True
-    except (TypeError, ValueError):
-        pass
     plan_text = "\n".join(
         str(plan.get(key) or "")
         for key in ("business_rule", "topic", "corpus", "rule_name")

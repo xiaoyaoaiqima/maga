@@ -31,6 +31,18 @@ class InvokeResult:
     error_message: str | None = None
 
 
+@dataclass(frozen=True)
+class DirectLLMCallResult:
+    """Normalized metadata from one direct OpenAI-compatible model call."""
+
+    content: str
+    model_code: str
+    provider_code: str | None
+    provider_model: str
+    usage: dict[str, int]
+    latency_ms: int
+
+
 def _iso_or_none(value: datetime | None) -> str | None:
     if value is None:
         return None
@@ -635,6 +647,27 @@ async def _call_openai_compatible_model(
     max_tokens: int | None,
     model_config: dict[str, Any],
 ) -> str:
+    result = await _call_openai_compatible_model_result(
+        model=model,
+        system=system,
+        user=user,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        model_config=model_config,
+    )
+    return result.content
+
+
+async def _call_openai_compatible_model_result(
+    *,
+    model: str,
+    system: str,
+    user: str,
+    temperature: float,
+    max_tokens: int | None,
+    model_config: dict[str, Any],
+) -> DirectLLMCallResult:
+    started = time.perf_counter()
     endpoint = _direct_model_endpoint(model_config)
     api_key = _direct_model_api_key(model_config)
     timeout_s = _float_or_default(
@@ -667,7 +700,18 @@ async def _call_openai_compatible_model(
                 response = await client.post(endpoint, json=payload, headers=headers)
                 response.raise_for_status()
                 data = response.json()
-            return _extract_openai_choice_content(data)
+            return DirectLLMCallResult(
+                content=_extract_openai_choice_content(data),
+                model_code=str(
+                    model_config.get("route_model_code")
+                    or model_config.get("requested_model_code")
+                    or model
+                ),
+                provider_code=str(model_config.get("provider_code") or "") or None,
+                provider_model=str(model_config.get("provider_model") or model),
+                usage=_normalize_openai_usage(data.get("usage")),
+                latency_ms=int((time.perf_counter() - started) * 1000),
+            )
         except httpx.TimeoutException:
             last_error = f"直连大模型调用超时(timeout={timeout_s}s)"
         except httpx.HTTPStatusError as exc:
@@ -678,6 +722,57 @@ async def _call_openai_compatible_model(
         except ValueError as exc:
             last_error = f"直连大模型响应解析失败: {exc}"
     raise RuntimeError(f"{last_error}，已重试 {retry_count} 次")
+
+
+async def call_direct_llm_text(
+    *,
+    model_config: dict[str, Any],
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float = 0,
+    max_tokens: int | None = None,
+) -> str:
+    """Call the same OpenAI-compatible provider path used by MAGA direct generation."""
+    result = await call_direct_llm(
+        model_config=model_config,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    return result.content
+
+
+async def call_direct_llm(
+    *,
+    model_config: dict[str, Any],
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float = 0,
+    max_tokens: int | None = None,
+) -> DirectLLMCallResult:
+    """Call the direct provider path and retain provider, token, and latency metadata."""
+    model = _direct_model_code(model_config, fallback_key="MAGA_DIRECT_REVIEW_MODEL")
+    return await _call_openai_compatible_model_result(
+        model=model,
+        system=system_prompt,
+        user=user_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        model_config=model_config,
+    )
+
+
+def _normalize_openai_usage(value: Any) -> dict[str, int]:
+    usage = value if isinstance(value, dict) else {}
+    input_tokens = int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
+    output_tokens = int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)
+    total_tokens = int(usage.get("total_tokens") or input_tokens + output_tokens)
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
 
 
 def _extract_openai_choice_content(data: dict[str, Any]) -> str:
@@ -696,6 +791,7 @@ def _direct_model_code(model_config: dict[str, Any], *, fallback_key: str) -> st
     return normalize_default_model(
         model_config.get("model_code")
         or model_config.get("provider_model")
+        or model_config.get("model")
         or model_config.get("ge_model")
         or os.getenv(fallback_key)
         or os.getenv("MAGA_DIRECT_CONTENT_MODEL")

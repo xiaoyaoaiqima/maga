@@ -84,6 +84,31 @@ def test_summary_reports_repeated_closure_clusters_only_near_body_end():
     assert clusters["right_choice"]["hits"][0]["phrases"] == ["判断没错", "选得还行"]
 
 
+def test_summary_separates_unreviewed_items_from_redline_failures():
+    service = ContentBatchReportService(db=None)
+    items = [
+        ContentBatchReportItem(
+            item_id=1,
+            item_no=1,
+            status="generated",
+            hard_pass=False,
+            audit_skipped=True,
+        ),
+        ContentBatchReportItem(
+            item_id=2,
+            item_no=2,
+            status="generated",
+            hard_pass=False,
+            audit_skipped=False,
+        ),
+    ]
+
+    summary = service._summary(items)
+
+    assert summary.hard_pass_count == 0
+    assert summary.audit_skipped_count == 1
+
+
 def test_report_surfaces_history_similarity_watch_without_rewrite():
     service = ContentBatchReportService(db=None)
     items = [
@@ -478,7 +503,7 @@ async def test_report_marks_rewrite_required_item_as_not_hard_pass():
     async with session_factory() as session:
         job = ContentBatchJob(
             batch_code="batch_rewrite_required_hard_pass",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="generated",

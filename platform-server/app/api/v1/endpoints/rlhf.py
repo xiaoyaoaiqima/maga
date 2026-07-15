@@ -14,10 +14,6 @@ from app.schemas.rlhf import (
     RLHFTagRequest,
     RLHFLockResponse,
     RLHFInspectionRequest,
-    RLHFSummaryRequest,
-    RLHFSummaryResponse,
-    RLHFSummarizeCommentRequest,
-    RLHFSummarizeCommentResponse,
     RLHFIssueTagCreate,
     RLHFIssueTagUpdate,
     RLHFIssueTagOut,
@@ -351,42 +347,6 @@ async def inspection_content(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/contents/{id}/suggest-tags", response_model=ResponseData[RLHFSummaryResponse])
-async def suggest_tags(
-    id: int = Path(..., title="Feedback ID"),
-    data: RLHFSummaryRequest = ...,
-    db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(get_current_active_user),
-):
-    """根据划词评论和人工意见，利用 AI 总结问题标签"""
-    service = RLHFService(db)
-    try:
-        tags = await service.suggest_tags(id, data)
-        return ResponseData(data=RLHFSummaryResponse(tags=tags))
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Summary failed: {str(e)}")
-
-
-@router.post("/contents/{id}/summarize-comment", response_model=ResponseData[RLHFSummarizeCommentResponse])
-async def summarize_comment(
-    id: int = Path(..., title="Feedback ID"),
-    data: RLHFSummarizeCommentRequest = RLHFSummarizeCommentRequest(),
-    db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(get_current_active_user),
-):
-    """AI 总结意见 - 根据原文和划词评论生成修改意见"""
-    service = RLHFService(db)
-    try:
-        comment = await service.summarize_comment(id, data)
-        return ResponseData(data=RLHFSummarizeCommentResponse(comment=comment))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI 总结意见失败: {str(e)}")
-
-
 # --- Review Operations ---
 
 @router.post("/contents/{id}/like", response_model=ResponseData[RLHFFeedbackOut])
@@ -553,4 +513,3 @@ async def get_reviewer_stats(
     service = RLHFService(db)
     result = await service.get_reviewer_stats()
     return ResponseData(data=result)
-

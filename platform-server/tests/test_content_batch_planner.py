@@ -12,18 +12,36 @@ from app.services.content_batch_planner import (
     _article_rules_with_draft_override,
     _corpus_for_ugc_post_type,
     _normalize_article_draft_rule_override,
+    _normalize_postprocess_mode,
     _resolve_prompt_mode,
+    _resolve_postprocess_mode,
     _resolve_real_user_pool_config,
     _rotated_model_config,
     _select_article_business_rules_for_generation,
 )
 
 
+def test_postprocess_mode_accepts_audit_only_without_rewrite():
+    assert _normalize_postprocess_mode("audit_only") == "audit_only"
+    assert _normalize_postprocess_mode("generate_only") == "generate_only"
+    assert _normalize_postprocess_mode(None) is None
+
+    with pytest.raises(ValueError, match="unsupported postprocess_mode"):
+        _normalize_postprocess_mode("rewrite_only")
+
+
+def test_momclass_defaults_to_audit_only_but_keeps_explicit_generate_only():
+    assert _resolve_postprocess_mode("a2_momclass_month_center", None) == "audit_only"
+    assert _resolve_postprocess_mode("a2_momclass_month_center", "generate_only") == "generate_only"
+    assert _resolve_postprocess_mode("other_article_rules", None) is None
+
+
 def test_rule_corpus_prompt_skips_planner_product_position_guard():
     corpus = _corpus_for_ugc_post_type(
         "任务：写选奶复盘。",
-        "对比选择型",
+        "轻复盘型",
         product_position_mode="先抛问题后出现",
+        include_ugc_post_type_guard=False,
         include_product_position_guard=False,
     )
 
@@ -177,7 +195,7 @@ def test_article_business_rule_plan_uses_asset_model_config_with_request_overrid
     }
     asset = AssetRegistry(
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         content_json={
             "rule_type": "business_rule",
             "model_config": {"temperature": 0.9, "max_tokens": 2048},
@@ -786,21 +804,21 @@ def test_article_business_rule_plan_rotates_product_position_and_ending_for_rest
         "后段才补一句",
         "拆箱核对时出现",
         "放回常用位置时出现",
-        "账单里轻带",
+        "清单里轻带",
     ]
     assert [plan["ending_mode"] for plan in plans] == [
         "放回位置",
         "漏买小遗憾",
         "普通收尾不总结",
         "家里乱但先补上",
-        "预算轻带",
+        "家里习惯轻带",
         "下次再看",
         "收纳未完成",
         "顺路带回",
         "家人提醒收口",
         "东西先归位",
     ]
-    assert [plan["ending_mode"] for plan in plans].count("预算轻带") == 1
+    assert [plan["ending_mode"] for plan in plans].count("家里习惯轻带") == 1
 
 
 def test_article_business_rule_plan_rotates_title_shape_by_post_type():
@@ -878,7 +896,7 @@ def test_article_business_rule_plan_rotates_scene_motive_by_post_type():
     )
 
     assert first["scene_motive_bucket"] == "快递到货拆箱"
-    assert second["scene_motive_bucket"] == "月底账单/购物车清理"
+    assert second["scene_motive_bucket"] == "月底清单/购物车清理"
 
 
 def test_article_business_rule_plan_uses_non_cabinet_restock_bucket():
@@ -925,7 +943,7 @@ def test_article_business_rule_plan_merges_content_path_control_from_asset_and_r
     }
     asset = AssetRegistry(
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         content_json={
             "rule_type": "business_rule",
             "content_path_control": {
@@ -970,7 +988,7 @@ def test_article_business_rule_plan_uses_content_path_control_to_filter_real_use
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={"rule_type": "business_rule"},
         metadata_json={},
@@ -1036,7 +1054,7 @@ def test_article_business_rule_plan_uses_asset_example_sample_count():
     }
     asset = AssetRegistry(
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         content_json={
             "rule_type": "business_rule",
             "example_sample_count": 8,
@@ -1070,7 +1088,7 @@ def test_article_business_rule_plan_caps_asset_example_sample_count():
     }
     asset = AssetRegistry(
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         content_json={
             "rule_type": "business_rule",
             "example_sample_count": 50,
@@ -1103,7 +1121,7 @@ def test_article_business_rule_plan_adds_real_user_examples_when_pool_configured
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -1179,7 +1197,7 @@ def test_article_business_rule_plan_selects_layered_real_user_examples():
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={"rule_type": "business_rule"},
         metadata_json={},
@@ -1304,7 +1322,7 @@ def test_wangyue_real_user_pool_defaults_sample_prompt_layers_without_static_tit
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -1412,7 +1430,7 @@ def test_wangyue_real_user_pool_source_row_override_can_disable_route_layer():
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={"rule_type": "business_rule"},
         metadata_json={},
@@ -1435,24 +1453,26 @@ def test_wangyue_real_user_pool_source_row_override_can_disable_route_layer():
             "quality_score": 30,
             "dedupe_hash": "route-1",
         },
-        {
-            "source_type": "note",
-            "text": "当妈后才知道，孩子喝的东西真不能随便。",
-            "title": "随手记",
-            "tags": ["选奶"],
-            "risk_tags": [],
-            "quality_score": 20,
-            "dedupe_hash": "opening-1",
-        },
-        {
-            "source_type": "note",
-            "text": "说实话，我不是很懂这些成分。",
-            "title": "随手记",
-            "tags": ["成分"],
-            "risk_tags": [],
-            "quality_score": 18,
-            "dedupe_hash": "opening-2",
-        },
+            {
+                "source_type": "note",
+                "text": "当妈后才知道，孩子喝的东西真不能随便。",
+                "title": "随手记",
+                "tags": ["选奶"],
+                "risk_tags": [],
+                "quality_score": 20,
+                "dedupe_hash": "opening-1",
+                "example_layer": "opening_texture",
+            },
+            {
+                "source_type": "note",
+                "text": "说实话，我不是很懂这些成分。",
+                "title": "随手记",
+                "tags": ["成分"],
+                "risk_tags": [],
+                "quality_score": 18,
+                "dedupe_hash": "opening-2",
+                "example_layer": "opening_texture",
+            },
         {
             "source_type": "note",
             "text": "我不是很懂，先看成分。",
@@ -1520,7 +1540,7 @@ def test_wangyue_real_user_pool_source_row_override_can_filter_layer_source_keyw
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={"rule_type": "business_rule"},
         metadata_json={},
@@ -1624,7 +1644,7 @@ def test_wangyue_real_user_pool_source_row_override_can_disable_all_layers():
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={"rule_type": "business_rule"},
         metadata_json={},
@@ -1694,7 +1714,7 @@ def test_wangyue_title_shape_can_use_fallback_pool_without_changing_route_pool()
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={"rule_type": "business_rule"},
         metadata_json={},
@@ -1781,7 +1801,7 @@ def test_wangyue_title_shape_can_use_fallback_pool_without_changing_route_pool()
     assert plan["real_user_pool"]["selected"]["title_shape"] == 2
 
 
-def test_wangyue_real_user_pool_defaults_rule_examples_to_one_unless_configured():
+def test_article_business_example_sample_count_requires_explicit_override():
     service = ContentBatchPlanner(None)
     rule = {
         "rule_id": "business_rule_001",
@@ -1790,7 +1810,7 @@ def test_wangyue_real_user_pool_defaults_rule_examples_to_one_unless_configured(
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -1799,12 +1819,12 @@ def test_wangyue_real_user_pool_defaults_rule_examples_to_one_unless_configured(
         metadata_json={},
     )
 
-    assert service._article_business_example_sample_count(asset, rule) == 1
+    assert service._article_business_example_sample_count(asset, rule) == 3
 
     configured_asset = AssetRegistry(
         id=11,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -1819,7 +1839,7 @@ def test_wangyue_real_user_pool_defaults_rule_examples_to_one_unless_configured(
     disabled_asset = AssetRegistry(
         id=12,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -1843,7 +1863,7 @@ def test_article_business_rule_plan_adds_title_reference_examples():
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -1901,7 +1921,7 @@ def test_article_business_rule_plan_avoids_repeated_static_title_references():
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -1952,7 +1972,7 @@ def test_article_business_rule_plan_avoids_stacked_title_prompt_family_when_poss
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -2019,7 +2039,7 @@ def test_article_business_rule_plan_keeps_stacked_title_prompt_family_when_no_al
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -2086,7 +2106,7 @@ def test_article_business_rule_plan_passes_prompt_family_filters_to_real_user_se
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -2183,7 +2203,7 @@ def test_wangyue_growth_rule_filters_drinking_synthetic_title_examples():
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -2232,7 +2252,7 @@ def test_article_business_rule_plan_filters_synthetic_titles_from_row_override()
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={
             "rule_type": "business_rule",
@@ -2283,7 +2303,7 @@ def test_article_business_rule_plan_selects_detail_and_ending_real_user_examples
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={"rule_type": "business_rule"},
         metadata_json={},
@@ -2364,7 +2384,7 @@ def test_article_business_rule_plan_passes_detail_family_filter():
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={"rule_type": "business_rule"},
         metadata_json={},
@@ -2436,7 +2456,7 @@ def test_article_business_rule_plan_avoids_reusing_route_family_across_batch():
     asset = AssetRegistry(
         id=10,
         asset_type="article_business_rule_set",
-        asset_key="wangyue_article_business_rules",
+        asset_key="wangyue_v3_core_storyline_article_rules",
         version_no=1,
         content_json={"rule_type": "business_rule"},
         metadata_json={},

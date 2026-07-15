@@ -41,7 +41,9 @@ def test_article_output_format_supports_explicit_two_items_mode():
     single = _article_output_format_requirement("article", ["title", "body"], {})
     multi = _article_output_format_requirement("article", ["title", "body"], {"multi_output_count": 2})
 
-    assert "字段只能包含 title 和 body" in single
+    assert '格式必须是 {"title":"...","body":"..."}' in single
+    assert "顶层只能包含 title 和 body 两个字段" in single
+    assert "不要输出 items 数组" in single
     assert '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。' in multi
     assert "items 必须正好 2 个" in multi
     assert "一次生成 2 篇" not in multi
@@ -53,15 +55,17 @@ def test_rule_corpus_as_prompt_keeps_single_article_output_format():
     prompt = _rule_corpus_as_prompt_article_prompt(
         {
             "business_rule": "任务：写1篇妈妈UGC。",
-            "output_format_requirement": (
-                "只输出 JSON 对象，字段只能包含 title 和 body；"
-                "正文内容放在 body 字段里，标题内容放在 title 字段里。"
+            "output_format_requirement": _article_output_format_requirement(
+                "article",
+                ["title", "body"],
+                {},
             ),
         },
         selected_keywords=[],
     )
 
-    assert "字段只能包含 title 和 body" in prompt
+    assert '格式必须是 {"title":"...","body":"..."}' in prompt
+    assert "不要输出 items 数组" in prompt
     assert "items 必须正好" not in prompt
     assert '"items"' not in prompt
 
@@ -370,6 +374,36 @@ def test_rule_corpus_as_prompt_selects_one_life_entry_slot_by_item_no():
     assert "一次生成 2 篇" not in prompt
     assert '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。' in prompt
     assert "items 必须正好 2 个。" in prompt
+
+
+def test_rule_corpus_selling_expression_note_is_optional():
+    from app.services.unified_content_generation_service import _rule_corpus_as_prompt_article_prompt
+
+    prompt = _rule_corpus_as_prompt_article_prompt(
+        {
+            "item_no": 2,
+            "business_rule": (
+                "生文指令：写妈妈UGC。\n\n"
+                "内容方向：\n记录一件日常。\n\n"
+                "【卖点表达】\n"
+                "- 卖点表达：乳铁蛋白含量优秀\n"
+                "  注意：不要讲得太专业\n"
+                "- 卖点表达：不指望它替代一切，但至少钙铁锌这些不会缺\n"
+                "- 卖点表达：营养比较丰富\n"
+                "  注意：不要照抄\n\n"
+                "事实与合规边界：\n- 不写保证有效。"
+            ),
+            "output_format_requirement": '只输出 {"title":"...","body":"..."}。',
+        },
+        selected_keywords=[],
+    )
+
+    assert "卖点表达：不指望它替代一切，但至少钙铁锌这些不会缺" in prompt
+    assert "注意：" not in prompt
+    assert "乳铁蛋白含量优秀" not in prompt
+    assert "营养比较丰富" not in prompt
+    assert "【卖点表达】" not in prompt
+    assert "事实与合规边界" in prompt
 
 
 def test_template_variables_derives_slot_rotation_from_multi_output_group():
@@ -1327,7 +1361,7 @@ def test_generation_requirements_do_not_render_wangyue_copyable_scene_bucket():
         "article",
         ["title", "body"],
         {
-            "asset_key": "wangyue_v209_benefit_bridge_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用反馈",
             "painpoint": "容易中招",
             "selling_point": "进阶保护力",
@@ -1352,7 +1386,7 @@ def test_generation_requirements_do_not_render_wangyue_copyable_scene_bucket():
         "article",
         ["title", "body"],
         {
-            "asset_key": "wangyue_v209_benefit_bridge_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用反馈",
             "painpoint": "容易中招",
             "selling_point": "进阶保护力",
@@ -2039,7 +2073,8 @@ async def test_unified_article_generation_renders_article_requirement_before_bus
     assert "业务内核发散" not in prompt[prompt.index("【表达扩散语料】") :]
     assert prompt.rstrip().endswith(
         "【输出格式】\n"
-        "只输出 JSON 对象，字段只能包含 title 和 body；"
+        '只输出一个 JSON 对象，格式必须是 {"title":"...","body":"..."}；'
+        "顶层只能包含 title 和 body 两个字段，不要输出 items 数组；"
         "不要输出 Markdown 标题、编号、解释、前后缀；"
         "不要写“标题：”“正文：”“### 标题”“### 正文”；"
         "正文内容放在 body 字段里，标题内容放在 title 字段里。"
@@ -2771,7 +2806,7 @@ def test_wangyue_keyword_corpus_filters_article_speaking_style_slot():
         selected_keywords,
         content_type="article",
         output_fields=["title", "body"],
-        business_rule={"asset_key": "wangyue_article_business_rules", "corpus": "旺玥"},
+        business_rule={"asset_key": "wangyue_v3_core_storyline_article_rules", "corpus": "旺玥"},
     )
     generic_text = _keyword_corpus_text(
         selected_keywords,

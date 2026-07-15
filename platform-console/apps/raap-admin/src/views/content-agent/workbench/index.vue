@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { ContentAgentApi } from '#/api/core/content-agent';
 
-import { computed, h, onMounted, ref, watch } from 'vue';
+import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+
+import { useUserStore } from '@vben/stores';
 
 import {
   Alert,
@@ -13,6 +15,7 @@ import {
   DescriptionsItem,
   Divider,
   Empty,
+  Input,
   List,
   ListItem,
   message,
@@ -29,20 +32,35 @@ import {
   getContentAgentTaskSnapshotApi,
   getContentBatchListApi,
   getContentBatchReportApi,
+  submitBatchItemFeedbackApi,
 } from '#/api/core/content-agent';
 
 import VersionComparePanel from '../components/version_compare_panel.vue';
 
 const route = useRoute();
 const router = useRouter();
+const userStore = useUserStore();
+const { TextArea } = Input;
 
 const batchLoading = ref(false);
 const reportLoading = ref(false);
 const exportLoading = ref(false);
+const savingItemId = ref<null | number>(null);
 const promptLoadingTaskId = ref<null | number>(null);
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
 const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
 const batchTotal = ref(0);
+const feedbackDrafts = reactive<Record<number, string>>({});
+const editDrafts = reactive<Record<number, { body: string; title: string }>>(
+  {},
+);
+
+const currentOperator = computed(
+  () =>
+    userStore.userInfo?.realName ||
+    userStore.userInfo?.username ||
+    'maga-operator',
+);
 
 const selectedItems = computed(() => selectedReport.value?.items || []);
 const selectedSummary = computed(() => selectedReport.value?.summary || null);
@@ -91,9 +109,7 @@ const formatDuration = (durationMs?: null | number) => {
   return `${(durationMs / 1000).toFixed(durationMs < 10_000 ? 2 : 1)}s`;
 };
 
-const failedCountOf = (
-  summary?: ContentAgentApi.BatchReportSummary | null,
-) => {
+const failedCountOf = (summary?: ContentAgentApi.BatchReportSummary | null) => {
   if (!summary) return 0;
   return Math.max(0, summary.total_count - summary.generated_count);
 };
@@ -438,9 +454,7 @@ const showGenerationSnapshot = (item: ContentAgentApi.BatchReportItem) => {
   });
 };
 
-const showGenerationPrompt = async (
-  item: ContentAgentApi.BatchReportItem,
-) => {
+const showGenerationPrompt = async (item: ContentAgentApi.BatchReportItem) => {
   let prompt = item.generation_snapshot?.rendered_prompt || '';
   if (!prompt && item.task_id) {
     promptLoadingTaskId.value = item.task_id;
@@ -488,6 +502,79 @@ const openReport = async (batchId: number, showLoading = true) => {
   }
 };
 
+const replaceReportItem = (updated: ContentAgentApi.BatchReportItem) => {
+  if (!selectedReport.value) return;
+  selectedReport.value.items = selectedReport.value.items.map((item) =>
+    item.item_id === updated.item_id ? updated : item,
+  );
+};
+
+const refreshSelectedReport = async () => {
+  if (!selectedReport.value) return;
+  await openReport(selectedReport.value.batch_id, false);
+};
+
+const startEdit = (item: ContentAgentApi.BatchReportItem) => {
+  editDrafts[item.item_id] = {
+    title: item.title || '',
+    body: item.body || '',
+  };
+};
+
+const cancelEdit = (itemId: number) => {
+  delete editDrafts[itemId];
+};
+
+const saveFeedback = async (item: ContentAgentApi.BatchReportItem) => {
+  const feedbackText = (feedbackDrafts[item.item_id] || '').trim();
+  if (!feedbackText) {
+    message.warning('请先填写反馈');
+    return;
+  }
+  savingItemId.value = item.item_id;
+  try {
+    const response = await submitBatchItemFeedbackApi(item.item_id, {
+      action: 'request_revision',
+      title: item.title,
+      body: item.body,
+      feedback_text: feedbackText,
+      created_by: currentOperator.value,
+    });
+    replaceReportItem(response.item);
+    feedbackDrafts[item.item_id] = '';
+    await refreshSelectedReport();
+    message.success('反馈已保存为 v' + response.version_no);
+  } finally {
+    savingItemId.value = null;
+  }
+};
+
+const saveEdit = async (item: ContentAgentApi.BatchReportItem) => {
+  const draft = editDrafts[item.item_id];
+  if (!draft?.title.trim() || !draft.body.trim()) {
+    message.warning('标题和正文不能为空');
+    return;
+  }
+  savingItemId.value = item.item_id;
+  try {
+    const response = await submitBatchItemFeedbackApi(item.item_id, {
+      action: 'manual_edit',
+      title: draft.title.trim(),
+      body: draft.body.trim(),
+      feedback_text:
+        (feedbackDrafts[item.item_id] || '').trim() || '运营人工修改内容',
+      created_by: currentOperator.value,
+    });
+    replaceReportItem(response.item);
+    delete editDrafts[item.item_id];
+    feedbackDrafts[item.item_id] = '';
+    await refreshSelectedReport();
+    message.success('修改已保存为 v' + response.version_no);
+  } finally {
+    savingItemId.value = null;
+  }
+};
+
 const loadBatches = async () => {
   batchLoading.value = true;
   try {
@@ -506,15 +593,6 @@ const loadBatches = async () => {
   } finally {
     batchLoading.value = false;
   }
-};
-
-const goFeedback = () => {
-  router.push({
-    path: '/content-agent/feedback',
-    query: selectedReport.value
-      ? { batch_id: String(selectedReport.value.batch_id) }
-      : {},
-  });
 };
 
 const goBusinessRules = () => {
@@ -565,8 +643,9 @@ watch(
                     batch.summary.total_count
                   }}
                   条 · 失败 {{ failedCountOf(batch.summary) }} · 红线通过
-                  {{ batch.summary.hard_pass_count }} · 改写
-                  {{ batch.summary.rewrite_item_count }}
+                  {{ batch.summary.hard_pass_count }} · 未审核
+                  {{ batch.summary.audit_skipped_count }} · 反馈
+                  {{ batch.summary.feedback_count }}
                 </div>
               </div>
             </div>
@@ -595,7 +674,6 @@ watch(
             </template>
             <template #extra>
               <Space>
-                <Button size="small" @click="goFeedback">去评价</Button>
                 <Button
                   size="small"
                   :loading="exportLoading"
@@ -638,7 +716,10 @@ watch(
                 />
               </Col>
               <Col :span="4">
-                <Statistic title="失败" :value="failedCountOf(selectedSummary)" />
+                <Statistic
+                  title="失败"
+                  :value="failedCountOf(selectedSummary)"
+                />
               </Col>
               <Col :span="4">
                 <Statistic
@@ -648,8 +729,8 @@ watch(
               </Col>
               <Col :span="4">
                 <Statistic
-                  title="自动改写"
-                  :value="selectedSummary.rewrite_item_count"
+                  title="反馈"
+                  :value="selectedSummary.feedback_count"
                 />
               </Col>
               <Col :span="4">
@@ -695,9 +776,13 @@ watch(
                         <Tag :color="statusColor(item.status)">
                           {{ statusLabel(item.status) }}
                         </Tag>
-                        <Tag :color="passColor(item.hard_pass)">
+                        <Tag
+                          :color="item.audit_skipped ? 'default' : passColor(item.hard_pass)"
+                        >
                           红线{{
-                            item.hard_pass === true
+                            item.audit_skipped
+                              ? '未审核'
+                              : item.hard_pass === true
                               ? '通过'
                               : item.hard_pass === false
                                 ? '未通过'
@@ -731,7 +816,8 @@ watch(
                           生文 {{ formatDuration(item.generation_duration_ms) }}
                         </Tag>
                         <Tag v-if="visibleTotalDurationMs(item)">
-                          总耗时 {{ formatDuration(visibleTotalDurationMs(item)) }}
+                          总耗时
+                          {{ formatDuration(visibleTotalDurationMs(item)) }}
                         </Tag>
                       </Space>
                     </template>
@@ -745,7 +831,10 @@ watch(
                           复制
                         </Button>
                         <Button
-                          v-if="item.task_id || item.generation_snapshot?.rendered_prompt"
+                          v-if="
+                            item.task_id ||
+                            item.generation_snapshot?.rendered_prompt
+                          "
                           size="small"
                           :loading="promptLoadingTaskId === item.task_id"
                           @click="showGenerationPrompt(item)"
@@ -776,7 +865,21 @@ watch(
                       </Space>
                     </template>
 
-                    <div class="article-content">
+                    <div v-if="editDrafts[item.item_id]" class="article-edit">
+                      <div class="article-field-label">标题</div>
+                      <Input
+                        v-model:value="editDrafts[item.item_id].title"
+                        placeholder="标题"
+                      />
+                      <div class="article-field-label mt-3">正文</div>
+                      <TextArea
+                        v-model:value="editDrafts[item.item_id].body"
+                        placeholder="正文"
+                        :rows="12"
+                      />
+                    </div>
+
+                    <div v-else class="article-content">
                       <section class="article-field article-title-field">
                         <div class="article-field-label">标题</div>
                         <h3 class="content-title">
@@ -807,6 +910,63 @@ watch(
                       :item="item"
                     />
 
+                    <div
+                      v-if="hasGeneratedContent(item)"
+                      class="feedback-editor mt-3"
+                    >
+                      <div class="feedback-editor-header">
+                        <div>
+                          <strong>反馈与修改</strong>
+                          <div class="feedback-editor-hint">
+                            保存内容修改会新增版本，不覆盖历史记录。当前 v{{
+                              item.latest_version_no || 1
+                            }}
+                          </div>
+                        </div>
+                        <Tag v-if="item.human_feedback_text" color="blue">
+                          最近反馈：{{ item.human_feedback_text }}
+                        </Tag>
+                      </div>
+                      <TextArea
+                        v-model:value="feedbackDrafts[item.item_id]"
+                        class="mt-2"
+                        placeholder="写反馈；修改内容时，这里会作为本次版本说明。"
+                        :rows="2"
+                      />
+                      <Space class="mt-2">
+                        <template v-if="editDrafts[item.item_id]">
+                          <Button
+                            type="primary"
+                            size="small"
+                            :loading="savingItemId === item.item_id"
+                            @click="saveEdit(item)"
+                          >
+                            保存修改版本
+                          </Button>
+                          <Button
+                            size="small"
+                            :disabled="savingItemId === item.item_id"
+                            @click="cancelEdit(item.item_id)"
+                          >
+                            取消
+                          </Button>
+                        </template>
+                        <template v-else>
+                          <Button
+                            type="primary"
+                            size="small"
+                            :loading="savingItemId === item.item_id"
+                            @click="saveFeedback(item)"
+                          >
+                            保存反馈
+                          </Button>
+                          <Button size="small" @click="startEdit(item)">
+                            编辑内容
+                          </Button>
+                        </template>
+                      </Space>
+                    </div>
+
                     <Alert
                       v-if="item.reject_reasons?.length"
                       class="mt-3"
@@ -826,7 +986,9 @@ watch(
                             <span v-if="reason.code" class="reason-code">
                               {{ reason.code }}
                             </span>
-                            <span>{{ displayErrorMessage(reason.message) }}</span>
+                            <span>{{
+                              displayErrorMessage(reason.message)
+                            }}</span>
                             <span v-if="reason.evidence?.length">
                               证据：{{ reason.evidence.join('；') }}
                             </span>
@@ -1025,6 +1187,34 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.article-edit,
+.feedback-editor {
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.article-edit {
+  background: #fafafa;
+}
+
+.feedback-editor {
+  background: #f6faff;
+}
+
+.feedback-editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.feedback-editor-hint {
+  margin-top: 2px;
+  color: #8c8c8c;
+  font-size: 12px;
 }
 
 .article-field {

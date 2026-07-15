@@ -1,0 +1,212 @@
+{
+  "dataset_code": "wangyue_review_gold_v1",
+  "slice": "product_usage_facts_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-15",
+  "description": "旺玥审核金标第二批候选：只判断年龄、奶粉操作、产品形态、动作载体、4段关联和明确营养数字事实。",
+  "labels": ["pass", "watch", "block"],
+  "rubric": [
+    "旺玥只写3周岁以后使用；低于3岁、断奶或辅食阶段开始喝，判 block。",
+    "孩子可以喝妈妈冲好的奶、自己拿杯子喝；孩子自己开罐、舀粉、倒水或冲泡，判 block。",
+    "奶粉干粉直接入口、便携小条装、奶粉放书包或保温杯带出门，判 block。",
+    "可以写一罐喝完又补一罐；不能把冲泡动作和罐结合成冲一罐。每天冲一杯、早晚各冲一杯本身可以出现。",
+    "旺玥不能和4段关联；30多种关键营养可以写，20多种等错误数字口径判 block。"
+  ],
+  "items": [
+    {
+      "title": "两岁半就开始喝",
+      "content": "孩子两岁半那会儿我就开始给他喝旺玥，一直喝到现在。",
+      "meta": {
+        "case_code": "WYU-001",
+        "expected_label": "block",
+        "issue_code": "underage_usage",
+        "evidence": ["两岁半那会儿", "开始给他喝旺玥"],
+        "reason": "明确低于3周岁时开始使用旺玥。",
+        "source": "hard_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "underage_usage", "source_type": "policy_case"}
+    },
+    {
+      "title": "断奶后就换了",
+      "content": "孩子刚断奶那阵我就把奶换成旺玥，想着早点把营养接上。",
+      "meta": {
+        "case_code": "WYU-002",
+        "expected_label": "block",
+        "issue_code": "underage_usage",
+        "evidence": ["刚断奶那阵", "换成旺玥"],
+        "reason": "断奶阶段与旺玥使用形成明确低龄关系。",
+        "source": "hard_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "underage_usage", "source_type": "policy_case"}
+    },
+    {
+      "title": "刚满三岁重新选奶",
+      "content": "孩子刚满三岁，我重新看了儿童奶粉，后来选了旺玥。",
+      "meta": {
+        "case_code": "WYU-003",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["刚满三岁", "后来选了旺玥"],
+        "reason": "使用阶段明确在3周岁以后。",
+        "source": "boundary_case"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "valid_age", "source_type": "boundary_case"}
+    },
+    {
+      "title": "孩子自己冲旺玥",
+      "content": "他现在会自己打开奶粉罐，舀两勺旺玥再倒水冲好。",
+      "meta": {
+        "case_code": "WYU-004",
+        "expected_label": "block",
+        "issue_code": "child_formula_operation",
+        "evidence": ["自己打开奶粉罐", "舀两勺旺玥", "倒水冲好"],
+        "reason": "孩子自己完成开罐、舀粉和冲泡操作。",
+        "source": "hard_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "child_formula_operation", "source_type": "policy_case"}
+    },
+    {
+      "title": "自己拿杯子喝",
+      "content": "我把旺玥冲好递给他，他自己拿着杯子咕咚咕咚喝完了。",
+      "meta": {
+        "case_code": "WYU-005",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["我把旺玥冲好递给他", "自己拿着杯子"],
+        "reason": "冲泡由妈妈完成，孩子只负责拿杯子喝。",
+        "source": "boundary_case"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "child_drinks_prepared_formula", "source_type": "boundary_case"}
+    },
+    {
+      "title": "直接尝一勺奶粉",
+      "content": "刚开罐时孩子凑过来，我舀了一勺旺玥奶粉直接放进他嘴里尝。",
+      "meta": {
+        "case_code": "WYU-006",
+        "expected_label": "block",
+        "issue_code": "dry_powder_ingestion",
+        "evidence": ["舀了一勺旺玥奶粉", "直接放进他嘴里"],
+        "reason": "把奶粉干粉直接放进孩子嘴里。",
+        "source": "hard_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "dry_powder_ingestion", "source_type": "policy_case"}
+    },
+    {
+      "title": "书包里放小条装",
+      "content": "出门前往孩子书包里塞了两条旺玥小条装，玩累了随时冲。",
+      "meta": {
+        "case_code": "WYU-007",
+        "expected_label": "block",
+        "issue_code": "portable_product_form",
+        "evidence": ["旺玥小条装", "书包里", "随时冲"],
+        "reason": "把旺玥写成不存在的便携小条装和随身产品。",
+        "source": "hard_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "portable_product_form", "source_type": "policy_case"}
+    },
+    {
+      "title": "保温杯带着旺玥",
+      "content": "我把旺玥装进保温杯带出门，孩子玩累了坐路边就能喝。",
+      "meta": {
+        "case_code": "WYU-008",
+        "expected_label": "block",
+        "issue_code": "portable_product_form",
+        "evidence": ["旺玥装进保温杯带出门"],
+        "reason": "把旺玥写成保温杯中的随身即饮产品。",
+        "source": "hard_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "portable_product_form", "source_type": "policy_case"}
+    },
+    {
+      "title": "早上冲一罐",
+      "content": "孩子起床后我给他冲了一罐旺玥，喝完再去吃早餐。",
+      "meta": {
+        "case_code": "WYU-009",
+        "expected_label": "block",
+        "issue_code": "physical_action_carrier_mismatch",
+        "evidence": ["冲了一罐旺玥"],
+        "reason": "冲泡动作不能和罐作为饮用量词结合。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "action_carrier_mismatch", "source_type": "human_feedback"}
+    },
+    {
+      "title": "喝完一罐又补一罐",
+      "content": "家里这罐旺玥喝完了，我又顺手补了一罐放回柜子里。",
+      "meta": {
+        "case_code": "WYU-010",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["这罐旺玥喝完了", "又顺手补了一罐"],
+        "reason": "这里的罐表示产品消耗和补货，不是冲泡动作。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "can_consumption_restock", "source_type": "human_feedback"}
+    },
+    {
+      "title": "每天冲一杯",
+      "content": "最近家里每天冲一杯旺玥，孩子拿着杯子慢慢喝。",
+      "meta": {
+        "case_code": "WYU-011",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["每天冲一杯旺玥"],
+        "reason": "每天冲一杯是正常奶粉使用表达，不应因为固定频率自动拦截。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "daily_one_cup_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "早晚各冲一杯",
+      "content": "我一般早晚各给孩子冲一杯旺玥，他自己拿杯子喝。",
+      "meta": {
+        "case_code": "WYU-012",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["早晚各给孩子冲一杯旺玥"],
+        "reason": "妈妈完成冲泡，早晚各一杯本身不构成产品形态或操作错误。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "daily_two_cups_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "给孩子选了旺玥4段",
+      "content": "孩子三岁后我给他选了旺玥4段，想把日常营养安排好。",
+      "meta": {
+        "case_code": "WYU-013",
+        "expected_label": "block",
+        "issue_code": "wangyue_four_stage_association",
+        "evidence": ["旺玥4段"],
+        "reason": "旺玥定位是儿童奶粉，不能和4段奶粉关联；4段是旺玥专属硬违禁词。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "four_stage_association", "source_type": "human_feedback"}
+    },
+    {
+      "title": "三十多种关键营养",
+      "content": "我当时看中旺玥搭配了30多种关键营养，日常营养覆盖得挺完整。",
+      "meta": {
+        "case_code": "WYU-014",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["30多种关键营养"],
+        "reason": "30多种关键营养符合当前业务事实口径。",
+        "source": "product_fact_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "valid_nutrition_count", "source_type": "boundary_case"}
+    },
+    {
+      "title": "二十多种关键营养",
+      "content": "旺玥里面有20多种关键营养，给孩子日常补充挺方便。",
+      "meta": {
+        "case_code": "WYU-015",
+        "expected_label": "block",
+        "issue_code": "product_fact_number_drift",
+        "evidence": ["20多种关键营养"],
+        "reason": "关键营养数量被改成错误的20多种口径。",
+        "source": "product_fact_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "nutrition_count_drift", "source_type": "boundary_case"}
+    }
+  ]
+}

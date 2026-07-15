@@ -68,14 +68,18 @@ const coreRoutes: RouteRecordRaw[] = [
         },
       },
       {
-        name: 'ContentAgentFeedback',
+        name: 'ContentAgentFeedbackLegacy',
         path: 'content-agent/feedback',
-        component: () => import('#/views/content-agent/feedback/index.vue'),
+        redirect: (to) => ({
+          path: '/content-agent/workbench',
+          query: to.query,
+        }),
         meta: {
-          title: '评价反馈',
-          icon: 'LineChartOutlined',
-          activeMenu: '/content-agent/feedback',
-          authority: ['admin'],
+          title: '生成历史',
+          hideInBreadcrumb: true,
+          hideInMenu: true,
+          hideInTab: true,
+          activeMenu: '/content-agent/workbench',
         },
       },
       {
@@ -106,8 +110,7 @@ const coreRoutes: RouteRecordRaw[] = [
       {
         name: 'ContentAgentPromptDebug',
         path: 'content-agent/prompt-debug',
-        component: () =>
-          import('#/views/content-agent/prompt-debug/index.vue'),
+        component: () => import('#/views/content-agent/prompt-debug/index.vue'),
         meta: {
           title: '提示词调试',
           hideInMenu: true,

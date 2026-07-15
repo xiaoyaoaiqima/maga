@@ -189,26 +189,7 @@ export function inspectionContentApi(
   );
 }
 
-/** AI 建议标签 */
-export function suggestRLHFTagsApi(id: number, data: { comment?: string }) {
-  return requestClient.post<{ tags: string[] }>(
-    `/v1/rlhf/contents/${id}/suggest-tags`,
-    data,
-  );
-}
-
-/** AI 总结意见 - 根据原文和划词评论生成修改意见 */
-export function summarizeRLHFCommentApi(
-  id: number,
-  data: { model_code?: string } = {},
-) {
-  return requestClient.post<{ comment: string }>(
-    `/v1/rlhf/contents/${id}/summarize-comment`,
-    data,
-  );
-}
-
-/** 更新内容（包括 AI 意见和标签） */
+/** 更新内容 */
 export function updateContentApi(
   id: number,
   data: {

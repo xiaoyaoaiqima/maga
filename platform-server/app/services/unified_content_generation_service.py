@@ -1753,7 +1753,8 @@ def _article_output_format_requirement(
             "不要写“标题：”“正文：”“### 标题”“### 正文”；"
         )
     return (
-        "只输出 JSON 对象，字段只能包含 title 和 body；"
+        '只输出一个 JSON 对象，格式必须是 {"title":"...","body":"..."}；'
+        "顶层只能包含 title 和 body 两个字段，不要输出 items 数组；"
         "不要输出 Markdown 标题、编号、解释、前后缀；"
         "不要写“标题：”“正文：”“### 标题”“### 正文”；"
         "正文内容放在 body 字段里，标题内容放在 title 字段里。"
@@ -2800,11 +2801,11 @@ def _render_rule_corpus_inspiration_clue_slot(corpus: str, *, item_no: int) -> s
 
 _SELLING_EXPRESSION_SLOT_SECTION = re.compile(
     r"\n*【卖点表达(?:槽位)?】[ \t]*\n"
-    r"(?P<options>(?:[ \t]*-[ \t]*卖点表达：[^\n]+\n[ \t]+注意：[^\n]+(?:\n|$))+)"
+    r"(?P<options>(?:[ \t]*-[ \t]*卖点表达：[^\n]+(?:\n[ \t]+注意：[^\n]+)?(?:\n|$))+)"
 )
 _SELLING_EXPRESSION_SLOT_ENTRY = re.compile(
-    r"^[ \t]*-[ \t]*卖点表达：(?P<selling>[^\n]+)\n"
-    r"[ \t]+注意：(?P<note>[^\n]+)",
+    r"^[ \t]*-[ \t]*卖点表达：(?P<selling>[^\n]+)"
+    r"(?:\n[ \t]+注意：(?P<note>[^\n]+))?",
     re.MULTILINE,
 )
 
@@ -2815,14 +2816,16 @@ def _render_rule_corpus_selling_expression_slot(corpus: str, *, item_no: int) ->
         return corpus
 
     options = [
-        (entry.group("selling").strip(), entry.group("note").strip())
+        (entry.group("selling").strip(), str(entry.group("note") or "").strip())
         for entry in _SELLING_EXPRESSION_SLOT_ENTRY.finditer(match.group("options"))
     ]
     if not options:
         return corpus
 
     selling, note = options[(max(1, item_no) - 1) % len(options)]
-    replacement = f"\n\n卖点表达：{selling}\n注意：{note}\n"
+    replacement = f"\n\n卖点表达：{selling}\n"
+    if note:
+        replacement += f"注意：{note}\n"
     return (corpus[: match.start()] + replacement + corpus[match.end() :]).strip()
 
 

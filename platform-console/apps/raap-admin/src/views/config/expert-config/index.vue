@@ -2451,7 +2451,7 @@ function handleTableChange(pag: any) {
                 >
                   <Input
                     v-model:value="formState.expert_app"
-                    placeholder="如: raap-service-ag"
+                    placeholder="如: maga-worker"
                   />
                   <div class="form-item-hint">服务应用标识（Dapr App ID）</div>
                 </FormItem>
@@ -2464,7 +2464,7 @@ function handleTableChange(pag: any) {
                 >
                   <Input
                     v-model:value="formState.expert_service"
-                    placeholder="如: critic.CriticService"
+                    placeholder="请输入 Expert service 名称"
                   />
                   <div class="form-item-hint">服务名称（HTTP 路由前缀）</div>
                 </FormItem>

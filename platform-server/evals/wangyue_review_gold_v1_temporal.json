@@ -1,0 +1,289 @@
+{
+  "dataset_code": "wangyue_review_gold_v1",
+  "slice": "temporal_logic_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-15",
+  "description": "旺玥审核金标第一批：只判断文章内部时间关系、效果所需时间跨度和发布时间锚点。",
+  "labels": ["pass", "watch", "block"],
+  "rubric": [
+    "同一个时间窗口同时承接持续负面状态和持续正面状态，且没有明确前后阶段转换，判 block。",
+    "前阵子、以前、上个月等旧阶段与最近、现在、这个月等新阶段边界清楚，可以 pass。",
+    "一次打喷嚏、刚换产品、刚开罐等单点事件立刻承接长期保护力或累计效果，判 block。",
+    "过去式季节或疾病环境可以保留；当前流感季、换季、入冬等依赖发布时间成立的锚点判 block。",
+    "局部小状况与整体状态稳定可以同时成立，但表达含混时标 watch，不自动改写。"
+  ],
+  "items": [
+    {
+      "title": "出门前找袜子想起这段",
+      "content": "早上出门前，我翻了三遍抽屉才找到他那只蓝色袜子，外套拉链卡住，水杯盖子拧不紧，队友在客厅喊“车钥匙呢”——所有杂事挤在一块儿，我蹲在地上忽然愣住：这段时间他好像特别容易中招，三天两头喉咙不舒服，班里一有人打喷嚏我就紧张。\n\n家里现在喝旺玥，回看这段时间状态倒是挺稳，日常活动也在线，出去玩全程精神头足；旺玥这罐我主要看中保护力支持，不用天天提心吊胆的。\n\n等我把所有东西收进包里，终于坐下来喝了口水。",
+      "meta": {
+        "case_code": "WYT-001",
+        "expected_label": "block",
+        "issue_code": "same_period_state_contradiction",
+        "evidence": ["这段时间他好像特别容易中招", "回看这段时间状态倒是挺稳"],
+        "reason": "两个相反的持续状态落在同一个时间窗口，中间没有以前、后来、换后等阶段转换。",
+        "source": "content_batch_item:1151",
+        "secondary_issue_codes": ["public_disease_context"]
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "same_period_contradiction",
+        "source_type": "historical_failure"
+      }
+    },
+    {
+      "title": "最近到底稳不稳",
+      "content": "这段时间他总是三天两头不舒服，我一直挺紧张。家里现在喝旺玥，回看这段时间状态倒是挺稳，日常活动也在线。",
+      "meta": {
+        "case_code": "WYT-002",
+        "expected_label": "block",
+        "issue_code": "same_period_state_contradiction",
+        "evidence": ["这段时间他总是三天两头不舒服", "回看这段时间状态倒是挺稳"],
+        "reason": "去掉公共疾病环境后仍存在同一时间窗口的状态矛盾，用来隔离测试时间逻辑能力。",
+        "source": "synthetic_minimal_pair"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "same_period_contradiction",
+        "source_type": "minimal_pair"
+      }
+    },
+    {
+      "title": "前阵子和现在",
+      "content": "前阵子他三天两头有点小状况，我那会儿确实容易紧张。后来家里换了旺玥，这段时间回看下来状态挺稳，平时活动也在线。",
+      "meta": {
+        "case_code": "WYT-003",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["前阵子", "后来", "这段时间"],
+        "reason": "旧阶段、转换动作和当前阶段完整，时间关系清楚。",
+        "source": "synthetic_boundary"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "clear_before_after",
+        "source_type": "boundary_case"
+      }
+    },
+    {
+      "title": "以前总请假",
+      "content": "以前一有点小状况就容易请假，后来给他换了旺玥。喝了一段时间再回看，最近出勤挺稳，周末出去玩也有精神。",
+      "meta": {
+        "case_code": "WYT-004",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["以前", "后来", "喝了一段时间", "最近"],
+        "reason": "效果有明确使用跨度，前后阶段没有冲突。",
+        "source": "synthetic_boundary"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "clear_before_after",
+        "source_type": "boundary_case"
+      }
+    },
+    {
+      "title": "朋友家娃那次",
+      "content": "去年朋友家娃有阵子总生病，她在群里问了好几次。回头看我家这个，喝旺玥这段时间出勤一直挺稳。",
+      "meta": {
+        "case_code": "WYT-005",
+        "expected_label": "watch",
+        "acceptable_labels": ["pass", "watch"],
+        "issue_code": "past_public_disease_reference",
+        "evidence": ["去年朋友家娃有阵子总生病", "这段时间出勤一直挺稳"],
+        "reason": "过去式公共疾病参照不应硬拦，但属于可观察的对照表达。",
+        "source": "human_feedback_boundary"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "past_public_context",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "哈啾后赶紧补救",
+      "content": "孩子早上打了个喷嚏，我马上把奶粉换成旺玥，想着赶紧把保护力补回来。",
+      "meta": {
+        "case_code": "WYT-006",
+        "expected_label": "block",
+        "issue_code": "immediate_rescue_causality",
+        "evidence": ["打了个喷嚏", "马上把奶粉换成旺玥", "赶紧把保护力补回来"],
+        "reason": "把单次小状况写成需要产品即时补救，时间和功效因果都不成立。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "immediate_rescue",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "刚换就稳了",
+      "content": "昨天刚给孩子换成旺玥，今天去幼儿园就没请假，感觉保护力一下稳住了。",
+      "meta": {
+        "case_code": "WYT-007",
+        "expected_label": "block",
+        "issue_code": "insufficient_effect_duration",
+        "evidence": ["昨天刚给孩子换成旺玥", "今天去幼儿园就没请假", "一下稳住了"],
+        "reason": "一天的单点结果不能证明累计保护力效果。",
+        "source": "synthetic_boundary"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "insufficient_duration",
+        "source_type": "boundary_case"
+      }
+    },
+    {
+      "title": "喝了一阵再回看",
+      "content": "旺玥已经喝了一阵，再回看最近的日常，孩子出勤挺稳，出去玩回来状态也还在线。",
+      "meta": {
+        "case_code": "WYT-008",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["已经喝了一阵", "再回看最近的日常"],
+        "reason": "使用时间和观察时间都有跨度，可以承接累计状态反馈。",
+        "source": "synthetic_boundary"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "sufficient_duration",
+        "source_type": "boundary_case"
+      }
+    },
+    {
+      "title": "偶尔不舒服但整体还行",
+      "content": "这段时间偶尔也会有点喉咙不舒服，不过整体看下来状态还算稳，平时该跑该玩都没耽误。",
+      "meta": {
+        "case_code": "WYT-009",
+        "expected_label": "watch",
+        "issue_code": "mixed_state_same_period",
+        "evidence": ["偶尔也会有点喉咙不舒服", "整体看下来状态还算稳"],
+        "reason": "局部小状况和整体稳定可以共存，不应按矛盾硬拦，但需要观察表达是否清楚。",
+        "source": "synthetic_boundary"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "mixed_state",
+        "source_type": "boundary_case"
+      }
+    },
+    {
+      "title": "上个月和这个月",
+      "content": "上个月孩子请过两次假，这个月家里安排顺了不少，回看下来出勤也稳一些。",
+      "meta": {
+        "case_code": "WYT-010",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["上个月", "这个月"],
+        "reason": "两个状态分别属于不同月份，没有时间冲突。",
+        "source": "synthetic_boundary"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "separate_calendar_windows",
+        "source_type": "boundary_case"
+      }
+    },
+    {
+      "title": "现在正是流感季",
+      "content": "现在正是流感季，班里不少孩子都请假了，我更庆幸家里一直喝旺玥。",
+      "meta": {
+        "case_code": "WYT-011",
+        "expected_label": "block",
+        "issue_code": "publication_time_anchor",
+        "evidence": ["现在正是流感季"],
+        "reason": "内容依赖当前疾病季节成立，会和实际发布时间冲突。",
+        "source": "existing_policy_boundary"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "current_season_anchor",
+        "source_type": "policy_case"
+      }
+    },
+    {
+      "title": "去年冬天那阵",
+      "content": "去年冬天班里有阵子请假的孩子挺多，我家那段时间出勤倒是一直挺稳。现在想起来，也算一段普通记录。",
+      "meta": {
+        "case_code": "WYT-012",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["去年冬天", "那段时间"],
+        "reason": "明确过去式的季节和疾病环境不会与当前发布时间冲突。",
+        "source": "human_feedback_boundary"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "past_season_context",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "今天出去玩状态不错",
+      "content": "今天带孩子出去玩了一趟，回来还有精神收玩具。家里喝旺玥这段时间，日常状态整体还不错。",
+      "meta": {
+        "case_code": "WYT-013",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["今天带孩子出去玩了一趟", "喝旺玥这段时间"],
+        "reason": "今天只是一个具体观察点，累计评价另有明确时间跨度。",
+        "source": "synthetic_boundary"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "single_observation_with_span",
+        "source_type": "boundary_case"
+      }
+    },
+    {
+      "title": "刚拆新罐时想起来",
+      "content": "今天刚拆一罐新的旺玥，顺手回想了下前面一个月，孩子日常活动和出勤都挺稳。",
+      "meta": {
+        "case_code": "WYT-014",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["今天刚拆一罐新的旺玥", "回想了下前面一个月"],
+        "reason": "开罐是触发回顾的生活事件，效果证据来自前面一个月，不是刚开罐后的即时效果。",
+        "source": "synthetic_boundary"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "trigger_not_effect_start",
+        "source_type": "boundary_case"
+      }
+    },
+    {
+      "title": "这几天一边稳一边总不舒服",
+      "content": "这几天孩子状态一直挺稳，早上起床也有精神，就是这几天又三天两头喉咙不舒服。",
+      "meta": {
+        "case_code": "WYT-015",
+        "expected_label": "block",
+        "issue_code": "same_period_state_contradiction",
+        "evidence": ["这几天孩子状态一直挺稳", "这几天又三天两头喉咙不舒服"],
+        "reason": "同一时间窗口内，一直稳定与高频不舒服直接冲突。",
+        "source": "synthetic_minimal_pair"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "same_period_contradiction",
+        "source_type": "minimal_pair"
+      }
+    }
+  ]
+}

@@ -23,11 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 COPY raap_trace_sdk/ ./raap_trace_sdk/
-COPY raap_llm_sdk/ ./raap_llm_sdk/
 
 RUN PIP_DEFAULT_TIMEOUT=120 pip install --retries 10 --no-cache-dir --user -r requirements.txt && \
-    PIP_DEFAULT_TIMEOUT=120 pip install --retries 10 --no-cache-dir --user ./raap_trace_sdk && \
-    PIP_DEFAULT_TIMEOUT=120 pip install --retries 10 --no-cache-dir --user ./raap_llm_sdk
+    PIP_DEFAULT_TIMEOUT=120 pip install --retries 10 --no-cache-dir --user ./raap_trace_sdk
 
 FROM python:3.12-slim
 
@@ -57,7 +55,6 @@ COPY alembic/ ./alembic/
 COPY alembic.ini ./
 COPY scripts/ ./scripts/
 COPY raap_trace_sdk/ ./raap_trace_sdk/
-COPY raap_llm_sdk/ ./raap_llm_sdk/
 
 RUN mkdir -p /app/logs && chown -R appuser:appuser /app /home/appuser/.local
 

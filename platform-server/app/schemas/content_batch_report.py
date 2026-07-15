@@ -71,6 +71,7 @@ class ContentBatchReportSummary(BaseSchema):
     generated_count: int = 0
     failed_count: int = 0
     hard_pass_count: int = 0
+    audit_skipped_count: int = 0
     rewrite_item_count: int = 0
     remaining_rewrite_required_count: int = 0
     forbidden_hit_count: int = 0
@@ -96,6 +97,7 @@ class ContentBatchReportItem(BaseSchema):
     body_preview: str | None = None
     body_chars: int = 0
     hard_pass: bool | None = None
+    audit_skipped: bool = False
     rewrite_required: bool | None = None
     rewrite_reason: str | None = None
     business_usability_tier: str | None = None

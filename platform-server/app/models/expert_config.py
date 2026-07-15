@@ -54,13 +54,13 @@ class ExpertConfig(Base):
     expert_app: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
-        comment="expert的app（Dapr app ID，如 raap-service-ag）"
+        comment="expert的app（Dapr app ID，如 maga-worker）"
     )
     
     expert_service: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
-        comment="expert的service名称，如 critic.CriticService"
+        comment="expert的service名称"
     )
     
     expert_func: Mapped[str] = mapped_column(
@@ -175,4 +175,3 @@ class ExpertConfig(Base):
     
     def __repr__(self) -> str:
         return f"<ExpertConfig(id={self.id}, expert_config_code={self.expert_config_code})>"
-

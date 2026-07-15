@@ -60,8 +60,6 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True  # 是否启用限流
     RATE_LIMIT_DEFAULT_REQUESTS: int = 10  # 默认请求数/秒
     RATE_LIMIT_DEFAULT_WINDOW: int = 1  # 默认时间窗口（秒）
-    RATE_LIMIT_AG_REQUESTS: int = 5  # AG 服务限制（AI 调用成本高）
-    RATE_LIMIT_GENERATION_EXPERTS_REQUESTS: int = 5  # 生成专家服务
 
     # JWT
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"

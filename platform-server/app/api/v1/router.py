@@ -71,7 +71,6 @@ def _include_full_routes(api_router: APIRouter) -> None:
         calibration_records,
         calibration_tasks,
         chat,
-        compat_invoke,
         content_agent,
         content_generation_experts,
         contents,
@@ -105,13 +104,9 @@ def _include_full_routes(api_router: APIRouter) -> None:
         users,
     )
     from app.api.v1.endpoints.system import admin_tools, info, menus, roles, users as sys_users
-    from app.modules.critic.router import external_router as critic_external_router
-    from app.modules.critic.router import internal_router as critic_internal_router
-    from app.modules.generation.router import internal_router as generation_internal_router
 
     # Authentication endpoints (public)
     api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
-    api_router.include_router(compat_invoke.router, tags=["internal-compat"])
 
     # Include all endpoints
     api_router.include_router(health.router, tags=["health"])
@@ -195,11 +190,6 @@ def _include_full_routes(api_router: APIRouter) -> None:
 
     # Message/Notification endpoints
     api_router.include_router(messages.router, tags=["messages"])
-
-    # Critic and generation compatibility endpoints
-    api_router.include_router(critic_external_router, tags=["critic"])
-    api_router.include_router(critic_internal_router, prefix="/__internal/critic/api/v1", tags=["internal-critic"])
-    api_router.include_router(generation_internal_router, prefix="/__internal/generation/api/v1", tags=["internal-generation"])
 
     # Files endpoints
     api_router.include_router(files.router, prefix="/files", tags=["files"])

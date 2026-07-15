@@ -635,6 +635,12 @@ function openRuleGeneration(record: Record<string, any>) {
   focusGenerateOpen.value = true;
 }
 
+function defaultArticlePostprocessMode(): 'audit_only' | undefined {
+  return selectedAsset.value?.asset_key === 'a2_momclass_month_center'
+    ? 'audit_only'
+    : undefined;
+}
+
 async function generateFocusedRule() {
   if (!selectedAsset.value?.asset_key) {
     message.warning('请先选择业务规则');
@@ -672,6 +678,7 @@ async function generateFocusedRule() {
           asset_key: selectedAsset.value.asset_key,
           count: Number(focusGenerateForm.value.count || 10),
           created_by: currentOperator.value,
+          postprocess_mode: defaultArticlePostprocessMode(),
           rule_id: String(targetRule.rule_id || ''),
           source_row_no: Number(targetRule.source_row_no || 0) || undefined,
         });
@@ -845,7 +852,7 @@ function buildRuleDraftTestPayload(
 
 async function testRuleDraft(
   count: number,
-  options: { postprocessMode?: 'generate_only' } = {},
+  options: { postprocessMode?: 'audit_only' | 'generate_only' } = {},
 ) {
   if (!selectedAsset.value?.asset_key || !selectedDraftRule.value) {
     message.warning('请先选择一条业务规则');
@@ -859,13 +866,15 @@ async function testRuleDraft(
   generating.value = true;
   try {
     const isQuickTrial = options.postprocessMode === 'generate_only';
+    const postprocessMode =
+      options.postprocessMode || defaultArticlePostprocessMode();
     const sharedPayload = buildRuleDraftTestPayload(count, draftCorpus.value);
     if (!sharedPayload) return;
     const result = isSelectedArticleBusinessRuleSet.value
       ? await startContentBatchApi({
           ...sharedPayload,
           articles_per_prompt: ARTICLE_TEST_ARTICLES_PER_RUN,
-          postprocess_mode: options.postprocessMode,
+          postprocess_mode: postprocessMode,
         })
       : await startCommentBatchApi(sharedPayload);
     message.success(formatRuleTestSuccessMessage(result, count, isQuickTrial));
@@ -1248,8 +1257,8 @@ function inferArticleBusinessTargetFromFileName(fileName: string) {
   }
   if (normalizedFileName.includes('旺玥')) {
     return {
-      assetKey: 'wangyue_article_business_rules',
-      displayName: '0705旺玥活动-UGC业务规则',
+      assetKey: 'wangyue_v3_core_storyline_article_rules',
+      displayName: '0705旺玥活动-V3-六块结构+CSV卖点映射',
     };
   }
   if (normalizedFileName.includes('a2')) {

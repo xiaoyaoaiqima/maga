@@ -45,6 +45,10 @@ from app.services.royal_friso_ugc_structure_guard_service import (
     RoyalFrisoUGCStructureGuardService,
     RoyalFrisoUGCStructureReview,
 )
+from app.services.rewrite_quality_validator_service import (
+    RewriteQualityJudgment,
+    RewriteQualityValidatorService,
+)
 from app.services.unified_content_generation_service import (
     CONTENT_GENERATE_CAPABILITY,
     UnifiedContentGenerationService,
@@ -345,6 +349,7 @@ class ContentBatchExecutionService:
         executor_code: str = DEFAULT_EXECUTOR_CODE,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
         product_experience_llm_reviewer: ProductExperienceLLMReviewService | None = None,
+        rewrite_quality_validator: RewriteQualityValidatorService | None = None,
     ):
         self.db = db
         self.invocation_client = invocation_client
@@ -360,6 +365,7 @@ class ContentBatchExecutionService:
         self.product_experience_llm_reviewer = (
             product_experience_llm_reviewer or ProductExperienceLLMReviewService()
         )
+        self.rewrite_quality_validator = rewrite_quality_validator or RewriteQualityValidatorService()
 
     async def execute_batch_items(
         self,
@@ -416,6 +422,16 @@ class ContentBatchExecutionService:
                 item_ids=item_ids,
             )
 
+        if _audit_only_postprocess_enabled(job):
+            await self._watch_similar_generated_items(batch_id, job)
+            return BatchExecutionResult(
+                batch_id=batch_id,
+                requested_limit=limit,
+                generated_count=generated,
+                failed_count=failed,
+                item_ids=item_ids,
+            )
+
         postprocess_errors = []
         postprocess_steps = [
             ("similarity_watch", self._watch_similar_generated_items),
@@ -426,6 +442,7 @@ class ContentBatchExecutionService:
             ("product_experience_llm_quality_rewrite", self._rewrite_product_experience_llm_quality_items),
             ("royal_friso_structure_review", self._review_royal_friso_structure_items),
             ("title_repair", self._repair_generated_titles),
+            ("product_experience_phrase_refresh", self._refresh_product_experience_phrase_reviews),
         ]
         for step_name, step in postprocess_steps:
             try:
@@ -687,26 +704,33 @@ class ContentBatchExecutionService:
                     item.quality_json["audit_skipped"] = True
                     item.quality_json["review_report"]["audit_skipped"] = True
                 else:
-                    await self._rewrite_item_for_persona_style(
-                        item=item,
-                        orchestrator=orchestrator,
-                        run_id=result.run.id,
-                    )
+                    audit_only = _audit_only_postprocess_enabled_for_context(job_context)
+                    if audit_only:
+                        item.quality_json["postprocess_mode"] = "audit_only"
+                    else:
+                        await self._rewrite_item_for_persona_style(
+                            item=item,
+                            orchestrator=orchestrator,
+                            run_id=result.run.id,
+                        )
                     forbidden_review = await ForbiddenTermReviewService(db).review_and_rewrite_item(
                         item=item,
                         asset_key=item.plan_json.get("asset_key"),
                         orchestrator=orchestrator,
                         executor_code=self.executor_code,
                         content_type="article",
+                        allow_rewrite=not audit_only,
                     )
                     if forbidden_review.get("final_hits"):
-                        self._mark_forbidden_term_blocking_failure(
-                            item,
-                            list(forbidden_review.get("final_hits") or []),
-                        )
+                        if not audit_only:
+                            self._mark_forbidden_term_blocking_failure(
+                                item,
+                                list(forbidden_review.get("final_hits") or []),
+                            )
                         await db.commit()
                         return _ItemExecutionResult(item_id=item_id, generated=True, failed=False)
-                    ActivityQualityGuardService().review_item(item)
+                    if not audit_only:
+                        ActivityQualityGuardService().review_item(item)
                 item.error_message = None
                 await db.commit()
                 return _ItemExecutionResult(item_id=item_id, generated=True, failed=False)
@@ -866,24 +890,31 @@ class ContentBatchExecutionService:
                         item.quality_json["audit_skipped"] = True
                         item.quality_json["review_report"]["audit_skipped"] = True
                     else:
-                        await self._rewrite_item_for_persona_style(
-                            item=item,
-                            orchestrator=orchestrator,
-                            run_id=result.run.id,
-                        )
+                        audit_only = _audit_only_postprocess_enabled_for_context(job_context)
+                        if audit_only:
+                            item.quality_json["postprocess_mode"] = "audit_only"
+                        else:
+                            await self._rewrite_item_for_persona_style(
+                                item=item,
+                                orchestrator=orchestrator,
+                                run_id=result.run.id,
+                            )
                         forbidden_review = await ForbiddenTermReviewService(db).review_and_rewrite_item(
                             item=item,
                             asset_key=item.plan_json.get("asset_key"),
                             orchestrator=orchestrator,
                             executor_code=self.executor_code,
                             content_type="article",
+                            allow_rewrite=not audit_only,
                         )
                         if forbidden_review.get("final_hits"):
-                            self._mark_forbidden_term_blocking_failure(
-                                item,
-                                list(forbidden_review.get("final_hits") or []),
-                            )
-                        ActivityQualityGuardService().review_item(item)
+                            if not audit_only:
+                                self._mark_forbidden_term_blocking_failure(
+                                    item,
+                                    list(forbidden_review.get("final_hits") or []),
+                                )
+                        elif not audit_only:
+                            ActivityQualityGuardService().review_item(item)
                     item.error_message = None
                     generated_count += 1
                 await db.commit()
@@ -1042,6 +1073,7 @@ class ContentBatchExecutionService:
             before = {"title": item.title or "", "body": item.body or ""}
             if _is_ai_flavor_title_only_review(review):
                 body = before["body"]
+            body = _preserve_rewrite_paragraphs(before["body"], body, item.plan_json)
             after = {"title": title, "body": body}
             if _rewrite_removed_required_wangyue_product(before, after, item.plan_json):
                 raise ValueError("rewrite_removed_required_wangyue_product")
@@ -1179,6 +1211,15 @@ class ContentBatchExecutionService:
                 body=sanitize_wangyue_time_event_context(item.body or ""),
             )
             cleanup_applied = True
+        if "wangyue_digestive_effect_context" in review.reasons:
+            review = self._apply_product_experience_text_cleanup(
+                item,
+                review,
+                cleanup_key=f"{cleanup_key_prefix}_wangyue_digestive_effect_cleanups",
+                title=sanitize_wangyue_context_phrases(item.title or ""),
+                body=sanitize_wangyue_context_phrases(item.body or ""),
+            )
+            cleanup_applied = True
 
         review_for_llm = (
             _append_product_experience_review_reason(review, POST_DELETE_CLEANUP_FLUENCY_REASON)
@@ -1229,6 +1270,7 @@ class ContentBatchExecutionService:
                 "如果是选奶/选择复盘型，正文压成一个生活入口 + 一个正向选择依据 + 一个非价格的现实细节；不要写完整广告复盘，也不要用“不敢说有效”来制造真实感。",
                 "标题不要替正文交代选择逻辑；把“我认真看了阶段/选择依据/重点关注”这类高解释义务标题，改成低义务生活碎片或名词短语。",
                 "正文结尾不要太会总结，不要用“只能说/不算满分推荐/每家情况不一样/看自己需求/有个底/心里稳点/没觉得选错/后面再看/继续观察”连续收束；能停在生活动作、补货动作或一个正向细节就停。",
+                "正文段落服从业务规则；原文已有自然换行时尽量保留，不要为了改写压成单段，也不要为了换行硬拆句。",
                 "只输出 JSON：title, body。",
             ],
         }
@@ -1422,6 +1464,7 @@ class ContentBatchExecutionService:
             if not title or not body:
                 raise ValueError("content.rewrite returned empty article")
             before = {"title": item.title or "", "body": item.body or ""}
+            body = _preserve_rewrite_paragraphs(before["body"], body, item.plan_json)
             after = {"title": title, "body": body}
             if _rewrite_removed_required_wangyue_product(before, after, item.plan_json):
                 raise ValueError("rewrite_removed_required_wangyue_product")
@@ -1513,7 +1556,8 @@ class ContentBatchExecutionService:
                 "按帖子类型纠偏，而不是削短：复购/长期使用围绕补货和一个没断原因；问题解决保留生活困扰和产品作为处理链路一环；使用反馈保留当前安排、场景细节和一个感受；轻测评保留一个观察点和提到它的生活语境；对比选择保留一个选择依据和一个取舍。",
                 "如果原正文已经超过80字，改写后也尽量保持80字以上；需要删广告链时，用生活细节或发帖动作补回自然密度，但不要新增第二个产品卖点或第二个效果证明。",
                 "标题低义务，优先生活入口、短名词、动作碎片；不要把卖点和完整决策写进标题。",
-                "正文单段不换行；只输出 JSON：title, body。",
+                "正文段落服从业务规则；原文已有自然换行时尽量保留，不要为了改写压成单段，也不要为了换行硬拆句。",
+                "只输出 JSON：title, body。",
             ],
         }
 
@@ -1551,6 +1595,7 @@ class ContentBatchExecutionService:
                 "保留原文标题、叙事顺序、正常口语、产品名和正确产品依据；不顺手处理广告感、模板感或表达风格。",
                 "公共疾病环境对照直接删除；睡眠等卖点错配只删除对应效果；产品动作或事实错误只修错误处。",
                 "硬违禁词不在本阶段改写范围内；如果输入仍含硬违禁词，不要用同义词绕过。",
+                "正文段落服从业务规则；原文已有自然换行时尽量保留，不要为了改写压成单段，也不要为了换行硬拆句。",
                 "只输出 JSON：title, body。",
             ],
         }
@@ -1588,6 +1633,7 @@ class ContentBatchExecutionService:
                 "尽量保持原句序、段落和叙事节奏；不把整篇抛光成统一模板，不补新的开头、结尾、感叹或总结。",
                 "具体动作优先于抽象总结；删除元话术和任务说明感，但允许普通句子、轻微口语和不完全对称的节奏存在。",
                 "不要用同义词替换制造假口语，不新增‘省心、踏实、选对了、值得、继续喝’等收口。",
+                "正文段落服从业务规则；原文已有自然换行时尽量保留，不要为了改写压成单段，也不要为了换行硬拆句。",
                 "只输出 JSON：title, body。",
             ],
         }
@@ -1958,6 +2004,15 @@ class ContentBatchExecutionService:
                         body=sanitize_wangyue_time_event_context(item.body or ""),
                     )
                     cleanup_applied = True
+                if "wangyue_digestive_effect_context" in review.reasons:
+                    review = self._apply_product_experience_text_cleanup(
+                        item,
+                        review,
+                        cleanup_key="product_experience_wangyue_digestive_effect_cleanups",
+                        title=sanitize_wangyue_context_phrases(item.title or ""),
+                        body=sanitize_wangyue_context_phrases(item.body or ""),
+                    )
+                    cleanup_applied = True
                 review_for_llm = (
                     _append_product_experience_review_reason(review, POST_DELETE_CLEANUP_FLUENCY_REASON)
                     if cleanup_applied
@@ -1968,6 +2023,26 @@ class ContentBatchExecutionService:
                     if rewritten:
                         rewrite_count += 1
                         review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                        if (
+                            "child_self_brewing_formula" in review.reasons
+                            or "child_formula_bottle_context" in review.reasons
+                        ):
+                            review = self._apply_product_experience_text_cleanup(
+                                item,
+                                review,
+                                cleanup_key="product_experience_child_self_brewing_cleanups",
+                                title=sanitize_baby_milk_action_phrases(item.title or ""),
+                                body=sanitize_baby_milk_action_phrases(item.body or ""),
+                            )
+                        if (
+                            "wangyue_growth_nutrition_drift_context" in review.reasons
+                            and self._fallback_clean_wangyue_growth_nutrition_drift(item, review)
+                        ):
+                            review = review_product_experience_phrase(
+                                title=item.title,
+                                body=item.body,
+                                plan=item.plan_json,
+                            )
                     else:
                         review = review_for_llm
                 if _has_blocking_product_experience_phrase_review(review):
@@ -1981,6 +2056,23 @@ class ContentBatchExecutionService:
                 self._mark_product_experience_phrase_review(item, review)
                 await db.commit()
                 return rewrite_count
+
+        return await self._run_generated_item_workers(batch_id, worker)
+
+    async def _refresh_product_experience_phrase_reviews(self, batch_id: int, job: ContentBatchJob) -> int:
+        async def worker(item_id: int) -> int:
+            async with self.session_factory() as db:
+                item = await self._require_item(db, item_id)
+                if item.status != "generated" or not should_review_product_experience(item.plan_json):
+                    return 0
+                review = review_product_experience_phrase(
+                    title=item.title,
+                    body=item.body,
+                    plan=item.plan_json,
+                )
+                self._mark_product_experience_phrase_review(item, review)
+                await db.commit()
+                return 1
 
         return await self._run_generated_item_workers(batch_id, worker)
 
@@ -2045,6 +2137,29 @@ class ContentBatchExecutionService:
             if not title or not body:
                 raise ValueError("content.rewrite returned empty article")
             before = {"title": item.title or "", "body": item.body or ""}
+            body = _preserve_rewrite_paragraphs(before["body"], body, item.plan_json)
+            forbidden_audit = await ForbiddenTermReviewService(db).audit_text(
+                asset_key=item.plan_json.get("asset_key"),
+                title=title,
+                body=body,
+            )
+            if forbidden_audit.hits:
+                quality = dict(item.quality_json or {})
+                failures = list(quality.get("mouth_phrase_budget_rewrite_failures") or [])
+                failures.append(
+                    {
+                        "initial_hits": hits,
+                        "error_message": "rewrite_introduced_forbidden_terms",
+                        "forbidden_hits": forbidden_audit.hits,
+                        "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
+                    }
+                )
+                quality["mouth_phrase_budget_rewrite_failures"] = failures
+                quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + len(result.stage_calls)
+                quality["run_status"] = result.run.status
+                item.quality_json = quality
+                await db.flush()
+                return False
             product_review = review_product_experience_phrase(title=title, body=body, plan=item.plan_json)
             if product_review.rewrite_required:
                 quality = dict(item.quality_json or {})
@@ -2109,48 +2224,183 @@ class ContentBatchExecutionService:
             callback_base_url=self.callback_base_url,
         )
         try:
-            input_payload = self._product_experience_phrase_rewrite_input(item, review)
-            result = await orchestrator.run_content_rewrite_stage(
-                run_id=item.run_id,
-                executor_code=self.executor_code,
-                input_payload=input_payload,
+            before = {"title": item.title or "", "body": item.body or ""}
+            validator_feedback = ""
+            stage_call_count = 0
+            for attempt in range(1, 3):
+                input_payload = self._product_experience_phrase_rewrite_input(item, review)
+                if validator_feedback:
+                    input_payload["rewrite_instructions"] = [
+                        *list(input_payload.get("rewrite_instructions") or []),
+                        f"上一个候选未通过改写验收：{validator_feedback}。本轮只修正这个问题，不要扩写。",
+                    ]
+                result = await orchestrator.run_content_rewrite_stage(
+                    run_id=item.run_id,
+                    executor_code=self.executor_code,
+                    input_payload=input_payload,
+                )
+                stage_call_count += len(result.stage_calls)
+                final = result.output or {}
+                final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
+                title = str(final.get("title") or final_content.get("title") or "").strip()
+                body = str(final.get("body") or final_content.get("body") or "").strip()
+                if not title or not body:
+                    raise ValueError("content.rewrite returned empty article")
+                body = _preserve_rewrite_paragraphs(before["body"], body, item.plan_json)
+                after = {"title": title, "body": body}
+                post_review = review_product_experience_phrase(title=title, body=body, plan=item.plan_json)
+                if _has_blocking_product_experience_phrase_review(post_review):
+                    quality = dict(item.quality_json or {})
+                    rewrites = list(quality.get("product_experience_phrase_rewrites") or [])
+                    rewrites.append(
+                        {
+                            "rewrite_round": self._product_experience_phrase_rewrite_rounds(item) + 1,
+                            "before": before,
+                            "after": after,
+                            "pre_review": review.model_dump(),
+                            "post_review": post_review.model_dump(),
+                            "passed": False,
+                            "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
+                        }
+                    )
+                    quality["product_experience_phrase_rewrites"] = rewrites
+                    quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + stage_call_count
+                    quality["run_status"] = result.run.status
+                    item.quality_json = quality
+                    await db.flush()
+                    return False
+                validation = await self._validate_cleanup_rewrite_candidate(
+                    item=item,
+                    orchestrator=orchestrator,
+                    before=before,
+                    after=after,
+                    review=review,
+                )
+                self._record_rewrite_quality_validation(
+                    item,
+                    validation=validation,
+                    before=before,
+                    after=after,
+                    attempt=attempt,
+                    stage_call_ids=[stage.stage_call_id for stage in result.stage_calls],
+                )
+                if validation is not None and validation.label == "reject":
+                    self._mark_rewrite_quality_validation_failure(
+                        item,
+                        reason="改写候选引入流畅性、语义连续或事实保留问题，需要人工复核",
+                    )
+                    await db.flush()
+                    return False
+                if validation is not None and validation.label == "retry":
+                    validator_feedback = validation.evidence or validation.issue_code
+                    continue
+
+                item.title = title
+                item.body = body
+                quality = dict(item.quality_json or {})
+                rewrites = list(quality.get("product_experience_phrase_rewrites") or [])
+                rewrite_round = self._product_experience_phrase_rewrite_rounds(item) + 1
+                rewrites.append(
+                    {
+                        "rewrite_round": rewrite_round,
+                        "pre_review": review.model_dump(),
+                        "post_review": post_review.model_dump(),
+                        "passed": post_review.pass_,
+                    }
+                )
+                quality["product_experience_phrase_rewrites"] = rewrites
+                quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + stage_call_count
+                quality["run_status"] = result.run.status
+                item.quality_json = quality
+                self._mark_product_experience_phrase_review(item, post_review)
+                item.error_message = None
+                await db.flush()
+                return True
+
+            self._mark_rewrite_quality_validation_failure(
+                item,
+                reason="改写候选连续两次未通过流畅性与语义验收，需要人工复核",
             )
-            final = result.output or {}
-            final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
-            title = str(final.get("title") or final_content.get("title") or "").strip()
-            body = str(final.get("body") or final_content.get("body") or "").strip()
-            if not title or not body:
-                raise ValueError("content.rewrite returned empty article")
-            item.title = title
-            item.body = body
-            post_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-            quality = dict(item.quality_json or {})
-            rewrites = list(quality.get("product_experience_phrase_rewrites") or [])
-            rewrite_round = self._product_experience_phrase_rewrite_rounds(item) + 1
-            rewrites.append(
-                {
-                    "rewrite_round": rewrite_round,
-                    "pre_review": review.model_dump(),
-                    "post_review": post_review.model_dump(),
-                    "passed": post_review.pass_,
-                }
-            )
-            quality["product_experience_phrase_rewrites"] = rewrites
-            quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + len(result.stage_calls)
-            quality["run_status"] = result.run.status
-            item.quality_json = quality
-            self._mark_product_experience_phrase_review(item, post_review)
-            item.error_message = None
             await db.flush()
-            return True
+            return False
         except Exception as exc:  # pragma: no cover - defensive path for flaky external workers
             quality = dict(item.quality_json or {})
             failures = list(quality.get("product_experience_phrase_rewrite_failures") or [])
             failures.append({"review": review.model_dump(), "error_message": str(exc)})
             quality["product_experience_phrase_rewrite_failures"] = failures
             item.quality_json = quality
+            if POST_DELETE_CLEANUP_FLUENCY_REASON in review.reasons:
+                self._mark_rewrite_quality_validation_failure(
+                    item,
+                    reason="改写后验收不可用，禁止自动放行",
+                )
             await db.flush()
             return False
+
+    async def _validate_cleanup_rewrite_candidate(
+        self,
+        *,
+        item: ContentBatchItem,
+        orchestrator: ContentAgentOrchestrator,
+        before: dict[str, str],
+        after: dict[str, str],
+        review: ProductExperiencePhraseReview,
+    ) -> RewriteQualityJudgment | None:
+        if POST_DELETE_CLEANUP_FLUENCY_REASON not in review.reasons or before == after:
+            return None
+        review_plan = await self._plan_with_provider_config_for_llm_review(
+            item.plan_json,
+            orchestrator=orchestrator,
+        )
+        return await self.rewrite_quality_validator.review(
+            before=before,
+            after=after,
+            rewrite_source="product_experience_phrase_guard",
+            target_issue="、".join(review.reasons),
+            plan=review_plan,
+        )
+
+    @staticmethod
+    def _record_rewrite_quality_validation(
+        item: ContentBatchItem,
+        *,
+        validation: RewriteQualityJudgment | None,
+        before: dict[str, str],
+        after: dict[str, str],
+        attempt: int,
+        stage_call_ids: list[str],
+    ) -> None:
+        if validation is None:
+            return
+        quality = dict(item.quality_json or {})
+        validations = list(quality.get("rewrite_quality_validations") or [])
+        validations.append(
+            {
+                "attempt": attempt,
+                "before": before,
+                "after": after,
+                "judgment": validation.model_dump(),
+                "stage_call_ids": stage_call_ids,
+            }
+        )
+        quality["rewrite_quality_validations"] = validations
+        item.quality_json = quality
+
+    @staticmethod
+    def _mark_rewrite_quality_validation_failure(item: ContentBatchItem, *, reason: str) -> None:
+        quality = dict(item.quality_json or {})
+        review_report = dict(quality.get("review_report") or {})
+        review_report.update(
+            {
+                "rewrite_required": True,
+                "rewrite_reason": reason,
+                "rewrite_quality_validation_failed": True,
+            }
+        )
+        quality["review_report"] = review_report
+        quality["hard_pass"] = False
+        quality["rewrite_quality_validation_watch"] = True
+        item.quality_json = quality
 
     def _product_experience_phrase_rewrite_input(
         self,
@@ -2532,7 +2782,7 @@ class ContentBatchExecutionService:
                 "product_experience_phrase_review": review.model_dump(),
             },
             "rewrite_instructions": [
-                length_instruction or "正文长度服从业务规则，正文单段不换行。",
+                length_instruction or "正文长度和段落服从业务规则。",
                 title_instruction,
                 phrase_instruction,
                 ai_phrase_instruction,
@@ -2572,7 +2822,8 @@ class ContentBatchExecutionService:
                 skeleton_redirect_instruction,
                 "不要用“省心、踏实、固定下来、心里有数、先这样”作为统一收口。",
                 "长个、少请假、不生病、保护力、坐不住这类真人强表达可以保留为观察或别人问，不能写成确定因果。",
-                "正文单段不换行；不要写成导购或品牌介绍。",
+                "正文段落服从业务规则；原文已有自然换行时尽量保留，不要为了改写压成单段，也不要为了换行硬拆句。",
+                "不要写成导购或品牌介绍。",
                 "只输出 JSON：title, body。",
             ],
         }
@@ -2592,12 +2843,14 @@ class ContentBatchExecutionService:
         else:
             should_mark_rewrite = review.rewrite_required if mark_rewrite_required is None else mark_rewrite_required
         if should_mark_rewrite:
-            review_report.update(
-                {
-                    "rewrite_required": True,
-                    "rewrite_reason": "业务规则口癖骨架或长度仍需人工处理",
-                }
-            )
+            existing_reason = str(review_report.get("rewrite_reason") or "")
+            if not review_report.get("rewrite_required") or not existing_reason or existing_reason == "业务规则口癖骨架或长度仍需人工处理":
+                review_report.update(
+                    {
+                        "rewrite_required": True,
+                        "rewrite_reason": "业务规则口癖骨架或长度仍需人工处理",
+                    }
+                )
         elif review_report.get("rewrite_reason") == "业务规则口癖骨架或长度仍需人工处理":
             review_report["rewrite_required"] = False
             review_report.pop("rewrite_reason", None)
@@ -3320,14 +3573,6 @@ def _max_product_experience_phrase_rewrite_rounds(
     plan: dict[str, Any] | None,
     review: ProductExperiencePhraseReview,
 ) -> int:
-    if not _light_postprocess_enabled_for_asset(str((plan or {}).get("asset_key") or "")):
-        return MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS
-    one_round_reasons = {
-        "odd_product_experience_phrase",
-        "wangyue_article_logic_drift_context",
-    }
-    if set(review.reasons).issubset(one_round_reasons):
-        return 1
     return MAX_PRODUCT_EXPERIENCE_PHRASE_REWRITE_ROUNDS
 
 
@@ -3366,12 +3611,15 @@ def _blocking_product_experience_phrase_hits(review: ProductExperiencePhraseRevi
             review.wangyue_time_event_context_hits
             + review.wangyue_no_rewrite_block_hits
             + review.wangyue_public_disease_context_hits
+            + review.wangyue_child_product_promo_hits
             + review.temporal_context_hits
             + review.wangyue_wrong_brand_hits
             + review.wangyue_explicit_age_hits
             + review.wangyue_portable_form_hits
             + review.formula_dry_powder_ingestion_hits
             + review.formula_usage_form_hits
+            + review.child_self_brewing_hits
+            + review.child_formula_bottle_hits
             + review.physical_action_carrier_mismatch_hits
             + review.product_fact_number_drift_hits
             + review.effect_scope_drift_hits
@@ -3418,10 +3666,6 @@ def _should_rewrite_product_experience_llm_quality(
         return False
     if plan.get("product_experience_llm_rewrite_enabled") is True:
         return review.rewrite_required
-    if _is_wangyue_v183_light_asset(str(plan.get("asset_key") or "")):
-        return review.rewrite_required
-    if _light_postprocess_enabled_for_asset(str(plan.get("asset_key") or "")):
-        return review.severity == "hard"
     return review.rewrite_required
 
 
@@ -3536,28 +3780,7 @@ def _should_mark_only_product_experience_phrase_review(
         )
     ):
         return True
-    if not _light_postprocess_enabled_for_asset(asset_key):
-        return False
-    mark_only_reasons = {
-        "product_effect_proof_chain",
-        "complete_selection_price_acceptance_closure_skeleton",
-    }
-    if asset_key.startswith("wangyue_v183_"):
-        mark_only_reasons.add("wangyue_article_logic_drift_context")
-    return bool(review.reasons) and set(review.reasons).issubset(mark_only_reasons)
-
-
-def _light_postprocess_enabled(job: ContentBatchJob) -> bool:
-    strategy = job.strategy_json if isinstance(job.strategy_json, dict) else {}
-    mode = str(
-        strategy.get("postprocess_mode")
-        or strategy.get("quality_postprocess_mode")
-        or strategy.get("review_mode")
-        or ""
-    ).strip()
-    if mode in {"light", "v153_light"}:
-        return True
-    return _light_postprocess_enabled_for_asset(str(job.asset_key or ""))
+    return False
 
 
 def _postprocess_mode(job: ContentBatchJob) -> str:
@@ -3573,16 +3796,12 @@ def _generate_only_postprocess_enabled_for_context(job_context: dict[str, Any]) 
     return str(job_context.get("postprocess_mode") or "").strip() == "generate_only"
 
 
-def _light_postprocess_enabled_for_asset(asset_key: str) -> bool:
-    return (
-        asset_key.startswith("wangyue_v152_")
-        or asset_key.startswith("wangyue_v153_")
-        or _is_wangyue_v183_light_asset(asset_key)
-    )
+def _audit_only_postprocess_enabled(job: ContentBatchJob) -> bool:
+    return _postprocess_mode(job) == "audit_only"
 
 
-def _is_wangyue_v183_light_asset(asset_key: str) -> bool:
-    return asset_key.startswith("wangyue_v183_")
+def _audit_only_postprocess_enabled_for_context(job_context: dict[str, Any]) -> bool:
+    return str(job_context.get("postprocess_mode") or "").strip() == "audit_only"
 
 
 def _semantic_wangyue_context_reasons(review: ProductExperiencePhraseReview) -> list[str]:
@@ -3718,6 +3937,56 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _preserve_rewrite_paragraphs(before_body: str, after_body: str, plan: dict[str, Any] | None) -> str:
+    before_paragraphs = [part.strip() for part in re.split(r"\n+", before_body or "") if part.strip()]
+    if len(before_paragraphs) < 2 or "\n" in after_body or _business_rule_requires_single_paragraph(plan):
+        return after_body
+
+    sentences = [
+        match.group(0).strip()
+        for match in re.finditer(r".+?(?:[。！？!?]+[”’」』]?|$)", after_body)
+        if match.group(0).strip()
+    ]
+    target_paragraphs = min(len(before_paragraphs), 3, len(sentences))
+    if target_paragraphs < 2:
+        return after_body
+
+    total_chars = sum(len(sentence) for sentence in sentences)
+    paragraphs: list[str] = []
+    current: list[str] = []
+    consumed_chars = 0
+    for index, sentence in enumerate(sentences):
+        current.append(sentence)
+        consumed_chars += len(sentence)
+        remaining_sentences = len(sentences) - index - 1
+        remaining_paragraphs = target_paragraphs - len(paragraphs) - 1
+        next_cut = total_chars * (len(paragraphs) + 1) / target_paragraphs
+        if (
+            remaining_paragraphs > 0
+            and consumed_chars >= next_cut
+            and remaining_sentences >= remaining_paragraphs
+        ):
+            paragraphs.append("".join(current))
+            current = []
+    if current:
+        paragraphs.append("".join(current))
+    return "\n\n".join(paragraphs) if len(paragraphs) >= 2 else after_body
+
+
+def _business_rule_requires_single_paragraph(plan: dict[str, Any] | None) -> bool:
+    rule_text = str(rewrite_business_rule_context(plan))
+    return any(
+        phrase in rule_text
+        for phrase in (
+            "正文单段不换行",
+            "正文一段不换行",
+            "正文不换行",
+            "正文不要换行",
+            "正文不分段",
+        )
+    )
 
 
 def _compact_len(value: str | None) -> int:

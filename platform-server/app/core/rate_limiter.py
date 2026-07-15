@@ -38,14 +38,6 @@ def _get_rate_limit_configs() -> dict[str, RateLimitConfig]:
             requests=settings.RATE_LIMIT_DEFAULT_REQUESTS,
             window=settings.RATE_LIMIT_DEFAULT_WINDOW,
         ),
-        "raap-service-ag": RateLimitConfig(
-            requests=settings.RATE_LIMIT_AG_REQUESTS,
-            window=settings.RATE_LIMIT_DEFAULT_WINDOW,
-        ),
-        "raap-service-generation-experts": RateLimitConfig(
-            requests=settings.RATE_LIMIT_GENERATION_EXPERTS_REQUESTS,
-            window=settings.RATE_LIMIT_DEFAULT_WINDOW,
-        ),
     }
 
 

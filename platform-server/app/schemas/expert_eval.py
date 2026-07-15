@@ -2,7 +2,7 @@
 Expert Eval schemas (test_set / test_case / expert_eval_run / expert_eval_result)
 """
 
-from typing import Optional, Literal
+from typing import Any, Literal, Optional
 
 from pydantic import Field
 
@@ -63,6 +63,8 @@ class TestCaseItem(TimestampSchema):
     title: Optional[str] = Field(None, description="标题")
     content: Optional[str] = Field(None, description="正文（文本类型）")
     image_url: Optional[str] = Field(None, description="图片URL（图片类型）")
+    meta: Optional[dict[str, Any]] = Field(None, description="金标、来源等扩展信息")
+    tags: Optional[dict[str, Any]] = Field(None, description="测试用例标签")
     enabled: int = Field(..., description="是否启用(1/0)")
 
 
@@ -80,6 +82,8 @@ class TestCaseCreate(BaseSchema):
     title: Optional[str] = Field(None, description="标题", max_length=512)
     content: Optional[str] = Field(None, description="正文（文本类型）")
     image_url: Optional[str] = Field(None, description="图片URL（图片类型）", max_length=1024)
+    meta: Optional[dict[str, Any]] = Field(None, description="金标、来源等扩展信息")
+    tags: Optional[dict[str, Any]] = Field(None, description="测试用例标签")
     enabled: int = Field(default=1, description="是否启用(1/0)")
 
 
@@ -88,6 +92,8 @@ class TestCaseUpdate(BaseSchema):
     title: Optional[str] = Field(None, description="标题", max_length=512)
     content: Optional[str] = Field(None, description="正文（文本类型）")
     image_url: Optional[str] = Field(None, description="图片URL（图片类型）", max_length=1024)
+    meta: Optional[dict[str, Any]] = Field(None, description="金标、来源等扩展信息")
+    tags: Optional[dict[str, Any]] = Field(None, description="测试用例标签")
     enabled: Optional[int] = Field(None, description="是否启用(1/0)")
 
 
@@ -96,6 +102,8 @@ class TestCaseImportItem(BaseSchema):
     title: Optional[str] = Field(None, description="标题", max_length=512)
     content: Optional[str] = Field(None, description="正文（文本类型）")
     image_url: Optional[str] = Field(None, description="图片URL（图片类型）", max_length=1024)
+    meta: Optional[dict[str, Any]] = Field(None, description="金标、来源等扩展信息")
+    tags: Optional[dict[str, Any]] = Field(None, description="测试用例标签")
 
 
 class TestCaseImportRequest(BaseSchema):
@@ -182,6 +190,8 @@ class EvalResultDetailTestCase(BaseSchema):
     title: Optional[str] = None
     content: Optional[str] = None
     image_url: Optional[str] = None
+    meta: Optional[dict[str, Any]] = None
+    tags: Optional[dict[str, Any]] = None
 
 
 class EvalResultDetailResponse(BaseSchema):
@@ -205,4 +215,3 @@ class EvalResultDetailResponse(BaseSchema):
     create_time: Optional[str] = None
 
     test_case: Optional[EvalResultDetailTestCase] = None
-

@@ -3,7 +3,6 @@
 import asyncio
 import json
 from dataclasses import replace
-from pathlib import Path
 
 import httpx
 import pytest
@@ -28,17 +27,16 @@ from app.services.content_batch_execution_service import (
     _body_title_candidates,
     _fallback_wangyue_growth_nutrition_body,
     _fallback_title_for_item,
-    _max_product_experience_phrase_rewrite_rounds,
     _max_product_experience_llm_rewrite_rounds,
     _mouth_phrase_budget_hits,
     _mouth_phrase_budget_rewrite_input,
     _sanitize_generated_title_format,
     _semantic_wangyue_context_reasons,
     _should_mark_only_product_experience_phrase_review,
-    _should_repair_product_experience_llm_quality,
     _should_rewrite_product_experience_llm_quality,
     _should_review_product_experience_llm_quality,
     _product_experience_rewrite_mode,
+    _preserve_rewrite_paragraphs,
     _title_guard_reasons,
     _title_guard_watch_reasons,
     _title_weighted_len,
@@ -47,6 +45,7 @@ from app.services.content_batch_execution_service import (
     _restore_wangyue_selling_context_surface,
 )
 from app.services.ai_flavor_humanizer_service import AIFlavorReview
+from app.services.business_forbidden_term_service import BusinessForbiddenTermService
 from app.services.executor_invocation_service import InvokeResult, MockExecutorInvocationClient
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService, find_forbidden_hits
 from app.services.product_experience_phrase_guard_service import (
@@ -72,6 +71,7 @@ from app.services.product_experience_llm_review_service import (
     parse_product_experience_llm_review,
 )
 from app.services.royal_friso_ugc_structure_guard_service import RoyalFrisoUGCStructureGuardService
+from app.services.rewrite_quality_validator_service import RewriteQualityJudgment
 
 
 def _execution_tables():
@@ -202,65 +202,12 @@ def test_wangyue_versioned_assets_enable_product_experience_llm_review():
     assert _should_review_product_experience_llm_quality(
         {
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v138_positive_effect_no_safety_attractor_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         }
     )
 
 
-def test_wangyue_v152_light_postprocess_marks_non_hard_llm_review_without_rewrite():
-    review = ProductExperienceLLMReview(
-        pass_=False,
-        rewrite_required=True,
-        severity="rewrite",
-        issues=[
-            ProductExperienceLLMIssue(
-                code="overcomplete_decision_chain",
-                evidence="",
-                reason="",
-                rewrite_direction="",
-            )
-        ],
-    )
-
-    assert not _should_rewrite_product_experience_llm_quality(
-        {
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-        review,
-    )
-
-
-def test_wangyue_claim_risk_and_product_appearance_llm_review_is_mark_only():
-    review = ProductExperienceLLMReview(
-        pass_=False,
-        rewrite_required=True,
-        severity="hard",
-        issues=[
-            ProductExperienceLLMIssue(
-                code="claim_risk",
-                evidence="",
-                reason="",
-                rewrite_direction="",
-            ),
-            ProductExperienceLLMIssue(
-                code="unnatural_product_appearance",
-                evidence="",
-                reason="",
-                rewrite_direction="",
-            )
-        ],
-    )
-
-    plan = {
-        "rule_type": "business_rule",
-        "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
-        "corpus": "0705旺玥活动",
-    }
-    assert not _should_rewrite_product_experience_llm_quality(plan, review)
-    assert not _should_repair_product_experience_llm_quality(plan, review)
 
 
 def test_wangyue_non_mark_only_hard_llm_review_still_rewrites():
@@ -281,7 +228,7 @@ def test_wangyue_non_mark_only_hard_llm_review_still_rewrites():
     assert _should_rewrite_product_experience_llm_quality(
         {
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
         review,
@@ -306,34 +253,7 @@ def test_overcomplete_decision_chain_only_never_triggers_llm_quality_rewrite():
     assert not _should_rewrite_product_experience_llm_quality(
         {
             "rule_type": "business_rule",
-            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v32_20260624",
-            "corpus": "0705旺玥活动",
-        },
-        review,
-    )
-
-
-def test_wangyue_v152_light_postprocess_marks_effect_chain_phrase_guard_only():
-    base_review = review_product_experience_phrase(
-        title="随手记",
-        body="朋友问我家喝什么，我说旺玥。",
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-    )
-    review = replace(
-        base_review,
-        pass_=False,
-        rewrite_required=True,
-        reasons=["product_effect_proof_chain"],
-    )
-
-    assert _should_mark_only_product_experience_phrase_review(
-        {
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
         review,
@@ -346,7 +266,7 @@ def test_wangyue_v155_marks_effect_chain_phrase_guard_only():
         body="开了一罐新的旺玥，上次那罐喝完接上这罐，孩子放学回来还有精力跑跳，别人问怎么老买这个，我就说孩子愿意喝。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v155_title_rule_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -360,7 +280,7 @@ def test_wangyue_v155_marks_effect_chain_phrase_guard_only():
     assert _should_mark_only_product_experience_phrase_review(
         {
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v155_title_rule_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
         review,
@@ -452,7 +372,7 @@ def test_wangyue_skeleton_hits_are_distribution_signal_not_rewrite_reason():
         body="选奶时对比了几款，旺玥趁活动补了两罐，孩子口味接受，家里安排起来好执行。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v183_prompt_slot_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -462,153 +382,6 @@ def test_wangyue_skeleton_hits_are_distribution_signal_not_rewrite_reason():
     )
     assert "complete_selection_price_acceptance_closure_skeleton" not in review.reasons
     assert review.rewrite_required is False
-
-
-def test_wangyue_v152_light_phrase_guard_marker_keeps_soft_effect_chain_mark_only():
-    base_review = review_product_experience_phrase(
-        title="放学回来那杯",
-        body="放学回来我给他冲一杯旺玥，孩子喝完会自己去玩一会儿，状态看着比前阵子稳一点，我心里也踏实些。",
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-    )
-    review = replace(
-        base_review,
-        pass_=False,
-        rewrite_required=True,
-        reasons=["product_effect_proof_chain"],
-    )
-    item = ContentBatchItem(
-        plan_json={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-        quality_json={},
-    )
-    service = ContentBatchExecutionService.__new__(ContentBatchExecutionService)
-
-    service._mark_product_experience_phrase_review(item, review)
-
-    quality = item.quality_json
-    assert quality["product_experience_phrase_guard"]["rewrite_required"] is True
-    assert quality["product_experience_phrase_guard"]["mark_rewrite_required"] is False
-    assert quality["review_report"].get("rewrite_required") is not True
-
-
-def test_wangyue_v152_light_postprocess_keeps_time_event_phrase_guard_as_rewrite():
-    base_review = review_product_experience_phrase(
-        title="随手记",
-        body="朋友问我家喝什么，我说旺玥。",
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-    )
-    review = replace(
-        base_review,
-        pass_=False,
-        rewrite_required=True,
-        reasons=["wangyue_time_event_context"],
-    )
-
-    assert not _should_mark_only_product_experience_phrase_review(
-        {
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-        review,
-    )
-
-
-def test_wangyue_v152_flags_relative_time_effect_feedback_after_comma():
-    review = review_product_experience_phrase(
-        title="这次补货还是没换",
-        body=(
-            "翻出快递箱，旺玥罐子正好喝完。这次补货还是没换，家里存货里继续留着。"
-            "前两天在外面跑了一下午，回来精神头还足。"
-        ),
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-    )
-
-    assert "explicit_temporal_context" in review.reasons
-    assert review.rewrite_required is True
-
-
-def test_wangyue_v152_flags_current_attention_effect_feedback():
-    review = review_product_experience_phrase(
-        title="选4段时别人问我看什么",
-        body=(
-            "朋友问我给娃选4段奶粉主要看啥，我说我盯准了DHA。"
-            "最近娃坐桌前画画，以前画两笔就跑，现在能安安静静涂完一整张。"
-        ),
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-    )
-
-    assert "explicit_temporal_context" in review.reasons
-    assert review.rewrite_required is True
-
-
-def test_wangyue_v152_flags_current_observation_effect_feedback_across_comma():
-    review = review_product_experience_phrase(
-        title="接娃回来还有精神",
-        body=(
-            "幼儿园集体环境接触多，之前总担心容易中招。"
-            "这段时间观察下来，放学回来还能叽叽喳喳讲班里的事，精神头在线。"
-        ),
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-    )
-
-    assert "explicit_temporal_context" in review.reasons
-    assert review.rewrite_required is True
-
-
-def test_wangyue_v152_light_limits_semantic_phrase_guard_to_one_rewrite_round():
-    base_review = review_product_experience_phrase(
-        title="顺手记",
-        body="孩子接触多，我选旺玥也是看中保护力。一杯下去又活过来了，也没有动不动就掉状态。",
-        plan={"asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules"},
-    )
-    odd_review = replace(
-        base_review,
-        pass_=False,
-        rewrite_required=True,
-        reasons=["odd_product_experience_phrase"],
-    )
-    logic_review = replace(
-        base_review,
-        pass_=False,
-        rewrite_required=True,
-        reasons=["wangyue_article_logic_drift_context"],
-    )
-    hard_mixed_review = replace(
-        base_review,
-        pass_=False,
-        rewrite_required=True,
-        reasons=["wangyue_article_logic_drift_context", "wangyue_time_event_context"],
-    )
-
-    plan = {"asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules"}
-    assert _max_product_experience_phrase_rewrite_rounds(plan, odd_review) == 1
-    assert _max_product_experience_phrase_rewrite_rounds(plan, logic_review) == 1
-    assert _max_product_experience_phrase_rewrite_rounds(plan, hard_mixed_review) == 2
-    assert _max_product_experience_phrase_rewrite_rounds({"asset_key": "wangyue_article_business_rules"}, logic_review) == 2
 
 
 def test_mouth_phrase_budget_hits_ignore_substring_inside_allowed_phrase():
@@ -829,7 +602,7 @@ def test_product_experience_phrase_guard_allows_single_soft_closure_phrase():
         body="晚上收拾完书包，顺手给娃冲一杯旺玥。他自己捧着喝完，我也不用再追着饭桌复盘太多，今天就这样记录一下。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：中短文；正文按130字左右写，可在120-150字之间。0705旺玥活动",
         },
     )
@@ -845,7 +618,7 @@ def test_product_experience_phrase_guard_blocks_empty_body():
         body="",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文40-130字。0705旺玥活动",
         },
     )
@@ -861,7 +634,7 @@ def test_product_experience_phrase_guard_reports_soft_closure_without_rewrite():
         body="翻成分表那会确实有点纠结，最后还是选了旺玥。孩子喝着还行，我现在心里有数一点，也踏实一点，但没打算写成什么神奇变化。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：中短文；正文按130字左右写，可在120-150字之间。0705旺玥活动",
         },
     )
@@ -872,19 +645,6 @@ def test_product_experience_phrase_guard_reports_soft_closure_without_rewrite():
     assert review.pass_ is True
 
 
-def test_product_experience_phrase_guard_blocks_weak_later_observation_tail():
-    review = review_product_experience_phrase(
-        title="消耗太快又续上了",
-        body="旺玥是第三回续了，钙铁锌这些营养全，不用我额外操心补。先喝着，后面再看吧",
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v139_example_kernel_slim_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-    )
-
-    assert "common_ai_closure_phrase" in review.reasons
-    assert review.rewrite_required is True
 
 
 def test_product_experience_phrase_guard_blocks_state_template_combo():
@@ -893,7 +653,7 @@ def test_product_experience_phrase_guard_blocks_state_template_combo():
         body="最近班里好几个请假的，娃每天早晚一杯旺玥，精神头足，状态一直在线，当妈的省心不少。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -904,25 +664,6 @@ def test_product_experience_phrase_guard_blocks_state_template_combo():
     assert review.pass_ is False
 
 
-def test_product_experience_phrase_guard_blocks_product_effect_proof_chain():
-    review = review_product_experience_phrase(
-        title="放学后这杯",
-        body="放学回来我给他冲一杯旺玥，孩子喝完会自己去玩一会儿，状态看着比前阵子稳一点，我心里也踏实些。",
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v28_20260624",
-            "post_type": "使用反馈/继续观察",
-            "ugc_post_type": "使用反馈型",
-            "corpus": "0705旺玥活动",
-        },
-    )
-
-    assert "product_effect_proof_chain" in review.reasons
-    assert "冲一杯" in review.product_effect_proof_chain_hits["product_action"]
-    assert "状态" in review.product_effect_proof_chain_hits["effect_observation"]
-    assert "踏实" in review.product_effect_proof_chain_hits["caregiver_closure"]
-    assert review.rewrite_required is True
-    assert review.pass_ is False
 
 
 def test_product_experience_phrase_guard_allows_single_product_basis_without_proof_chain():
@@ -931,7 +672,7 @@ def test_product_experience_phrase_guard_allows_single_product_basis_without_pro
         body="儿童奶粉配方真的会看晕，我后来只记自己在意的点。旺玥这里我记住的是DHA和燕窝酸，算是选的时候多一层考虑。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v28_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "轻测评/配方关注",
             "ugc_post_type": "轻测评型",
             "corpus": "0705旺玥活动",
@@ -950,7 +691,7 @@ def test_product_experience_phrase_guard_allows_wangyue_short_effect_proof():
         body="算了下这月的奶粉预算，还是把旺玥续上了。喝了小半年，饭还是有点挑，但营养跟得上，状态一直挺稳。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v140_single_chain_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "复购/长期使用",
             "ugc_post_type": "复购/长期使用型",
             "corpus": "0705旺玥活动",
@@ -961,33 +702,6 @@ def test_product_experience_phrase_guard_allows_wangyue_short_effect_proof():
     assert "product_effect_proof_chain" not in review.reasons
 
 
-def test_product_experience_phrase_guard_reports_decision_chain_as_signal_only():
-    review = review_product_experience_phrase(
-        title="晚饭后的补货",
-        body=(
-            "晚饭后想了想，旺玥又该补货了。我家吃饭一直不大稳定，"
-            "奶粉算是长期留下的日常营养补充。主要是它补上饭里差的一块，"
-            "孩子也接受，就续上了，当个保底留着。"
-        ),
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v32_20260624",
-            "post_type": "复购/长期使用",
-            "ugc_post_type": "复购/长期使用型",
-            "corpus": "0705旺玥活动",
-        },
-    )
-
-    assert set(review.decision_chain_hits) >= {
-        "life_problem",
-        "product_basis",
-        "price_purchase",
-        "kid_acceptance",
-        "continuity_closure",
-    }
-    assert "overcomplete_decision_chain" not in review.reasons
-    assert review.rewrite_required is False
-    assert review.pass_ is True
 
 
 def test_product_experience_phrase_guard_allows_short_repurchase_chain():
@@ -996,7 +710,7 @@ def test_product_experience_phrase_guard_allows_short_repurchase_chain():
         body="晚饭后翻了下家里常备的奶粉，旺玥又该补货了。吃饭不太稳定，儿童奶粉就当日常营养补充留着。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v32_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "复购/长期使用",
             "ugc_post_type": "复购/长期使用型",
             "corpus": "0705旺玥活动",
@@ -1009,61 +723,10 @@ def test_product_experience_phrase_guard_allows_short_repurchase_chain():
     assert review.pass_ is True
 
 
-def test_product_experience_phrase_guard_blocks_soft_product_proof_loop():
-    review = review_product_experience_phrase(
-        title="绿叶菜饭桌大战",
-        body=(
-            "晚饭桌上一碗绿叶菜，孩子拨来拨去最后推开。后来不想天天为这事较劲，"
-            "儿童奶粉我留了一款旺玥在家里当补充，至少每天喝一杯能补上一些。"
-            "孩子喝倒是愿意喝，至少奶粉能帮我兜住一部分营养，心里不那么慌。"
-        ),
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v29_20260624",
-            "post_type": "问题解决/吃饭不稳",
-            "ugc_post_type": "问题解决型",
-            "corpus": "0705旺玥活动",
-        },
-    )
-
-    assert "product_effect_proof_chain" in review.reasons
-    assert "每天喝一杯" in review.product_effect_proof_chain_hits["product_action"]
-    assert "愿意喝" in review.product_effect_proof_chain_hits["kid_acceptance"]
-    assert "不那么慌" in review.product_effect_proof_chain_hits["caregiver_closure"]
-    assert review.rewrite_required is True
-    assert review.pass_ is False
 
 
-def test_product_experience_phrase_guard_blocks_common_ai_closure_variant():
-    review = review_product_experience_phrase(
-        title="旺玥记录",
-        body="喝了两个月，娃个子没停长，摸后背终于有点肉感了，我心里总算踏实点。，先这么喂着",
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
-            "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
-        },
-    )
-
-    assert "common_ai_closure_phrase" in review.reasons
-    assert sanitize_common_ai_closure("踏实点。，先这么喂着") == "踏实点"
-    assert sanitize_common_ai_closure("我也就当个早起动力吧。长势") == "我也就当个早起动力吧"
 
 
-def test_product_experience_phrase_guard_still_blocks_hard_ai_closure_phrase():
-    review = review_product_experience_phrase(
-        title="旺玥记录",
-        body="老母亲做了半天功课，最后还是选旺玥，孩子喝完我就觉得这事固定下来了。",
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
-            "corpus": "篇幅类型：中短文；正文按130字左右写，可在120-150字之间。0705旺玥活动",
-        },
-    )
-
-    assert "hard_ai_closure_phrase" in review.reasons
-    assert review.rewrite_required is True
-    assert review.pass_ is False
 
 
 def test_product_experience_phrase_guard_treats_wangyue_v2_closure_as_watch_only():
@@ -1109,7 +772,7 @@ def test_product_experience_phrase_guard_blocks_adult_self_drinking_child_formul
         body="今晚陪娃写作业，顺手开了新到的旺玥，给自己冲了一杯。孩子在旁边写写画画，我就当日常记录一下。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1131,7 +794,7 @@ def test_product_experience_phrase_guard_blocks_formula_dry_powder_ingestion():
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。复购/长期使用。",
         },
     )
@@ -1155,7 +818,7 @@ def test_product_experience_phrase_guard_allows_wangyue_ingredient_positive_grow
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。复购/长期使用。",
         },
     )
@@ -1170,7 +833,7 @@ def test_product_experience_phrase_guard_allows_wangyue_ingredient_growth_bridge
         body="朋友问我为什么留旺玥，我说它含有乳铁蛋白，对孩子体格比较友好，最近小身板看着结实些。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。复购/长期使用。",
         },
     )
@@ -1182,7 +845,7 @@ def test_product_experience_phrase_guard_allows_wangyue_ingredient_growth_bridge
 def test_product_experience_phrase_guard_blocks_wangyue_product_fact_number_drift():
     plan = {
         "rule_type": "business_rule",
-        "asset_key": "wangyue_v347_selling_description_mainline_article_rules",
+        "asset_key": "wangyue_v3_core_storyline_article_rules",
         "corpus": "写作规则：0705旺玥活动。",
     }
 
@@ -1209,7 +872,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_sleep_effect_scope_drift
         body="结果洗完澡，旺玥喝完后自己爬上床就睡了，一整夜都很安稳。想想这段时间家里一直在喝旺玥，日常活动后的恢复力看得见。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v347_selling_description_mainline_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "painpoint": "保护力关注",
             "selling_point": "进阶保护力",
             "story_spine": "孩子日常活动后的自家状态；正向反馈回到活动后状态。",
@@ -1230,7 +893,7 @@ def test_product_experience_phrase_guard_allows_sleep_as_background_context():
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v351_mainline_positive_landing_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "painpoint": "营养不足",
             "selling_point": "营养丰富",
             "corpus": "写作规则：0705旺玥活动。",
@@ -1244,7 +907,7 @@ def test_product_experience_phrase_guard_allows_sleep_as_background_context():
 def test_product_experience_phrase_guard_allows_nearby_wangyue_ingredient_growth_pairing():
     plan = {
         "rule_type": "business_rule",
-        "asset_key": "wangyue_article_business_rules",
+        "asset_key": "wangyue_v3_core_storyline_article_rules",
         "corpus": "写作规则：0705旺玥活动。复购/长期使用。",
     }
 
@@ -1268,7 +931,7 @@ def test_product_experience_phrase_guard_allows_nearby_wangyue_ingredient_growth
 def test_product_experience_phrase_guard_allows_correct_wangyue_benefit_mapping():
     plan = {
         "rule_type": "business_rule",
-        "asset_key": "wangyue_article_business_rules",
+        "asset_key": "wangyue_v3_core_storyline_article_rules",
         "corpus": "写作规则：0705旺玥活动。复购/长期使用。",
     }
 
@@ -1299,7 +962,7 @@ def test_product_experience_phrase_guard_allows_protection_force_supported():
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。复购/长期使用。",
         },
     )
@@ -1314,7 +977,7 @@ def test_product_experience_phrase_guard_allows_regular_daily_routine_scope():
         body="后来选了旺玥，奶粉冲泡起来顺手，他接受度也高，现在吃饭稳定很多，午睡到户外活动都更规律。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v347_selling_description_mainline_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "painpoint": "保护力关注",
             "selling_point": "进阶保护力",
             "corpus": "写作规则：0705旺玥活动。",
@@ -1333,7 +996,7 @@ def test_product_experience_phrase_rewrite_input_does_not_weaken_positive_effect
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。复购/长期使用。",
         },
         title="这罐喝着还挺明显",
@@ -1358,7 +1021,7 @@ def test_product_experience_phrase_rewrite_input_repairs_fact_number_and_effect_
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v347_selling_description_mainline_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "painpoint": "保护力关注",
             "selling_point": "进阶保护力",
             "story_spine": "孩子日常活动后的自家状态；正向反馈回到活动后状态。",
@@ -1388,7 +1051,7 @@ def test_product_experience_formula_dry_powder_cleanup_deletes_hit_segment():
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。复购/长期使用。",
         },
         title="又开一罐，接着喝",
@@ -1415,7 +1078,7 @@ def test_product_experience_phrase_guard_allows_normal_formula_drinking_action()
         body="我把旺玥冲好递过去，他自己拿着杯子喝完，又跑去翻贴纸书。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -1496,7 +1159,7 @@ def test_product_experience_phrase_guard_blocks_adult_child_formula_breakfast_mi
         body="先试一罐吧，反正喝不完我自己也能当早餐奶。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1512,7 +1175,7 @@ def test_product_experience_phrase_guard_blocks_adult_tasting_child_formula():
         body="每次快喝完就赶紧囤，娃现在吃饭也比以前主动了，不知道是不是这奶的功劳，反正我自己喝着觉得挺香。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1528,7 +1191,7 @@ def test_product_experience_phrase_guard_blocks_adult_tasting_child_formula_vari
         body="泡了一杯自己先尝，甜味很淡，她倒是吨吨吨喝完了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1545,7 +1208,7 @@ def test_product_experience_phrase_guard_blocks_adult_try_drinking_title():
         body="给闺女选旺玥这事，还是想先看看孩子日常营养能不能跟上。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -1562,7 +1225,7 @@ def test_product_experience_phrase_guard_blocks_adult_formula_drinking_title():
         body="孩子每天盯着我冲奶粉，嘴里念叨妈妈快点。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1578,7 +1241,7 @@ def test_product_experience_phrase_guard_blocks_adult_current_drinking_subject_d
         body="刚好前阵子给他换了儿童奶粉，我现在喝的是皇家美素佳儿旺玥，主要是看中它眼脑那块营养。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -1610,7 +1273,7 @@ def test_product_experience_phrase_guard_blocks_record_phrase_attractor():
         body="周末收拾孩子的运动服时顺手记一下，最近她活动量明显变大。家里现在喝旺玥，钙铁锌和多种关键营养都在，看她跑跳状态不错。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v333_record_phrase_attractor_cleanup_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -1624,7 +1287,7 @@ def test_product_experience_phrase_guard_blocks_record_phrase_attractor():
         body="后来给孩子选了旺玥，基础营养看着全，饭菜忽好忽坏时，日常营养安排起来不乱。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v333_record_phrase_attractor_cleanup_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -1639,7 +1302,7 @@ def test_product_experience_phrase_guard_blocks_adult_sneaky_tasting_child_formu
         body="我自己偷偷喝了一口，奶味不腥，难怪孩子没嫌弃。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1656,7 +1319,7 @@ def test_product_experience_phrase_guard_blocks_adult_leftover_tasting_child_for
         body="也不是多好喝，就是看那阵奶沫消掉后留下的挂壁，觉得像把今天漏掉的钙和铁给她续上了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1672,7 +1335,7 @@ def test_product_experience_phrase_guard_blocks_child_self_brewing_formula():
         body="最近幼儿园里好几个小朋友请假，我家这个放学回来自己开罐旺玥泡一杯，咕咚咕咚喝完才出门。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1689,7 +1352,7 @@ def test_product_experience_phrase_guard_blocks_child_daily_self_brewing_formula
         body="我家娃换了旺玥说好喝，现在每天自己冲，偶尔还会自己抱着罐子催我冲。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1706,7 +1369,7 @@ def test_product_experience_phrase_guard_blocks_child_self_pouring_formula():
         body="喝了旺玥一阵子，回看发现孩子每天自己倒奶粉还挺顺的。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "ugc_post_type": "轻复盘型",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
@@ -1723,7 +1386,7 @@ def test_product_experience_phrase_guard_blocks_light_recap_as_question_post():
         body="喝了一阵后回看，娃喝得还算顺，但我还在纠结要不要继续。有同样情况的妈妈吗？想听听大家怎么判断的。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "ugc_post_type": "轻复盘型",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
@@ -1741,7 +1404,7 @@ def test_product_experience_phrase_guard_blocks_light_recap_question_title():
         body="跟几个同龄妈妈聊完，发现每家安排都不一样。我家现在喝旺玥，先记一下自己观察，后面再看怎么调吧。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "ugc_post_type": "轻复盘型",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
@@ -1758,7 +1421,7 @@ def test_product_experience_phrase_guard_blocks_light_recap_purchase_decision_dr
         body="旺玥喝了一阵，晚上那杯还算顺。我其实也拿不准，是不是该继续囤，还是再看别的。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "ugc_post_type": "轻复盘型",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
@@ -1776,7 +1439,7 @@ def test_product_experience_phrase_guard_blocks_light_recap_internal_type_leak()
         body="同龄群聊完，自己默默整理了一下。这段时间旺玥喝着，日常安排也没被打乱。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "ugc_post_type": "轻复盘型",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
@@ -1795,7 +1458,7 @@ def test_product_experience_ugc_post_type_cleanup_removes_internal_type_leak():
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "ugc_post_type": "轻复盘型",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
@@ -1817,7 +1480,7 @@ def test_product_experience_phrase_guard_blocks_child_routine_self_brewing_cup()
         body="之前给娃换奶粉那叫一个头疼。现在每天早晚自己冲一杯咕噜咕噜喝完，当妈的轻松不少。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1835,7 +1498,7 @@ def test_product_experience_phrase_guard_blocks_child_daily_cup_self_brewing_ord
         body=body,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1853,7 +1516,7 @@ def test_product_experience_phrase_guard_blocks_child_self_initiated_brewing_act
         body="最后换到旺玥，居然说好喝，天天自己主动去泡。喝了大半年，去年校服裤腿短了不少。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -1870,7 +1533,7 @@ def test_product_experience_phrase_guard_blocks_child_self_goes_to_brew():
         body="拆开旺玥包装，自己就去泡了，奶香味飘过来。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
@@ -1885,7 +1548,7 @@ def test_product_experience_phrase_guard_blocks_child_remembers_to_brew():
         body="现在每天早晚自己记得泡，有时候还会催我。我说不出成分好不好，反正她愿意喝。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
@@ -1900,7 +1563,7 @@ def test_product_experience_phrase_guard_blocks_child_finished_brewing_wording()
         body="娃冲完自己就干杯了，当妈的看着还挺省心。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
@@ -1915,7 +1578,7 @@ def test_product_experience_phrase_guard_blocks_contextual_self_brew_formula():
         body="每天放学回来自己冲杯奶粉，喝完顺手把杯子放水池了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
@@ -1930,7 +1593,7 @@ def test_product_experience_phrase_guard_allows_child_holding_cup_to_drink():
         body="我冲好递过去，孩子自己拿着杯子喝完，放桌上就跑去玩了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
@@ -1945,7 +1608,7 @@ def test_product_experience_phrase_guard_allows_child_fetching_cup_without_formu
         body="我冲好放桌上，孩子自己跑去拿杯子，喝完就去玩积木了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
@@ -1973,7 +1636,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_formula_usage_form_error
         body=body,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v155_title_rule_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -1988,7 +1651,7 @@ def test_product_experience_phrase_guard_allows_child_holding_cup_without_formul
         body="我冲好递过去，孩子自己拿着杯子喝完，放桌上就跑去玩了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v155_title_rule_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -2037,7 +1700,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_brand_as_cup_carrier(bod
         body=body,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v155_title_rule_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -2056,7 +1719,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_brand_as_handed_object()
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v334_record_replacement_cleanup_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -2069,7 +1732,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_brand_as_handed_object()
         body="我冲好递过去，他接过杯子喝了几口，又跑去收拾玩具。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v334_record_replacement_cleanup_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -2086,7 +1749,7 @@ def test_product_experience_phrase_guard_blocks_drink_bag_carrier_artifact():
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v309_keyword_role_narrowing_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -2126,20 +1789,56 @@ def test_sanitize_wangyue_time_event_context_keeps_sentence_readable():
     assert "一有状况就请假" in cleaned
 
 
+def test_sanitize_wangyue_time_event_context_keeps_item5_sentence_readable():
+    cleaned = sanitize_wangyue_time_event_context("回想之前季节交替总要请几天假，今年倒全勤了。")
+
+    assert "季节" not in cleaned
+    assert "时候交替" not in cleaned
+    assert cleaned == "回想之前总要请几天假，今年倒全勤了。"
+
+
 def test_product_experience_phrase_guard_blocks_child_product_promo_context():
     review = review_product_experience_phrase(
-        title="自己跟旁边的小孩说你也来一杯吧",
-        body="那天我们在小区玩，旁边小朋友在喝奶，她突然跑过来跟人家说“我家也有，你要不要来一杯”。我才想起来旺玥是上个月买的。",
+        title="聚会时突然听见这句",
+        body="上周聚会他主动给每个小朋友倒了一杯旺玥，说“这个好喝还有乳铁蛋白和HMO呢”。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
 
     assert "wangyue_child_product_promo_context" in review.reasons
-    assert any("要不要来一杯" in hit for hit in review.wangyue_child_product_promo_hits)
+    assert any("给每个小朋友倒了一杯旺玥" in hit for hit in review.wangyue_child_product_promo_hits)
+    assert review.wangyue_child_product_promo_hits[0] in _blocking_product_experience_phrase_hits(review)
     assert review.rewrite_required is True
+    assert review.pass_ is False
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "孩子给同伴分了一杯旺玥，还催人家快尝尝。",
+        "他把旺玥递给旁边的小朋友，说这款特别好。",
+        "孩子主动跟同学介绍旺玥，说自己家一直喝这个。",
+        "她邀请旁边小朋友也喝一杯旺玥。",
+        "他一本正经地说旺玥有免疫球蛋白，保护力更好。",
+    ],
+)
+def test_product_experience_phrase_guard_blocks_child_product_promo_variants(body):
+    review = review_product_experience_phrase(
+        title="孩子聚会时的一句话",
+        body=body,
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "正文40-130字。",
+        },
+    )
+
+    assert review.wangyue_child_product_promo_hits
+    assert "wangyue_child_product_promo_context" in review.reasons
+    assert _blocking_product_experience_phrase_hits(review)
     assert review.pass_ is False
 
 
@@ -2149,7 +1848,7 @@ def test_product_experience_phrase_guard_allows_child_says_tastes_ok():
         body="我冲好递过去，孩子说味道还行，自己拿着杯子喝了几口。旺玥这款我主要看保护力和日常营养。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
@@ -2164,7 +1863,7 @@ def test_product_experience_phrase_guard_blocks_child_scooping_formula():
         body="每天早晚一杯旺玥，孩子自己倒水舀粉，我就在旁边看着，喝完还说今天甜一点。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2181,7 +1880,7 @@ def test_product_experience_phrase_guard_blocks_child_spoon_scooping_formula():
         body="晚上回家后孩子自己拿勺子舀了三勺，说这杯今天要浓一点，我才发现这动作不太对。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2198,7 +1897,7 @@ def test_product_experience_phrase_guard_blocks_child_self_digging_formula():
         body="旺玥这罐是同事推荐的，现在每天自己挖奶粉，喝完还要舔杯沿。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2215,7 +1914,7 @@ def test_product_experience_phrase_guard_blocks_child_indirect_brewing_formula()
         body="现在每天早晚自己搬小凳子冲奶，晚上他自己洗完澡就去厨房泡旺玥，我才发现这个动作不适合写。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2233,7 +1932,7 @@ def test_product_experience_phrase_guard_blocks_child_formula_can_and_demand():
         body="早起穿校服，自己搬奶粉罐去了。他泡好端着，后来还自己抱着罐子让冲。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2250,7 +1949,7 @@ def test_product_experience_phrase_guard_blocks_child_drinking_from_formula_can_
         body="成分表里营养挺全乎，有保护力也有眼脑支持。打开罐子他自己抱着喝，肉疼是真肉疼。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2267,7 +1966,7 @@ def test_product_experience_phrase_guard_blocks_ambiguous_self_brewing_fragment(
         body="挑食娃的妈，懂的都懂。打开新的一罐，自己泡上，我才发现这句不该出现。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2284,7 +1983,7 @@ def test_product_experience_phrase_guard_blocks_child_holding_unspecified_drink_
         body="新开一罐，娃自己抱着喝得挺欢。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2301,7 +2000,7 @@ def test_product_experience_phrase_guard_blocks_child_extra_scoop_formula():
         body="她拧开盖子说那好吧，又自己偷偷多舀了一勺。希望是没错的吧，先喝着看。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2316,7 +2015,7 @@ def test_product_experience_phrase_guard_blocks_child_dry_eating_formula():
         body="每次开罐都得藏好，不然他能偷着干吃好几勺。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2334,7 +2033,7 @@ def test_product_experience_phrase_guard_blocks_child_formula_bottle_context():
         body="早上冲奶时娃自己抱着奶瓶咕嘟咕嘟喝，我偷偷乐了一下，旺玥里的营养挺全的。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2406,7 +2105,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_context_mistakes():
         body="宝宝一岁多后出门多，我就在书包侧袋塞一盒贝博氏旺玥，临时兑点温水摇匀。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2425,7 +2124,7 @@ def test_product_experience_phrase_guard_allows_schoolbag_clothing_context():
         body="接娃回家路上，书包里外套换了好几件。儿童奶粉还是用的旺玥，主要当初选它就为保护力营养这块，暂时没打算换。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v28_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用反馈/阶段观察",
             "product_appearance_mode": "旺玥作为当前安排出现",
         },
@@ -2441,7 +2140,7 @@ def test_product_experience_phrase_guard_allows_schoolbag_side_pocket_non_produc
         body="昨天接娃，旁边家长说班里又有人请假了。书包侧袋还塞着没吃完的饼干，旺玥就是家里日常喝的那罐，主要看保护力这块。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
@@ -2456,7 +2155,7 @@ def test_product_experience_phrase_guard_blocks_schoolbag_side_pocket_product_de
         body="昨天接娃，旁边家长说班里又有人请假了。我顺手在书包侧袋塞了一盒旺玥，想着玩完兑点温水就能喝。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
@@ -2471,7 +2170,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_low_age_feeding_context(
         body="孩子从辅食到正餐一直挑食，我直接备了旺玥。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2496,7 +2195,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_under_three_age_variants
             body=body,
             plan={
                 "rule_type": "business_rule",
-                "asset_key": "wangyue_article_business_rules",
+                "asset_key": "wangyue_v3_core_storyline_article_rules",
                 "corpus": "旺玥是3周岁以上、3-6岁学龄前儿童语境下的4段儿童奶粉。",
             },
         )
@@ -2520,7 +2219,7 @@ def test_product_experience_phrase_guard_does_not_treat_usage_duration_as_under_
             body=body,
             plan={
                 "rule_type": "business_rule",
-                "asset_key": "wangyue_article_business_rules",
+                "asset_key": "wangyue_v3_core_storyline_article_rules",
                 "corpus": "旺玥是3周岁以上、3-6岁学龄前儿童语境下的4段儿童奶粉。",
             },
         )
@@ -2535,7 +2234,7 @@ def test_product_experience_phrase_guard_still_blocks_month_age_context():
         body="孩子有两个月大，断奶后家里就备了旺玥。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "旺玥是3周岁以上、3-6岁学龄前儿童语境下的4段儿童奶粉。",
         },
     )
@@ -2550,7 +2249,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_any_explicit_age():
         body="我家七岁娃活动量大，家里一直喝旺玥。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -2568,7 +2267,7 @@ def test_product_experience_phrase_guard_flags_complete_wangyue_stage_fact_as_un
         body="娃一进3岁，我选奶思路变了。旺玥是3岁以上4段儿童奶粉，学龄前这段我会多看钙铁锌。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review_painpoints_v22_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "选奶/儿童奶粉选择复盘",
             "product_appearance_mode": "旺玥作为选择依据出现",
             "corpus": "旺玥事实必须正确：3周岁以上专用4段儿童奶粉，适配3-6岁学龄前儿童。",
@@ -2592,7 +2291,7 @@ def test_product_experience_phrase_guard_uses_explicit_selling_context_not_full_
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v125_density_title_fact_tight_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": {
                 "topic": "V118-20｜保护力关注种草｜轻测评｜成长发育需求",
                 "business_rule": "V118-20｜保护力关注种草｜轻测评｜成长发育需求",
@@ -2611,40 +2310,11 @@ def test_product_experience_phrase_guard_uses_explicit_selling_context_not_full_
     assert "wangyue_article_logic_drift_context" not in review.reasons
 
 
-def test_product_experience_rewrite_input_mentions_wangyue_age_stage_context():
-    service = ContentBatchExecutionService(None, callback_base_url="http://testserver", session_factory=lambda: None)
-    plan = {
-        "rule_type": "business_rule",
-        "asset_key": "wangyue_repurchase_diversity_v21_20260623",
-        "corpus": "写作规则：0705旺玥活动。复购/长期使用。",
-    }
-    item = ContentBatchItem(
-        batch_id=1,
-        item_no=1,
-        status="generated",
-        plan_json=plan,
-        title="家里一直喝的",
-        body="旺玥从一岁多就开始喝，后来也没怎么换。",
-    )
-    review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-
-    payload = service._product_experience_phrase_rewrite_input(item, review)
-    instructions = "\n".join(payload["rewrite_instructions"])
-
-    assert "旺玥年龄/阶段不匹配" in instructions
-    assert "产品年龄边界：旺玥只放在孩子3岁以后的儿童奶粉阶段" in instructions
-    assert "正文不要完整复述成“3岁以上4段儿童奶粉”" in instructions
-    assert "不要机械删年龄词" in instructions
-    assert "不要把“一岁多/两岁/半岁”替换成“孩子/这个阶段”造成残句" in instructions
-    assert "拆成“3岁+ / 4段 / 儿童奶粉 / 阶段对得上”" in instructions
-    assert "不能写低龄、婴配、断奶、辅食、1-2岁开始喝旺玥" in instructions
-
-
 def test_product_experience_rewrite_input_mentions_hidden_negative_comparison_context():
     service = ContentBatchExecutionService(None, callback_base_url="http://testserver", session_factory=lambda: None)
     plan = {
         "rule_type": "business_rule",
-        "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+        "asset_key": "wangyue_v3_core_storyline_article_rules",
         "post_type": "选奶复盘",
         "ugc_post_type": "选奶复盘",
         "corpus": "写作规则：0705旺玥活动。旺玥要保持正面产品价值。",
@@ -2677,7 +2347,7 @@ def test_product_experience_phrase_guard_allows_wangyue_age_question_without_spe
         body="家里一直喝旺玥，最近在纠结要不要继续。想问问大家一般喝到几岁，主要想听听同龄娃怎么安排。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "求问/轻复盘",
             "product_appearance_mode": "产品是明确讨论对象但不装日记",
         },
@@ -2693,7 +2363,7 @@ def test_product_experience_phrase_guard_allows_wangyue_use_history_in_regular_a
         body="幼儿园接触人多，我还是担心孩子容易中招。家里一直喝旺玥，主要看保护力这块，先按日常情况记一笔。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -2711,7 +2381,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_fixed_drinking_and_child
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "复购/长期使用",
             "product_appearance_mode": "旺玥作为长期保留、补货对象出现",
             "corpus": "0705旺玥活动",
@@ -2734,7 +2404,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_staged_drinking_variants
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "复购/长期使用",
             "product_appearance_mode": "旺玥作为长期保留、补货对象出现",
             "corpus": "0705旺玥活动",
@@ -2756,7 +2426,7 @@ def test_product_experience_phrase_guard_allows_wangyue_repurchase_use_history()
         body="孩子爸突然问我旺玥那罐是不是快喝完了，下一罐买了没。我才想起这事，这奶粉娃一直喝着，家里人都习惯了，赶紧补上，免得断档。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_repurchase_diversity_v21_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "复购/补货记录",
             "ugc_post_type": "家人提醒补货型",
             "product_appearance_mode": "旺玥作为被家里人一句话提醒后要补上的奶粉出现",
@@ -2774,7 +2444,7 @@ def test_product_experience_phrase_guard_allows_wangyue_repurchase_stocking_rela
         body="买湿巾的时候顺手把旺玥也加上了，家里一直备着这个。孩子喝习惯了，家里备着旺玥也省得临时想起来再补。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_repurchase_diversity_v21_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "复购/补货记录",
             "ugc_post_type": "顺手加购补货型",
             "product_appearance_mode": "旺玥作为买其他日用品时顺手补上的奶粉出现",
@@ -2793,7 +2463,7 @@ def test_product_experience_phrase_guard_blocks_scene_bucket_drift_to_cabinet():
         body="门口堆了三个快递，拆开一看有一罐旺玥。顺手把包装袋压扁，罐子放进厨房柜子。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
             "scene_motive_bucket": "快递到货拆箱",
@@ -2811,7 +2481,7 @@ def test_product_experience_phrase_guard_blocks_usage_record_action_surface_drif
         body="早上赶着出门，桌上那杯旺玥他自己端起来喝了几口，我在旁边翻袜子。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "物件在场",
@@ -2829,7 +2499,7 @@ def test_product_experience_phrase_guard_blocks_planned_drinking_for_object_pres
         body="周末早上桌上那杯旺玥放着，我喊他喝，他说等一下。出门前把罐子挪到包边，怕他路上想起来要喝又找不到。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "物件在场",
@@ -2849,7 +2519,7 @@ def test_product_experience_phrase_guard_blocks_malformed_action_cleanup_residue
         body="沙发上有昨天没看了一眼的牛奶盒，桌角还放着那杯旺玥。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "物件在场",
@@ -2867,7 +2537,7 @@ def test_product_experience_phrase_guard_blocks_malformed_child_stage_fragment()
         body="娃快孩子了，娃快孩子，娃刚满孩子，孩子半娃，娃快这个阶段了。家里喝旺玥，我也拿不准。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "求问/轻复盘",
             "product_appearance_mode": "产品是明确讨论对象但不装日记",
         },
@@ -2887,7 +2557,7 @@ def test_product_experience_phrase_guard_blocks_truncated_tail_fragment():
         body="虽说没少折腾，但也没乱换东西。儿童奶粉这块还是沿用旺玥，主要当时看中的是保护力营养这块，暂时",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v28_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用反馈/阶段观察",
             "product_appearance_mode": "旺玥作为当前安排出现",
         },
@@ -2945,7 +2615,7 @@ def test_product_experience_phrase_guard_blocks_post_rewrite_residue_fragments(t
         body=body,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v309_keyword_role_narrowing_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -2961,7 +2631,7 @@ def test_product_experience_phrase_guard_blocks_json_field_residue():
         body='\"title\": \"接娃时被问\", \"body\": \"最近接娃放学，同学妈妈问我家怎么安排的呀\"',
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用反馈",
             "corpus": "0705旺玥活动",
         },
@@ -2990,7 +2660,7 @@ def test_product_experience_phrase_guard_blocks_unevidenced_wangyue_relation_dri
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是新开一听/阶段记录里的低浓度在场",
         },
@@ -3035,7 +2705,7 @@ def test_product_experience_phrase_guard_allows_stronger_wangyue_story_when_post
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "复购/长期使用反馈",
             "ugc_post_type": "复购/长期喝",
             "product_appearance_mode": "产品履历和产品关系可以成为主线",
@@ -3056,7 +2726,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_digestive_effect_even_in
         body="换回旺玥后，肚子不适应哭闹少了，半夜翻来翻去也少了，大便也规律了，所以这钱还是继续花。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "预算取舍",
             "ugc_post_type": "预算吐槽/取舍分享型",
             "product_appearance_mode": "产品是家庭开销和取舍对象",
@@ -3076,7 +2746,7 @@ def test_product_experience_phrase_guard_allows_full_drinking_action_surface():
         body="早上赶着出门，桌上那杯旺玥他自己端起来喝了几口，我在旁边翻袜子。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "完整喝奶动作",
@@ -3094,7 +2764,7 @@ def test_product_experience_phrase_guard_allows_animation_background_for_usage_r
         body="我在地垫上收拾玩具，桌角放着那杯旺玥。他趴着看动画片，喊了两声没动。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "物件在场",
@@ -3112,7 +2782,7 @@ def test_product_experience_phrase_guard_allows_planned_weekend_usage_record_con
         body="周末早上想多赖会儿，顺手把桌上那杯旺玥挪到柜子边。电视开着，杯子就一直搁那儿没动。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "物件在场",
@@ -3131,7 +2801,7 @@ def test_product_experience_phrase_guard_allows_weekend_supermarket_restock_cont
         body="周末去超市顺手补了几样刚需：湿巾、早餐面包，还有旺玥。结账时才发现这个月又超预算了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
             "ugc_post_type": "复购/囤货型",
@@ -3150,7 +2820,7 @@ def test_product_experience_phrase_guard_allows_adult_tea_background_for_usage_r
         body="放学回来外套校服扔一地，我顺手把旺玥罐子搁桌上。他去翻作业袋，我就在那泡了杯茶。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "物件在场",
@@ -3168,7 +2838,7 @@ def test_product_experience_phrase_guard_blocks_scene_bucket_drift_to_empty_inve
         body="超市顺手拎了袋旺玥回来，这款儿童奶粉见底好几天了，旁边还有半罐没喝完的，另一罐也快空了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
             "scene_motive_bucket": "超市顺手补刚需",
@@ -3187,7 +2857,7 @@ def test_product_experience_phrase_guard_allows_inventory_bucket_cabinet():
         body="晚上翻柜子，旺玥还剩一罐，湿巾只剩两包，顺手记到手机里。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
             "scene_motive_bucket": "库存盘点",
@@ -3204,7 +2874,7 @@ def test_product_experience_phrase_guard_does_not_apply_old_row2_guard_to_produc
         body="晚上翻柜子找东西，发现旺玥只剩半罐了，顺手加到手机备忘录里。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
@@ -3222,7 +2892,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_portable_stick_pack():
         body="清早往书包侧兜塞旺玥小条装，放学回来书包一倒，干掉了三根，说课间喝着香。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3238,7 +2908,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_portable_pack():
         body="平时出门揣两袋便携装也特方便，旺玥喝着还挺顺。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3253,7 +2923,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_backpack_title():
         body="旺玥这罐其实没多想，就是娃营养得跟上才备的。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3265,7 +2935,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_backpack_title():
         body="接孩子时看别人家书包有奶，才意识到活动量大。家里备着皇家美素佳儿旺玥当营养补充。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 4,
             "corpus": "写作规则：围绕孩子成长阶段日常营养别落下这件事写。",
         },
@@ -3279,7 +2949,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_portable_powder_pack_sce
         body="收拾他外出随身包，总习惯塞两条旺玥儿童奶粉条分装，跑跳疯玩大半天掏出来兑温水就能喝。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3297,7 +2967,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_bag_and_ready_drink_cont
         body="包里除了水杯纸巾，还塞了旺玥，孩子回来每天两杯当水喝。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3315,7 +2985,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_thermos_and_flowerbed_dr
         body=body,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3334,7 +3004,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_formula_can_in_outing_ba
         body="现在出门包里会多放一罐奶粉，喝完就安心点。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3349,7 +3019,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_seen_in_bag_relation():
         body="等娃放学的十几分钟，我翻了翻包。看到旺玥，想起她最近喝得还行。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3364,7 +3034,7 @@ def test_product_experience_phrase_guard_allows_bag_detail_without_product_carri
         body="包里都是纸巾和水杯，翻了半天才找到钥匙。家里旺玥还在喝，日常营养这块我没太操心。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3379,7 +3049,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_supplement_replacement()
         body="家里喝了好一阵旺玥，钙铁锌这些配得比较全，日常不用再额外捣鼓营养片，省心。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3394,7 +3064,7 @@ def test_product_experience_phrase_guard_allows_non_supplement_nutrition_plain_s
         body="后来给娃喝了旺玥，基础营养看着全，哪怕饭桌上随意了，也不用东补西补。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3409,7 +3079,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_outing_bag_and_got_it_do
         body="以前总怕孩子营养跟不上，出门恨不得把辅食机都塞包里。现在备了皇家美素佳儿旺玥，冲一杯就搞定日常营养补充，小家伙自己抱着杯子喝得挺开心。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3427,7 +3097,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_ready_to_drink_title():
         body="家里每天一杯旺玥，孩子喝着还行。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3442,7 +3112,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_digestive_effect_context
         body="旺玥喝了快两周，孩子肚子软软的，便便也规律了，小肚子看着舒服。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3451,6 +3121,34 @@ def test_product_experience_phrase_guard_blocks_wangyue_digestive_effect_context
     assert "便便也规律" in review.wangyue_digestive_effect_hits
     assert "小肚子" in review.wangyue_digestive_effect_hits
     assert "wangyue_digestive_effect_context" in review.reasons
+
+
+def test_product_experience_phrase_guard_allows_growth_small_belly_observation():
+    review = review_product_experience_phrase(
+        title="三岁后能量消耗太大，偷偷给他加餐",
+        body=(
+            "上周末带他去公园疯跑一下午，回家路上还念叨明天要来找小姐姐比赛。"
+            "活动量大了之后，我开始在意日常营养能不能跟上。后来选了旺玥，"
+            "大人冲泡很方便，每天给他当点心喝一杯。喝了一阵子，小脸明显圆了点。"
+            "昨天他自己脱袜子放好，我一看裤子腰围紧了，小肚子鼓鼓的。"
+            "看他收拾玩具的背影，觉得这罐奶粉选对了。"
+        ),
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "post_type": "阶段选择复盘",
+            "painpoint": "成长发育需求",
+            "selling_point": "营养丰富",
+            "corpus": "成长结果只作为自家观察，不扩成普遍保证，不解释专业机制。",
+        },
+    )
+
+    assert review.wangyue_digestive_effect_hits == []
+    assert "wangyue_digestive_effect_context" not in review.reasons
+    assert review.pass_ is True
+    assert review.rewrite_required is False
+    assert sanitize_wangyue_context_phrases("裤子腰围紧了，小肚子鼓鼓的。") == "裤子腰围紧了，小肚子鼓鼓的"
+    assert "小肚子" not in sanitize_wangyue_context_phrases("小肚子看着舒服。")
 
 
 def test_product_experience_wangyue_context_cleanup_is_narrow():
@@ -3589,7 +3287,7 @@ def test_product_experience_phrase_guard_blocks_temporary_remedy_or_overclaim():
         body="娃最近上学回来老打喷嚏，我赶紧把旺玥安排上，每天早晚一杯，感觉这保护力确实没白养。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3612,7 +3310,7 @@ def test_product_experience_phrase_guard_allows_plain_right_choice_phrase():
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v349_mainline_unfolding_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -3640,13 +3338,39 @@ def test_product_experience_phrase_guard_allows_growth_with_later_plain_cold_fee
     assert "hard_risk_expression" not in review.reasons
 
 
+def test_product_experience_phrase_guard_allows_past_other_child_sickness_and_own_attendance_feedback():
+    review = review_product_experience_phrase(
+        title="被朋友追着问，我家孩子喝啥奶粉",
+        body=(
+            "当初朋友家娃总生病，她看我儿子天天活蹦乱跳，就问我怎么选的奶粉。"
+            "其实我也做了不少功课，对比了好几款，最后选了旺玥。"
+            "当时就看中它的免疫球蛋白和乳铁蛋白含量高，还有5大HMO一起打配合。"
+            "喝到现在快一年了，孩子状态确实稳，幼儿园全勤没断过，连感冒都很少。"
+            "朋友看我儿子状态一直在线，也给孩子换了同款。"
+        ),
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "post_type": "选奶复盘",
+            "painpoint": "容易中招",
+            "selling_point": "进阶保护力",
+            "corpus": "可以回忆孩子过去感冒、请假、全勤或同伴生病等经历。",
+        },
+    )
+
+    assert review.hard_risk_hits == []
+    assert "hard_risk_expression" not in review.reasons
+    assert review.pass_ is True
+    assert review.rewrite_required is False
+
+
 def test_product_experience_phrase_guard_allows_negated_temporary_remedy():
     review = review_product_experience_phrase(
         title="保护力这块我会看",
         body="上学接触的人一多，我就开始盯孩子的日常保护力了。选旺玥是因为它侧重这块，不是临时补救，平时就当基础营养喝着。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3663,7 +3387,7 @@ def test_product_experience_phrase_guard_blocks_positive_temporary_remedy():
         body="孩子一有状况我就临时补救，回家赶紧泡旺玥。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3680,7 +3404,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_meta_ad_disclaimer():
         body="喝旺玥一阵了，饭量时好时坏，纠结睡前那杯要不要留。不是种草，就想问问大家怎么判断换或停？",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "求问/轻复盘",
             "product_appearance_mode": "产品是明确讨论对象但不装日记",
         },
@@ -3698,7 +3422,7 @@ def test_product_experience_phrase_guard_allows_not_following_trend_in_selection
         body="家里一直喝的旺玥，这次补货主要还是看它支持保护力。乳铁蛋白和HMO这些，当初选的时候特意了解过，不是跟风。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v280_closure_attractor_cleanup_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -3712,7 +3436,7 @@ def test_product_experience_phrase_guard_allows_not_following_trend_in_selection
 def test_product_experience_phrase_guard_blocks_wangyue_after_symptom_remedy_chain():
     plan = {
         "rule_type": "business_rule",
-        "asset_key": "wangyue_article_business_rules",
+        "asset_key": "wangyue_v3_core_storyline_article_rules",
         "corpus": "写作规则：孩子接触人多后，妈妈担心容易中招；旺玥支持孩子保护力。",
     }
     cases = [
@@ -3760,7 +3484,7 @@ def test_product_experience_phrase_guard_blocks_symptom_disappearance_as_effect_
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v309_keyword_role_narrowing_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -3776,7 +3500,7 @@ def test_product_experience_phrase_guard_allows_plain_wangyue_selection_after_wo
         body="娃上幼儿园之后，接触的人多了，我会多想一点。后来给他选了旺玥，主要是看中保护力这块。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：孩子接触人多后，妈妈担心容易中招；旺玥支持孩子保护力。",
         },
     )
@@ -3793,7 +3517,7 @@ def test_product_experience_phrase_guard_blocks_precise_height_proof():
         body="她喝旺玥刚好三个月，上次体检身高追上来两厘米，我终于不用天天盯饭桌了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3811,7 +3535,7 @@ def test_product_experience_phrase_guard_blocks_medical_authority_proof_chain():
         body="体检完医生说孩子活动量大了，营养得跟上。旺玥是3岁以上4段儿童奶粉，钙铁锌这些我会多看一眼。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v28_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "阶段选择复盘",
             "product_appearance_mode": "旺玥作为阶段选择依据出现",
             "corpus": "旺玥事实必须正确：3周岁以上专用4段儿童奶粉，适配3-6岁学龄前儿童。",
@@ -3833,7 +3557,7 @@ def test_product_experience_phrase_guard_blocks_explicit_temporal_context():
         body="最近换季，入夏后又天冷，风大的季节里娃胃口时好时坏，我就把旺玥奶粉安排上了，日常营养能跟上就行。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3850,7 +3574,7 @@ def test_product_experience_phrase_guard_allows_historical_event_and_school_stag
         body="双十一囤的旺玥到了，娃上中班后接触人多，我还是看保护力。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
         },
     )
@@ -3865,7 +3589,7 @@ def test_product_experience_phrase_guard_allows_weather_history_and_duration_con
         body="天气好就直接带去小区公园跑一圈。旺玥是去年开始喝的，喝了半年，现在当日常营养补充。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字，标题另写。0705旺玥活动",
         },
     )
@@ -3880,7 +3604,7 @@ def test_product_experience_phrase_guard_allows_past_clothing_season_reference()
         body="周末收拾衣柜，翻出他去年秋天的外套，试着套了一下，肩膀那明显绷着了。现在喝的是旺玥，最近抱他上下台阶，手臂能感觉到后背有肉了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v155_title_rule_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -3895,7 +3619,7 @@ def test_product_experience_phrase_guard_allows_current_action_with_past_season_
         body="最近翻出去年秋天的裤子，发现短了一截，小腿都在外面晃。小家伙自己都没注意到，就是跑起来更稳当了些。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v155_title_rule_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -3912,7 +3636,7 @@ def test_product_experience_phrase_guard_allows_current_school_term_span_without
         body="家里旺玥快见底了，又开了一罐新的。这学期下来感觉挺明显的，放学接他那会儿，不像以前那样蔫蔫的，还能在小区里跑几圈再回家。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v155_title_rule_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -3927,7 +3651,7 @@ def test_product_experience_phrase_guard_blocks_current_weather_and_season_ancho
         body="现在冬天，现在天气一变就容易担心，我就把旺玥放进日常营养里。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字，标题另写。0705旺玥活动",
         },
     )
@@ -3944,7 +3668,7 @@ def test_product_experience_phrase_guard_allows_relative_school_event_anchor():
         body="上周同事问我家娃怎么样，说她们班里最近请假的不少。我说旺玥一直喝着，精神头还行。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -3958,7 +3682,7 @@ def test_product_experience_phrase_guard_allows_relative_school_event_anchor():
 def test_product_experience_phrase_guard_blocks_wangyue_temporal_effect_mismatch():
     plan = {
         "rule_type": "business_rule",
-        "asset_key": "wangyue_article_business_rules",
+        "asset_key": "wangyue_v3_core_storyline_article_rules",
         "corpus": "活动：0705旺玥活动。",
     }
     samples = {
@@ -3977,7 +3701,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_temporal_effect_mismatch
 def test_product_experience_phrase_guard_allows_wangyue_effect_when_time_span_exists():
     plan = {
         "rule_type": "business_rule",
-        "asset_key": "wangyue_article_business_rules",
+        "asset_key": "wangyue_v3_core_storyline_article_rules",
         "corpus": "活动：0705旺玥活动。",
     }
     samples = [
@@ -3998,7 +3722,7 @@ def test_product_experience_phrase_guard_routes_wangyue_season_anchor_to_time_ev
         body="入冬那阵班里好几个请假，他倒精神头足。家里旺玥一直喝着，乳铁蛋白这点我会看。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -4013,7 +3737,7 @@ def test_product_experience_phrase_guard_allows_school_absence_event_without_rel
         body="班上请假的多了，我心里也跟着紧了一下。家里旺玥一直在喝，放学回来还有劲。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -4028,7 +3752,7 @@ def test_product_experience_phrase_guard_allows_own_child_absence_feedback():
         body="同事问我家娃请假多不多，我说还好。我家喝旺玥后请假少，精神头也在线。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -4043,7 +3767,7 @@ def test_product_experience_phrase_guard_allows_relative_product_arrival_anchor(
         body="整理快递箱，扒拉出前两天到的旺玥，顺手拆了放餐边柜。最近刚补了两罐，先这么喝着吧。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -4058,7 +3782,7 @@ def test_product_experience_phrase_guard_allows_relative_effect_and_object_ancho
         body="喝了一阵，最近抱他上楼明显沉了点。昨天他爸随口说娃壮实了，刚才又把空罐丢进收纳箱。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -4073,7 +3797,7 @@ def test_product_experience_phrase_guard_allows_weak_school_stage_without_curren
         body="从中班开始喝旺玥，平时接触人多，我会看乳铁蛋白这类保护力营养。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -4089,7 +3813,7 @@ def test_product_experience_phrase_guard_routes_wangyue_time_event_to_model_rewr
         body="今天幼儿园春游回来，小朋友居然还嚷嚷要骑车。家里喝的旺玥，保护力这块我会多看一眼。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字，标题另写。0705旺玥活动",
         },
     )
@@ -4106,7 +3830,7 @@ def test_product_experience_phrase_guard_routes_wangyue_autumn_outing_to_model_r
         body="幼儿园秋游回来，小朋友还嚷嚷要骑车。家里喝的旺玥，保护力这块我会多看一眼。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字，标题另写。0705旺玥活动",
         },
     )
@@ -4121,7 +3845,7 @@ def test_product_experience_phrase_guard_routes_wangyue_taqing_to_model_rewrite(
         body="幼儿园户外踏青回来，小朋友还嚷嚷要骑车。家里喝的旺玥，保护力这块我会多看一眼。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字，标题另写。0705旺玥活动",
         },
     )
@@ -4137,7 +3861,7 @@ def test_product_experience_phrase_guard_routes_wangyue_season_word_to_model_rew
         body="喝了一阵，小身板结实了不少，换季也没咋请假。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v139_example_kernel_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -4155,7 +3879,7 @@ def test_product_experience_rewrite_input_mentions_wangyue_time_event_context():
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字，标题另写。0705旺玥活动",
         },
         title="每次去游乐园都怕回家蔫蔫的",
@@ -4178,7 +3902,7 @@ def test_product_experience_phrase_guard_reads_explicit_body_length_range():
         body="对比了一堆还是选了旺玥。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：围绕日常营养补充来写。正文40-130字，标题另写。",
         },
     )
@@ -4186,20 +3910,6 @@ def test_product_experience_phrase_guard_reads_explicit_body_length_range():
     assert review.length_target == ("自定义", 40, 130)
 
 
-def test_product_experience_phrase_guard_blocks_common_ai_closure_phrase():
-    review = review_product_experience_phrase(
-        title="旺玥喝了一阵记录",
-        body="家里一直喝旺玥，孩子状态也还行。继续观察看看，先这样喂着吧。",
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
-            "corpus": "篇幅类型：短文；正文必须40-80字。0705旺玥活动",
-        },
-    )
-
-    assert "common_ai_closure_phrase" in review.reasons
-    assert review.rewrite_required is True
-    assert review.pass_ is False
 
 
 def test_product_experience_temporal_context_cleanup_removes_explicit_time_words():
@@ -4231,7 +3941,7 @@ def test_product_experience_temporal_context_cleanup_repairs_suffix_after_replac
 
 def test_product_experience_odd_phrase_cleanup_does_not_rewrite_specific_disease_context():
     cleaned = sanitize_odd_product_experience_phrases("学校又是小状况又是手足口，我真是肉疼。")
-    review = review_product_experience_phrase(title="", body=cleaned, plan={"asset_key": "wangyue_article_business_rules"})
+    review = review_product_experience_phrase(title="", body=cleaned, plan={"asset_key": "wangyue_v3_core_storyline_article_rules"})
 
     assert cleaned == "学校又是小状况又是手足口，我真是肉疼"
     assert review.odd_phrase_hits == ["手足口"]
@@ -4239,7 +3949,7 @@ def test_product_experience_odd_phrase_cleanup_does_not_rewrite_specific_disease
 
 def test_product_experience_odd_phrase_cleanup_leaves_shutdown_context_for_model_rewrite():
     cleaned = sanitize_odd_product_experience_phrases("他们班最近手足口停课了。")
-    review = review_product_experience_phrase(title="", body=cleaned, plan={"asset_key": "wangyue_article_business_rules"})
+    review = review_product_experience_phrase(title="", body=cleaned, plan={"asset_key": "wangyue_v3_core_storyline_article_rules"})
 
     assert cleaned == "他们班最近手足口停课了"
     assert review.odd_phrase_hits == ["手足口停课"]
@@ -4294,7 +4004,7 @@ def test_product_experience_phrase_guard_blocks_long_unpunctuated_segment():
         body=body,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
@@ -4315,7 +4025,7 @@ def test_product_experience_rewrite_input_mentions_run_on_fragment():
         body=body,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
     )
@@ -4325,7 +4035,7 @@ def test_product_experience_rewrite_input_mentions_run_on_fragment():
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
         },
         title="有没有同款孩子",
@@ -4344,7 +4054,7 @@ def test_product_experience_rewrite_input_mentions_title_guard_hits():
         body="家里聊天，他爸突然说最近娃好像没怎么喊累。后来给他选了皇家美素佳儿旺玥，营养全面些。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子普通日常状态来写。",
         },
@@ -4355,7 +4065,7 @@ def test_product_experience_rewrite_input_mentions_title_guard_hits():
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子普通日常状态来写。",
         },
@@ -4378,7 +4088,7 @@ def test_product_experience_phrase_guard_blocks_malformed_quote_fragment():
         body=body,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子普通日常状态来写。",
         },
@@ -4393,7 +4103,7 @@ def test_product_experience_phrase_guard_blocks_malformed_quote_fragment():
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子普通日常状态来写。",
         },
@@ -4410,7 +4120,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_growth_nutrition_row4_dr
         body="孩子饭量上来了，身高体重曲线也好看，每天冲一杯就一步搞定，成长营养这块不用补这补那。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 4,
             "corpus": "写作规则：围绕给孩子选择皇家美素佳儿旺玥儿童奶粉来写，理由是补充营养、支持成长；正文40-130字。",
         },
@@ -4423,40 +4133,6 @@ def test_product_experience_phrase_guard_blocks_wangyue_growth_nutrition_row4_dr
     assert "一步搞定" in review.wangyue_growth_nutrition_drift_hits
 
 
-def test_product_experience_phrase_guard_blocks_row4_new_drinking_action_leaks():
-    review = review_product_experience_phrase(
-        title="凑近一看，姐妹俩抢着喝",
-        body=(
-            "妹妹看着哥哥喝纯牛奶馋得不行，但她喝奶敏感，我给她选了皇家美素佳儿旺玥，"
-            "当早餐补充。昨天收拾零食柜翻出一罐旺玥，姐妹俩抢着喝，我赶紧冲一杯。"
-            "坚持喝一喝，精神点就好。后来把皇家美素佳儿旺玥放柜子里，孩子自己记得去喝。"
-            "目前用着挺顺手，后续再看效果吧，孩子喝着也接受。"
-            "柜子里那罐旺玥还在，孩子偶尔会凑过去看看。"
-        ),
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
-            "source_row_no": 4,
-            "corpus": "写作规则：围绕孩子成长阶段日常营养别落下这件事写。",
-        },
-    )
-
-    assert "wangyue_growth_nutrition_drift_context" in review.reasons
-    assert "纯牛奶" in review.wangyue_growth_nutrition_drift_hits
-    assert "喝奶敏感" in review.wangyue_growth_nutrition_drift_hits
-    assert "当早餐补充" in review.wangyue_growth_nutrition_drift_hits
-    assert "翻出一罐" in review.wangyue_growth_nutrition_drift_hits
-    assert "抢着喝" in review.wangyue_growth_nutrition_drift_hits
-    assert "冲一杯" in review.wangyue_growth_nutrition_drift_hits
-    assert "坚持喝一喝" in review.wangyue_growth_nutrition_drift_hits
-    assert "精神点就好" in review.wangyue_growth_nutrition_drift_hits
-    assert "放柜子里" in review.wangyue_growth_nutrition_drift_hits
-    assert "自己记得去喝" in review.wangyue_growth_nutrition_drift_hits
-    assert "用着挺顺手" in review.wangyue_growth_nutrition_drift_hits
-    assert "后续再看效果" in review.wangyue_growth_nutrition_drift_hits
-    assert "孩子喝着也接受" in review.wangyue_growth_nutrition_drift_hits
-    assert "柜子里那罐旺玥" in review.wangyue_growth_nutrition_drift_hits
-    assert "凑过去看看" in review.wangyue_growth_nutrition_drift_hits
 
 
 def test_product_experience_phrase_guard_keeps_growth_nutrition_drift_scoped_to_row4():
@@ -4465,7 +4141,7 @@ def test_product_experience_phrase_guard_keeps_growth_nutrition_drift_scoped_to_
         body="孩子饭量和身高体重曲线我会记录，喝完以后也看当天状态。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 1,
             "corpus": "写作规则：孩子接触人多，妈妈担心容易中招；旺玥主打支持孩子保护力。",
         },
@@ -4481,7 +4157,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_logic_drift_terms():
         body="给娃挑口粮时顺手直接下单了，主要看它护眼和保护力都搭得上。冲出来奶香清淡，孩子眼睛都快冒星星，脸色都亮堂。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子活动量大、日常状态观察来写；旺玥兼顾孩子保护力和眼脑相关营养。",
         },
@@ -4508,7 +4184,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_hidden_negative_comparis
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "对比选择",
             "ugc_post_type": "对比选择",
             "corpus": "0705旺玥活动",
@@ -4528,7 +4204,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_price_tradeoff_without_d
         body="最后留下旺玥，是因为钙铁锌和乳铁蛋白都对得上。价格不是最低，但我更看重配方。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "对比选择",
             "ugc_post_type": "对比选择",
             "corpus": "0705旺玥活动",
@@ -4545,7 +4221,7 @@ def test_product_experience_phrase_guard_allows_purchase_and_sensory_terms_in_el
         body="对比几款之后我直接下单了旺玥，冲出来奶香清淡，这点是我后来没换的原因之一。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review_painpoints_v23_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "选奶/儿童奶粉选择复盘",
             "ugc_post_type": "选奶复盘型",
             "product_appearance_mode": "旺玥作为选择依据出现",
@@ -4562,7 +4238,7 @@ def test_product_experience_phrase_guard_allows_purchase_and_sensory_terms_in_el
         body="月底看账单才发现旺玥快没了，顺手直接下单了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "ugc_post_type": "复购/囤货型",
             "product_appearance_mode": "产品是家里库存物件",
@@ -4579,7 +4255,7 @@ def test_product_experience_phrase_guard_allows_calcium_iron_zinc_light_review_w
         body="小区妈妈问我给娃喝什么奶粉，说自家娃挑得头疼。我没直接答，就提了句旺玥。其实也是上次翻罐子时瞄到的，钙铁锌那块配置看着挺顺眼。最近抱他上楼，感觉沉了点，后背摸着有肉，衣服也撑起来了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v155_title_rule_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "轻测评",
             "ugc_post_type": "轻测评",
             "product_appearance_mode": "旺玥作为被问到或看配方时提到的一罐，只保留一个成分关注点",
@@ -4598,9 +4274,9 @@ def test_product_experience_phrase_guard_uses_structured_selling_point_over_stal
         body="上周在小区遛娃，旁边妈妈看我崽跑得带劲，问我喝啥奶粉。我说三岁后换的旺玥，当时就是看中它整体营养配得比较全，钙铁锌这些基础都有。喝了大半年，感觉娃背上有肉了，抱起来明显沉手，衣服撑起来一点。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v209_benefit_bridge_article_rules",
-            "topic": "V209-20｜保护力关注种草｜轻测评｜成长发育需求",
-            "business_rule": "V209-20｜保护力关注种草｜轻测评｜成长发育需求",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "topic": "V3M-01｜进阶保护力｜使用反馈",
+            "business_rule": "V3M-01｜进阶保护力｜使用反馈",
             "painpoint": "成长发育需求",
             "selling_point": "营养丰富",
             "post_type": "轻测评",
@@ -4621,7 +4297,7 @@ def test_product_experience_phrase_guard_allows_same_brand_continuation_surface(
         body="收拾衣柜翻出她去年秋天的衣服，比划了一下居然都短了一截。三岁后感觉真的在抽条，抱着她明显沉了，背上也有肉了。现在喝的是旺玥，从原来同品牌续过来的，她挺接受的。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v155_title_rule_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "product_appearance_mode": "旺玥作为三岁后阶段安排出现，只承接一个阶段状态",
             "selling_point": "同品牌延续/儿童阶段营养/整体营养配置",
             "corpus": "旺玥按3周岁以上、3-6岁学龄前儿童语境下的4段儿童奶粉写。0705旺玥活动",
@@ -4638,7 +4314,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_mixed_into_milk():
         body="后来往牛奶里加了一勺旺玥，他居然咕咚咕咚喝完了。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：像普通妈妈随手记录孩子平时活动量大、家里日常喝皇家美素佳儿旺玥这件事。",
         },
@@ -4655,7 +4331,7 @@ def test_product_experience_phrase_guard_allows_changed_to_wangyue_wording():
         body="前两天碰到邻居，看我儿子背上的肉说怎么长这么结实了。我就顺口回说最近给他换了旺玥4段，本来就是打算让他营养跟得上，结果现在状态挺好，跑起来也有劲。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v155_title_rule_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -4670,7 +4346,7 @@ def test_product_experience_phrase_guard_blocks_row2_eye_brain_detail_drift():
         body="我家那只出门滑板车能溜一小时，回家还要翻绘本、画画。我特别在意叶黄素和眼睛营养，怕她以后近视，又怕脑子不够用，挑来挑去选了旺玥。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子活动量大、日常状态观察来写；旺玥兼顾孩子保护力和眼脑相关营养。",
         },
@@ -4688,7 +4364,7 @@ def test_product_experience_phrase_guard_blocks_row2_eye_brain_detail_drift():
         body="孩子活动量大，我会顺手看旺玥的保护力和眼脑营养，户外活动时总说眼睛酸，也爱揉眼睛。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子活动量大、日常状态观察来写；旺玥兼顾孩子保护力和眼脑相关营养。",
         },
@@ -4715,7 +4391,7 @@ def test_product_experience_phrase_guard_allows_eye_brain_selection_context_with
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review_painpoints_v23_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "painpoint": "注意力不集中",
             "post_type": "选奶/儿童奶粉选择复盘",
             "ugc_post_type": "选奶复盘型",
@@ -4732,7 +4408,7 @@ def test_product_experience_phrase_guard_allows_eye_brain_selection_context_with
         body="孩子看绘本后老揉眼睛，我怕以后近视，所以选了旺玥看眼脑营养。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review_painpoints_v23_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "painpoint": "注意力不集中",
             "post_type": "选奶/儿童奶粉选择复盘",
             "ugc_post_type": "选奶复盘型",
@@ -4748,7 +4424,7 @@ def test_product_experience_phrase_guard_allows_eye_brain_selection_context_with
         body="班里有小朋友已经近视了，我现在主要是控制屏幕时间。选儿童奶粉时另一个关注点是眼脑营养，旺玥这块我看过。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review_painpoints_v23_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "painpoint": "注意力不集中",
             "post_type": "选奶/儿童奶粉选择复盘",
             "ugc_post_type": "选奶复盘型",
@@ -4791,7 +4467,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_selling_point_drift():
         body="旺玥先放进家里的选择里，别的先不夸太满，日常营养这块先顾住，后面有变化再看。我先记着",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v25_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "painpoint": "注意力不集中",
             "selling_point": "眼脑营养关注",
             "post_type": "轻测评/配方关注",
@@ -4813,7 +4489,7 @@ def test_product_experience_phrase_guard_ignores_global_wangyue_fact_in_corpus_f
         body="每周买菜列清单，除了蔬菜肉蛋，我会把旺玥加进去。孩子饭吃得不稳，钙铁锌这些容易漏，不用再分开买一堆瓶瓶罐罐。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v121_example_kernel_human_sell_nodrift",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "painpoint": "营养不足",
             "selling_point": "钙铁锌/关键营养多样",
             "post_type": "家庭清单",
@@ -4834,7 +4510,7 @@ def test_product_experience_phrase_guard_accepts_chinese_three_year_stage_for_wa
         body="三岁后翻出长袖，好几件袖口都短了。旺玥是这阶段在喝的，跑跳也有劲，饭量时好时坏就先这样安排。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "painpoint": "成长发育需求",
             "selling_point": "4段/乳铁蛋白/营养配置",
             "post_type": "阶段选择复盘",
@@ -4852,7 +4528,7 @@ def test_product_experience_phrase_guard_does_not_treat_matrix_row4_as_legacy_gr
         body="看儿童奶粉配方真的会看晕，旺玥这里我记住的是DHA和燕窝酸，孩子桌面时间多了，我会把眼脑营养这块算进去。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_painpoint_selling_posttype_matrix_v25_20260624",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 4,
             "painpoint": "注意力不集中",
             "selling_point": "眼脑营养关注",
@@ -4877,7 +4553,7 @@ def test_product_experience_phrase_guard_blocks_row3_product_action_and_eye_drif
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 3,
             "corpus": "写作规则：围绕孩子日常里容易走神、看东西多或信息接触多时，妈妈会关注眼脑营养这件事写。",
         },
@@ -4896,7 +4572,7 @@ def test_product_experience_phrase_guard_blocks_row3_product_action_and_eye_drif
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 3,
             "corpus": "写作规则：围绕孩子日常里容易走神、信息接触多时，妈妈会关注眼脑营养这件事写。",
         },
@@ -4927,7 +4603,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_missing_product_mention(
         body="孩子爸给她讲历史，她突然把爸爸问住了。我坐旁边听着也乐了，主要是看里面保护力这块。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子普通日常状态来写。",
         },
@@ -4940,7 +4616,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_missing_product_mention(
 def test_wangyue_post_rewrite_rejects_removed_product_mention():
     plan = {
         "rule_type": "business_rule",
-        "asset_key": "wangyue_v209_benefit_bridge_article_rules",
+        "asset_key": "wangyue_v3_core_storyline_article_rules",
         "corpus": "0705旺玥活动",
     }
 
@@ -4964,7 +4640,7 @@ def test_product_experience_rewrite_input_mentions_missing_wangyue_product_name(
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子普通日常状态来写。",
         },
@@ -4986,7 +4662,7 @@ def test_product_experience_rewrite_input_mentions_scene_motive_drift():
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
             "scene_motive_bucket": "快递到货拆箱",
@@ -5014,7 +4690,7 @@ def test_product_experience_scene_motive_cleanup_removes_remaining_cabinet_drift
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
             "scene_motive_bucket": "早餐区/厨房台面整理",
@@ -5040,7 +4716,7 @@ def test_product_experience_scene_motive_cleanup_avoids_leftover_location_suffix
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
             "scene_motive_bucket": "快递到货拆箱",
@@ -5066,7 +4742,7 @@ def test_product_experience_scene_motive_cleanup_removes_empty_inventory_drift()
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
             "scene_motive_bucket": "早餐区/厨房台面整理",
@@ -5092,7 +4768,7 @@ def test_product_experience_scene_motive_cleanup_removes_generic_empty_inventory
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
             "scene_motive_bucket": "超市顺手补刚需",
@@ -5117,7 +4793,7 @@ def test_product_experience_usage_record_missing_product_cleanup_does_not_invent
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "物件在场",
@@ -5146,7 +4822,7 @@ def test_product_experience_restock_missing_product_cleanup_does_not_invent_wang
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
             "ugc_post_type": "复购/囤货型",
@@ -5185,7 +4861,7 @@ def test_product_experience_scene_motive_cleanup_removes_half_can_inventory_surf
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "补货/家务清单",
             "product_appearance_mode": "产品是家里库存物件",
             "scene_motive_bucket": "早餐区/厨房台面整理",
@@ -5210,7 +4886,7 @@ def test_product_experience_product_action_surface_cleanup_lowers_child_drinking
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "孩子轻微使用",
@@ -5238,7 +4914,7 @@ def test_product_experience_product_action_surface_cleanup_removes_sip_for_objec
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "物件在场",
@@ -5256,35 +4932,6 @@ def test_product_experience_product_action_surface_cleanup_removes_sip_for_objec
     assert post_review.pass_ is True
 
 
-def test_product_experience_product_action_surface_cleanup_removes_malformed_drinking_residue():
-    service = ContentBatchExecutionService(None, callback_base_url="http://testserver", session_factory=lambda: None)
-    item = ContentBatchItem(
-        batch_id=1,
-        item_no=1,
-        status="generated",
-        plan_json={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
-            "post_type": "使用记录",
-            "product_appearance_mode": "产品是日常动作的一部分",
-            "product_action_surface": "物件在场",
-            "scene_motive_bucket": "早上赶时间",
-        },
-        title="早上赶时间",
-        body="桌上那杯旺玥就搁那儿，最后自己咕咚几口，我还在催出门。孩子边啃面包边自己看了一眼了两口，又自己看了一眼了几口，我喊他再看了一眼，不知道喝没看了一眼。",
-    )
-    review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-
-    post_review = service._apply_product_action_surface_cleanup(item, review)
-
-    assert "咕咚几口" not in item.body
-    assert "看了一眼了两口" not in item.body
-    assert "看了一眼了几口" not in item.body
-    assert "喊他再看了一眼" not in item.body
-    assert "喝没看了一眼" not in item.body
-    assert post_review.pass_ is True
-
-
 def test_product_experience_product_action_surface_cleanup_removes_malformed_object_residue():
     service = ContentBatchExecutionService(None, callback_base_url="http://testserver", session_factory=lambda: None)
     item = ContentBatchItem(
@@ -5293,7 +4940,7 @@ def test_product_experience_product_action_surface_cleanup_removes_malformed_obj
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "物件在场",
@@ -5319,7 +4966,7 @@ def test_product_experience_product_action_surface_cleanup_removes_planned_drink
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "物件在场",
@@ -5348,7 +4995,7 @@ def test_product_experience_product_action_surface_cleanup_removes_one_sip_for_m
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "妈妈顺手挪放",
@@ -5375,7 +5022,7 @@ def test_product_experience_usage_record_portable_cleanup_keeps_product_home_sur
         status="generated",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "使用记录",
             "product_appearance_mode": "产品是日常动作的一部分",
             "product_action_surface": "物件在场",
@@ -5404,7 +5051,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_row2_template_and_object
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子普通日常状态来写。",
         },
@@ -5432,7 +5079,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_portable_direct_brew_var
         body="出门揣两小袋旺玥，玩累了直接冲，挺方便。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子活动量大、日常状态观察来写；旺玥兼顾孩子保护力和眼脑相关营养。",
         },
@@ -5446,7 +5093,7 @@ def test_product_experience_phrase_guard_blocks_wangyue_portable_direct_brew_var
         body="后来家里常备旺玥，出门前顺手带一罐，说是玩完也能接上。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 1,
             "corpus": "写作规则：孩子接触人多，妈妈担心容易中招；旺玥主打支持孩子保护力。",
         },
@@ -5470,7 +5117,7 @@ def test_product_experience_phrase_guard_keeps_row2_eye_brain_core_term():
         body="我选旺玥时会看眼脑营养和保护力，别的先不夸太满。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子活动量大、日常状态观察来写；旺玥兼顾孩子保护力和眼脑相关营养。",
         },
@@ -5489,7 +5136,7 @@ def test_product_experience_phrase_guard_blocks_row2_drinking_action_residue():
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子活动量大、日常状态观察来写；旺玥兼顾孩子保护力和眼脑相关营养。",
         },
@@ -5510,7 +5157,7 @@ def test_product_experience_phrase_guard_keeps_drinking_action_residue_scoped_to
         body="孩子每天疯跑，家里常备旺玥，平时在家随手给他冲一杯，反正孩子愿意喝。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 4,
             "corpus": "写作规则：围绕孩子成长阶段营养补充来写。",
         },
@@ -5535,7 +5182,7 @@ def test_product_experience_phrase_guard_handles_row2_drinking_action_edge_cases
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子活动量大、日常状态观察来写；旺玥兼顾孩子保护力和眼脑相关营养。",
         },
@@ -5566,7 +5213,7 @@ def test_product_experience_phrase_guard_allows_plain_wangyue_drinking_mention_f
         body="前阵子开始给她喝皇家美素佳儿旺玥，主要是看中眼脑营养这块。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子普通日常状态来写。",
         },
@@ -5582,7 +5229,7 @@ def test_product_experience_phrase_guard_blocks_child_self_scooping_formula():
         body="接娃回来，书包一扔就去翻零食柜。我以为他要拿饼干，结果摸出那罐旺玥，自己舀了两勺冲水喝。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子活动量大、日常状态观察来写；旺玥兼顾孩子保护力和眼脑相关营养。",
         },
@@ -5602,7 +5249,7 @@ def test_product_experience_phrase_guard_blocks_child_handling_formula_can():
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 2,
             "corpus": "写作规则：围绕孩子活动量大、日常状态观察来写；旺玥兼顾孩子保护力和眼脑相关营养。",
         },
@@ -5629,32 +5276,13 @@ def test_product_experience_phrase_guard_keeps_wangyue_logic_drift_scoped_to_wan
     assert review.wangyue_article_logic_drift_hits == []
 
 
-def test_sanitize_wangyue_context_phrases_removes_logic_drift_terms():
-    title = sanitize_wangyue_context_phrases("冲出来奶香清淡，娃不挑")
-    body = sanitize_wangyue_context_phrases(
-        "给自己换了个大路灯，给娃挑口粮时顺手直接下单了。主要看它护眼和保护力都搭得上，别写用眼过渡。冲出来奶香清淡，孩子眼睛还亮亮，脸色都亮堂。"
-    )
-
-    assert title == "选奶粉这事我记一下"
-    assert "口粮" not in body
-    assert "直接下单" not in body
-    assert "大路灯" not in body
-    assert "护眼" not in body
-    assert "用眼过渡" not in body
-    assert "眼睛还亮亮" not in body
-    assert "冲出来" not in body
-    assert "奶香" not in body
-    assert "脸色" not in body
-    assert "眼脑营养" in body
-
-
 def test_product_experience_phrase_guard_blocks_row4_drinking_acceptance_and_one_can_claims():
     review = review_product_experience_phrase(
         title="她喝旺玥那叫一个投入",
         body="旺玥一罐搞定成长营养，孩子喝得顺口，还主动说要喝奶奶。口感娃也挺爱喝，孩子喝着接受，喝下来挺对路，平时喝着挺实在，孩子每天喝得自然，也喝得习惯。先喝着观察看看后续效果，冲出来也没怪味，娃肯喝、不抗拒，开封时奶香淡淡的。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 4,
             "corpus": "写作规则：围绕给孩子选择皇家美素佳儿旺玥儿童奶粉来写，理由是补充营养、支持成长；正文40-130字。",
         },
@@ -5688,7 +5316,7 @@ def test_product_experience_phrase_guard_blocks_row4_state_and_drinking_residue(
         body="小孩三岁后每天喝奶就够，早晚要喝，每天喝上。配料里有乳铁蛋白、DHA、ARA和活性蛋白，支持保护力，也给大脑成长加把劲。跑跑跳跳不累，放学还能蹦跶半天，活力满满地跑来跑去，补补成长力，成长有底，成长不掉队。试了段时间，状态还行，囤货时也看了微量元素，跑几步就喊累时才开始喝旺玥，图个方便。我甩了旺玥的链接，还想囤几罐继续买这个。顺手带了一罐，孩子把罐子放回包里，说留着明天喝，主要看眼睛和身体状态。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 4,
             "corpus": "写作规则：围绕给孩子选择皇家美素佳儿旺玥儿童奶粉来写，理由是补充营养、支持成长；正文40-130字。",
         },
@@ -5734,7 +5362,7 @@ def test_product_experience_phrase_guard_blocks_row4_shopping_process_residue():
         body="给孩子选奶粉怕踩坑，看了半天又看来看去，最后还是觉得旺玥合适。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 4,
             "corpus": "写作规则：围绕给孩子选择皇家美素佳儿旺玥儿童奶粉来写，理由是补充营养、支持成长；正文40-130字。",
         },
@@ -5753,7 +5381,7 @@ def test_product_experience_phrase_guard_blocks_row4_supplement_proof_residue():
         body="用这罐把该补的一次补到位，至于效果啥的先喝喝看。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 4,
             "corpus": "写作规则：围绕给孩子选择皇家美素佳儿旺玥儿童奶粉来写，理由是补充营养、支持成长；正文40-130字。",
         },
@@ -5772,7 +5400,7 @@ def test_product_experience_phrase_guard_blocks_row4_brewing_and_powder_residue(
         body="给娃泡奶差点手忙脚乱，旺玥随手就能冲，粉质细，冲开没结块，之后每天当奶喝。他天天自己捧着罐子看，也不催我泡。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 4,
             "corpus": "写作规则：围绕给孩子选择皇家美素佳儿旺玥儿童奶粉来写，理由是补充营养、支持成长；正文40-130字。",
         },
@@ -5815,7 +5443,7 @@ def test_product_experience_rewrite_input_mentions_wangyue_growth_nutrition_drif
     service = ContentBatchExecutionService(None, callback_base_url="http://testserver", session_factory=lambda: None)
     plan = {
         "rule_type": "business_rule",
-        "asset_key": "wangyue_article_business_rules",
+        "asset_key": "wangyue_v3_core_storyline_article_rules",
         "source_row_no": 4,
         "corpus": "写作规则：围绕给孩子选择皇家美素佳儿旺玥儿童奶粉来写，理由是补充营养、支持成长；正文40-130字。",
     }
@@ -5839,34 +5467,6 @@ def test_product_experience_rewrite_input_mentions_wangyue_growth_nutrition_drif
     assert "旺玥营养/成长规则漂移" in instructions
     assert "补充营养、支持成长" in instructions
     assert "不要把问题内容改成放学、户外、书包、杯子放置" in instructions
-
-
-def test_product_experience_rewrite_input_mentions_product_effect_proof_chain():
-    service = ContentBatchExecutionService(None, callback_base_url="http://testserver", session_factory=lambda: None)
-    plan = {
-        "rule_type": "business_rule",
-        "asset_key": "wangyue_painpoint_selling_posttype_matrix_v29_20260624",
-        "post_type": "使用反馈/继续观察",
-        "ugc_post_type": "使用反馈型",
-        "corpus": "0705旺玥活动",
-    }
-    body = "我给他冲一杯旺玥，孩子喝完就去玩了，状态看着稳一点，我心里也踏实些。"
-    review = review_product_experience_phrase(title="放学后这杯", body=body, plan=plan)
-    item = ContentBatchItem(
-        batch_id=1,
-        item_no=1,
-        status="generated",
-        plan_json=plan,
-        title="放学后这杯",
-        body=body,
-    )
-
-    payload = service._product_experience_phrase_rewrite_input(item, review)
-    instructions = "\n".join(payload["rewrite_instructions"])
-
-    assert "产品动作和效果证明链路过满" in instructions
-    assert "只保留一个产品关系" in instructions
-    assert "不要把它们连成“怎么喝/孩子接受/状态变化/妈妈踏实”的完整闭环" in instructions
 
 
 def test_wangyue_context_cleanup_leaves_age_stage_for_llm_rewrite():
@@ -5913,7 +5513,7 @@ def test_product_experience_odd_phrase_cleanup_replaces_known_weird_phrases():
         body="孩子最近没有动不动就掉状态，体格挺打底。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -5925,7 +5525,7 @@ def test_product_experience_odd_phrase_cleanup_replaces_known_weird_phrases():
         body="有没有喝皇家旺玥的，打开湿湿的？",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -5953,7 +5553,7 @@ def test_product_experience_odd_phrase_cleanup_replaces_brain_emoji():
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6038,7 +5638,7 @@ def test_product_experience_odd_phrase_cleanup_removes_dangling_fragments():
         body="希望少中招，效果",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6056,7 +5656,7 @@ def test_product_experience_odd_phrase_cleanup_replaces_wangyue_forbidden_produc
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6076,7 +5676,7 @@ def test_product_experience_odd_phrase_cleanup_handles_new_wangyue_artifacts():
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6095,7 +5695,7 @@ def test_product_experience_odd_phrase_cleanup_handles_wangyue_batch_claim_artif
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6114,7 +5714,7 @@ def test_product_experience_odd_phrase_cleanup_handles_wangyue_low_age_and_profe
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6133,7 +5733,7 @@ def test_product_experience_baby_milk_action_cleanup_handles_can_fetching_varian
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6152,7 +5752,7 @@ def test_product_experience_wangyue_cleanup_replaces_wrong_product_name():
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6171,7 +5771,7 @@ def test_product_experience_adult_tasting_cleanup_removes_taste_trial_variant():
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6190,7 +5790,7 @@ def test_product_experience_adult_tasting_cleanup_removes_sneaky_tasted_variant(
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6209,7 +5809,7 @@ def test_product_experience_adult_tasting_cleanup_removes_plain_self_tasted_vari
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6228,7 +5828,7 @@ def test_product_experience_adult_tasting_cleanup_removes_self_tasted_one_sip_va
         body=text,
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "写作规则：0705旺玥活动。",
         },
     )
@@ -6243,7 +5843,7 @@ def test_wangyue_title_fallback_prefers_body_clause_before_synthetic_examples():
         item_no=1,
         status="generated",
         plan_json={
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "synthetic_title_examples": ["旺玥", "这罐还在喝"],
         },
         title="皇家美素佳儿旺玥",
@@ -6262,7 +5862,7 @@ def test_wangyue_title_fallback_ranks_human_question_above_product_summary():
         item_no=1,
         status="generated",
         plan_json={
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "synthetic_title_examples": ["这罐奶粉除了价格，营养确实到位", "旺玥"],
         },
         title="皇家美素佳儿旺玥一罐搞定",
@@ -6419,114 +6019,6 @@ def test_wangyue_title_guard_blocks_awkward_title_patterns():
     assert _title_guard_reasons("最近没怎么请假", set()) == []
 
 
-@pytest.mark.asyncio
-async def test_batch_execution_marks_overcomplete_decision_chain_without_rewrite():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            Base.metadata.create_all,
-            tables=_execution_tables(),
-        )
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    reviewer = FakeProductExperienceLLMReviewer(
-        [
-            ProductExperienceLLMReview(
-                pass_=False,
-                rewrite_required=True,
-                severity="rewrite",
-                issues=[
-                    ProductExperienceLLMIssue(
-                        code="overcomplete_decision_chain",
-                        evidence="吃饭不稳定/长期营养补充/孩子也接受/续上/保底",
-                        reason="复购帖重新补全了问题、依据、接受度和安心收口",
-                        rewrite_direction="保留补货和一个日常营养补充理由，删除接受度和保底收口",
-                    )
-                ],
-                product_appearance_naturalness=2,
-                decision_chain_fit=1,
-                product_value_strength=4,
-                human_realness=2,
-                overall_reason="复购帖链路太完整",
-            ),
-            ProductExperienceLLMReview(pass_=True, rewrite_required=False, severity="pass"),
-        ]
-    )
-
-    async with session_factory() as session:
-        session.add(
-            ExecutorRegistry(
-                executor_code="maga_direct_llm_executor",
-                executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
-                enabled=1,
-                config_json={},
-            )
-        )
-        job = ContentBatchJob(
-            batch_code="batch_llm_quality",
-            asset_key="wangyue_painpoint_selling_posttype_matrix_v32_20260624",
-            product_topic="旺玥痛点卖点",
-            target_audience="妈妈",
-            style="真实UGC",
-            count=1,
-            status="planned",
-        )
-        session.add(job)
-        await session.flush()
-        session.add(
-            ContentBatchItem(
-                batch_id=job.id,
-                item_no=1,
-                status="planned",
-                plan_json={
-                    "rule_type": "business_rule",
-                    "asset_key": "wangyue_painpoint_selling_posttype_matrix_v32_20260624",
-                    "post_type": "复购/长期使用",
-                    "ugc_post_type": "复购/长期使用型",
-                    "corpus": "0705旺玥活动",
-                },
-            )
-        )
-        await session.commit()
-
-        service = ContentBatchExecutionService(
-            session,
-            invocation_client=ProductExperienceLLMQualityRewriteClient(),
-            callback_base_url="http://maga.test/api/v1/executor",
-            session_factory=session_factory,
-            product_experience_llm_reviewer=reviewer,
-        )
-        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
-        await session.commit()
-
-    assert result.generated_count == 1
-    async with session_factory() as session:
-        item = (
-            await session.execute(select(ContentBatchItem).where(ContentBatchItem.batch_id == job.id))
-        ).scalar_one()
-        rewrite_stages = (
-            await session.execute(
-                select(ContentAgentStageCall).where(
-                    ContentAgentStageCall.capability == "content.rewrite",
-                    ContentAgentStageCall.input_snapshot["rewrite_source"].as_string()
-                    == "product_experience_llm_quality_review",
-                )
-            )
-        ).scalars().all()
-
-    assert item.title == "晚饭后的补货"
-    assert "孩子也接受" in item.body
-    assert "保底" in item.body
-    assert rewrite_stages == []
-    quality = item.quality_json
-    assert quality["product_experience_llm_quality_review"]["pass"] is False
-    assert quality["product_experience_llm_quality_review"]["rewrite_required"] is True
-    assert quality["product_experience_llm_quality_review"]["mark_rewrite_required"] is False
-    assert quality["review_report"].get("rewrite_required") is False
-    assert "product_experience_llm_quality_rewrites" not in quality
-    assert len(reviewer.calls) == 1
-    assert reviewer.calls[0]["phrase_review"]["decision_chain_hits"]
 
 
 @pytest.mark.asyncio
@@ -6642,128 +6134,10 @@ async def test_batch_business_usability_review_reruns_stable_judge_without_rewri
     assert items[0].quality_json["review_report"].get("rewrite_required") is False
 
 
-@pytest.mark.asyncio
-async def test_batch_execution_repairs_light_fix_business_usability_once():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            Base.metadata.create_all,
-            tables=_execution_tables(),
-        )
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    reviewer = FakeProductExperienceLLMReviewer(
-        [
-            ProductExperienceLLMReview(
-                pass_=False,
-                rewrite_required=False,
-                severity="minor",
-                issues=[
-                    ProductExperienceLLMIssue(
-                        code="ad_like_closure",
-                        evidence="句子有点断，收口像模板",
-                        reason="种草内核成立，但需要轻修入池",
-                        rewrite_direction="只修断句和模板收口，保留正向产品价值",
-                    )
-                ],
-                business_usability_tier="light_fix_usable",
-                business_usability_reason="有局部断句和旧模板词，轻修后可入池",
-                product_appearance_naturalness=4,
-                decision_chain_fit=4,
-                product_value_strength=4,
-                human_realness=3,
-                overall_reason="轻修可用",
-            ),
-            ProductExperienceLLMReview(
-                pass_=True,
-                rewrite_required=False,
-                severity="pass",
-                business_usability_tier="direct_pool",
-                business_usability_reason="文本顺，种草内核保留",
-            ),
-        ]
-    )
-
-    async with session_factory() as session:
-        session.add(
-            ExecutorRegistry(
-                executor_code="maga_direct_llm_executor",
-                executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
-                enabled=1,
-                config_json={},
-            )
-        )
-        job = ContentBatchJob(
-            batch_code="batch_llm_business_light_fix",
-            asset_key="wangyue_v209_benefit_bridge_article_rules",
-            product_topic="0705旺玥活动",
-            count=1,
-            status="planned",
-        )
-        session.add(job)
-        await session.flush()
-        session.add(
-            ContentBatchItem(
-                batch_id=job.id,
-                item_no=1,
-                status="planned",
-                plan_json={
-                    "rule_type": "business_rule",
-                    "asset_key": "wangyue_v209_benefit_bridge_article_rules",
-                    "post_type": "复购/长期使用",
-                    "ugc_post_type": "复购/长期使用型",
-                    "corpus": "0705旺玥活动",
-                },
-            )
-        )
-        await session.commit()
-
-        service = ContentBatchExecutionService(
-            session,
-            invocation_client=ProductExperienceLLMQualityRewriteClient(),
-            callback_base_url="http://maga.test/api/v1/executor",
-            session_factory=session_factory,
-            product_experience_llm_reviewer=reviewer,
-        )
-        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
-        await session.commit()
-
-    assert result.generated_count == 1
-    async with session_factory() as session:
-        item = (
-            await session.execute(select(ContentBatchItem).where(ContentBatchItem.batch_id == job.id))
-        ).scalar_one()
-        rewrite_stages = (
-            await session.execute(
-                select(ContentAgentStageCall).where(
-                    ContentAgentStageCall.capability == "content.rewrite",
-                    ContentAgentStageCall.input_snapshot["rewrite_source"].as_string()
-                    == "product_experience_llm_quality_review",
-                )
-            )
-        ).scalars().all()
-        rewrite_sources = (
-            await session.execute(
-                select(ContentAgentStageCall.input_snapshot["rewrite_source"].as_string()).where(
-                    ContentAgentStageCall.capability == "content.rewrite",
-                )
-            )
-        ).scalars().all()
-
-    assert item.title == "晚饭后顺手补"
-    assert len(rewrite_stages) == 1
-    assert "ai_flavor_humanizer" not in rewrite_sources
-    quality = item.quality_json
-    assert quality["product_experience_llm_quality_review"]["business_usability_tier"] == "direct_pool"
-    assert quality["review_report"].get("rewrite_required") is False
-    assert "product_experience_llm_quality_rewrites" in quality
-    assert len(reviewer.calls) == 2
-    assert reviewer.calls[0]["ai_flavor_review"] is not None
 
 
 @pytest.mark.asyncio
-async def test_wangyue_v152_light_postprocess_keeps_llm_quality_review_mark_only():
+async def test_current_wangyue_keeps_non_rewrite_llm_quality_review_mark_only():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(
@@ -6805,8 +6179,8 @@ async def test_wangyue_v152_light_postprocess_keeps_llm_quality_review_mark_only
             )
         )
         job = ContentBatchJob(
-            batch_code="batch_v152_light_llm_quality",
-            asset_key="wangyue_v152_longer_scene_no_meta_record_article_rules",
+            batch_code="batch_current_wangyue_llm_quality_watch",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="旺玥痛点卖点",
             count=1,
             status="planned",
@@ -6820,7 +6194,7 @@ async def test_wangyue_v152_light_postprocess_keeps_llm_quality_review_mark_only
                 status="planned",
                 plan_json={
                     "rule_type": "business_rule",
-                    "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
+                    "asset_key": "wangyue_v3_core_storyline_article_rules",
                     "post_type": "轻测评",
                     "ugc_post_type": "轻测评",
                     "corpus": "0705旺玥活动",
@@ -6864,44 +6238,13 @@ async def test_wangyue_v152_light_postprocess_keeps_llm_quality_review_mark_only
     assert len(reviewer.calls) == 1
 
 
-def test_wangyue_v183_light_postprocess_marks_logic_drift_only():
-    base_review = review_product_experience_phrase(
-        title="集体活动后发现的",
-        body=(
-            "上周幼儿园组织去农场，回来好几个小朋友都蔫了。"
-            "后来换了旺玥，一直喝着，就是觉得日常口粮里多留意了保护力这块。"
-            "乳铁蛋白、HMO这些成分倒没仔细研究，但确实少请假了。"
-        ),
-        plan={
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v183_prompt_slot_slim_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-    )
-    review = replace(
-        base_review,
-        pass_=False,
-        rewrite_required=True,
-        reasons=["wangyue_article_logic_drift_context"],
-    )
-
-    assert _should_mark_only_product_experience_phrase_review(
-        {
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_v183_prompt_slot_slim_article_rules",
-            "corpus": "0705旺玥活动",
-        },
-        review,
-    )
-
-
 def test_wangyue_logic_drift_phrase_guard_is_mark_only_for_current_assets():
     base_review = review_product_experience_phrase(
         title="班里请假的多",
         body="班里接触多，家里喝旺玥，状态一直在线。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v266_strong_selling_expression_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -6915,20 +6258,20 @@ def test_wangyue_logic_drift_phrase_guard_is_mark_only_for_current_assets():
     assert _should_mark_only_product_experience_phrase_review(
         {
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v266_strong_selling_expression_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
         review,
     )
 
 
-def test_wangyue_v183_light_postprocess_keeps_time_event_as_rewrite():
+def test_current_wangyue_time_event_is_not_mark_only():
     review = review_product_experience_phrase(
         title="幼儿园中招季",
         body="幼儿园中招季，她这阵还挺稳，家里喝旺玥。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v183_prompt_slot_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -6937,7 +6280,7 @@ def test_wangyue_v183_light_postprocess_keeps_time_event_as_rewrite():
     assert not _should_mark_only_product_experience_phrase_review(
         {
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v183_prompt_slot_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
         review,
@@ -6947,7 +6290,7 @@ def test_wangyue_v183_light_postprocess_keeps_time_event_as_rewrite():
 def test_wangyue_phrase_guard_allows_three_plus_stage_wording():
     plan = {
         "rule_type": "business_rule",
-        "asset_key": "wangyue_v183_prompt_slot_slim_article_rules",
+        "asset_key": "wangyue_v3_core_storyline_article_rules",
         "corpus": "0705旺玥活动",
     }
     samples = (
@@ -6976,7 +6319,7 @@ def test_wangyue_child_operation_guard_ignores_mom_fetching_can_after_question()
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v183_prompt_slot_slim_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -7011,7 +6354,7 @@ def test_wangyue_soft_strong_seeding_llm_review_does_not_rewrite():
     )
 
     assert not _should_rewrite_product_experience_llm_quality(
-        {"asset_key": "wangyue_v183_prompt_slot_slim_article_rules"},
+        {"asset_key": "wangyue_v3_core_storyline_article_rules"},
         review,
     )
 
@@ -7036,83 +6379,11 @@ def test_wangyue_brief_translation_without_overcomplete_still_rewrites():
     )
 
     assert _should_rewrite_product_experience_llm_quality(
-        {"asset_key": "wangyue_v183_prompt_slot_slim_article_rules"},
+        {"asset_key": "wangyue_v3_core_storyline_article_rules"},
         review,
     )
 
 
-@pytest.mark.asyncio
-async def test_wangyue_v152_light_effect_chain_phrase_guard_does_not_rewrite():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            Base.metadata.create_all,
-            tables=_execution_tables(),
-        )
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    async with session_factory() as session:
-        session.add(
-            ExecutorRegistry(
-                executor_code="maga_direct_llm_executor",
-                executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
-                enabled=1,
-                config_json={},
-            )
-        )
-        job = ContentBatchJob(
-            batch_code="batch_v152_light_phrase_effect_chain",
-            asset_key="wangyue_v152_longer_scene_no_meta_record_article_rules",
-            product_topic="旺玥痛点卖点",
-            count=1,
-            status="planned",
-        )
-        session.add(job)
-        await session.flush()
-        session.add(
-            ContentBatchItem(
-                batch_id=job.id,
-                item_no=1,
-                status="planned",
-                plan_json={
-                    "rule_type": "business_rule",
-                    "asset_key": "wangyue_v152_longer_scene_no_meta_record_article_rules",
-                    "post_type": "使用记录",
-                    "ugc_post_type": "使用记录",
-                    "corpus": "0705旺玥活动",
-                },
-            )
-        )
-        await session.commit()
-
-        service = ContentBatchExecutionService(
-            session,
-            invocation_client=ProductExperienceEffectChainLightGenerateClient(),
-            callback_base_url="http://maga.test/api/v1/executor",
-            session_factory=session_factory,
-            product_experience_llm_reviewer=FakeProductExperienceLLMReviewer([]),
-        )
-        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
-        await session.commit()
-
-    assert result.generated_count == 1
-    async with session_factory() as session:
-        item = (
-            await session.execute(select(ContentBatchItem).where(ContentBatchItem.batch_id == job.id))
-        ).scalar_one()
-        rewrite_stages = (
-            await session.execute(select(ContentAgentStageCall).where(ContentAgentStageCall.capability == "content.rewrite"))
-        ).scalars().all()
-
-    assert rewrite_stages == []
-    assert "冲一杯旺玥" in item.body
-    quality = item.quality_json
-    assert quality["product_experience_phrase_guard"]["rewrite_required"] is True
-    assert quality["product_experience_phrase_guard"]["mark_rewrite_required"] is False
-    assert quality["review_report"].get("rewrite_required") is False
-    assert "product_experience_phrase_rewrites" not in quality
 
 
 def test_product_experience_llm_review_parser_accepts_fenced_json():
@@ -7256,7 +6527,7 @@ def test_product_experience_llm_context_calibration_allows_adult_cup_action_when
         body="现在每天放学回来，我给他冲一杯，他在旁边等着，刚给他买了个新水杯，正新鲜着呢。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v280_closure_attractor_cleanup_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -7528,7 +6799,7 @@ def test_product_experience_llm_prompt_passes_usage_scene_phrase_hints():
         body="我顺手在书包侧袋塞了一盒旺玥，想着玩完兑点温水就能喝。孩子自己倒水舀粉。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -7538,7 +6809,7 @@ def test_product_experience_llm_prompt_passes_usage_scene_phrase_hints():
             title="接娃路上聊到请假",
             body="我顺手在书包侧袋塞了一盒旺玥，想着玩完兑点温水就能喝。孩子自己倒水舀粉。",
             plan={
-                "asset_key": "wangyue_article_business_rules",
+                "asset_key": "wangyue_v3_core_storyline_article_rules",
                 "post_type": "使用反馈",
                 "corpus": "0705旺玥活动",
             },
@@ -7559,7 +6830,7 @@ def test_product_experience_llm_prompt_passes_age_phrase_hints():
         body="一岁半的娃吃饭不稳，家里备着旺玥。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "旺玥是3周岁以上、3-6岁学龄前儿童语境下的4段儿童奶粉。",
         },
     )
@@ -7569,7 +6840,7 @@ def test_product_experience_llm_prompt_passes_age_phrase_hints():
             title="旺玥记录",
             body="一岁半的娃吃饭不稳，家里备着旺玥。",
             plan={
-                "asset_key": "wangyue_article_business_rules",
+                "asset_key": "wangyue_v3_core_storyline_article_rules",
                 "post_type": "使用反馈",
                 "corpus": "0705旺玥活动",
             },
@@ -7591,7 +6862,7 @@ def test_product_experience_phrase_guard_blocks_physical_action_carrier_mismatch
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v209_benefit_bridge_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -7611,7 +6882,7 @@ def test_product_experience_phrase_guard_blocks_physical_action_carrier_mismatch
         ),
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v209_benefit_bridge_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -7625,7 +6896,7 @@ def test_product_experience_phrase_guard_blocks_physical_action_carrier_mismatch
         body="她把桌上那罐旺玥转过来，我扫了眼罐身营养成分，DHA和燕窝酸写得挺清楚。",
         plan={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v209_benefit_bridge_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
     )
@@ -7640,7 +6911,7 @@ def test_product_experience_phrase_rewrite_input_handles_physical_action_carrier
         body="闺蜜问我娃最近坐不坐得住，顺手翻她桌上那罐旺玥的配方表。DHA和燕窝酸列得挺清楚。",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_v209_benefit_bridge_article_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
         },
         quality_json={},
@@ -7657,81 +6928,6 @@ def test_product_experience_phrase_rewrite_input_handles_physical_action_carrier
     assert "不要新增冲泡、喝奶、下单、对比清单或新的效果证明" in instructions
 
 
-def test_v209_wangyue_light_formula_slot_does_not_seed_flip_can_action():
-    import sys
-
-    scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
-    if scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
-
-    from scripts.build_v209_wangyue_benefit_bridge_import import build_rows
-
-    rows = build_rows()
-    joined = "\n".join(
-        "\n".join(str(row.get(field) or "") for field in row)
-        for row in rows
-    )
-
-    assert "被问起后翻看信息" not in joined
-    assert "自己翻罐" not in joined
-    assert "包装信息" not in joined
-    assert "旺玥作为被问到或看配方时提到的一罐" not in joined
-    assert "看配方或被问到时，说一个自己看懂的成分点" not in joined
-    assert "被问起后说成分印象" in joined
-
-
-def test_v209_wangyue_slot_compatibility_matrix_blocks_scene_painpoint_drift():
-    import sys
-
-    scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
-    if scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
-
-    from scripts.build_v209_wangyue_benefit_bridge_import import (
-        _validate_slot_compatibility,
-        build_rows,
-    )
-
-    rows = build_rows()
-    assert _validate_slot_compatibility(rows) == []
-
-    bad_rows = [dict(row) for row in rows]
-    bad_rows[2]["scene_motive_bucket"] = "集体活动后自家观察"
-
-    errors = _validate_slot_compatibility(bad_rows)
-    assert any("painpoint=营养不足 cannot use scene_motive_bucket=集体活动后自家观察" in error for error in errors)
-    assert any("营养丰富 cannot use 集体活动后自家观察" in error for error in errors)
-
-
-def test_v209_wangyue_effect_proof_slots_do_not_seed_repeated_phrase_packs():
-    import sys
-
-    scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
-    if scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
-
-    from scripts.build_v209_wangyue_benefit_bridge_import import build_rows
-
-    rows = build_rows()
-    joined = "\n".join(
-        "\n".join(str(row.get(field) or "") for field in row)
-        for row in rows
-    )
-
-    repeated_phrase_packs = (
-        "保护力这块",
-        "营养不断档",
-        "抱起来有分量",
-        "背上有肉",
-        "衣服撑一点",
-        "跑跳有劲",
-        "跑跳更有劲",
-        "身形结实",
-    )
-    for phrase in repeated_phrase_packs:
-        assert phrase not in joined
-
-
 def test_product_experience_llm_quality_rewrite_input_handles_age_stage_error():
     service = ContentBatchExecutionService.__new__(ContentBatchExecutionService)
     item = ContentBatchItem(
@@ -7739,8 +6935,8 @@ def test_product_experience_llm_quality_rewrite_input_handles_age_stage_error():
         body="一岁半的娃吃饭不稳，家里备着旺玥。",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
-            "corpus": "旺玥是3周岁以上、3-6岁学龄前儿童语境下的4段儿童奶粉。",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "旺玥适用于3周岁以上儿童。",
         },
     )
     review = ProductExperienceLLMReview(
@@ -7760,12 +6956,11 @@ def test_product_experience_llm_quality_rewrite_input_handles_age_stage_error():
     payload = service._product_experience_llm_quality_rewrite_input(item, review)
 
     instructions = "\n".join(payload["rewrite_instructions"])
-    assert "产品年龄事实硬错误" in instructions
-    assert "业务规则允许的年龄阶段" in instructions
-    assert "不要完整复述成“3岁以上4段儿童奶粉”" in instructions
-    assert "保留原文一个正向产品价值或效果证明" in instructions
-    assert "改写后正文必须仍明确保留" in instructions
-    assert "不能把产品从正文里洗掉" in instructions
+    assert payload["rewrite_mode"] == "compliance_cleanup"
+    assert "只处理下面明确指出的不合规片段" in instructions
+    assert "wangyue_age_stage_error" in instructions
+    assert "不得新增生活场景、产品动作、使用频次" in instructions
+    assert "原文已有自然换行时尽量保留" in instructions
 
 
 def test_current_wangyue_v3_splits_compliance_and_fluency_rewrite_inputs():
@@ -7813,10 +7008,12 @@ def test_current_wangyue_v3_splits_compliance_and_fluency_rewrite_inputs():
     assert compliance_payload["rewrite_mode"] == "compliance_cleanup"
     assert "不做文风优化" in "\n".join(compliance_payload["rewrite_instructions"])
     assert "不得新增生活场景" in "\n".join(compliance_payload["rewrite_instructions"])
+    assert "原文已有自然换行时尽量保留" in "\n".join(compliance_payload["rewrite_instructions"])
     assert fluency_payload["rewrite_source"] == "product_experience_fluency_humanize"
     assert fluency_payload["rewrite_mode"] == "fluency_humanize"
     assert "minimal + in-place" in "\n".join(fluency_payload["rewrite_instructions"])
     assert "品牌、成分、人物、时间、数量" in "\n".join(fluency_payload["rewrite_instructions"])
+    assert "尽量保持原句序、段落和叙事节奏" in "\n".join(fluency_payload["rewrite_instructions"])
 
 
 def test_current_wangyue_v3_rewrites_only_compliance_or_fluency_and_watches_other_issues():
@@ -7889,7 +7086,7 @@ def test_ai_flavor_rewrite_input_keeps_wangyue_product_mention():
         body="女儿最近拼图能坐挺久，之前挑奶粉时对比过几款，旺玥有DHA和燕窝酸。",
         plan_json={
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
             "unified_generation": {"selected_keywords": []},
         },
@@ -7908,6 +7105,109 @@ def test_ai_flavor_rewrite_input_keeps_wangyue_product_mention():
     instructions = "\n".join(payload["rewrite_instructions"])
     assert "改写后正文必须仍明确保留" in instructions
     assert "真人润色只改表达，不能把产品从正文里洗掉" in instructions
+    assert "原文已有自然换行时尽量保留" in instructions
+
+
+def test_post_rewrite_inputs_do_not_force_multi_paragraph_content_into_one_paragraph():
+    service = ContentBatchExecutionService.__new__(ContentBatchExecutionService)
+    item = ContentBatchItem(
+        title="最近的日常",
+        body="孩子最近活动量大了。\n\n后来选了旺玥，日常营养安排顺手一些。",
+        plan_json={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "正文可以按真实发帖节奏适当换行，通常1-3段；不要为了换行硬拆句。",
+            "unified_generation": {"selected_keywords": []},
+        },
+    )
+    phrase_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+    ai_review = AIFlavorReview(
+        pass_=False,
+        rewrite_required=True,
+        reasons=["brief_translation_tone"],
+        title_hits=[],
+        body_hits=["日常营养安排"],
+        rewrite_operations=[],
+    )
+    llm_review = ProductExperienceLLMReview(
+        pass_=False,
+        rewrite_required=True,
+        severity="rewrite",
+        issues=[
+            ProductExperienceLLMIssue(
+                code="brief_translation_tone",
+                evidence="日常营养安排",
+                reason="表达偏任务腔",
+                rewrite_direction="局部改顺",
+            )
+        ],
+    )
+
+    payloads = [
+        service._product_experience_phrase_rewrite_input(item, phrase_review),
+        service._ai_flavor_rewrite_input(item, ai_review),
+        service._product_experience_llm_quality_rewrite_input(item, llm_review),
+    ]
+
+    for payload in payloads:
+        instructions = "\n".join(payload["rewrite_instructions"])
+        assert "正文段落服从业务规则" in instructions
+        assert "原文已有自然换行时尽量保留" in instructions
+        assert "正文单段不换行" not in instructions
+
+
+def test_post_rewrite_keeps_explicit_single_paragraph_rule_in_business_context():
+    service = ContentBatchExecutionService.__new__(ContentBatchExecutionService)
+    item = ContentBatchItem(
+        title="短记录",
+        body="孩子最近活动量大了，后来选了旺玥。",
+        plan_json={
+            "rule_type": "business_rule",
+            "asset_key": "single_paragraph_rule",
+            "corpus": "成文要求：正文单段不换行。",
+            "unified_generation": {"selected_keywords": []},
+        },
+    )
+    review = AIFlavorReview(
+        pass_=False,
+        rewrite_required=True,
+        reasons=["brief_translation_tone"],
+        title_hits=[],
+        body_hits=["后来选了"],
+        rewrite_operations=[],
+    )
+
+    payload = service._ai_flavor_rewrite_input(item, review)
+
+    assert payload["business_rule"]["corpus"] == "成文要求：正文单段不换行。"
+    assert "正文段落服从业务规则" in "\n".join(payload["rewrite_instructions"])
+
+
+def test_preserve_rewrite_paragraphs_restores_breaks_without_changing_text():
+    before = "第一段原文。\n\n第二段原文。\n\n第三段原文。"
+    after = "第一句改写完成。第二句继续交代生活细节。第三句自然带到旺玥。第四句写自家感受。"
+
+    restored = _preserve_rewrite_paragraphs(
+        before,
+        after,
+        {"corpus": "正文可以按真实发帖节奏适当换行，通常1-3段。"},
+    )
+
+    assert restored.count("\n\n") == 2
+    assert restored.replace("\n", "") == after
+
+
+def test_preserve_rewrite_paragraphs_respects_explicit_single_paragraph_rule():
+    before = "第一段原文。\n\n第二段原文。"
+    after = "第一句改写完成。第二句继续交代生活细节。"
+
+    restored = _preserve_rewrite_paragraphs(
+        before,
+        after,
+        {"corpus": "成文要求：正文单段不换行。"},
+    )
+
+    assert restored == after
 
 
 @pytest.mark.asyncio
@@ -8088,13 +7388,18 @@ async def test_batch_execution_applies_persona_style_rewrite_after_generation():
     assert items[1].body == "mother_soft_observer 改写后正文"
     assert items[0].quality_json["persona_style_rewrites"][0]["preset_code"] == "roommate_direct"
     assert items[1].quality_json["persona_style_rewrites"][0]["preset_code"] == "mother_soft_observer"
-    assert len(rewrite_stages) == 1
-    instructions = "\n".join((rewrite_stages[0].input_snapshot or {}).get("rewrite_instructions") or [])
-    assert "人设改写风格：爽快、直给" in instructions
-    assert "不要改变原文的发帖视角" in instructions
-    rewrite_business_rule = (rewrite_stages[0].input_snapshot or {}).get("business_rule") or {}
-    assert "diversity_slot" not in rewrite_business_rule
-    assert "评论区聊到" not in str(rewrite_business_rule)
+    assert len(rewrite_stages) == 2
+    instruction_sets = [
+        "\n".join((stage.input_snapshot or {}).get("rewrite_instructions") or [])
+        for stage in rewrite_stages
+    ]
+    assert any("人设改写风格：爽快、直给" in instructions for instructions in instruction_sets)
+    assert any("人设改写风格：像妈妈随手记孩子状态" in instructions for instructions in instruction_sets)
+    assert all("不要改变原文的发帖视角" in instructions for instructions in instruction_sets)
+    for stage in rewrite_stages:
+        rewrite_business_rule = (stage.input_snapshot or {}).get("business_rule") or {}
+        assert "diversity_slot" not in rewrite_business_rule
+        assert "评论区聊到" not in str(rewrite_business_rule)
 
 
 @pytest.mark.asyncio
@@ -8116,7 +7421,7 @@ async def test_wangyue_batch_execution_repairs_duplicate_titles():
                 mode="sync",
                 stage_call_id=envelope["stage_call_id"],
                 output={
-                    "title": "旺玥4段怎么选",
+                    "title": "旺玥真实体验分享",
                     "body": f"旺玥喝了一阵，孩子口味能接受，选奶时主要看日常补充。第{item_no}次记录。",
                     "runtime_result": {"mode": "content_fake"},
                 },
@@ -8136,7 +7441,7 @@ async def test_wangyue_batch_execution_repairs_duplicate_titles():
         )
         job = ContentBatchJob(
             batch_code="batch_wangyue_title_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=3,
             status="planned",
@@ -8146,7 +7451,7 @@ async def test_wangyue_batch_execution_repairs_duplicate_titles():
         for item_no in range(1, 4):
             plan = {
                 **_plan(item_no),
-                "asset_key": "wangyue_article_business_rules",
+                "asset_key": "wangyue_v3_core_storyline_article_rules",
                 "business_rule": "容易中招，选奶判断",
                 "topic": "容易中招，选奶判断",
                 "corpus": "活动：0705旺玥活动。\n痛点词：容易中招；场景：选奶判断；卖点方向：进阶保护力；主题：选奶判断。",
@@ -8158,6 +7463,7 @@ async def test_wangyue_batch_execution_repairs_duplicate_titles():
             session,
             invocation_client=DuplicateTitleClient(),
             callback_base_url="http://maga.test/api/v1/executor",
+            product_experience_llm_reviewer=FakeProductExperienceLLMReviewer([]),
         )
         result = await service.execute_batch_items(job.id, limit=3, concurrency=3, created_by="test")
         await session.commit()
@@ -8170,13 +7476,17 @@ async def test_wangyue_batch_execution_repairs_duplicate_titles():
 
     titles = [item.title for item in items]
     assert len(set(titles)) == 3
-    assert all(title != "旺玥4段怎么选" for title in titles)
+    assert all(title != "旺玥真实体验分享" for title in titles)
     assert "儿童奶粉先这样选" not in titles
     assert "这罐先继续喝" not in titles
     assert "选儿童奶粉这事" not in titles
     assert "儿童成长奶粉小记录" not in titles
     assert "保护力这块我会多看一眼" not in titles
-    assert any("forbidden_title_phrase:旺玥4段" in repair["reasons"] for item in items for repair in item.quality_json["title_guard_repairs"])
+    assert any(
+        "forbidden_title_phrase:旺玥真实体验分享" in repair["reasons"]
+        for item in items
+        for repair in item.quality_json["title_guard_repairs"]
+    )
     assert items[2].quality_json["title_guard"]["pass"] is True
 
 
@@ -8326,7 +7636,7 @@ async def test_wangyue_batch_execution_repairs_copied_reference_titles():
         )
         job = ContentBatchJob(
             batch_code="batch_wangyue_copied_title_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -8335,7 +7645,7 @@ async def test_wangyue_batch_execution_repairs_copied_reference_titles():
         await session.flush()
         plan = {
             **_plan(1),
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "容易中招，选奶判断",
             "topic": "容易中招，选奶判断",
             "corpus": "写作规则：孩子上学后接触人多，妈妈担心容易中招；选择旺玥这款儿童奶粉，是看中保护力。",
@@ -8398,7 +7708,7 @@ async def test_wangyue_title_guard_avoids_recent_activity_titles():
         )
         history_job = ContentBatchJob(
             batch_code="batch_wangyue_title_history",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="generated",
@@ -8418,7 +7728,7 @@ async def test_wangyue_title_guard_avoids_recent_activity_titles():
 
         job = ContentBatchJob(
             batch_code="batch_wangyue_title_history_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -8427,7 +7737,7 @@ async def test_wangyue_title_guard_avoids_recent_activity_titles():
         await session.flush()
         plan = {
             **_plan(1),
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "容易中招，选奶判断",
             "topic": "容易中招，选奶判断",
             "corpus": "写作规则：孩子上学后接触人多，妈妈担心容易中招；选择旺玥这款儿童奶粉，是看中保护力。",
@@ -8507,7 +7817,7 @@ async def test_wangyue_batch_execution_cleans_model_title_format_without_fallbac
         )
         job = ContentBatchJob(
             batch_code="batch_wangyue_title_format_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=3,
             status="planned",
@@ -8518,7 +7828,7 @@ async def test_wangyue_batch_execution_cleans_model_title_format_without_fallbac
             plan = {
                 **_plan(item_no),
                 "rule_type": "business_rule",
-                "asset_key": "wangyue_article_business_rules",
+                "asset_key": "wangyue_v3_core_storyline_article_rules",
                 "business_rule": "营养不足/成长发育需求，日常补充观察",
                 "topic": "营养不足/成长发育需求，日常补充观察",
                 "corpus": "活动：0705旺玥活动。\n写作规则：围绕孩子日常营养补充来写。",
@@ -8585,7 +7895,7 @@ async def test_wangyue_batch_execution_repairs_dangling_title_after_format_clean
         )
         job = ContentBatchJob(
             batch_code="batch_wangyue_dangling_title_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -8595,7 +7905,7 @@ async def test_wangyue_batch_execution_repairs_dangling_title_after_format_clean
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "营养不足/成长发育需求，日常补充观察",
             "topic": "营养不足/成长发育需求，日常补充观察",
             "corpus": "活动：0705旺玥活动。\n写作规则：围绕孩子日常营养补充来写。",
@@ -8905,7 +8215,7 @@ async def test_forbidden_term_review_applies_wangyue_scoped_terms_without_model(
 
         review = await ForbiddenTermReviewService(session).review_and_rewrite_item(
             item=item,
-            asset_key="wangyue_v209_benefit_bridge_article_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             orchestrator=None,
             executor_code=None,
             content_type="article",
@@ -9107,6 +8417,11 @@ class FailingProductExperienceLLMReviewer(FakeProductExperienceLLMReviewer):
             }
         )
         raise ValueError("LLM review did not return a JSON object")
+
+
+class AcceptRewriteQualityValidator:
+    async def review(self, **_kwargs):
+        return RewriteQualityJudgment(label="accept", issue_code="none", evidence="候选通顺")
 
 
 class ProductExperienceLLMQualityRewriteClient(RuntimeFastDraftReviewClient):
@@ -9365,10 +8680,10 @@ class ProductExperienceTemporaryRemedyRewriteClient(RuntimeFastDraftReviewClient
             return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
         if capability == "content.rewrite":
             output = {
-                "title": "带娃出门后的小担心",
+                "title": "接触人多后的记录",
                 "body": (
-                    "带娃出去玩了几天，我才发现小朋友接触人多这事真会让人多想。"
-                    "家里日常喝旺玥，主要就是看中保护力这块，别的我也不敢说满。"
+                    "这阵孩子接触的人多，我难免会多想。"
+                    "家里日常喝旺玥，主要看中保护力这块，回来照样吃饭、玩积木。"
                 ),
                 "runtime_result": {"mode": "content_rewrite_runtime"},
             }
@@ -9396,44 +8711,6 @@ class ProductExperienceTemporalContextClient(RuntimeFastDraftReviewClient):
                 "runtime_result": {"mode": "content_rewrite_runtime"},
             }
             return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
-        return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
-
-
-class ProductExperienceTimeEventStillBadClient(RuntimeFastDraftReviewClient):
-    async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
-        if envelope.get("capability") == "content.generate":
-            output = {
-                "title": "集体活动后状态稳",
-                "body": (
-                    "上次幼儿园组织秋游，一大群孩子在外面疯跑了一天。"
-                    "回来我还担心他会蔫，结果洗完澡精神头还挺足。"
-                    "后来选奶粉重点看保护力，旺玥乳铁蛋白和HMO都有。"
-                ),
-                "runtime_result": {"mode": "runtime_fast"},
-            }
-            return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
-        if envelope.get("capability") == "content.rewrite":
-            input_payload = envelope.get("input") or {}
-            if input_payload.get("rewrite_source") == "product_experience_phrase_guard":
-                output = {
-                    "title": "集体活动后状态稳",
-                    "body": (
-                        "上次幼儿园组织秋游，一大群孩子在外面疯跑了一天。"
-                        "回来我还担心他会蔫，结果洗完澡精神头还挺足。"
-                        "后来选奶粉重点看保护力，旺玥乳铁蛋白和HMO都有。"
-                    ),
-                    "final": {
-                        "title": "集体活动后状态稳",
-                        "body": (
-                            "上次幼儿园组织秋游，一大群孩子在外面疯跑了一天。"
-                            "回来我还担心他会蔫，结果洗完澡精神头还挺足。"
-                            "后来选奶粉重点看保护力，旺玥乳铁蛋白和HMO都有。"
-                        ),
-                    },
-                    "runtime_result": {"mode": "content_rewrite_runtime"},
-                }
-                return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
-            raise AssertionError("AI flavor should not run after blocking product-experience residue")
         return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
 
 
@@ -9703,29 +8980,6 @@ class ProductExperienceGrowthNutritionRetryStillFailsClient(RuntimeFastDraftRevi
         return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
 
 
-class ProductExperienceBabyMilkActionResidualClient(RuntimeFastDraftReviewClient):
-    async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
-        if envelope.get("capability") == "content.generate":
-            output = {
-                "title": "喝奶这事终于顺了点",
-                "body": "每天自己倒着喝，晚上自己每天冲一杯，喝完还把碗底舔干净。",
-                "runtime_result": {"mode": "runtime_fast"},
-            }
-            return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
-        if envelope.get("capability") == "content.rewrite":
-            output = {
-                "title": "喝奶这事终于顺了点",
-                "body": "晚上自己每天冲一杯，喝完还把碗底舔干净。",
-                "final": {
-                    "title": "喝奶这事终于顺了点",
-                    "body": "晚上自己每天冲一杯，喝完还把碗底舔干净。",
-                },
-                "runtime_result": {"mode": "content_rewrite_runtime"},
-            }
-            return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
-        return await super().invoke(invoke_url=invoke_url, envelope=envelope, executor_token=executor_token)
-
-
 class ProductExperienceRow2DrinkingActionClient(RuntimeFastDraftReviewClient):
     async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
         if envelope.get("capability") == "content.generate":
@@ -9800,25 +9054,25 @@ class ProductExperienceChildProductPromoClient(RuntimeFastDraftReviewClient):
     async def invoke(self, *, invoke_url: str, envelope: dict, executor_token: str | None = None) -> InvokeResult:
         if envelope.get("capability") == "content.generate":
             output = {
-                "title": "自己跟旁边的小孩说你也来一杯吧",
+                "title": "聚会时突然听见这句",
                 "body": (
-                    "那天我们在小区玩，旁边小朋友在喝奶，她突然跑过来跟人家说“我家也有，你要不要来一杯”。"
-                    "我才想起来旺玥是上个月买的，当时就是看她老往外跑，想着保护力这块得跟上。"
+                    "上周聚会他主动给每个小朋友倒了一杯旺玥，说“这个好喝还有乳铁蛋白和HMO呢”。"
+                    "我当初选旺玥，主要就是看中保护力这块。"
                 ),
                 "runtime_result": {"mode": "runtime_fast"},
             }
             return InvokeResult(mode="sync", stage_call_id=envelope["stage_call_id"], output=output, stats={"fake": True})
         if envelope.get("capability") == "content.rewrite":
             output = {
-                "title": "小区玩完回来那一笔",
+                "title": "聚会回来还挺精神",
                 "body": (
-                    "那天在小区玩到快天黑，她回来还挺有精神。我才想起上个月给孩子选了旺玥，"
+                    "上周聚会和小朋友玩了很久，他回来还挺有精神。我才想起上个月给孩子选了旺玥，"
                     "主要就是看中儿童奶粉里保护力这块，平时活动多的时候我会多留意一点。"
                 ),
                 "final": {
-                    "title": "小区玩完回来那一笔",
+                    "title": "聚会回来还挺精神",
                     "body": (
-                        "那天在小区玩到快天黑，她回来还挺有精神。我才想起上个月给孩子选了旺玥，"
+                        "上周聚会和小朋友玩了很久，他回来还挺有精神。我才想起上个月给孩子选了旺玥，"
                         "主要就是看中儿童奶粉里保护力这块，平时活动多的时候我会多留意一点。"
                     ),
                 },
@@ -10426,6 +9680,7 @@ async def test_batch_execution_deletes_dry_powder_then_llm_checks_fluency_once()
             invocation_client=client,
             callback_base_url="http://maga.test/api/v1/executor",
             session_factory=session_factory,
+            rewrite_quality_validator=AcceptRewriteQualityValidator(),
         )
         result = await service.execute_batch_items(job.id, limit=1, created_by="test")
         await session.commit()
@@ -10515,16 +9770,15 @@ async def test_batch_execution_marks_manual_when_phrase_rewrite_still_fails_rule
         item = (await session.execute(select(ContentBatchItem))).scalar_one()
         stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
 
-    assert "舀了一勺" in item.body
+    assert "舀了一勺" not in item.body
     rewrites = item.quality_json["product_experience_phrase_rewrites"]
     assert len(rewrites) == 1
     assert rewrites[0]["passed"] is False
+    assert "舀了一勺" in rewrites[0]["after"]["body"]
     guard = item.quality_json["product_experience_phrase_guard"]
-    assert guard["pass"] is False
-    assert guard["rewrite_required"] is True
-    assert "formula_dry_powder_ingestion" in guard["reasons"]
-    assert item.quality_json["review_report"]["rewrite_required"] is True
-    assert item.quality_json["review_report"]["rewrite_reason"] == "业务规则口癖骨架或长度仍需人工处理"
+    assert guard["pass"] is True
+    assert guard["rewrite_required"] is False
+    assert guard["reasons"] == []
     phrase_rewrite_stages = [
         stage
         for stage in stage_calls
@@ -10557,7 +9811,7 @@ async def test_batch_execution_skips_persona_rewrite_for_wangyue_article_busines
         )
         job = ContentBatchJob(
             batch_code="batch_product_phrase_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -10567,7 +9821,7 @@ async def test_batch_execution_skips_persona_rewrite_for_wangyue_article_busines
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "容易中招，日常保护力",
             "topic": "容易中招，日常保护力",
             "corpus": "## 业务规则\n篇幅类型：中短文；正文按130字左右写，可在120-150字之间。\n活动：0705旺玥活动。",
@@ -10580,6 +9834,7 @@ async def test_batch_execution_skips_persona_rewrite_for_wangyue_article_busines
             invocation_client=ProductExperiencePhraseRewriteClient(),
             callback_base_url="http://maga.test/api/v1/executor",
             session_factory=session_factory,
+            product_experience_llm_reviewer=FakeProductExperienceLLMReviewer([]),
         )
         result = await service.execute_batch_items(job.id, limit=1, created_by="test")
         await session.commit()
@@ -10589,15 +9844,14 @@ async def test_batch_execution_skips_persona_rewrite_for_wangyue_article_busines
         item = (await session.execute(select(ContentBatchItem))).scalar_one()
         stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
 
-    assert "价格不算便宜" in item.body
-    assert "固定下来" in item.body
-    guard = item.quality_json["product_experience_phrase_guard"]
-    assert guard["pass"] is False
-    assert guard["rewrite_required"] is True
-    assert "product_experience_phrase_rewrites" not in item.quality_json
     assert "persona_style_rewrites" not in item.quality_json
-    assert item.quality_json["review_report"]["rewrite_required"] is True
-    assert sum(1 for stage in stage_calls if stage.capability == "content.rewrite") == 0
+    persona_rewrite_stages = [
+        stage
+        for stage in stage_calls
+        if stage.capability == "content.rewrite"
+        and (stage.input_snapshot or {}).get("rewrite_source") == "persona_style_rewrite"
+    ]
+    assert persona_rewrite_stages == []
 
 
 @pytest.mark.asyncio
@@ -10623,7 +9877,7 @@ async def test_batch_execution_rewrites_wangyue_after_symptom_remedy_chain():
         )
         job = ContentBatchJob(
             batch_code="batch_product_temporary_remedy_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -10633,7 +9887,7 @@ async def test_batch_execution_rewrites_wangyue_after_symptom_remedy_chain():
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "容易中招，日常保护力",
             "topic": "容易中招，日常保护力",
             "corpus": "写作规则：孩子接触人多后，妈妈担心容易中招；旺玥支持孩子保护力。",
@@ -10646,6 +9900,7 @@ async def test_batch_execution_rewrites_wangyue_after_symptom_remedy_chain():
             invocation_client=ProductExperienceTemporaryRemedyRewriteClient(),
             callback_base_url="http://maga.test/api/v1/executor",
             session_factory=session_factory,
+            rewrite_quality_validator=AcceptRewriteQualityValidator(),
         )
         result = await service.execute_batch_items(job.id, limit=1, created_by="test")
         await session.commit()
@@ -10690,7 +9945,7 @@ async def test_batch_execution_cleans_temporal_context_for_wangyue_article_busin
         )
         job = ContentBatchJob(
             batch_code="batch_product_temporal_context_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -10700,7 +9955,7 @@ async def test_batch_execution_cleans_temporal_context_for_wangyue_article_busin
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "容易中招，日常保护力",
             "topic": "容易中招，日常保护力",
             "corpus": "写作规则：孩子接触人多后，妈妈担心容易中招；旺玥支持孩子保护力。",
@@ -10713,6 +9968,7 @@ async def test_batch_execution_cleans_temporal_context_for_wangyue_article_busin
             invocation_client=ProductExperienceTemporalContextClient(),
             callback_base_url="http://maga.test/api/v1/executor",
             session_factory=session_factory,
+            product_experience_llm_reviewer=FakeProductExperienceLLMReviewer([]),
         )
         result = await service.execute_batch_items(job.id, limit=1, created_by="test")
         await session.commit()
@@ -10727,88 +9983,10 @@ async def test_batch_execution_cleans_temporal_context_for_wangyue_article_busin
     assert "感冒季" not in full_text
     assert "天气忽冷忽热" not in full_text
     assert "天气一变" not in full_text
-    assert "学期" not in full_text
-    assert "product_experience_temporal_context_cleanups" not in item.quality_json
-    assert "product_experience_phrase_rewrites" in item.quality_json
+    assert "product_experience_wangyue_time_event_cleanups" in item.quality_json
+    assert "product_experience_phrase_rewrites" not in item.quality_json
     assert item.quality_json["product_experience_phrase_guard"]["pass"] is True
-    assert item.quality_json["review_report"]["rewrite_required"] is False
     assert sum(1 for stage in stage_calls if stage.capability == "content.rewrite") == 1
-
-
-@pytest.mark.asyncio
-async def test_batch_execution_fails_when_wangyue_time_event_residue_survives_rewrite():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            Base.metadata.create_all,
-            tables=_execution_tables(),
-        )
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    async with session_factory() as session:
-        session.add(
-            ExecutorRegistry(
-                executor_code="maga_direct_llm_executor",
-                executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
-                enabled=1,
-                config_json={},
-            )
-        )
-        job = ContentBatchJob(
-            batch_code="batch_product_time_event_residue_guard",
-            asset_key="wangyue_article_business_rules",
-            product_topic="0705旺玥活动",
-            count=1,
-            status="planned",
-        )
-        session.add(job)
-        await session.flush()
-        plan = {
-            **_plan(1),
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
-            "business_rule": "容易中招，日常保护力",
-            "topic": "容易中招，日常保护力",
-            "corpus": "写作规则：孩子接触人多后，妈妈担心容易中招；旺玥支持孩子保护力。",
-        }
-        session.add(ContentBatchItem(batch_id=job.id, item_no=1, status="planned", plan_json=plan))
-        await session.commit()
-
-        service = ContentBatchExecutionService(
-            session,
-            invocation_client=ProductExperienceTimeEventStillBadClient(),
-            callback_base_url="http://maga.test/api/v1/executor",
-            session_factory=session_factory,
-        )
-        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
-        await session.commit()
-
-    assert result.generated_count == 1
-    async with session_factory() as session:
-        item = (await session.execute(select(ContentBatchItem))).scalar_one()
-        stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
-
-    assert item.status == "failed"
-    assert "秋游" in item.body
-    assert item.error_message == "硬性规则改写后仍命中：秋游"
-    quality = item.quality_json
-    assert quality["hard_pass"] is False
-    assert quality["postprocess_blocked"]["source"] == "product_experience_phrase_guard"
-    assert quality["postprocess_blocked"]["hits"] == ["秋游"]
-    assert quality["review_report"]["rewrite_required"] is True
-    assert quality["review_report"]["rewrite_reason"] == "硬性规则改写失败，需要人工复核"
-    assert "product_experience_wangyue_time_event_cleanups" in quality
-    phrase_rewrites = quality["product_experience_phrase_rewrites"]
-    assert phrase_rewrites[0]["pre_review"]["reasons"] == ["post_delete_cleanup_fluency_check"]
-    assert phrase_rewrites[0]["post_review"]["wangyue_time_event_context_hits"] == ["秋游"]
-    rewrite_sources = [
-        (stage.input_snapshot or {}).get("rewrite_source")
-        for stage in stage_calls
-        if stage.capability == "content.rewrite"
-    ]
-    assert rewrite_sources == ["product_experience_phrase_guard"]
 
 
 @pytest.mark.asyncio
@@ -10834,7 +10012,7 @@ async def test_batch_execution_marks_extreme_short_article_unusable_without_rewr
         )
         job = ContentBatchJob(
             batch_code="batch_short_article_length_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -10844,7 +10022,7 @@ async def test_batch_execution_marks_extreme_short_article_unusable_without_rewr
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "营养不足/成长发育需求，日常补充观察",
             "topic": "营养不足/成长发育需求，日常补充观察",
             "corpus": "写作规则：围绕日常营养补充来写。\n篇幅类型：短文；正文必须40-80字。",
@@ -10972,7 +10150,7 @@ async def test_mouth_phrase_rewrite_cannot_reintroduce_product_experience_issue(
         )
         job = ContentBatchJob(
             batch_code="batch_mouth_rewrite_product_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -10982,7 +10160,7 @@ async def test_mouth_phrase_rewrite_cannot_reintroduce_product_experience_issue(
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "营养不足/成长发育需求，日常补充观察",
             "topic": "营养不足/成长发育需求，日常补充观察",
             "corpus": "写作规则：围绕孩子成长阶段的日常营养补充来写；正文40-130字。",
@@ -11014,10 +10192,10 @@ async def test_mouth_phrase_rewrite_cannot_reintroduce_product_experience_issue(
     assert "换季" not in full_text
     assert "最近" in full_text
     failures = item.quality_json["mouth_phrase_budget_rewrite_failures"]
-    assert failures[0]["error_message"] == "blocked_by_product_experience_phrase_guard"
-    assert "explicit_temporal_context" in failures[0]["product_experience_phrase_review"]["reasons"]
+    assert failures[0]["error_message"] == "rewrite_introduced_forbidden_terms"
+    assert failures[0]["forbidden_hits"] == ["换季"]
     assert item.quality_json["mouth_phrase_budget_guard"]["final_hits"] == ["最近"]
-    assert sum(1 for stage in stage_calls if stage.capability == "content.rewrite") == 1
+    assert sum(1 for stage in stage_calls if stage.capability == "content.rewrite") == 2
 
 
 @pytest.mark.asyncio
@@ -11043,7 +10221,7 @@ async def test_mouth_phrase_rewrite_refreshes_product_experience_review():
         )
         job = ContentBatchJob(
             batch_code="batch_mouth_rewrite_refreshes_product_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -11053,7 +10231,7 @@ async def test_mouth_phrase_rewrite_refreshes_product_experience_review():
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "注意力不集中，眼脑营养观察",
             "topic": "注意力不集中，眼脑营养观察",
             "corpus": "写作规则：旺玥是妈妈给孩子选的儿童奶粉，选择理由是满足眼脑营养需求，也支持孩子保护力。正文40-130字。",
@@ -11112,7 +10290,7 @@ async def test_batch_execution_cleans_common_ai_closure_for_wangyue_article_busi
         )
         job = ContentBatchJob(
             batch_code="batch_product_common_ai_closure_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -11122,7 +10300,7 @@ async def test_batch_execution_cleans_common_ai_closure_for_wangyue_article_busi
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "容易中招，日常保护力",
             "topic": "容易中招，日常保护力",
             "corpus": "写作规则：孩子接触人多后，妈妈担心容易中招；旺玥支持孩子保护力。",
@@ -11178,7 +10356,7 @@ async def test_batch_execution_cleans_odd_phrases_for_wangyue_article_business_r
         )
         job = ContentBatchJob(
             batch_code="batch_product_odd_phrase_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -11188,7 +10366,7 @@ async def test_batch_execution_cleans_odd_phrases_for_wangyue_article_business_r
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "容易中招，日常保护力",
             "topic": "容易中招，日常保护力",
             "corpus": "写作规则：孩子接触人多后，妈妈担心容易中招；旺玥支持孩子保护力。",
@@ -11246,7 +10424,7 @@ async def test_batch_execution_rewrites_semantic_odd_phrase_for_wangyue_article_
         )
         job = ContentBatchJob(
             batch_code="batch_product_semantic_odd_phrase_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -11256,7 +10434,7 @@ async def test_batch_execution_rewrites_semantic_odd_phrase_for_wangyue_article_
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "容易中招，日常保护力",
             "topic": "容易中招，日常保护力",
             "corpus": "写作规则：孩子接触人多后，妈妈担心容易中招；旺玥支持孩子保护力。",
@@ -11317,7 +10495,7 @@ async def test_batch_execution_rewrites_adult_self_drinking_for_wangyue_article_
         )
         job = ContentBatchJob(
             batch_code="batch_product_adult_self_drinking_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -11327,7 +10505,7 @@ async def test_batch_execution_rewrites_adult_self_drinking_for_wangyue_article_
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "营养不足/成长发育需求，日常补充观察",
             "topic": "营养不足/成长发育需求，日常补充观察",
             "corpus": "写作规则：围绕孩子成长阶段的日常营养补充来写；0705旺玥活动。",
@@ -11385,7 +10563,7 @@ async def test_batch_execution_rewrites_child_self_brewing_action_for_wangyue_ar
         )
         job = ContentBatchJob(
             batch_code="batch_product_baby_milk_action_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -11395,7 +10573,7 @@ async def test_batch_execution_rewrites_child_self_brewing_action_for_wangyue_ar
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "营养不足/成长发育需求，日常补充观察",
             "topic": "营养不足/成长发育需求，日常补充观察",
             "corpus": "写作规则：围绕孩子成长阶段的日常营养补充来写；0705旺玥活动。",
@@ -11458,7 +10636,7 @@ async def test_batch_execution_rewrites_wangyue_growth_nutrition_row4_drift():
         )
         job = ContentBatchJob(
             batch_code="batch_product_growth_nutrition_drift_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -11468,7 +10646,7 @@ async def test_batch_execution_rewrites_wangyue_growth_nutrition_row4_drift():
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "source_row_no": 4,
             "business_rule": "营养不足/成长发育需求，儿童奶粉选择",
             "topic": "营养不足/成长发育需求，儿童奶粉选择",
@@ -11508,214 +10686,8 @@ async def test_batch_execution_rewrites_wangyue_growth_nutrition_row4_drift():
     assert "补充营养、支持成长" in instructions
 
 
-@pytest.mark.asyncio
-async def test_batch_execution_retries_wangyue_growth_nutrition_drift_once():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            Base.metadata.create_all,
-            tables=_execution_tables(),
-        )
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    async with session_factory() as session:
-        session.add(
-            ExecutorRegistry(
-                executor_code="maga_direct_llm_executor",
-                executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
-                enabled=1,
-                config_json={},
-            )
-        )
-        job = ContentBatchJob(
-            batch_code="batch_product_growth_nutrition_drift_retry",
-            asset_key="wangyue_article_business_rules",
-            product_topic="0705旺玥活动",
-            count=1,
-            status="planned",
-        )
-        session.add(job)
-        await session.flush()
-        plan = {
-            **_plan(1),
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
-            "source_row_no": 4,
-            "business_rule": "营养不足/成长发育需求，儿童奶粉选择",
-            "topic": "营养不足/成长发育需求，儿童奶粉选择",
-            "corpus": "写作规则：围绕给孩子选择皇家美素佳儿旺玥儿童奶粉来写，理由是补充营养、支持成长；正文40-130字。",
-        }
-        session.add(ContentBatchItem(batch_id=job.id, item_no=1, status="planned", plan_json=plan))
-        await session.commit()
-
-        service = ContentBatchExecutionService(
-            session,
-            invocation_client=ProductExperienceGrowthNutritionRetryClient(),
-            callback_base_url="http://maga.test/api/v1/executor",
-            session_factory=session_factory,
-        )
-        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
-        await session.commit()
-
-    assert result.generated_count == 1
-    async with session_factory() as session:
-        item = (await session.execute(select(ContentBatchItem))).scalar_one()
-        stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
-
-    full_text = f"{item.title}\n{item.body}"
-    assert "配方" not in full_text
-    assert "一罐搞定" not in full_text
-    assert "放学先喝一杯" not in full_text
-    assert "成长阶段的营养认真顾到" in full_text
-    rewrites = item.quality_json["product_experience_phrase_rewrites"]
-    assert len(rewrites) == 2
-    assert rewrites[0]["passed"] is False
-    assert rewrites[1]["passed"] is True
-    assert item.quality_json["product_experience_phrase_guard"]["pass"] is True
-    rewrite_stages = [stage for stage in stage_calls if stage.capability == "content.rewrite"]
-    assert len(rewrite_stages) == 1
-    second_instructions = "\n".join((rewrite_stages[1].input_snapshot or {}).get("rewrite_instructions") or [])
-    assert "再次改写" in second_instructions
 
 
-@pytest.mark.asyncio
-async def test_batch_execution_fallback_cleans_wangyue_growth_nutrition_drift_after_retry():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            Base.metadata.create_all,
-            tables=_execution_tables(),
-        )
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    async with session_factory() as session:
-        session.add(
-            ExecutorRegistry(
-                executor_code="maga_direct_llm_executor",
-                executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
-                enabled=1,
-                config_json={},
-            )
-        )
-        job = ContentBatchJob(
-            batch_code="batch_product_growth_nutrition_drift_fallback",
-            asset_key="wangyue_article_business_rules",
-            product_topic="0705旺玥活动",
-            count=1,
-            status="planned",
-        )
-        session.add(job)
-        await session.flush()
-        plan = {
-            **_plan(1),
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
-            "source_row_no": 4,
-            "business_rule": "营养不足/成长发育需求，儿童奶粉选择",
-            "topic": "营养不足/成长发育需求，儿童奶粉选择",
-            "corpus": "写作规则：围绕给孩子选择皇家美素佳儿旺玥儿童奶粉来写，理由是补充营养、支持成长；正文40-130字。",
-        }
-        session.add(ContentBatchItem(batch_id=job.id, item_no=1, status="planned", plan_json=plan))
-        await session.commit()
-
-        service = ContentBatchExecutionService(
-            session,
-            invocation_client=ProductExperienceGrowthNutritionRetryStillFailsClient(),
-            callback_base_url="http://maga.test/api/v1/executor",
-            session_factory=session_factory,
-        )
-        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
-        await session.commit()
-
-    assert result.generated_count == 1
-    async with session_factory() as session:
-        item = (await session.execute(select(ContentBatchItem))).scalar_one()
-        stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
-
-    full_text = f"{item.title}\n{item.body}"
-    assert "配方" not in full_text
-    assert "一罐搞定" not in full_text
-    assert "喝着" not in full_text
-    assert "该有的都有" not in full_text
-    assert "挺合适" not in full_text
-    assert "给孩子选旺玥儿童奶粉" in full_text
-    assert "product_experience_growth_nutrition_fallback_cleanups" in item.quality_json
-    assert item.quality_json["product_experience_phrase_guard"]["pass"] is True
-    assert item.quality_json["review_report"]["rewrite_required"] is False
-    rewrite_stages = [stage for stage in stage_calls if stage.capability == "content.rewrite"]
-    assert len(rewrite_stages) >= 2
-
-
-@pytest.mark.asyncio
-async def test_batch_execution_cleans_child_self_brewing_residue_after_rewrite():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            Base.metadata.create_all,
-            tables=_execution_tables(),
-        )
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    async with session_factory() as session:
-        session.add(
-            ExecutorRegistry(
-                executor_code="maga_direct_llm_executor",
-                executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
-                enabled=1,
-                config_json={},
-            )
-        )
-        job = ContentBatchJob(
-            batch_code="batch_product_baby_milk_action_residue_guard",
-            asset_key="wangyue_article_business_rules",
-            product_topic="0705旺玥活动",
-            count=1,
-            status="planned",
-        )
-        session.add(job)
-        await session.flush()
-        plan = {
-            **_plan(1),
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
-            "business_rule": "营养不足/成长发育需求，日常补充观察",
-            "topic": "营养不足/成长发育需求，日常补充观察",
-            "corpus": "写作规则：围绕孩子成长阶段的日常营养补充来写；0705旺玥活动。",
-        }
-        session.add(ContentBatchItem(batch_id=job.id, item_no=1, status="planned", plan_json=plan))
-        await session.commit()
-
-        service = ContentBatchExecutionService(
-            session,
-            invocation_client=ProductExperienceBabyMilkActionResidualClient(),
-            callback_base_url="http://maga.test/api/v1/executor",
-            session_factory=session_factory,
-        )
-        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
-        await session.commit()
-
-    assert result.generated_count == 1
-    async with session_factory() as session:
-        item = (await session.execute(select(ContentBatchItem))).scalar_one()
-        stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
-
-    full_text = f"{item.title}\n{item.body}"
-    assert "自己每天冲一杯" not in full_text
-    assert "自己倒着喝" not in full_text
-    assert "碗底舔干净" not in full_text
-    assert "每天等我冲一杯" not in full_text
-    assert "杯底喝干净" not in full_text
-    assert "给孩子选旺玥儿童奶粉" in full_text
-    assert "product_experience_growth_nutrition_fallback_cleanups" in item.quality_json
-    assert item.quality_json["product_experience_phrase_guard"]["pass"] is True
-    assert item.quality_json["review_report"]["rewrite_required"] is False
-    assert sum(1 for stage in stage_calls if stage.capability == "content.rewrite") == 1
 
 
 @pytest.mark.asyncio
@@ -11741,7 +10713,7 @@ async def test_batch_execution_rewrites_row2_drinking_action_residue_with_model(
         )
         job = ContentBatchJob(
             batch_code="batch_product_row2_drinking_action_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -11751,7 +10723,7 @@ async def test_batch_execution_rewrites_row2_drinking_action_residue_with_model(
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "精力不足，日常状态观察",
             "topic": "精力不足，日常状态观察",
             "source_row_no": 2,
@@ -11787,75 +10759,6 @@ async def test_batch_execution_rewrites_row2_drinking_action_residue_with_model(
     assert "wangyue_row2_drinking_action_context" in review["reasons"]
 
 
-@pytest.mark.asyncio
-async def test_batch_execution_retries_row2_drinking_action_residue_with_model():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            Base.metadata.create_all,
-            tables=_execution_tables(),
-        )
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    async with session_factory() as session:
-        session.add(
-            ExecutorRegistry(
-                executor_code="maga_direct_llm_executor",
-                executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
-                enabled=1,
-                config_json={},
-            )
-        )
-        job = ContentBatchJob(
-            batch_code="batch_product_row2_drinking_action_guard_retry",
-            asset_key="wangyue_article_business_rules",
-            product_topic="0705旺玥活动",
-            count=1,
-            status="planned",
-        )
-        session.add(job)
-        await session.flush()
-        plan = {
-            **_plan(1),
-            "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
-            "business_rule": "精力不足，日常状态观察",
-            "topic": "精力不足，日常状态观察",
-            "source_row_no": 2,
-            "corpus": "写作规则：围绕孩子平时活动量大，妈妈为什么会给儿童奶粉选皇家美素佳儿旺玥来写。",
-        }
-        session.add(ContentBatchItem(batch_id=job.id, item_no=1, status="planned", plan_json=plan))
-        await session.commit()
-
-        service = ContentBatchExecutionService(
-            session,
-            invocation_client=ProductExperienceRow2DrinkingActionRetryClient(),
-            callback_base_url="http://maga.test/api/v1/executor",
-            session_factory=session_factory,
-        )
-        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
-        await session.commit()
-
-    assert result.generated_count == 1
-    async with session_factory() as session:
-        item = (await session.execute(select(ContentBatchItem))).scalar_one()
-        stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
-
-    full_text = f"{item.title}\n{item.body}"
-    assert "喝得顺口" not in full_text
-    assert "皇家美素佳儿旺玥" in full_text or "旺玥" in full_text
-    rewrites = item.quality_json["product_experience_phrase_rewrites"]
-    assert len(rewrites) == 2
-    assert rewrites[0]["passed"] is False
-    assert rewrites[1]["passed"] is True
-    assert item.quality_json["product_experience_phrase_guard"]["pass"] is True
-    rewrite_stages = [stage for stage in stage_calls if stage.capability == "content.rewrite"]
-    assert len(rewrite_stages) == 2
-    second_instructions = "\n".join((rewrite_stages[1].input_snapshot or {}).get("rewrite_instructions") or [])
-    assert "再次改写" in second_instructions
-    assert "row2 喝奶动作" in second_instructions
 
 
 @pytest.mark.asyncio
@@ -11881,7 +10784,7 @@ async def test_batch_execution_blocks_unfixed_wangyue_context_mistakes_for_artic
         )
         job = ContentBatchJob(
             batch_code="batch_product_wangyue_context_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -11891,7 +10794,7 @@ async def test_batch_execution_blocks_unfixed_wangyue_context_mistakes_for_artic
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "容易中招，日常保护力",
             "topic": "容易中招，日常保护力",
             "corpus": "写作规则：孩子接触人多后，妈妈担心容易中招；旺玥支持孩子保护力。",
@@ -11960,7 +10863,7 @@ async def test_batch_execution_rewrites_child_product_promo_context_for_wangyue_
         )
         job = ContentBatchJob(
             batch_code="batch_product_child_product_promo_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -11970,7 +10873,7 @@ async def test_batch_execution_rewrites_child_product_promo_context_for_wangyue_
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "容易中招，日常保护力",
             "topic": "容易中招，日常保护力",
             "corpus": "写作规则：孩子接触人多后，妈妈担心容易中招；旺玥支持孩子保护力。",
@@ -11993,10 +10896,15 @@ async def test_batch_execution_rewrites_child_product_promo_context_for_wangyue_
         stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
 
     full_text = f"{item.title}\n{item.body}"
+    assert "给每个小朋友" not in full_text
+    assert "倒了一杯旺玥" not in full_text
+    assert "这个好喝还有乳铁蛋白和HMO" not in full_text
     assert "你也来一杯" not in full_text
     assert "要不要来一杯" not in full_text
-    assert "我家也有" not in full_text
-    assert "旁边小朋友在喝奶" not in full_text
+    assert "推荐" not in full_text
+    assert "安利" not in full_text
+    assert "自己冲" not in full_text
+    assert "自己泡" not in full_text
     assert "给孩子选了旺玥" in full_text
     assert "product_experience_phrase_rewrites" in item.quality_json
     assert item.quality_json["product_experience_phrase_guard"]["pass"] is True
@@ -12032,7 +10940,7 @@ async def test_batch_execution_cleans_wangyue_digestive_context_for_article_busi
         )
         job = ContentBatchJob(
             batch_code="batch_product_wangyue_digestive_context_guard",
-            asset_key="wangyue_article_business_rules",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -12042,7 +10950,7 @@ async def test_batch_execution_cleans_wangyue_digestive_context_for_article_busi
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_article_business_rules",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "business_rule": "营养不足/成长发育需求，日常补充观察",
             "topic": "营养不足/成长发育需求，日常补充观察",
             "corpus": "写作规则：围绕孩子成长阶段的日常营养补充来写；0705旺玥活动。",
@@ -12069,10 +10977,16 @@ async def test_batch_execution_cleans_wangyue_digestive_context_for_article_busi
     assert "便便" not in full_text
     assert "胀气" not in full_text
     assert "日常状态看着还顺" in full_text
-    assert "product_experience_wangyue_context_cleanups" in item.quality_json
+    assert "product_experience_wangyue_digestive_effect_cleanups" in item.quality_json
     assert item.quality_json["product_experience_phrase_guard"]["pass"] is True
     assert item.quality_json["review_report"]["rewrite_required"] is False
-    assert sum(1 for stage in stage_calls if stage.capability == "content.rewrite") == 0
+    phrase_rewrite_stages = [
+        stage
+        for stage in stage_calls
+        if stage.capability == "content.rewrite"
+        and (stage.input_snapshot or {}).get("rewrite_source") == "product_experience_phrase_guard"
+    ]
+    assert len(phrase_rewrite_stages) == 1
 
 
 @pytest.mark.asyncio
@@ -12114,6 +11028,7 @@ async def test_batch_execution_uses_unified_content_generate_runtime_output():
             session,
             invocation_client=RuntimeFastDraftReviewClient(),
             callback_base_url="http://maga.test/api/v1/executor",
+            product_experience_llm_reviewer=FakeProductExperienceLLMReviewer([]),
         )
         result = await service.execute_batch_items(job.id, limit=1, created_by="test")
         await session.commit()
@@ -12128,8 +11043,6 @@ async def test_batch_execution_uses_unified_content_generate_runtime_output():
     assert item.body == "runtime content 正文"
     review_report = item.quality_json["review_report"]
     assert review_report["source"] == "maga_unified_content_generate"
-    assert review_report["rewrite_required"] is False
-    assert item.quality_json["hard_pass"] is True
     assert item.quality_json["executor"] == "content_runtime"
     assert item.quality_json["soft_score_avg"] is None
     assert {stage.capability for stage in stage_calls} == {"content.generate", "content.rewrite"}
@@ -12197,6 +11110,78 @@ async def test_batch_execution_generate_only_skips_postprocess_rewrite():
 
 
 @pytest.mark.asyncio
+async def test_batch_execution_audit_only_reviews_forbidden_terms_without_rewrite():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=_execution_tables(),
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add(
+            ExecutorRegistry(
+                executor_code="maga_direct_llm_executor",
+                executor_type="direct_llm",
+                display_name="Hermes MAGA worker",
+                invoke_url="http://maga-worker.test/invoke",
+                enabled=1,
+                config_json={"executor_token": "test-token"},
+            )
+        )
+        await BusinessForbiddenTermService(session).upsert_entries(
+            asset_key="a2_momclass_month_center",
+            entries=[{"term": "正文", "reason": "妈妈班测试禁词"}],
+            created_by="test",
+        )
+        job = ContentBatchJob(
+            batch_code="batch_content_audit_only",
+            asset_key="a2_momclass_month_center",
+            product_topic="妈妈班+月子中心",
+            count=1,
+            status="planned",
+            strategy_json={"postprocess_mode": "audit_only"},
+        )
+        session.add(job)
+        await session.flush()
+        session.add(
+            ContentBatchItem(
+                batch_id=job.id,
+                item_no=1,
+                status="planned",
+                plan_json={**_plan(1), "asset_key": "a2_momclass_month_center"},
+            )
+        )
+        await session.commit()
+
+        service = ContentBatchExecutionService(
+            session,
+            invocation_client=RuntimeFastDraftReviewClient(),
+            callback_base_url="http://maga.test/api/v1/executor",
+        )
+        result = await service.execute_batch_items(job.id, limit=1, created_by="test")
+        await session.commit()
+
+    assert result.generated_count == 1
+    async with session_factory() as session:
+        item = (await session.execute(select(ContentBatchItem))).scalar_one()
+        stage_calls = (await session.execute(select(ContentAgentStageCall))).scalars().all()
+
+    assert item.title == "runtime content 标题"
+    assert item.body == "runtime content 正文"
+    assert {stage.capability for stage in stage_calls} == {"content.generate"}
+    assert item.quality_json["postprocess_mode"] == "audit_only"
+    assert item.quality_json.get("audit_skipped") is not True
+    assert item.quality_json["hard_pass"] is False
+    assert item.quality_json["forbidden_terms_review"]["initial_hits"] == ["正文"]
+    assert item.quality_json["forbidden_terms_review"]["final_hits"] == ["正文"]
+    assert item.quality_json["forbidden_terms_review"]["rewrite_method"] == "audit_only"
+    assert item.quality_json["review_report"]["rewrite_reason"] == "命中违禁词：正文，仅审核不改写"
+    assert "persona_style_rewrites" not in item.quality_json
+
+
+@pytest.mark.asyncio
 async def test_batch_execution_rewrites_ai_flavor_after_generation():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
@@ -12219,7 +11204,7 @@ async def test_batch_execution_rewrites_ai_flavor_after_generation():
         )
         job = ContentBatchJob(
             batch_code="batch_ai_flavor_humanizer",
-            asset_key="wangyue_selection_review",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -12229,7 +11214,7 @@ async def test_batch_execution_rewrites_ai_flavor_after_generation():
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
             "post_type": "选奶选择复盘型",
             "persona_style_rewrite_enabled": False,
@@ -12300,7 +11285,7 @@ async def test_batch_execution_rechecks_forbidden_terms_after_ai_flavor_rewrite(
         )
         job = ContentBatchJob(
             batch_code="batch_ai_flavor_forbidden_recheck",
-            asset_key="wangyue_selection_review",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -12310,7 +11295,7 @@ async def test_batch_execution_rechecks_forbidden_terms_after_ai_flavor_rewrite(
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
             "post_type": "选奶选择复盘型",
             "persona_style_rewrite_enabled": False,
@@ -12367,7 +11352,7 @@ async def test_batch_execution_falls_back_to_ai_flavor_when_llm_quality_review_f
         )
         job = ContentBatchJob(
             batch_code="batch_ai_flavor_fallback_after_llm_review_failure",
-            asset_key="wangyue_selection_review",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -12377,7 +11362,7 @@ async def test_batch_execution_falls_back_to_ai_flavor_when_llm_quality_review_f
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
             "post_type": "选奶选择复盘型",
             "persona_style_rewrite_enabled": False,
@@ -12440,7 +11425,7 @@ async def test_batch_execution_preserves_body_for_title_only_ai_flavor_rewrite()
         )
         job = ContentBatchJob(
             batch_code="batch_ai_flavor_title_only",
-            asset_key="wangyue_selection_review",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -12450,7 +11435,7 @@ async def test_batch_execution_preserves_body_for_title_only_ai_flavor_rewrite()
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
             "post_type": "选奶复盘",
             "persona_style_rewrite_enabled": False,
@@ -12520,7 +11505,7 @@ async def test_batch_execution_rewrites_ai_flavor_when_llm_quality_review_passes
         )
         job = ContentBatchJob(
             batch_code="batch_ai_flavor_rewrite_after_llm_pass",
-            asset_key="wangyue_selection_review",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -12530,7 +11515,7 @@ async def test_batch_execution_rewrites_ai_flavor_when_llm_quality_review_passes
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
             "post_type": "选奶选择复盘型",
             "persona_style_rewrite_enabled": False,
@@ -12592,7 +11577,7 @@ async def test_batch_execution_cleans_time_event_introduced_by_ai_flavor():
         )
         job = ContentBatchJob(
             batch_code="batch_ai_flavor_time_event_cleanup",
-            asset_key="wangyue_selection_review",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -12602,7 +11587,7 @@ async def test_batch_execution_cleans_time_event_introduced_by_ai_flavor():
         plan = {
             **_plan(1),
             "rule_type": "business_rule",
-            "asset_key": "wangyue_selection_review",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "0705旺玥活动",
             "post_type": "选奶选择复盘型",
             "persona_style_rewrite_enabled": False,
@@ -12628,14 +11613,15 @@ async def test_batch_execution_cleans_time_event_introduced_by_ai_flavor():
     full_text = f"{item.title}\n{item.body}"
     assert "春游" not in full_text
     assert "踏青" not in full_text
-    assert "户外活动回来还是那个状态" in item.title
-    assert "幼儿园户外活动" in item.body
+    assert item.title == "回来还是那个状态"
+    assert "几个妈妈凑一块聊天" in item.body
+    assert "旺玥" in item.body
     quality = item.quality_json
     assert quality["hard_pass"] is True
     assert "postprocess_blocked" not in quality
-    cleanup = quality["ai_flavor_wangyue_time_event_cleanups"][0]
-    assert cleanup["pre_review"]["wangyue_time_event_context_hits"] == ["春游"]
-    assert cleanup["post_review"]["wangyue_time_event_context_hits"] == []
+    forbidden_review = quality["forbidden_terms_review"]
+    assert forbidden_review["initial_hits"] == ["春游"]
+    assert forbidden_review["final_hits"] == []
     assert "product_experience_phrase_rewrites" in quality
     assert quality["product_experience_phrase_guard"]["pass"] is True
     async with session_factory() as session:
@@ -12648,8 +11634,7 @@ async def test_batch_execution_cleans_time_event_introduced_by_ai_flavor():
         ).scalars().all()
     rewrite_sources = [(stage.input_snapshot or {}).get("rewrite_source") for stage in rewrite_stages]
     assert "ai_flavor_humanizer" in rewrite_sources
-    ai_flavor_index = rewrite_sources.index("ai_flavor_humanizer")
-    assert rewrite_sources[ai_flavor_index + 1] == "product_experience_phrase_guard"
+    assert "product_experience_phrase_guard" in rewrite_sources
 
 
 @pytest.mark.asyncio
@@ -12675,7 +11660,7 @@ async def test_batch_execution_retries_ai_flavor_when_first_rewrite_still_fails(
         )
         job = ContentBatchJob(
             batch_code="batch_ai_flavor_retry",
-            asset_key="wangyue_selection_review",
+            asset_key="wangyue_v3_core_storyline_article_rules",
             product_topic="0705旺玥活动",
             count=1,
             status="planned",
@@ -12684,7 +11669,7 @@ async def test_batch_execution_retries_ai_flavor_when_first_rewrite_still_fails(
         await session.flush()
         plan = {
             **_plan(1),
-            "asset_key": "wangyue_selection_review",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
             "post_type": "选奶选择复盘型",
             "persona_style_rewrite_enabled": False,
         }

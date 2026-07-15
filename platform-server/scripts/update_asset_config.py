@@ -111,12 +111,14 @@ def run(args: argparse.Namespace) -> None:
                 _set_dotted_value(updated_content, field_path, new_value)
             if args.target in {"metadata", "both"}:
                 _set_dotted_value(updated_metadata, field_path, new_value)
+            next_version = _next_asset_version(cursor, row) if args.mode == "new-version" else row.version_no
 
             summary = _build_summary(
                 row,
                 field_path=field_path,
                 target=args.target,
                 mode=args.mode,
+                next_version=next_version,
                 content_json=updated_content,
                 metadata_json=updated_metadata,
             )
@@ -130,6 +132,7 @@ def run(args: argparse.Namespace) -> None:
                 new_id = _insert_new_version(
                     cursor,
                     row,
+                    next_version=next_version,
                     content_json=updated_content,
                     metadata_json=updated_metadata,
                     created_by=args.created_by,
@@ -244,6 +247,7 @@ def _insert_new_version(
     cursor: Any,
     row: AssetRow,
     *,
+    next_version: int,
     content_json: dict[str, Any],
     metadata_json: dict[str, Any],
     created_by: str,
@@ -256,7 +260,6 @@ def _insert_new_version(
         """,
         (row.asset_type, row.asset_key, row.asset_stage),
     )
-    next_version = row.version_no + 1
     cursor.execute(
         """
         INSERT INTO asset_registry (
@@ -280,6 +283,15 @@ def _insert_new_version(
         ),
     )
     return int(cursor.lastrowid)
+
+
+def _next_asset_version(cursor: Any, row: AssetRow) -> int:
+    cursor.execute(
+        "SELECT COALESCE(MAX(version_no), 0) AS max_version FROM asset_registry WHERE asset_type=%s AND asset_key=%s",
+        (row.asset_type, row.asset_key),
+    )
+    result = cursor.fetchone() or {}
+    return int(result.get("max_version") or 0) + 1
 
 
 def _update_in_place(
@@ -327,6 +339,7 @@ def _build_summary(
     field_path: list[str],
     target: str,
     mode: str,
+    next_version: int,
     content_json: dict[str, Any],
     metadata_json: dict[str, Any],
 ) -> dict[str, Any]:
@@ -340,7 +353,7 @@ def _build_summary(
         "mode": mode,
         "target": target,
         "field": ".".join(field_path),
-        "next_version": row.version_no + 1 if mode == "new-version" else row.version_no,
+        "next_version": next_version,
         "content_value": _get_dotted_value(content_json, field_path) if target in {"content", "both"} else None,
         "metadata_value": _get_dotted_value(metadata_json, field_path) if target in {"metadata", "both"} else None,
     }

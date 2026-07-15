@@ -1,11 +1,12 @@
 """Build operator-facing reports for MAGA content batch jobs."""
 from __future__ import annotations
 
+import csv
 import json
 import re
-from io import BytesIO
 from collections import Counter
 from datetime import datetime
+from io import BytesIO, StringIO
 from types import SimpleNamespace
 from typing import Any
 
@@ -324,18 +325,12 @@ class ContentBatchReportService:
         filename = _excel_filename(report)
         return filename, output.getvalue()
 
-    async def export_article_pool_excel(self, batch_id: int) -> tuple[str, bytes]:
+    async def export_article_pool_csv(self, batch_id: int) -> tuple[str, bytes]:
         report = await self.get_batch_report(batch_id, include_details=True)
-        workbook = Workbook()
-        sheet = workbook.active
-        sheet.title = "文章池数据"
-        _write_article_pool_sheet(sheet, report)
-
-        output = BytesIO()
-        workbook.save(output)
-        filename = _article_pool_excel_filename(report)
+        content = _build_article_pool_csv(report)
+        filename = _article_pool_csv_filename(report)
         await self._record_article_pool_delivery(report, filename)
-        return filename, output.getvalue()
+        return filename, content
 
     async def _record_article_pool_delivery(self, report: ContentBatchReportResponse, filename: str) -> None:
         items = _article_pool_export_items(report.items)
@@ -479,6 +474,7 @@ class ContentBatchReportService:
             run=run,
             feedback_count=feedback_count,
             forbidden_terms=forbidden_terms,
+            include_details=True,
         )
 
     def _feedback_sample(
@@ -717,6 +713,7 @@ class ContentBatchReportService:
             body_preview=(item.body or "")[:160] if detail_value and item.body else None,
             body_chars=len(item.body or "") if detail_value else 0,
             hard_pass=hard_pass,
+            audit_skipped=bool(quality.get("audit_skipped")),
             rewrite_required=rewrite_required,
             rewrite_reason=rewrite_reason,
             business_usability_tier=business_usability.get("tier"),
@@ -729,19 +726,15 @@ class ContentBatchReportService:
             debug_dir=runtime_result.get("debug_dir") if detail_value else None,
             review_status=(
                 latest_version.review_status if latest_version else (quality.get("human_review") or {}).get("review_status")
-            )
-            if detail_value
-            else None,
-            latest_version_no=latest_version.version_no if detail_value and latest_version else None,
+            ),
+            latest_version_no=latest_version.version_no if latest_version else None,
             human_feedback_text=(
                 latest_version.feedback_text if latest_version else (quality.get("human_review") or {}).get("feedback_text")
-            )
-            if detail_value
-            else None,
-            feedback_count=feedback_count if detail_value else 0,
+            ),
+            feedback_count=feedback_count,
             reject_reasons=self._reject_reasons(item, review, forbidden_hits),
             similarity_warnings=[],
-            version_compare=self._version_compare(latest_version, ordered_versions) if detail_value else None,
+            version_compare=self._version_compare(latest_version, ordered_versions),
             runtime_mode=runtime_result.get("mode") or quality.get("executor") if detail_value else None,
             generation_duration_ms=(
                 self._stage_duration_ms(generation_stage) if detail_value and generation_stage else None
@@ -1247,6 +1240,7 @@ class ContentBatchReportService:
             generated_count=len(generated),
             failed_count=sum(1 for item in items if item.status == "failed"),
             hard_pass_count=sum(1 for item in generated if item.hard_pass is True),
+            audit_skipped_count=sum(1 for item in generated if item.audit_skipped),
             rewrite_item_count=sum(1 for item in items if item.rewrite_reason or item.rewrite_rounds),
             remaining_rewrite_required_count=sum(1 for item in items if item.rewrite_required is True),
             forbidden_hit_count=forbidden_hit_count,
@@ -1901,26 +1895,21 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
         sheet.row_dimensions[row_index].height = 42
 
 
-def _write_article_pool_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
+def _build_article_pool_csv(report: ContentBatchReportResponse) -> bytes:
     headers = ["标题", "正文", "上下文变量(context_list)"]
-    sheet.append(headers)
+    output = StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(headers)
     for item in _article_pool_export_items(report.items):
         context_list = _article_pool_context_list(item)
-        sheet.append(
+        writer.writerow(
             [
                 item.title or "",
                 item.body or "",
                 json.dumps(context_list, ensure_ascii=False),
             ]
         )
-    _style_table_header(sheet, header_row=1, column_count=len(headers))
-    sheet.freeze_panes = "A2"
-    sheet.column_dimensions["A"].width = 18
-    sheet.column_dimensions["B"].width = 56
-    sheet.column_dimensions["C"].width = 72
-    for row in sheet.iter_rows(min_row=2):
-        for cell in row:
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
+    return output.getvalue().encode("utf-8-sig")
 
 
 def _article_pool_export_items(items: list[ContentBatchReportItem]) -> list[ContentBatchReportItem]:
@@ -2208,7 +2197,7 @@ def _excel_filename(report: ContentBatchReportResponse) -> str:
     return f"生文结果_{batch_code or report.batch_id}.xlsx"
 
 
-def _article_pool_excel_filename(report: ContentBatchReportResponse) -> str:
+def _article_pool_csv_filename(report: ContentBatchReportResponse) -> str:
     topic = re.sub(r"[^0-9A-Za-z\u4e00-\u9fa5_-]+", "_", report.product_topic or "评论").strip("_")
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
-    return f"生成{topic or '评论'}-{timestamp}.xlsx"
+    return f"生成{topic or '评论'}-{timestamp}.csv"

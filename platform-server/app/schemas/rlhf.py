@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -183,30 +183,6 @@ class RLHFInspectionRequest(BaseModel):
     result: str = Field(..., description="PASSED 或 FAILED")
     comment: Optional[str] = Field(None, description="抽检意见")
     issue_tag_names: Optional[List[str]] = Field(None, description="问题标签名称列表（可选，支持自动新增）")
-
-    model_config = ConfigDict(protected_namespaces=())
-
-class RLHFSummaryRequest(BaseModel):
-    comment: Optional[str] = Field(None, description="抽检人填写的初步修改意见")
-
-    model_config = ConfigDict(protected_namespaces=())
-
-class RLHFSummaryResponse(BaseModel):
-    tags: List[str] = Field(..., description="AI 建议的问题标签")
-
-    model_config = ConfigDict(protected_namespaces=())
-
-
-class RLHFSummarizeCommentRequest(BaseModel):
-    """AI 总结意见请求"""
-    model_code: str = Field("deepseek-v4-flash", description="使用的模型编码")
-
-    model_config = ConfigDict(protected_namespaces=())
-
-
-class RLHFSummarizeCommentResponse(BaseModel):
-    """AI 总结意见响应"""
-    comment: str = Field(..., description="AI 生成的修改意见")
 
     model_config = ConfigDict(protected_namespaces=())
 

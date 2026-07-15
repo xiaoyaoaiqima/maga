@@ -30,6 +30,7 @@ DEFAULT_CONTENT_EMOJI = "少量"
 ARTICLE_RULE_EXAMPLE_SAMPLE_COUNT = 3
 ARTICLE_RULE_MAX_EXAMPLE_SAMPLE_COUNT = 8
 MOUTH_PHRASE_BUDGET_DEFAULT_BASE = 20
+AUDIT_ONLY_DEFAULT_ASSET_KEYS = {"a2_momclass_month_center"}
 SOURCE_ROW_RULE_OVERRIDE_FIELDS = {
     "story_spine",
     "scene_motive_bucket",
@@ -69,7 +70,7 @@ class ContentBatchPlanner:
     ) -> ContentBatchJob:
         if count <= 0:
             raise ValueError("count must be positive")
-        normalized_postprocess_mode = _normalize_postprocess_mode(postprocess_mode)
+        normalized_postprocess_mode = _resolve_postprocess_mode(asset_key, postprocess_mode)
 
         rule_asset = await self._latest_article_business_rule_asset(asset_key)
         if rule_asset is not None:
@@ -513,10 +514,7 @@ class ContentBatchPlanner:
         )
         business_rule = rule.get("business_rule")
         resolved_model_config = self._article_business_model_config(asset, model_config)
-        resolved_real_user_pool_config = _real_user_pool_config_for_rule(
-            real_user_pool_config or _default_real_user_pool_config(asset),
-            rule,
-        )
+        resolved_real_user_pool_config = _real_user_pool_config_for_rule(real_user_pool_config or {}, rule)
         content_path_control = _resolve_content_path_control(asset, rule)
         resolved_real_user_pool_config = _real_user_pool_config_with_content_path_control(
             resolved_real_user_pool_config,
@@ -665,7 +663,8 @@ class ContentBatchPlanner:
             rule.get("corpus"),
             ugc_post_type,
             product_position_mode=product_position_mode,
-            include_product_position_guard=prompt_mode != "rule_corpus_as_prompt",
+            include_ugc_post_type_guard=resolved_rule_prompt_mode != "rule_corpus_as_prompt",
+            include_product_position_guard=resolved_rule_prompt_mode != "rule_corpus_as_prompt",
         )
         variation_slots = _resolve_rule_variation_slots(rule, item_no=item_no)
         return {
@@ -907,8 +906,6 @@ class ContentBatchPlanner:
             count = _int_or_none(source.get("example_sample_count"))
             if count is not None:
                 return min(max(count, 0), ARTICLE_RULE_MAX_EXAMPLE_SAMPLE_COUNT)
-        if asset.asset_key == "wangyue_article_business_rules" and _resolve_real_user_pool_asset_key(asset):
-            return 1
         return ARTICLE_RULE_EXAMPLE_SAMPLE_COUNT
 
     def _selected_rule_examples(
@@ -1160,7 +1157,7 @@ def _resolve_real_user_pool_asset_key(asset: AssetRegistry) -> str | None:
 def _resolve_real_user_pool_config(asset: AssetRegistry) -> dict[str, Any]:
     asset_content = asset.content_json or {}
     asset_metadata = asset.metadata_json or {}
-    config: dict[str, Any] = _default_real_user_pool_config(asset)
+    config: dict[str, Any] = {}
     for source in (asset_content, asset_metadata):
         value = source.get("real_user_pool_sampling")
         if isinstance(value, dict):
@@ -1274,20 +1271,6 @@ def _real_user_pool_config_with_content_path_control(
     ):
         resolved[key] = _unique_strings([*_string_list(resolved.get(key)), *exclude_terms])
     return resolved
-
-
-def _default_real_user_pool_config(asset: AssetRegistry) -> dict[str, Any]:
-    if asset.asset_key != "wangyue_article_business_rules":
-        return {}
-    return {
-        "route_count": 1,
-        "texture_count": 2,
-        "title_shape_count": 0,
-        "opening_or_ending_count": 1,
-        "comment_count": 0,
-        "title_reference_count": 0,
-        "disable_static_title_reference": True,
-    }
 
 
 def _merge_real_user_fallback_meta(
@@ -1624,11 +1607,12 @@ def _corpus_for_ugc_post_type(
     ugc_post_type: str | None,
     *,
     product_position_mode: str | None = None,
+    include_ugc_post_type_guard: bool = True,
     include_product_position_guard: bool = True,
 ) -> str | None:
     base = str(corpus or "").strip()
     guards: list[str] = []
-    if str(ugc_post_type or "") == "轻复盘型":
+    if include_ugc_post_type_guard and str(ugc_post_type or "") == "轻复盘型":
         guards.append(
             "本篇是阶段性回看，不写成求问帖、攻略或购买替换决策；"
             "围绕一段使用后的观察、取舍或家里安排展开；"
@@ -2450,10 +2434,7 @@ def _synthetic_title_examples_pool(
     asset_content = asset.content_json or {}
     asset_metadata = asset.metadata_json or {}
     pool: list[str] = []
-    row4_growth_rule = (
-        asset.asset_key == "wangyue_article_business_rules"
-        and (rule.get("source_row_no") == 4 or str(rule.get("business_rule") or "").startswith("营养不足/成长发育需求"))
-    )
+    growth_rule = str(rule.get("business_rule") or "").startswith("营养不足/成长发育需求")
     for source in (rule, asset_content, asset_metadata):
         for item in source.get("synthetic_title_examples") or []:
             title = str(item.get("title") if isinstance(item, dict) else item or "").strip()
@@ -2461,7 +2442,7 @@ def _synthetic_title_examples_pool(
             if (
                 title
                 and _is_usable_synthetic_title_example(title)
-                and (not row4_growth_rule or _is_usable_wangyue_growth_synthetic_title(title))
+                and (not growth_rule or _is_usable_wangyue_growth_synthetic_title(title))
                 and (not include_terms or any(term in match_text for term in include_terms))
                 and not any(term in match_text for term in exclude_terms)
                 and title not in pool
@@ -2594,8 +2575,15 @@ def _normalize_postprocess_mode(value: str | None) -> str | None:
     mode = str(value or "").strip()
     if not mode:
         return None
-    if mode != "generate_only":
+    if mode not in {"audit_only", "generate_only"}:
         raise ValueError(f"unsupported postprocess_mode: {mode}")
+    return mode
+
+
+def _resolve_postprocess_mode(asset_key: str, value: str | None) -> str | None:
+    mode = _normalize_postprocess_mode(value)
+    if mode is None and str(asset_key or "").strip() in AUDIT_ONLY_DEFAULT_ASSET_KEYS:
+        return "audit_only"
     return mode
 
 
