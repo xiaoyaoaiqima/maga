@@ -70,25 +70,31 @@ class UnifiedContentGenerationService:
         keyword_content_override: dict[str, Any] | None = None,
         model_config: dict[str, Any] | None = None,
     ) -> UnifiedGenerationSnapshot:
-        resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, business_rule)
-        keyword_asset = (
-            None
-            if keyword_content_override is not None
-            else await self._latest_keyword_asset(resolved_keyword_asset_key)
-        )
-        keyword_content = normalize_system_prompt_keyword_content(
-            keyword_content_override
-            if keyword_content_override is not None
-            else keyword_asset.content_json
-            if keyword_asset
-            else fallback_system_prompt_keyword_content()
-        )
-        selected_keywords = _select_keyword_bundle(
-            keyword_content,
-            content_type=content_type,
-            item_no=item_no,
-            keyword_selection=_keyword_selection_from_rule(business_rule),
-        )
+        layered_article = content_type == "article" and _uses_layered_article_prompt(business_rule)
+        if layered_article:
+            resolved_keyword_asset_key = ""
+            keyword_asset = None
+            selected_keywords: list[dict[str, Any]] = []
+        else:
+            resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, business_rule)
+            keyword_asset = (
+                None
+                if keyword_content_override is not None
+                else await self._latest_keyword_asset(resolved_keyword_asset_key)
+            )
+            keyword_content = normalize_system_prompt_keyword_content(
+                keyword_content_override
+                if keyword_content_override is not None
+                else keyword_asset.content_json
+                if keyword_asset
+                else fallback_system_prompt_keyword_content()
+            )
+            selected_keywords = _select_keyword_bundle(
+                keyword_content,
+                content_type=content_type,
+                item_no=item_no,
+                keyword_selection=_keyword_selection_from_rule(business_rule),
+            )
         business_rule, selected_keywords, slot_coherence = _apply_article_slot_coherence(
             content_type=content_type,
             business_rule=business_rule,
@@ -154,6 +160,15 @@ class UnifiedContentGenerationService:
                     rendered_prompt,
                     str(variables.get("output_format_requirement") or ""),
                 )
+        keyword_asset_ref = (
+            None
+            if layered_article
+            else _keyword_asset_ref(
+                keyword_asset,
+                resolved_keyword_asset_key,
+                inline=keyword_content_override is not None,
+            )
+        )
         input_snapshot = {
             "schema_version": "1",
             "capability": CONTENT_GENERATE_CAPABILITY,
@@ -167,11 +182,7 @@ class UnifiedContentGenerationService:
             "output_format_mode": comment_output_format.get("mode"),
             "expansion_count": comment_output_format.get("count"),
             "slot_coherence": slot_coherence,
-            "keyword_asset": _keyword_asset_ref(
-                keyword_asset,
-                resolved_keyword_asset_key,
-                inline=keyword_content_override is not None,
-            ),
+            "keyword_asset": keyword_asset_ref,
             "expert": expert,
             "model_config": expert["model_config"],
             "template_variables": variables,
@@ -181,11 +192,7 @@ class UnifiedContentGenerationService:
             input_snapshot=input_snapshot,
             asset_refs={
                 "business_rule": _business_rule_ref(business_rule),
-                "keyword_asset": _keyword_asset_ref(
-                    keyword_asset,
-                    resolved_keyword_asset_key,
-                    inline=keyword_content_override is not None,
-                ),
+                "keyword_asset": keyword_asset_ref,
                 "expert_config": {
                     "expert_config_code": expert["expert_config_code"],
                     "source": expert["source"],
@@ -2664,11 +2671,9 @@ def _layered_article_prompt(
     selling_expression_note = str(business_rule.get("selling_expression_note") or "").strip()
     hard_boundaries = _string_list(business_rule.get("hard_boundaries"))
     writing_requirements = _string_list(business_rule.get("writing_requirements"))
-    keyword_layers = _article_keyword_prompt_layers(selected_keywords)
+    del selected_keywords
 
     lines = [f"任务：{generation_instruction}"]
-    if keyword_layers["instruction"]:
-        lines.extend(["", "生文指令：", *[f"- {line}" for line in keyword_layers["instruction"]]])
     lines.extend(["", "这篇要写的事：", content_direction or "按本篇业务规则自然展开。"])
     if inspiration_material:
         lines.extend(["", f"本篇灵感线索：{inspiration_material}"])
@@ -2681,10 +2686,8 @@ def _layered_article_prompt(
     if hard_boundaries:
         lines.extend(["", "硬边界：", *[f"- {line}" for line in hard_boundaries]])
 
-    layered_writing_requirements = list(writing_requirements)
-    layered_writing_requirements.extend(keyword_layers["writing"])
-    if layered_writing_requirements:
-        lines.extend(["", "写法：", *[f"- {line}" for line in layered_writing_requirements]])
+    if writing_requirements:
+        lines.extend(["", "写法：", *[f"- {line}" for line in writing_requirements]])
 
     examples = _string_list(business_rule.get("examples"))
     if examples:
@@ -2698,34 +2701,6 @@ def _layered_article_prompt(
     if output_format:
         lines.extend(["", "输出格式：", output_format])
     return "\n".join(lines).strip()
-
-
-def _article_keyword_prompt_layers(selected_keywords: list[dict[str, Any]]) -> dict[str, list[str]]:
-    instruction: list[str] = []
-    writing: list[str] = []
-    writing_labels = {
-        "persona": "人设",
-        "article_speaking_style": "说话方式",
-        "perturbation_rule": "扰动规则",
-        "writing_method": "写作手法",
-        "article_format_control": "格式控制",
-    }
-    for item in selected_keywords:
-        category_code = str(item.get("category_code") or "").strip()
-        corpus_lines = [str(line or "").strip() for line in item.get("corpus") or [] if str(line or "").strip()]
-        if category_code == "writing_instruction":
-            for line in corpus_lines:
-                if line not in instruction:
-                    instruction.append(line)
-            continue
-        label = writing_labels.get(category_code)
-        if not label:
-            continue
-        for line in corpus_lines:
-            rendered = f"{label}：{line}"
-            if rendered not in writing:
-                writing.append(rendered)
-    return {"instruction": instruction, "writing": writing}
 
 
 _LIFE_ENTRY_SLOT_SECTION = re.compile(

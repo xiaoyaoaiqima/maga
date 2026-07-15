@@ -66,7 +66,7 @@ def test_rule_corpus_as_prompt_keeps_single_article_output_format():
     assert '"items"' not in prompt
 
 
-def test_layered_article_prompt_renders_six_layers_and_selected_expression_keywords():
+def test_layered_article_prompt_renders_only_its_own_six_layers():
     prompt = _layered_article_prompt(
         {
             "generation_instruction": "写一篇小红书妈妈 UGC 正向记录。",
@@ -113,7 +113,7 @@ def test_layered_article_prompt_renders_six_layers_and_selected_expression_keywo
     )
 
     assert prompt.startswith("任务：写一篇小红书妈妈 UGC 正向记录。")
-    assert "生文指令：\n- 像真实妈妈写一段完整分享。" in prompt
+    assert "像真实妈妈写一段完整分享。" not in prompt
     assert "这篇要写的事：\n写妈妈在常买门店看到a2至初到货" in prompt
     assert "本篇灵感线索：和下班顺路有关" in prompt
     assert "活动素材：\n- 门店已经到货。" in prompt
@@ -122,9 +122,53 @@ def test_layered_article_prompt_renders_six_layers_and_selected_expression_keywo
     assert "卖点表达：熟悉口粮能接上" in prompt
     assert "硬边界：\n- 不写成官方到货公告。" in prompt
     assert "写法：\n- 标题从正文自然提炼。" in prompt
-    assert "- 人设：像普通家庭妈妈自然表达。" in prompt
-    assert "- 格式控制：正文保持紧凑。" in prompt
+    assert "像普通家庭妈妈自然表达。" not in prompt
+    assert "正文保持紧凑。" not in prompt
     assert "输出格式：\n只输出 JSON 对象" in prompt
+
+
+@pytest.mark.asyncio
+async def test_layered_article_snapshot_does_not_load_default_expression_keywords(unified_session_factory):
+    async with unified_session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type=SYSTEM_KEYWORD_ASSET_TYPE,
+                asset_key=DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+                display_name="默认表达语料",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "categories": [
+                        _category("article_speaking_style", "帖子说话方式", ["又开一听记录"]),
+                    ]
+                },
+            )
+        )
+        await session.commit()
+
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="article",
+            business_rule={
+                "rule_type": "business_rule",
+                "prompt_mode": "layered_article",
+                "generation_instruction": "写一篇妈妈班分享。",
+                "content_direction": "写待产妈妈听完课后理清第一口奶选择。",
+                "inspiration_material": "和课后记下的一句话有关。",
+                "activity_material": ["活动发生在妈妈班。"],
+                "selling_expression": "a2至初含A2型蛋白质。",
+                "hard_boundaries": ["宝宝尚未出生。"],
+                "writing_requirements": ["正文130-200字。"],
+            },
+            item_no=1,
+            output_fields=["title", "body"],
+        )
+
+    assert snapshot.input_snapshot["selected_keywords"] == []
+    assert snapshot.input_snapshot["keyword_asset"] is None
+    assert snapshot.asset_refs["keyword_asset"] is None
+    assert "又开一听记录" not in snapshot.input_snapshot["rendered_prompt"]
+    assert "本篇灵感线索：和课后记下的一句话有关。" in snapshot.input_snapshot["rendered_prompt"]
 
 
 def test_comment_prompt_renders_selected_instruction_and_format_layers():

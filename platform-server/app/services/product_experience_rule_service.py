@@ -317,6 +317,12 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         or row.get("content_direction")
         or ""
     ).strip()
+    inspiration_material = (
+        row.get("灵感线索")
+        or row.get("本篇灵感线索")
+        or row.get("inspiration_material")
+        or ""
+    ).strip()
     corpus = (
         row.get("规则语料")
         or row.get("语料")
@@ -368,6 +374,7 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         (
             generation_instruction,
             content_direction,
+            inspiration_material,
             activity_material,
             prize_material,
             batch_detection_material,
@@ -590,6 +597,7 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         **({"prompt_mode": prompt_mode} if prompt_mode else {}),
         **({"generation_instruction": generation_instruction} if generation_instruction else {}),
         **({"content_direction": content_direction} if content_direction else {}),
+        **({"inspiration_material": inspiration_material} if inspiration_material else {}),
         **({"activity_material": activity_material} if activity_material else {}),
         **({"selling_expression": selling_expression} if selling_expression else {}),
         **({"selling_expression_note": selling_expression_note} if selling_expression_note else {}),

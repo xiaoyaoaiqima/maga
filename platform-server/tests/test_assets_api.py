@@ -41,6 +41,7 @@ def test_row_to_rule_item_parses_layered_article_fields_and_activity_pools():
             "业务规则名称": "妈妈班｜老师讲解",
             "生文指令": "写一篇真实待产妈妈参加a2妈妈班后的分享。",
             "内容方向": "写老师讲完后，妈妈理清新生儿奶粉选择标准。",
+            "灵感线索": "和课后记下的一句话有关。",
             "活动素材": "活动发生在妈妈班。",
             "奖品素材": "现场看到待产包。||现场看到新客礼盒。",
             "批批检素材": "扫罐底码能看检测报告。||每批检测报告可对应查询。",
@@ -55,6 +56,7 @@ def test_row_to_rule_item_parses_layered_article_fields_and_activity_pools():
     assert item is not None
     assert item["prompt_mode"] == "layered_article"
     assert item["corpus"] == item["content_direction"]
+    assert item["inspiration_material"] == "和课后记下的一句话有关。"
     assert item["activity_material"] == ["活动发生在妈妈班。"]
     assert item["hard_boundaries"] == ["宝宝尚未出生。", "不写宝宝已经喝过。"]
     assert item["writing_requirements"] == ["标题少于20字。", "正文130-200字。"]
