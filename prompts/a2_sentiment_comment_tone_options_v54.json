@@ -1,0 +1,110 @@
+{
+  "stock": [
+    {
+      "tone_code": "confirming_tone",
+      "tone_label": "先确认",
+      "prompt": "语气稍微好奇，像先确认一下；不新增具体疑问或经历"
+    },
+    {
+      "tone_code": "direct_tone",
+      "tone_label": "直接说",
+      "prompt": "句子直接、少铺垫；不新增个人经历，也不催抢"
+    },
+    {
+      "tone_code": "familiar_tone",
+      "tone_label": "熟悉口吻",
+      "prompt": "语气熟悉、简洁；规则不支持时不出现一直喝或以前买过"
+    },
+    {
+      "tone_code": "checking_tone",
+      "tone_label": "核对信息",
+      "prompt": "语气像在核对信息；不新增规则没给的渠道"
+    },
+    {
+      "tone_code": "brief_reply_tone",
+      "tone_label": "顺手接话",
+      "prompt": "句子短，像顺手接楼；不新增事实"
+    }
+  ],
+  "transfer": [
+    {
+      "tone_code": "hesitant_tone",
+      "tone_label": "有点犹豫",
+      "prompt": "语气稍微犹豫，只保留规则已有的问题；不新增症状或经历"
+    },
+    {
+      "tone_code": "direct_tone",
+      "tone_label": "直接不慌",
+      "prompt": "句子直接、不慌；不新增个人换奶或喂养经历"
+    },
+    {
+      "tone_code": "reserved_tone",
+      "tone_label": "留点余地",
+      "prompt": "只体现语气谨慎、会留余地；不出现喂养方式、自家换奶或宝宝喝过"
+    },
+    {
+      "tone_code": "cautious_tone",
+      "tone_label": "克制判断",
+      "prompt": "语气克制、少下结论；不新增决定依据"
+    },
+    {
+      "tone_code": "brief_reply_tone",
+      "tone_label": "短句接话",
+      "prompt": "句子短，只接规则已有的变量或差异，说到意思就停"
+    }
+  ],
+  "batch_check": [
+    {
+      "tone_code": "uncertain_tone",
+      "tone_label": "有点不确定",
+      "prompt": "语气稍有不确定，术语可以不说全；不新增检测项目"
+    },
+    {
+      "tone_code": "direct_tone",
+      "tone_label": "直接说",
+      "prompt": "句子直接，只说规则已有的信息；不新增个人经历"
+    },
+    {
+      "tone_code": "checking_tone",
+      "tone_label": "认真核对",
+      "prompt": "语气像认真核对入口和批次；不补检测项目、成分或数值"
+    },
+    {
+      "tone_code": "term_uncertain_tone",
+      "tone_label": "术语记不全",
+      "prompt": "语气允许记不全专业名词，但不新增具体术语"
+    },
+    {
+      "tone_code": "observing_tone",
+      "tone_label": "先观望",
+      "prompt": "语气偏观望，不急着下结论；不新增风险猜测"
+    }
+  ],
+  "member_benefit": [
+    {
+      "tone_code": "confirming_tone",
+      "tone_label": "先确认",
+      "prompt": "语气稍微好奇，先看规则；不写成自己已经参与"
+    },
+    {
+      "tone_code": "direct_tone",
+      "tone_label": "直接关注",
+      "prompt": "句子直接，关注活动信息；不新增个人参与经历"
+    },
+    {
+      "tone_code": "familiar_tone",
+      "tone_label": "熟悉口吻",
+      "prompt": "语气熟悉、简洁，但不新增参与、领取或中奖经历"
+    },
+    {
+      "tone_code": "checking_tone",
+      "tone_label": "核对活动",
+      "prompt": "语气像在核对规则和礼品，表达克制，不喊口号"
+    },
+    {
+      "tone_code": "brief_reply_tone",
+      "tone_label": "顺手接话",
+      "prompt": "句子短，只接规则已有的活动信息"
+    }
+  ]
+}

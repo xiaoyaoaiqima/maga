@@ -14,10 +14,12 @@ from app.services.unified_content_generation_service import (
     _article_output_format_requirement,
     _business_rule_text,
     _comment_prompt_text,
-    _select_comment_persona,
+    _select_comment_prompt_slots,
+    _select_comment_tone,
     _normalize_model_config,
     _render_comment_prompt_slot,
     _royal_compact_article_prompt,
+    _template_variables,
 )
 
 
@@ -42,6 +44,25 @@ def test_article_output_format_supports_explicit_two_items_mode():
     assert '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。' in multi
     assert "items 必须正好 2 个" in multi
     assert "一次生成 2 篇" not in multi
+
+
+def test_rule_corpus_as_prompt_keeps_single_article_output_format():
+    from app.services.unified_content_generation_service import _rule_corpus_as_prompt_article_prompt
+
+    prompt = _rule_corpus_as_prompt_article_prompt(
+        {
+            "business_rule": "任务：写1篇妈妈UGC。",
+            "output_format_requirement": (
+                "只输出 JSON 对象，字段只能包含 title 和 body；"
+                "正文内容放在 body 字段里，标题内容放在 title 字段里。"
+            ),
+        },
+        selected_keywords=[],
+    )
+
+    assert "字段只能包含 title 和 body" in prompt
+    assert "items 必须正好" not in prompt
+    assert '"items"' not in prompt
 
 
 def test_rule_corpus_as_prompt_mode_skips_legacy_article_layers():
@@ -133,13 +154,101 @@ def test_rule_corpus_as_prompt_mode_skips_legacy_article_layers():
     assert "产品事实：旺玥" not in prompt
     assert "产品出现边界" not in prompt
     assert "产品表达边界" not in prompt
+
+
+def test_rule_corpus_as_prompt_selects_one_life_entry_slot_by_item_no():
+    from app.services.unified_content_generation_service import _rule_corpus_as_prompt_article_prompt
+
+    prompt = _rule_corpus_as_prompt_article_prompt(
+        {
+            "item_no": 2,
+            "slot_rotation_no": 2,
+            "business_rule": (
+                "任务：写妈妈UGC。\n\n"
+                "这篇要写的事：\n"
+                "从【生活入口】写起，再写孩子比以前更能坐住一点。\n\n"
+                "【生活入口槽位】\n"
+                "- 妈妈们聊天时提到孩子坐不住\n"
+                "- 周末各忙各的，抬头发现孩子还在小桌前\n"
+                "- 陪孩子拼图时发现这次没有很快跑开\n\n"
+                "【孩子专注事件槽位】\n"
+                "- 听绘本时能跟住一段故事\n"
+                "- 搭积木倒了以后愿意重新试一次\n"
+                "- 玩桌游时能把一轮玩完\n\n"
+                "【保护力日常反馈槽位】\n"
+                "- 外出回来还愿意讲路上的事\n"
+                "- 到饭点照常坐下来吃饭\n"
+                "- 回家后继续做自己惦记的事\n\n"
+                "【本篇灵感线索槽位】\n"
+                "- 和动物相关\n"
+                "- 和游戏相关\n"
+                "- 和一次出门的小插曲相关\n\n"
+                "【卖点表达槽位】\n"
+                "- 卖点表达：乳铁蛋白含量优秀\n"
+                "  注意：不要讲得太专业\n"
+                "- 卖点表达：添加了免疫球蛋白\n"
+                "  注意：不要解释免疫机制\n"
+                "- 卖点表达：有5大HMO\n"
+                "  注意：可以只记得大概\n\n"
+                "硬边界：\n"
+                "- 不写保证有效。"
+            ),
+            "output_format_requirement": (
+                '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。'
+                "items 必须正好 2 个。"
+            ),
+        },
+        selected_keywords=[],
+    )
+
+    assert "从周末各忙各的，抬头发现孩子还在小桌前写起" in prompt
+    assert "本篇抽中的生活入口" in prompt
+    assert "妈妈们聊天时提到孩子坐不住" not in prompt
+    assert "陪孩子拼图时发现这次没有很快跑开" not in prompt
+    assert "【生活入口】" not in prompt
+    assert "【生活入口槽位】" not in prompt
+    assert "搭积木倒了以后愿意重新试一次" in prompt
+    assert "听绘本时能跟住一段故事" not in prompt
+    assert "玩桌游时能把一轮玩完" not in prompt
+    assert "本篇抽中的孩子专注事件" in prompt
+    assert "【孩子专注事件槽位】" not in prompt
+    assert "到饭点照常坐下来吃饭" in prompt
+    assert "外出回来还愿意讲路上的事" not in prompt
+    assert "回家后继续做自己惦记的事" not in prompt
+    assert "本篇抽中的保护力日常反馈" in prompt
+    assert "【保护力日常反馈槽位】" not in prompt
+    assert "本篇灵感线索：和游戏相关" in prompt
+    assert "和动物相关" not in prompt
+    assert "和一次出门的小插曲相关" not in prompt
+    assert "【本篇灵感线索槽位】" not in prompt
+    assert "卖点表达：添加了免疫球蛋白" in prompt
+    assert "注意：不要解释免疫机制" in prompt
+    assert "乳铁蛋白含量优秀" not in prompt
+    assert "不要讲得太专业" not in prompt
+    assert "有5大HMO" not in prompt
+    assert "可以只记得大概" not in prompt
+    assert "【卖点表达槽位】" not in prompt
     assert "产品出现位置" not in prompt
     assert "产品叙事推进" not in prompt
     assert "低权重表达扰动" not in prompt
-    assert "生成同质化内容是原罪" in prompt
+    assert "生成同质化的内容是原罪" in prompt
     assert "一次生成 2 篇" not in prompt
     assert '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。' in prompt
     assert "items 必须正好 2 个。" in prompt
+
+
+def test_template_variables_derives_slot_rotation_from_multi_output_group():
+    variables = _template_variables(
+        content_type="article",
+        output_fields=["title", "body"],
+        business_rule={
+            "item_no": 5,
+            "multi_output_group": {"requested_count": 2, "output_index": 0},
+        },
+        selected_keywords=[],
+    )
+
+    assert variables["slot_rotation_no"] == 3
 
 
 def test_royal_compact_prompt_keeps_rule_mainline_and_drops_random_scenes():
@@ -1987,36 +2096,98 @@ def test_a2_stock_comment_uses_compact_context_without_shortage_backstory():
     assert "字数在10到20字之间" not in prompt
 
 
-def test_a2_comment_persona_rotates_and_renders_without_creating_facts():
+def test_a2_comment_tone_rotates_and_renders_without_creating_facts():
     rule = {
         "asset_key": "a2_sentiment_comment_activity",
         "business_rule": "有货-直给到货情绪",
         "corpus": "像刷到a2到货后顺手接一句。",
-        "comment_persona_options": [
+        "comment_tone_options": [
             {
-                "persona_code": "new_mom_style",
-                "persona_label": "新手妈妈式",
+                "tone_code": "confirming_tone",
+                "tone_label": "先确认",
                 "prompt": "有点好奇，会先确认一下",
             },
             {
-                "persona_code": "second_child_style",
-                "persona_label": "二胎妈妈式",
+                "tone_code": "direct_tone",
+                "tone_label": "直接说",
                 "prompt": "语气直接，不铺垫",
             },
         ],
     }
 
-    first = _select_comment_persona(rule, item_no=1)
-    second = _select_comment_persona(rule, item_no=2)
-    third = _select_comment_persona(rule, item_no=3)
-    prompt = _comment_prompt_text(rule, comment_persona=first)
+    first = _select_comment_tone(rule, item_no=1)
+    second = _select_comment_tone(rule, item_no=2)
+    third = _select_comment_tone(rule, item_no=3)
+    prompt = _comment_prompt_text(rule, comment_tone=first)
 
-    assert first["persona_code"] == "new_mom_style"
-    assert second["persona_code"] == "second_child_style"
+    assert first["tone_code"] == "confirming_tone"
+    assert second["tone_code"] == "direct_tone"
     assert third == first
-    assert "本条语气参考（不代表真实身份）：\n新手妈妈式：有点好奇，会先确认一下" in prompt
-    assert "上面只是在模仿一种说话方式，不代表真实身份" in prompt
+    assert "本条语气槽：\n先确认：有点好奇，会先确认一下" in prompt
+    assert "语气槽只控制说法，不提供事实" in prompt
     assert "不要因此新增购买经历、喂养方式、宝宝状态或使用结果" in prompt
+
+
+def test_legacy_comment_persona_options_are_read_as_tone_options():
+    selected = _select_comment_tone(
+        {
+            "comment_persona_options": [
+                {
+                    "persona_code": "legacy_style",
+                    "persona_label": "旧标签",
+                    "prompt": "语气简短。",
+                }
+            ]
+        },
+        item_no=1,
+    )
+
+    assert selected == {
+        "tone_code": "legacy_style",
+        "tone_label": "旧标签",
+        "prompt": "语气简短。",
+    }
+
+
+def test_comment_variation_slots_are_selected_and_rendered():
+    rule = {
+        "variation_slots": [
+            {
+                "slot_code": "comment_entry",
+                "slot_name": "接法槽",
+                "options": ["追问：先问一句", "报信：直接补一句信息"],
+            },
+            {
+                "slot_code": "info_source",
+                "slot_name": "来源槽",
+                "options": ["信息来自妈妈群", "信息来自导购通知"],
+            },
+        ]
+    }
+
+    with patch(
+        "app.services.unified_content_generation_service._random_choice_index",
+        side_effect=[1, 0],
+    ):
+        selected = _select_comment_prompt_slots(rule)
+
+    assert selected == [
+        {
+            "slot_name": "接法槽",
+            "text": "报信：直接补一句信息",
+            "selected_index": 1,
+            "candidate_count": 2,
+        },
+        {
+            "slot_name": "来源槽",
+            "text": "信息来自妈妈群",
+            "selected_index": 0,
+            "candidate_count": 2,
+        },
+    ]
+    prompt = _comment_prompt_text(rule, selected_prompt_slots=selected)
+    assert "接法槽：报信：直接补一句信息" in prompt
+    assert "来源槽：信息来自妈妈群" in prompt
 
 
 @pytest.mark.parametrize(

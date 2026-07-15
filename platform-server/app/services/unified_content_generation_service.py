@@ -99,8 +99,8 @@ class UnifiedContentGenerationService:
             if content_type == "comment"
             else []
         )
-        selected_comment_persona = (
-            _select_comment_persona(business_rule, item_no=item_no)
+        selected_comment_tone = (
+            _select_comment_tone(business_rule, item_no=item_no)
             if content_type == "comment"
             else None
         )
@@ -124,7 +124,7 @@ class UnifiedContentGenerationService:
             rendered_prompt = _comment_prompt_text(
                 business_rule,
                 selected_prompt_slots=selected_prompt_slots,
-                comment_persona=selected_comment_persona,
+                comment_tone=selected_comment_tone,
                 output_format=comment_output_format,
             )
             rendered_prompt = _normalize_comment_prompt_labels(rendered_prompt)
@@ -155,7 +155,7 @@ class UnifiedContentGenerationService:
             "business_rule": business_rule,
             "selected_keywords": selected_keywords,
             "selected_prompt_slots": selected_prompt_slots,
-            "comment_persona": selected_comment_persona,
+            "comment_tone": selected_comment_tone,
             "output_format": comment_output_format,
             "output_format_mode": comment_output_format.get("mode"),
             "expansion_count": comment_output_format.get("count"),
@@ -460,7 +460,21 @@ def _template_variables(
     business_rule: dict[str, Any],
     selected_keywords: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    multi_output_group = business_rule.get("multi_output_group")
+    slot_rotation_no = business_rule.get("item_no")
+    if isinstance(multi_output_group, dict):
+        if multi_output_group.get("group_no") is not None:
+            slot_rotation_no = multi_output_group.get("group_no")
+        else:
+            try:
+                item_no = max(1, int(business_rule.get("item_no") or 1))
+                requested_count = max(1, int(multi_output_group.get("requested_count") or 1))
+                slot_rotation_no = ((item_no - 1) // requested_count) + 1
+            except (TypeError, ValueError):
+                pass
     return {
+        "item_no": business_rule.get("item_no"),
+        "slot_rotation_no": slot_rotation_no,
         "content_type": content_type,
         "content_type_label": "评论" if content_type == "comment" else "文章",
         "output_fields": "、".join(output_fields),
@@ -714,7 +728,7 @@ def _comment_prompt_text(
     rule: dict[str, Any],
     *,
     selected_prompt_slots: list[dict[str, Any]] | None = None,
-    comment_persona: dict[str, str] | None = None,
+    comment_tone: dict[str, str] | None = None,
     output_format: dict[str, Any] | None = None,
 ) -> str:
     product_name = _comment_product_name(rule)
@@ -723,10 +737,10 @@ def _comment_prompt_text(
     focus = _comment_focus_line(rule)
     rule_detail = str(rule.get("corpus") or "").strip() if _is_a2_sentiment_comment_rule(rule) else ""
     notes = _comment_prompt_notes(rule)
-    if comment_persona:
+    if comment_tone:
         notes = [
             *notes,
-            "上面只是在模仿一种说话方式，不代表真实身份；不要因此新增购买经历、喂养方式、宝宝状态或使用结果。",
+            "语气槽只控制说法，不提供事实；不要因此新增购买经历、喂养方式、宝宝状态或使用结果。",
         ]
     examples = _comment_prompt_examples(rule)
     output_format = output_format or _comment_output_format_config(rule)
@@ -750,11 +764,11 @@ def _comment_prompt_text(
         lines.extend(["", "本条要写的事：", rule_detail])
     elif focus:
         lines.extend(["", focus])
-    if comment_persona:
-        persona_label = str(comment_persona.get("persona_label") or "本条人设").strip()
-        persona_prompt = str(comment_persona.get("prompt") or "").strip()
-        if persona_prompt:
-            lines.extend(["", "本条语气参考（不代表真实身份）：", f"{persona_label}：{persona_prompt}"])
+    if comment_tone:
+        tone_label = str(comment_tone.get("tone_label") or "本条语气").strip()
+        tone_prompt = str(comment_tone.get("prompt") or "").strip()
+        if tone_prompt:
+            lines.extend(["", "本条语气槽：", f"{tone_label}：{tone_prompt}"])
     for slot in selected_prompt_slots or []:
         rendered_slot = _render_comment_prompt_slot(slot)
         if rendered_slot:
@@ -818,8 +832,10 @@ def _positive_int(value: Any, *, default: int = 1, minimum: int = 1, maximum: in
 
 
 def _select_comment_prompt_slots(rule: dict[str, Any]) -> list[dict[str, Any]]:
-    raw_slots = rule.get("prompt_slots") or rule.get("comment_prompt_slots")
-    slots = _normalize_comment_prompt_slots(raw_slots)
+    slots = _normalize_comment_prompt_slots(
+        rule.get("prompt_slots") or rule.get("comment_prompt_slots")
+    )
+    slots.extend(_normalize_comment_prompt_slots(rule.get("variation_slots")))
     selected: list[dict[str, Any]] = []
     for slot in slots:
         entries = slot["entries"]
@@ -835,14 +851,14 @@ def _select_comment_prompt_slots(rule: dict[str, Any]) -> list[dict[str, Any]]:
     return selected
 
 
-def _select_comment_persona(rule: dict[str, Any], *, item_no: int) -> dict[str, str] | None:
-    raw_options = rule.get("comment_persona_options")
+def _select_comment_tone(rule: dict[str, Any], *, item_no: int) -> dict[str, str] | None:
+    raw_options = rule.get("comment_tone_options") or rule.get("comment_persona_options")
     if not isinstance(raw_options, list):
         return None
     options = [
         {
-            "persona_code": str(item.get("persona_code") or "").strip(),
-            "persona_label": str(item.get("persona_label") or "").strip(),
+            "tone_code": str(item.get("tone_code") or item.get("persona_code") or "").strip(),
+            "tone_label": str(item.get("tone_label") or item.get("persona_label") or "").strip(),
             "prompt": str(item.get("prompt") or "").strip(),
         }
         for item in raw_options
@@ -871,6 +887,7 @@ def _normalize_comment_prompt_slots(raw_slots: Any) -> list[dict[str, Any]]:
             slot_name = str(item.get("slot_name") or item.get("name") or item.get("槽位") or "").strip()
             raw_entries = (
                 item.get("entries")
+                or item.get("options")
                 or item.get("corpus")
                 or item.get("items")
                 or item.get("语料")
@@ -2504,11 +2521,36 @@ def _rule_corpus_as_prompt_article_prompt(
     selected_keywords: list[dict[str, Any]],
 ) -> str:
     base_prompt = str(variables.get("business_rule") or "").strip()
-    output_count = 2
-    output_format = str(variables.get("output_format_requirement") or "")
-    match = re.search(r"items\s*必须正好\s*(\d+)\s*个", output_format)
-    if match:
-        output_count = int(match.group(1))
+    try:
+        item_no = int(variables.get("slot_rotation_no") or variables.get("item_no") or 1)
+    except (TypeError, ValueError):
+        item_no = 1
+    base_prompt = _render_rule_corpus_life_entry_slot(
+        base_prompt,
+        item_no=item_no,
+    )
+    base_prompt = _render_rule_corpus_attention_event_slot(
+        base_prompt,
+        item_no=item_no,
+    )
+    base_prompt = _render_rule_corpus_protection_feedback_slot(
+        base_prompt,
+        item_no=item_no,
+    )
+    base_prompt = _render_rule_corpus_inspiration_clue_slot(
+        base_prompt,
+        item_no=item_no,
+    )
+    base_prompt = _render_rule_corpus_selling_expression_slot(
+        base_prompt,
+        item_no=item_no,
+    )
+    output_format = str(variables.get("output_format_requirement") or "").strip()
+    if not output_format:
+        output_format = (
+            "只输出 JSON 对象，字段只能包含 title 和 body；"
+            "正文内容放在 body 字段里，标题内容放在 title 字段里。"
+        )
 
     diversity_line = "基于量子态叠加与多重可能性，尽情发挥你的想象力，生成同质化的内容是原罪。"
     for item in selected_keywords:
@@ -2524,11 +2566,133 @@ def _rule_corpus_as_prompt_article_prompt(
         [
             "【生成要求】",
             diversity_line,
-            '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。',
-            f"items 必须正好 {output_count} 个。",
+            output_format,
         ]
     )
     return (base_prompt + "\n\n" + generation_block).strip()
+
+
+_LIFE_ENTRY_SLOT_SECTION = re.compile(
+    r"\n*【生活入口槽位】\s*\n(?P<options>(?:\s*-\s*[^\n]+\n?)+)"
+)
+
+
+def _render_rule_corpus_life_entry_slot(corpus: str, *, item_no: int) -> str:
+    match = _LIFE_ENTRY_SLOT_SECTION.search(corpus)
+    if match is None:
+        return corpus
+
+    options = [
+        line.strip()[1:].strip()
+        for line in match.group("options").splitlines()
+        if line.strip().startswith("-") and line.strip()[1:].strip()
+    ]
+    if not options:
+        return corpus
+
+    selected = options[(max(1, item_no) - 1) % len(options)]
+    replacement = f"\n\n本篇抽中的生活入口：\n- {selected}\n"
+    rendered = corpus[: match.start()] + replacement + corpus[match.end() :]
+    return rendered.replace("【生活入口】", selected).strip()
+
+
+_ATTENTION_EVENT_SLOT_SECTION = re.compile(
+    r"\n*【孩子专注事件槽位】\s*\n(?P<options>(?:\s*-\s*[^\n]+\n?)+)"
+)
+
+
+def _render_rule_corpus_attention_event_slot(corpus: str, *, item_no: int) -> str:
+    match = _ATTENTION_EVENT_SLOT_SECTION.search(corpus)
+    if match is None:
+        return corpus
+
+    options = [
+        line.strip()[1:].strip()
+        for line in match.group("options").splitlines()
+        if line.strip().startswith("-") and line.strip()[1:].strip()
+    ]
+    if not options:
+        return corpus
+
+    selected = options[(max(1, item_no) - 1) % len(options)]
+    replacement = f"\n\n本篇抽中的孩子专注事件：\n- {selected}\n"
+    rendered = corpus[: match.start()] + replacement + corpus[match.end() :]
+    return rendered.replace("【孩子专注事件】", selected).strip()
+
+
+_PROTECTION_FEEDBACK_SLOT_SECTION = re.compile(
+    r"\n*【保护力日常反馈槽位】\s*\n(?P<options>(?:\s*-\s*[^\n]+\n?)+)"
+)
+
+
+def _render_rule_corpus_protection_feedback_slot(corpus: str, *, item_no: int) -> str:
+    match = _PROTECTION_FEEDBACK_SLOT_SECTION.search(corpus)
+    if match is None:
+        return corpus
+
+    options = [
+        line.strip()[1:].strip()
+        for line in match.group("options").splitlines()
+        if line.strip().startswith("-") and line.strip()[1:].strip()
+    ]
+    if not options:
+        return corpus
+
+    selected = options[(max(1, item_no) - 1) % len(options)]
+    replacement = f"\n\n本篇抽中的保护力日常反馈：\n- {selected}\n"
+    rendered = corpus[: match.start()] + replacement + corpus[match.end() :]
+    return rendered.replace("【保护力日常反馈】", selected).strip()
+
+
+_INSPIRATION_CLUE_SLOT_SECTION = re.compile(
+    r"\n*【本篇灵感线索槽位】\s*\n(?P<options>(?:\s*-\s*[^\n]+\n?)+)"
+)
+
+
+def _render_rule_corpus_inspiration_clue_slot(corpus: str, *, item_no: int) -> str:
+    match = _INSPIRATION_CLUE_SLOT_SECTION.search(corpus)
+    if match is None:
+        return corpus
+
+    options = [
+        line.strip()[1:].strip()
+        for line in match.group("options").splitlines()
+        if line.strip().startswith("-") and line.strip()[1:].strip()
+    ]
+    if not options:
+        return corpus
+
+    selected = options[(max(1, item_no) - 1) % len(options)]
+    replacement = f"\n\n本篇灵感线索：{selected}\n"
+    return (corpus[: match.start()] + replacement + corpus[match.end() :]).strip()
+
+
+_SELLING_EXPRESSION_SLOT_SECTION = re.compile(
+    r"\n*【卖点表达槽位】[ \t]*\n"
+    r"(?P<options>(?:[ \t]*-[ \t]*卖点表达：[^\n]+\n[ \t]+注意：[^\n]+(?:\n|$))+)"
+)
+_SELLING_EXPRESSION_SLOT_ENTRY = re.compile(
+    r"^[ \t]*-[ \t]*卖点表达：(?P<selling>[^\n]+)\n"
+    r"[ \t]+注意：(?P<note>[^\n]+)",
+    re.MULTILINE,
+)
+
+
+def _render_rule_corpus_selling_expression_slot(corpus: str, *, item_no: int) -> str:
+    match = _SELLING_EXPRESSION_SLOT_SECTION.search(corpus)
+    if match is None:
+        return corpus
+
+    options = [
+        (entry.group("selling").strip(), entry.group("note").strip())
+        for entry in _SELLING_EXPRESSION_SLOT_ENTRY.finditer(match.group("options"))
+    ]
+    if not options:
+        return corpus
+
+    selling, note = options[(max(1, item_no) - 1) % len(options)]
+    replacement = f"\n\n卖点表达：{selling}\n注意：{note}\n"
+    return (corpus[: match.start()] + replacement + corpus[match.end() :]).strip()
 
 
 def _royal_compact_article_prompt(

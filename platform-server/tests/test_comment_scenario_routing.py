@@ -11,11 +11,12 @@ from app.services.activity_quality_guard_service import (
 from app.services.content_comment_batch_service import (
     ContentCommentBatchService,
     _comment_plan_output_count,
-    _comment_persona_options_from_asset,
-    _a2_comment_persona_family,
+    _comment_tone_options_from_asset,
+    _a2_comment_tone_family,
     _comment_scenario_from_asset,
     _keyword_selection_with_rule_overrides,
     _rule_with_comment_scenario,
+    _rule_with_rotated_variation_slots,
     _weighted_comment_scenario_allocations,
 )
 from app.services.unified_content_generation_service import _comment_prompt_text
@@ -356,16 +357,16 @@ def test_a2_plan_applies_length_neutral_selection_to_generic_named_rules():
         id=1,
         version_no=51,
         content_json={
-            "comment_persona_options": {
+            "comment_tone_options": {
                 "transfer": [
                     {
-                        "persona_code": "new_mom_style",
-                        "persona_label": "新手妈妈式",
+                        "tone_code": "hesitant_tone",
+                        "tone_label": "有点犹豫",
                         "prompt": "有点犹豫，会先确认一下",
                     },
                     {
-                        "persona_code": "second_child_style",
-                        "persona_label": "二胎妈妈式",
+                        "tone_code": "direct_tone",
+                        "tone_label": "直接说",
                         "prompt": "语气直接，不铺垫",
                     },
                 ]
@@ -393,7 +394,7 @@ def test_a2_plan_applies_length_neutral_selection_to_generic_named_rules():
 
     assert plan["keyword_selection"] == {"comment_writing_instruction": ["natural_comment"]}
     assert plan["keyword_selection_override"]["reason"] == "a2_transfer_route_only"
-    assert plan["comment_persona_options"] == _comment_persona_options_from_asset(
+    assert plan["comment_tone_options"] == _comment_tone_options_from_asset(
         asset,
         {
             "asset_key": asset.asset_key,
@@ -401,20 +402,68 @@ def test_a2_plan_applies_length_neutral_selection_to_generic_named_rules():
             "scenario_guard_keyword": "有货+转奶",
         },
     )
-    assert [item["persona_code"] for item in plan["comment_persona_options"]] == [
-        "new_mom_style",
-        "second_child_style",
+    assert [item["tone_code"] for item in plan["comment_tone_options"]] == [
+        "hesitant_tone",
+        "direct_tone",
     ]
 
 
-def test_a2_persona_family_prefers_business_rule_over_combined_guard_keyword():
-    assert _a2_comment_persona_family(
+def test_a2_tone_family_prefers_business_rule_over_combined_guard_keyword():
+    assert _a2_comment_tone_family(
         {
             "asset_key": "a2_sentiment_comment_activity",
             "business_rule": "有货-继续熟悉款",
             "scenario_guard_keyword": "有货+转奶",
         }
     ) == "stock"
+
+
+def test_variation_slots_rotate_by_rule_occurrence_with_slot_offset():
+    rule = {
+        "variation_slots": [
+            {
+                "slot_code": "comment_entry",
+                "slot_name": "接法槽",
+                "options": ["追问", "报信", "附和"],
+            },
+            {
+                "slot_code": "info_source",
+                "slot_name": "来源槽",
+                "options": ["妈妈群", "导购", "门店"],
+            },
+        ]
+    }
+
+    selected = _rule_with_rotated_variation_slots(rule, rule_occurrence_no=1)
+
+    assert selected["variation_slots"] == [
+        {
+            "slot_code": "comment_entry",
+            "slot_name": "接法槽",
+            "options": ["报信"],
+        },
+        {
+            "slot_code": "info_source",
+            "slot_name": "来源槽",
+            "options": ["门店"],
+        },
+    ]
+    assert selected["preselected_variation_slots"]["comment_entry"]["selected_index"] == 1
+    assert selected["preselected_variation_slots"]["info_source"]["selected_index"] == 2
+
+    second_cycle = _rule_with_rotated_variation_slots(rule, rule_occurrence_no=3)
+    assert second_cycle["variation_slots"] == [
+        {
+            "slot_code": "comment_entry",
+            "slot_name": "接法槽",
+            "options": ["附和"],
+        },
+        {
+            "slot_code": "info_source",
+            "slot_name": "来源槽",
+            "options": ["导购"],
+        },
+    ]
 
 
 def test_scenario_selection_batches_target_outputs_without_multiplying_requested_count():

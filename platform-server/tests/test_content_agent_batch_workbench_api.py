@@ -36,7 +36,11 @@ from app.schemas.content_batch_report import (
     ContentBatchStartRequest,
     ContentCommentBatchStartRequest,
 )
-from app.services.activity_quality_guard_service import ActivityQualityGuardService, resolve_quality_guard_profile
+from app.services.activity_quality_guard_service import (
+    ActivityQualityGuardService,
+    build_article_pool_context_list,
+    resolve_quality_guard_profile,
+)
 from app.services.comment_batch_variation_review_service import CommentBatchVariationReviewService
 from app.services.content_comment_batch_service import (
     COMMENT_MICRO_REPLY_AWKWARD_STOCK_PHRASES,
@@ -484,6 +488,36 @@ def test_comment_plan_preserves_prompt_slots_from_rule():
     plan = service._plan_from_rule(rule, asset=asset, item_no=1)
 
     assert plan["prompt_slots"] == rule["prompt_slots"]
+
+
+def test_comment_plan_preserves_variation_slots_from_rule():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rule = {
+        "rule_id": "a2_direct_02",
+        "business_rule": "有货-渠道线索",
+        "corpus": "像看到 a2 到货渠道后顺手接一句。",
+        "examples": ["我在山姆看到a2到货了"],
+        "variation_slots": [
+            {
+                "slot_code": "comment_entry",
+                "slot_name": "接法槽",
+                "options": ["追问：先问一句", "报信：直接补一句信息"],
+            }
+        ],
+        "source_row_no": 2,
+    }
+    asset = SimpleNamespace(asset_key="a2_sentiment_comment_activity", id=7, version_no=54)
+
+    plan = service._plan_from_rule(rule, asset=asset, item_no=1)
+
+    assert plan["variation_slots"] == [
+        {
+            "slot_code": "comment_entry",
+            "slot_name": "接法槽",
+            "options": ["追问：先问一句"],
+        }
+    ]
+    assert plan["preselected_variation_slots"]["comment_entry"]["candidate_count"] == 2
 
 
 def test_comment_plan_preserves_seed_expand_output_config_from_rule():
@@ -3967,6 +4001,22 @@ def test_a2_activity_guard_repairs_redundant_logistics_code_reference():
     assert any(repair["code"] == "activity_body_duplicate_term_collapsed" for repair in payload["repairs"])
 
 
+def test_a2_activity_guard_repairs_logistics_code_repeated_after_can_bottom_replacement():
+    item = ContentBatchItem(
+        body="原来扫罐底的物流码就能看到检测报告啊",
+        plan_json=_a2_guard_plan("报告查询互动：\n关键词方向是有货+批批检，像妈妈问报告怎么查。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert item.body == "原来扫罐底物流码就能看到检测报告啊"
+    assert "物流码的物流码" not in item.body
+    assert any(repair["code"] == "activity_body_duplicate_term_collapsed" for repair in payload["repairs"])
+
+
 def test_a2_activity_guard_limits_wax_term_to_once_per_comment():
     item = ContentBatchItem(
         body="转奶前看物流码报告，达能也看，a2报告里那项0.03我会比，蜡毒那项和蜡毒报告别重复说",
@@ -3991,6 +4041,31 @@ def test_article_pool_export_keeps_only_usable_generated_items():
     exported = _article_pool_export_items(items)
 
     assert [item.item_id for item in exported] == [1]
+
+
+def test_article_pool_context_omits_empty_and_comment_only_fields_for_articles():
+    item = ContentBatchItem(
+        title="能坐住一点了",
+        body="孩子最近拼图能多坐一会儿，家里喝的是旺玥。",
+        plan_json={
+            "output_fields": ["title", "body"],
+            "business_rule": "V3M-18｜眼脑营养｜使用反馈｜注意力不集中",
+            "unified_generation": {
+                "selected_keywords": [
+                    {
+                        "category_code": "perturbation_rule",
+                        "keyword_name": "v2发散提醒",
+                    }
+                ]
+            },
+        },
+        quality_json={},
+    )
+
+    assert build_article_pool_context_list(item) == {
+        "扰动规则": "v2发散提醒",
+        "业务规则": "V3M-18｜眼脑营养｜使用反馈｜注意力不集中",
+    }
 
 
 def test_article_pool_export_writes_title_when_item_has_title():
@@ -5101,6 +5176,7 @@ async def test_article_batch_can_start_from_article_business_rule_asset_key_only
     assert [kw["category_code"] for kw in item.plan_json["unified_generation"]["selected_keywords"]] == [
         "persona",
         "writing_instruction",
+        "article_speaking_style",
         "perturbation_rule",
         "writing_method",
         "article_format_control",

@@ -19,6 +19,17 @@ const frontendTabRoutes: RouteRecordRaw[] = [
     },
   },
   {
+    name: 'ContentAgentWorkbench',
+    path: '/content-agent/workbench',
+    component: () => import('#/views/content-agent/workbench/index.vue'),
+    meta: {
+      title: '生成历史',
+      icon: 'lucide:history',
+      order: -90,
+      activeMenu: '/content-agent/workbench',
+    },
+  },
+  {
     name: 'ContentAgentFeedback',
     path: '/content-agent/feedback',
     component: () => import('#/views/content-agent/feedback/index.vue'),

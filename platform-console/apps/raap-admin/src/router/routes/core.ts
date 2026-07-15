@@ -54,7 +54,7 @@ const coreRoutes: RouteRecordRaw[] = [
           icon: 'RobotOutlined',
           hideInMenu: true,
           order: -99,
-          activeMenu: '/business-rules',
+          activeMenu: '/content-agent/workbench',
         },
       },
       {

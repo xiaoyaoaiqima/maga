@@ -1,4 +1,4 @@
-"""Update one comment business-rule item inside an asset_registry rule-set asset.
+"""Update or delete one business-rule item inside an asset_registry rule-set asset.
 
 Examples:
     PYTHONPATH=. ../.venv/bin/python scripts/update_comment_business_rule_item.py \
@@ -45,7 +45,7 @@ except ModuleNotFoundError:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Update one comment business-rule corpus item safely.")
+    parser = argparse.ArgumentParser(description="Update or delete one business-rule item safely.")
     parser.add_argument("--database-url", default=None, help="MySQL URL; overrides MYSQL_* envs")
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
@@ -69,9 +69,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional JSON array written to item.variation_slots.",
     )
     parser.add_argument(
+        "--ugc-post-type",
+        default=None,
+        help="Optional replacement for item.ugc_post_type.",
+    )
+    parser.add_argument(
         "--sync-examples-from-corpus",
         action="store_true",
         help="Extract '- ...' lines under '示例：' from the corpus block and write item.examples too.",
+    )
+    parser.add_argument(
+        "--delete-item",
+        action="store_true",
+        help="Delete the matched rule item while preserving all other items.",
     )
     parser.add_argument("--show-current", action="store_true", help="Print the matched current item and exit")
     parser.add_argument("--mode", choices=("new-version", "in-place"), default="new-version")
@@ -106,11 +116,20 @@ def run(args: argparse.Namespace) -> None:
                 print(json.dumps({"asset": _asset_summary(row), "matched_item": summary}, ensure_ascii=False, indent=2))
                 return
 
-            new_corpus = _load_new_corpus(args)
-            updated_content, item_summary = _content_with_updated_corpus(row.content_json, args, new_corpus=new_corpus)
+            if args.delete_item:
+                _validate_delete_args(args)
+                updated_content, item_summary = _content_with_deleted_item(row.content_json, args)
+            else:
+                new_corpus = _load_new_corpus(args)
+                updated_content, item_summary = _content_with_updated_corpus(
+                    row.content_json,
+                    args,
+                    new_corpus=new_corpus,
+                )
             summary = {
                 "asset": _asset_summary(row),
                 "mode": args.mode,
+                "operation": "delete-item" if args.delete_item else "update-item",
                 "next_version": row.version_no + 1 if args.mode == "new-version" else row.version_no,
                 "matched_item": item_summary,
                 "metadata_unchanged": True,
@@ -161,13 +180,57 @@ def _apply_env_defaults(args: argparse.Namespace) -> argparse.Namespace:
 
 
 def _load_new_corpus(args: argparse.Namespace) -> str:
-    if not args.corpus_file and not args.corpus_text and args.new_business_rule is not None:
+    if (
+        not args.corpus_file
+        and not args.corpus_text
+        and (
+            args.new_business_rule is not None
+            or getattr(args, "variation_slots_json", None) is not None
+            or getattr(args, "ugc_post_type", None) is not None
+        )
+    ):
         return ""
     if bool(args.corpus_file) == bool(args.corpus_text):
         raise ValueError("pass exactly one of --corpus-file or --corpus-text unless --show-current is used")
     if args.corpus_file:
         return Path(args.corpus_file).read_text(encoding="utf-8").rstrip("\n")
     return str(args.corpus_text).rstrip("\n")
+
+
+def _validate_delete_args(args: argparse.Namespace) -> None:
+    conflicting = (
+        args.corpus_file,
+        args.corpus_text,
+        args.new_business_rule,
+        args.variation_slots_json,
+        args.ugc_post_type,
+        args.sync_examples_from_corpus,
+    )
+    if any(value not in (None, False) for value in conflicting):
+        raise ValueError("--delete-item cannot be combined with corpus or item update arguments")
+
+
+def _content_with_deleted_item(
+    content_json: dict[str, Any],
+    args: argparse.Namespace,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    updated = copy.deepcopy(content_json)
+    items = updated.get("items")
+    if not isinstance(items, list):
+        raise ValueError("asset content_json.items must be a list")
+    index, item = _find_item(items, args)
+    deleted_item = copy.deepcopy(item)
+    items.pop(index)
+    return updated, {
+        "index": index,
+        "rule_id": deleted_item.get("rule_id"),
+        "source_row_no": deleted_item.get("source_row_no"),
+        "business_rule": _business_rule_name(deleted_item),
+        "old_corpus": str(deleted_item.get("corpus") or ""),
+        "remaining_item_count": len(items),
+        "changed": True,
+        "deleted": True,
+    }
 
 
 def _content_with_updated_corpus(
@@ -185,6 +248,7 @@ def _content_with_updated_corpus(
     old_business_rule = str(_business_rule_name(item) or "")
     old_examples = list(item.get("examples") or []) if isinstance(item.get("examples"), list) else []
     old_variation_slots = copy.deepcopy(item.get("variation_slots") or [])
+    old_ugc_post_type = str(item.get("ugc_post_type") or "")
     if new_corpus is not None:
         # 重要逻辑：business_rule 会单独渲染进生成 prompt，必要时要和语料标题一起改。
         if new_corpus:
@@ -200,6 +264,9 @@ def _content_with_updated_corpus(
             if not isinstance(variation_slots, list):
                 raise ValueError("--variation-slots-json must be a JSON array")
             item["variation_slots"] = variation_slots
+        ugc_post_type = getattr(args, "ugc_post_type", None)
+        if ugc_post_type is not None:
+            item["ugc_post_type"] = ugc_post_type.strip()
     summary = {
         "index": index,
         "rule_id": item.get("rule_id"),
@@ -212,11 +279,14 @@ def _content_with_updated_corpus(
         "new_example_count": len(item.get("examples") or []) if isinstance(item.get("examples"), list) else 0,
         "old_variation_slots": old_variation_slots,
         "new_variation_slots": item.get("variation_slots") or [],
+        "old_ugc_post_type": old_ugc_post_type,
+        "new_ugc_post_type": str(item.get("ugc_post_type") or ""),
         "changed": new_corpus is not None
         and (
             old_corpus != str(item.get("corpus") or "")
             or old_business_rule != str(_business_rule_name(item) or "")
             or old_variation_slots != (item.get("variation_slots") or [])
+            or old_ugc_post_type != str(item.get("ugc_post_type") or "")
         ),
     }
     return updated, summary

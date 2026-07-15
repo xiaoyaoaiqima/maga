@@ -29,4 +29,13 @@ def rewrite_business_rule_context(plan: dict[str, Any] | None) -> dict[str, Any]
         "source_row_no",
         "quality_guard_profile_key",
     )
-    return {key: plan[key] for key in allowed_keys if key in plan and plan[key] is not None}
+    context = {key: plan[key] for key in allowed_keys if key in plan and plan[key] is not None}
+    if str(plan.get("prompt_mode") or "").strip() == "rule_corpus_as_prompt":
+        rendered_prompt = str(
+            ((plan.get("unified_generation") or {}).get("rendered_prompt") or "")
+        ).strip()
+        if rendered_prompt:
+            rendered_corpus = rendered_prompt.split("\n\n【生成要求】", 1)[0].strip()
+            if rendered_corpus:
+                context["corpus"] = rendered_corpus
+    return context

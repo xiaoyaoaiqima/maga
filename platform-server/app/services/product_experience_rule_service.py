@@ -21,7 +21,7 @@ from app.services.business_rule_asset_types import (
 
 PRODUCT_EXPERIENCE_RULE_ASSET_TYPE = ARTICLE_BUSINESS_RULE_ASSET_TYPE
 DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY = "yuanyue_product_experience"
-DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME = "美素佳儿源悦活动生文"
+DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME = "文章业务规则生文"
 DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT = 10
 
 
@@ -227,7 +227,7 @@ def _infer_activity_name_from_display_name(display_name: str | None) -> str | No
         return match.group(1).strip()
     if "旺玥" in text:
         return "0705旺玥活动"
-    return None
+    return text
 
 
 def _infer_activity_name_from_asset_key(asset_key: str) -> str | None:

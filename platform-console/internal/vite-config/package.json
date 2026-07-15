@@ -12,6 +12,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "build": "pnpm unbuild && cp src/plugins/inject-app-loading/default-loading.html dist/default-loading.html",
     "stub": "pnpm unbuild --stub"
   },
   "files": [

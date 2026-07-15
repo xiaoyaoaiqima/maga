@@ -661,6 +661,7 @@ class ContentBatchPlanner:
             rule.get("corpus"),
             ugc_post_type,
             product_position_mode=product_position_mode,
+            include_product_position_guard=prompt_mode != "rule_corpus_as_prompt",
         )
         variation_slots = _resolve_rule_variation_slots(rule, item_no=item_no)
         return {
@@ -1612,6 +1613,7 @@ def _corpus_for_ugc_post_type(
     ugc_post_type: str | None,
     *,
     product_position_mode: str | None = None,
+    include_product_position_guard: bool = True,
 ) -> str | None:
     base = str(corpus or "").strip()
     guards: list[str] = []
@@ -1621,7 +1623,7 @@ def _corpus_for_ugc_post_type(
             "围绕一段使用后的观察、取舍或家里安排展开；"
             "不要在标题或正文里直接写“轻复盘”这个内部类型词。"
         )
-    if str(product_position_mode or "") in {
+    if include_product_position_guard and str(product_position_mode or "") in {
         "先抛问题后出现",
         "同龄对照后出现",
         "纠结标准后出现",

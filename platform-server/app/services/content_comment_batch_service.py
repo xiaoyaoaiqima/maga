@@ -787,6 +787,7 @@ class ContentCommentBatchService:
         quality_guard_profile_key: str | None = None,
     ) -> dict[str, Any]:
         rule = _rule_with_rotated_prompt_slots(rule, rule_occurrence_no=rule_occurrence_no)
+        rule = _rule_with_rotated_variation_slots(rule, rule_occurrence_no=rule_occurrence_no)
         selected_examples, example_meta = self._selected_prompt_examples(rule)
         keyword_rule = {
             **rule,
@@ -798,7 +799,7 @@ class ContentCommentBatchService:
             keyword_rule,
             item_no=item_no,
         )
-        comment_persona_options = _comment_persona_options_from_asset(asset, keyword_rule)
+        comment_tone_options = _comment_tone_options_from_asset(asset, keyword_rule)
         generation_requirements = _merge_comment_generation_requirements(
             _generation_requirements_from_asset(asset),
             rule.get("scenario_generation_requirements"),
@@ -834,8 +835,8 @@ class ContentCommentBatchService:
             "scenario_guard_keyword": rule.get("scenario_guard_keyword"),
             "output_fields": ["comment"],
         }
-        if comment_persona_options:
-            plan["comment_persona_options"] = comment_persona_options
+        if comment_tone_options:
+            plan["comment_tone_options"] = comment_tone_options
         if isinstance(rule.get("model_config"), dict):
             plan["model_config"] = dict(rule["model_config"])
         output_config = _comment_generation_output_config(rule, asset)
@@ -843,7 +844,12 @@ class ContentCommentBatchService:
             plan["output_format"] = output_config
             plan["output_format_mode"] = output_config["mode"]
             plan["expansion_count"] = output_config["count"]
-        for key in ("prompt_slots", "comment_prompt_slots"):
+        for key in (
+            "prompt_slots",
+            "comment_prompt_slots",
+            "variation_slots",
+            "preselected_variation_slots",
+        ):
             if rule.get(key):
                 plan[key] = rule.get(key)
         return plan
@@ -2098,15 +2104,15 @@ def _a2_route_keyword_selection(route_family: str | None) -> dict[str, list[str]
     return {"comment_writing_instruction": ["natural_comment"]}
 
 
-def _comment_persona_options_from_asset(
+def _comment_tone_options_from_asset(
     asset: AssetRegistry | None,
     rule: dict[str, Any],
 ) -> list[dict[str, str]]:
-    route_family = _a2_comment_persona_family(rule)
+    route_family = _a2_comment_tone_family(rule)
     if not route_family:
         return []
     for source in _asset_json_sources(asset):
-        configured = source.get("comment_persona_options")
+        configured = source.get("comment_tone_options") or source.get("comment_persona_options")
         if not isinstance(configured, dict):
             continue
         raw_options = configured.get(route_family) or configured.get("default")
@@ -2119,8 +2125,8 @@ def _comment_persona_options_from_asset(
                 if prompt:
                     options.append(
                         {
-                            "persona_code": f"{route_family}_{index}",
-                            "persona_label": prompt.split("：", 1)[0].strip() or f"人设{index}",
+                            "tone_code": f"{route_family}_{index}",
+                            "tone_label": prompt.split("：", 1)[0].strip() or f"语气{index}",
                             "prompt": prompt,
                         }
                     )
@@ -2132,8 +2138,18 @@ def _comment_persona_options_from_asset(
                 continue
             options.append(
                 {
-                    "persona_code": str(raw_option.get("persona_code") or raw_option.get("code") or f"{route_family}_{index}").strip(),
-                    "persona_label": str(raw_option.get("persona_label") or raw_option.get("label") or f"人设{index}").strip(),
+                    "tone_code": str(
+                        raw_option.get("tone_code")
+                        or raw_option.get("persona_code")
+                        or raw_option.get("code")
+                        or f"{route_family}_{index}"
+                    ).strip(),
+                    "tone_label": str(
+                        raw_option.get("tone_label")
+                        or raw_option.get("persona_label")
+                        or raw_option.get("label")
+                        or f"语气{index}"
+                    ).strip(),
                     "prompt": prompt,
                 }
             )
@@ -2142,7 +2158,7 @@ def _comment_persona_options_from_asset(
     return []
 
 
-def _a2_comment_persona_family(rule: dict[str, Any]) -> str | None:
+def _a2_comment_tone_family(rule: dict[str, Any]) -> str | None:
     if not _is_a2_comment_rule(rule):
         return None
     major = _business_rule_name(rule).split("-", 1)[0].strip()
@@ -2503,6 +2519,51 @@ def _rule_with_rotated_prompt_slots(
     next_rule = dict(rule)
     next_rule["prompt_slots"] = selected_slots
     next_rule["preselected_prompt_slots"] = selected_meta
+    return next_rule
+
+
+def _rule_with_rotated_variation_slots(
+    rule: dict[str, Any],
+    *,
+    rule_occurrence_no: int,
+) -> dict[str, Any]:
+    raw_slots = rule.get("variation_slots")
+    if not isinstance(raw_slots, list):
+        return rule
+    selected_slots: list[dict[str, Any]] = []
+    selected_meta: dict[str, dict[str, Any]] = {}
+    for slot_offset, raw_slot in enumerate(raw_slots):
+        if not isinstance(raw_slot, dict):
+            continue
+        slot_name = str(raw_slot.get("slot_name") or raw_slot.get("name") or "").strip()
+        slot_code = str(raw_slot.get("slot_code") or raw_slot.get("code") or slot_name).strip()
+        options = [str(item).strip() for item in raw_slot.get("options") or [] if str(item).strip()]
+        if not slot_name or not options:
+            continue
+        cycle_shift = rule_occurrence_no // len(options)
+        cycle_stride = slot_offset + 2
+        selected_index = (
+            rule_occurrence_no + slot_offset + cycle_shift * cycle_stride
+        ) % len(options)
+        selected_text = options[selected_index]
+        selected_slots.append(
+            {
+                "slot_code": slot_code,
+                "slot_name": slot_name,
+                "options": [selected_text],
+            }
+        )
+        selected_meta[slot_code] = {
+            "slot_name": slot_name,
+            "selected_index": selected_index,
+            "candidate_count": len(options),
+            "text": selected_text,
+        }
+    if not selected_slots:
+        return rule
+    next_rule = dict(rule)
+    next_rule["variation_slots"] = selected_slots
+    next_rule["preselected_variation_slots"] = selected_meta
     return next_rule
 
 

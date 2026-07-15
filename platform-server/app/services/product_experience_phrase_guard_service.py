@@ -634,6 +634,17 @@ WANGYUE_ARTICLE_LOGIC_DRIFT_PHRASES = (
     "3周岁以上专用4段儿童奶粉",
     "3岁以上4段",
 )
+
+WANGYUE_PUBLIC_DISEASE_CONTEXT_PATTERNS = (
+    re.compile(
+        r"(?:班里|班上|同班|幼儿园里|周围|身边|小区里|其他孩子|别的小朋友)"
+        r"[^。！？；;\n]{0,24}(?:请假|咳嗽|流鼻涕|感冒|生病|中招|病倒|没来|倒了一片)"
+    ),
+    re.compile(
+        r"(?:请假|咳嗽|流鼻涕|感冒|生病|中招|病倒|没来|倒了一片)"
+        r"[^。！？；;\n]{0,24}(?:班里|班上|同班|幼儿园里|周围|身边|小区里|其他孩子|别的小朋友)"
+    ),
+)
 WANGYUE_NEUTRAL_DRINKING_SOUND_PHRASES = {
     "咕咚咕咚",
 }
@@ -1782,6 +1793,32 @@ WANGYUE_SLEEP_EFFECT_SCOPE_PATTERNS = (
 )
 
 
+def _wangyue_no_rewrite_block_hits(title: str, body: str) -> list[str]:
+    text = f"{title}\n{body}"
+    hits: list[str] = []
+
+    if "给妈妈日常冲一杯" in body:
+        hits.append("给妈妈日常冲一杯")
+    for match in re.finditer(
+        r"给(?:妈妈|我|大人|自己)[^。！？；;，,\r\n]{0,6}冲(?:好|了)?(?:一|这)?杯(?:旺玥|奶粉|奶)",
+        body,
+    ):
+        hits.append(match.group(0))
+
+    if "热奶" in text:
+        hits.append("热奶")
+
+    father_terms = ("他爸", "爸爸", "娃爸", "孩子爸")
+    elder_terms = ("家里老人", "老人", "奶奶", "姥姥", "爷爷", "姥爷")
+    title_father = next((term for term in father_terms if term in title), "")
+    body_elder = next((term for term in elder_terms if term in body), "")
+    body_father = any(term in body for term in father_terms)
+    if title_father and body_elder and not body_father:
+        hits.append(f"标题人物“{title_father}”与正文人物“{body_elder}”不一致")
+
+    return list(dict.fromkeys(hits))
+
+
 @dataclass(frozen=True)
 class ProductExperiencePhraseReview:
     pass_: bool
@@ -1824,6 +1861,8 @@ class ProductExperiencePhraseReview:
     formula_dry_powder_ingestion_hits: list[str] = field(default_factory=list)
     ingredient_benefit_mismatch_hits: list[str] = field(default_factory=list)
     formula_usage_form_hits: list[str] = field(default_factory=list)
+    wangyue_no_rewrite_block_hits: list[str] = field(default_factory=list)
+    wangyue_public_disease_context_hits: list[str] = field(default_factory=list)
 
     def model_dump(self) -> dict[str, Any]:
         return {
@@ -1841,6 +1880,8 @@ class ProductExperiencePhraseReview:
             "formula_dry_powder_ingestion_hits": self.formula_dry_powder_ingestion_hits,
             "ingredient_benefit_mismatch_hits": self.ingredient_benefit_mismatch_hits,
             "formula_usage_form_hits": self.formula_usage_form_hits,
+            "wangyue_no_rewrite_block_hits": self.wangyue_no_rewrite_block_hits,
+            "wangyue_public_disease_context_hits": self.wangyue_public_disease_context_hits,
             "child_self_brewing_hits": self.child_self_brewing_hits,
             "child_formula_bottle_hits": self.child_formula_bottle_hits,
             "ugc_post_type_drift_hits": self.ugc_post_type_drift_hits,
@@ -1910,6 +1951,9 @@ def review_product_experience_phrase(
     # The phrase guard should not hard-fail positive Wangyue effect wording.
     ingredient_benefit_mismatch_hits: list[str] = []
     formula_usage_form_hits = _wangyue_formula_usage_form_hits(text) if is_wangyue else []
+    wangyue_no_rewrite_block_hits = (
+        _wangyue_no_rewrite_block_hits(title or "", body_text) if is_wangyue else []
+    )
     child_self_brewing_hits = _merge_hits(
         _hits_prefer_longer(text, CHILD_SELF_BREWING_PHRASES),
         _child_self_brewing_regex_hits(text),
@@ -1952,6 +1996,7 @@ def review_product_experience_phrase(
     wangyue_article_logic_drift_hits = (
         _hits_prefer_longer(text, WANGYUE_ARTICLE_LOGIC_DRIFT_PHRASES) if is_wangyue else []
     )
+    wangyue_public_disease_context_hits = _wangyue_public_disease_context_hits(text) if is_wangyue else []
     if is_wangyue:
         wangyue_article_logic_drift_hits = [
             hit for hit in wangyue_article_logic_drift_hits if hit not in WANGYUE_PRODUCT_HISTORY_ALLOWED_PHRASES
@@ -2076,6 +2121,8 @@ def review_product_experience_phrase(
         reasons.append("ingredient_benefit_mismatch")
     if formula_usage_form_hits:
         reasons.append("formula_usage_form_error")
+    if wangyue_no_rewrite_block_hits:
+        reasons.append("wangyue_no_rewrite_hard_block")
     if child_self_brewing_hits:
         reasons.append("child_self_brewing_formula")
     if child_formula_bottle_hits:
@@ -2098,6 +2145,8 @@ def review_product_experience_phrase(
         reasons.append("wangyue_growth_nutrition_drift_context")
     if wangyue_article_logic_drift_hits:
         reasons.append("wangyue_article_logic_drift_context")
+    if wangyue_public_disease_context_hits:
+        reasons.append("wangyue_public_disease_context")
     if wangyue_row2_drinking_action_hits:
         reasons.append("wangyue_row2_drinking_action_context")
     if wangyue_child_product_promo_hits:
@@ -2141,6 +2190,7 @@ def review_product_experience_phrase(
         formula_dry_powder_ingestion_hits=formula_dry_powder_ingestion_hits,
         ingredient_benefit_mismatch_hits=ingredient_benefit_mismatch_hits,
         formula_usage_form_hits=formula_usage_form_hits,
+        wangyue_no_rewrite_block_hits=wangyue_no_rewrite_block_hits,
         child_self_brewing_hits=child_self_brewing_hits,
         child_formula_bottle_hits=child_formula_bottle_hits,
         ugc_post_type_drift_hits=ugc_post_type_drift_hits,
@@ -2151,6 +2201,7 @@ def review_product_experience_phrase(
         wangyue_digestive_effect_hits=wangyue_digestive_effect_hits,
         wangyue_growth_nutrition_drift_hits=wangyue_growth_nutrition_drift_hits,
         wangyue_article_logic_drift_hits=wangyue_article_logic_drift_hits,
+        wangyue_public_disease_context_hits=wangyue_public_disease_context_hits,
         wangyue_row2_drinking_action_hits=wangyue_row2_drinking_action_hits,
         wangyue_child_product_promo_hits=wangyue_child_product_promo_hits,
         wangyue_time_event_context_hits=wangyue_time_event_context_hits,
@@ -2976,6 +3027,22 @@ def _wangyue_effect_scope_drift_hits(text: str, plan: dict[str, Any]) -> list[st
     value = text or ""
     for pattern in WANGYUE_SLEEP_EFFECT_SCOPE_PATTERNS:
         for match in pattern.finditer(value):
+            hit = match.group(0).strip(" ，,。；;\n")
+            if hit:
+                hits.append((match.start(), hit))
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _wangyue_public_disease_context_hits(text: str) -> list[str]:
+    hits: list[tuple[int, str]] = []
+    for pattern in WANGYUE_PUBLIC_DISEASE_CONTEXT_PATTERNS:
+        for match in pattern.finditer(text or ""):
             hit = match.group(0).strip(" ，,。；;\n")
             if hit:
                 hits.append((match.start(), hit))
@@ -3845,7 +3912,7 @@ def _is_wangyue_plan(plan: dict[str, Any]) -> bool:
 
 
 def _is_wangyue_article_rules_plan(plan: dict[str, Any]) -> bool:
-    return str((plan or {}).get("asset_key") or "").startswith("wangyue_v2_")
+    return str((plan or {}).get("asset_key") or "") == "wangyue_v3_core_storyline_article_rules"
 
 
 def _is_wangyue_painpoint_selling_plan(plan: dict[str, Any]) -> bool:

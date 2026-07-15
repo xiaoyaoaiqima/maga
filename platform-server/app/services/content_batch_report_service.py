@@ -964,7 +964,23 @@ class ContentBatchReportService:
             or {}
         )
         rendered_prompt = self._string_or_none(source.get("rendered_prompt") or unified.get("rendered_prompt"))
-        comment_persona = self._dict_value(source.get("comment_persona")) or self._dict_value(unified.get("comment_persona")) or {}
+        selected_prompt_slots = source.get("selected_prompt_slots") or unified.get("selected_prompt_slots") or []
+        raw_comment_tone = (
+            self._dict_value(source.get("comment_tone"))
+            or self._dict_value(unified.get("comment_tone"))
+            or self._dict_value(source.get("comment_persona"))
+            or self._dict_value(unified.get("comment_persona"))
+            or {}
+        )
+        comment_tone = (
+            {
+                "tone_code": raw_comment_tone.get("tone_code") or raw_comment_tone.get("persona_code"),
+                "tone_label": raw_comment_tone.get("tone_label") or raw_comment_tone.get("persona_label"),
+                "prompt": raw_comment_tone.get("prompt"),
+            }
+            if raw_comment_tone
+            else {}
+        )
         forbidden_review = self._forbidden_review(quality)
         realness_review = self._comment_realness_review(quality)
         activity_quality_guard = self._activity_quality_guard(quality)
@@ -985,7 +1001,8 @@ class ContentBatchReportService:
             "output_fields": output_fields,
             "business_rule": business_rule,
             "selected_keywords": selected_keywords,
-            "comment_persona": comment_persona,
+            "selected_prompt_slots": selected_prompt_slots,
+            "comment_tone": comment_tone,
             "keyword_asset": self._dict_value(source.get("keyword_asset")) or self._dict_value(unified.get("keyword_asset")) or {},
             "expert": expert,
             "model_config": model_config,

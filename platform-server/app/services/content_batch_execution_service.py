@@ -114,6 +114,28 @@ TITLE_GUARD_FORBIDDEN_SUBSTRINGS = (
     "这钱我掏了",
     "选到我心坎里",
 )
+
+CURRENT_WANGYUE_ARTICLE_ASSET_KEY = "wangyue_v3_core_storyline_article_rules"
+PERSONA_STYLE_REWRITE_DISABLED_ASSET_KEYS = {
+    "a2_momclass_month_center",
+}
+PRODUCT_EXPERIENCE_COMPLIANCE_ISSUE_CODES = {
+    "claim_risk",
+    "public_disease_contrast",
+    "wangyue_age_stage_error",
+    "child_formula_operation_error",
+    "formula_dry_powder_ingestion",
+    "formula_usage_form_error",
+    "portable_product_error",
+    "supplement_replacement_error",
+    "product_fact_number_drift",
+    "effect_scope_drift",
+}
+PRODUCT_EXPERIENCE_FLUENCY_ISSUE_CODES = {
+    "unnatural_product_appearance",
+    "brief_translation_tone",
+    "ad_like_closure",
+}
 TITLE_GUARD_WATCH_ONLY_SUBSTRINGS = (
     "不用纠结",
 )
@@ -1118,6 +1140,8 @@ class ContentBatchExecutionService:
         *,
         cleanup_key_prefix: str,
     ) -> ProductExperiencePhraseReview:
+        if _has_no_rewrite_product_experience_phrase_review(review):
+            return review
         cleanup_applied = False
         if review.temporal_context_hits:
             review = self._apply_product_experience_text_cleanup(
@@ -1293,7 +1317,9 @@ class ContentBatchExecutionService:
 
                 while True:
                     if _should_repair_product_experience_llm_quality(item.plan_json, review):
-                        if self._product_experience_llm_rewrite_rounds(item) >= MAX_PRODUCT_EXPERIENCE_LLM_REWRITE_ROUNDS:
+                        if self._product_experience_llm_rewrite_rounds(item) >= _max_product_experience_llm_rewrite_rounds(
+                            item.plan_json
+                        ):
                             break
                         if not item.run_id or not item.body:
                             break
@@ -1409,6 +1435,8 @@ class ContentBatchExecutionService:
                     "pre_review": review.model_dump(),
                     "before": before,
                     "after": {"title": item.title, "body": item.body},
+                    "rewrite_source": input_payload.get("rewrite_source"),
+                    "rewrite_mode": input_payload.get("rewrite_mode"),
                     "phrase_review_after_rewrite": phrase_review.model_dump(),
                     "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
                 }
@@ -1435,6 +1463,13 @@ class ContentBatchExecutionService:
         item: ContentBatchItem,
         review: ProductExperienceLLMReview,
     ) -> dict[str, Any]:
+        if _is_current_wangyue_article_plan(item.plan_json):
+            mode = _product_experience_rewrite_mode(review)
+            if mode == "compliance_cleanup":
+                return self._product_experience_compliance_cleanup_input(item, review)
+            if mode == "fluency_humanize":
+                return self._product_experience_fluency_humanize_input(item, review)
+
         unified_generation = (item.plan_json or {}).get("unified_generation") or {}
         issue_lines = [
             f"{issue.code}: {issue.evidence}；原因：{issue.reason}"
@@ -1479,6 +1514,81 @@ class ContentBatchExecutionService:
                 "如果原正文已经超过80字，改写后也尽量保持80字以上；需要删广告链时，用生活细节或发帖动作补回自然密度，但不要新增第二个产品卖点或第二个效果证明。",
                 "标题低义务，优先生活入口、短名词、动作碎片；不要把卖点和完整决策写进标题。",
                 "正文单段不换行；只输出 JSON：title, body。",
+            ],
+        }
+
+    def _product_experience_compliance_cleanup_input(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperienceLLMReview,
+    ) -> dict[str, Any]:
+        unified_generation = (item.plan_json or {}).get("unified_generation") or {}
+        issue_lines = [
+            f"{issue.code}: {issue.evidence}；原因：{issue.reason}"
+            for issue in review.issues
+            if issue.code in PRODUCT_EXPERIENCE_COMPLIANCE_ISSUE_CODES
+        ]
+        return {
+            "previous_content": {"title": item.title or "", "body": item.body or ""},
+            "content_type": "article",
+            "output_fields": ["title", "body"],
+            "business_rule": rewrite_business_rule_context(item.plan_json),
+            "selected_keywords": unified_generation.get("selected_keywords") or [],
+            "model_config": dict((item.plan_json or {}).get("model_config") or {}),
+            "rewrite_source": "product_experience_compliance_cleanup",
+            "rewrite_mode": "compliance_cleanup",
+            "review_report": {
+                "rewrite_required": True,
+                "rewrite_reason": "删除明确不合规内容",
+                "product_experience_llm_review": review.model_dump(),
+            },
+            "rewrite_round": self._product_experience_llm_rewrite_rounds(item) + 1,
+            "rewrite_instructions": [
+                "只处理下面明确指出的不合规片段，不做文风优化，不重写整篇。",
+                "本轮问题：" + ("；".join(issue_lines) if issue_lines else review.overall_reason),
+                "优先直接删除违规短语、分句或错误事实连接；删掉后句子不通时，只补最短的连接词。",
+                "不得新增生活场景、产品动作、使用频次、孩子反馈、妈妈情绪、成分功效或任何原文没有的事实。",
+                "保留原文标题、叙事顺序、正常口语、产品名和正确产品依据；不顺手处理广告感、模板感或表达风格。",
+                "公共疾病环境对照直接删除；睡眠等卖点错配只删除对应效果；产品动作或事实错误只修错误处。",
+                "硬违禁词不在本阶段改写范围内；如果输入仍含硬违禁词，不要用同义词绕过。",
+                "只输出 JSON：title, body。",
+            ],
+        }
+
+    def _product_experience_fluency_humanize_input(
+        self,
+        item: ContentBatchItem,
+        review: ProductExperienceLLMReview,
+    ) -> dict[str, Any]:
+        unified_generation = (item.plan_json or {}).get("unified_generation") or {}
+        issue_lines = [
+            f"{issue.code}: {issue.evidence}；原因：{issue.reason}"
+            for issue in review.issues
+            if issue.code in PRODUCT_EXPERIENCE_FLUENCY_ISSUE_CODES
+        ]
+        return {
+            "previous_content": {"title": item.title or "", "body": item.body or ""},
+            "content_type": "article",
+            "output_fields": ["title", "body"],
+            "business_rule": rewrite_business_rule_context(item.plan_json),
+            "selected_keywords": unified_generation.get("selected_keywords") or [],
+            "model_config": dict((item.plan_json or {}).get("model_config") or {}),
+            "rewrite_source": "product_experience_fluency_humanize",
+            "rewrite_mode": "fluency_humanize",
+            "review_report": {
+                "rewrite_required": True,
+                "rewrite_reason": "局部流畅性改写",
+                "product_experience_llm_review": review.model_dump(),
+            },
+            "rewrite_round": self._product_experience_llm_rewrite_rounds(item) + 1,
+            "rewrite_instructions": [
+                "按‘说人话’的 minimal + in-place 方式局部改写，只修病句、任务腔、翻译腔、突兀转折或生硬产品出现。",
+                "本轮问题：" + ("；".join(issue_lines) if issue_lines else review.overall_reason),
+                "保护原文事实：品牌、成分、人物、时间、数量、产品动作、生活事件和正向反馈都不能新增、删除或改义。",
+                "尽量保持原句序、段落和叙事节奏；不把整篇抛光成统一模板，不补新的开头、结尾、感叹或总结。",
+                "具体动作优先于抽象总结；删除元话术和任务说明感，但允许普通句子、轻微口语和不完全对称的节奏存在。",
+                "不要用同义词替换制造假口语，不新增‘省心、踏实、选对了、值得、继续喝’等收口。",
+                "只输出 JSON：title, body。",
             ],
         }
 
@@ -1530,8 +1640,28 @@ class ContentBatchExecutionService:
         failures = list(quality.get("product_experience_llm_quality_failures") or [])
         failures.append({"error_message": error_message})
         quality["product_experience_llm_quality_failures"] = failures
-        if str((item.plan_json or {}).get("asset_key") or "").startswith("wangyue_v2_"):
+        if _is_current_wangyue_article_plan(item.plan_json):
             quality["product_experience_llm_quality_review_unavailable_mark_only"] = True
+            if quality.get("product_experience_llm_quality_rewrites"):
+                quality["product_experience_llm_quality_review"] = {
+                    "pass": False,
+                    "rewrite_required": False,
+                    "mark_rewrite_required": False,
+                    "severity": "unavailable",
+                    "business_usability_tier": "watch",
+                    "business_usability_reason": "改写后 LLM 审核不可用，保留最终正文并进入 watch。",
+                    "issues": [],
+                    "scores": {},
+                }
+                review_report = dict(quality.get("review_report") or {})
+                if str(review_report.get("rewrite_reason") or "").startswith("LLM 判断产品出现"):
+                    review_report["rewrite_required"] = False
+                    review_report.pop("rewrite_reason", None)
+                review_report["product_experience_llm_review_unavailable_after_rewrite"] = {
+                    "error_message": error_message,
+                    "watch": True,
+                }
+                quality["review_report"] = review_report
         item.quality_json = quality
 
     async def _rewrite_item_for_persona_style(
@@ -1786,6 +1916,15 @@ class ContentBatchExecutionService:
                 if _is_postprocess_blocked(item):
                     return 0
                 review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                if _has_no_rewrite_product_experience_phrase_review(review):
+                    self._mark_product_experience_blocking_failure(
+                        item,
+                        review,
+                        source="product_experience_phrase_guard",
+                        rewrite_attempted=False,
+                    )
+                    await db.commit()
+                    return 0
                 if _should_mark_only_product_experience_phrase_review(item.plan_json, review):
                     self._mark_product_experience_phrase_review(item, review, mark_rewrite_required=False)
                     await db.commit()
@@ -2175,6 +2314,14 @@ class ContentBatchExecutionService:
             if review.hard_risk_hits
             else "不要写孩子已经出现不舒服后才临时喝旺玥；旺玥只作为日常儿童奶粉选择出现，不写治疗、补救或立刻见效。"
         )
+        public_disease_context_instruction = (
+            "本轮命中公共疾病环境对照："
+            f"{'/'.join(review.wangyue_public_disease_context_hits)}。"
+            "只删除班里、周围或其他孩子请假、咳嗽、中招、生病等对照分句；保留自家孩子普通状态观察和正确产品依据。"
+            "删除后如果句子不通，只补最短连接，不新增另一种疾病、天气、季节、出勤或医疗事实。"
+            if review.wangyue_public_disease_context_hits
+            else "不要新增班里、周围或其他孩子请假、咳嗽、中招、生病等公共疾病环境对照；自家普通状态观察可以保留。"
+        )
         semantic_odd_instruction = (
             "本轮命中会牵动上下文逻辑的敏感表达："
             f"{'/'.join(_semantic_odd_product_experience_phrase_hits(review))}。"
@@ -2394,6 +2541,7 @@ class ContentBatchExecutionService:
                 wangyue_age_stage_instruction,
                 odd_phrase_instruction,
                 hard_risk_instruction,
+                public_disease_context_instruction,
                 adult_self_drinking_instruction,
                 formula_usage_form_instruction,
                 physical_action_carrier_instruction,
@@ -2468,6 +2616,7 @@ class ContentBatchExecutionService:
         review: ProductExperiencePhraseReview,
         *,
         source: str,
+        rewrite_attempted: bool = True,
     ) -> None:
         self._mark_product_experience_phrase_review(item, review)
         quality = dict(item.quality_json or {})
@@ -2476,11 +2625,16 @@ class ContentBatchExecutionService:
         review_report.update(
             {
                 "rewrite_required": True,
-                "rewrite_reason": "硬性规则改写失败，需要人工复核",
+                "rewrite_reason": (
+                    "硬性规则改写失败，需要人工复核"
+                    if rewrite_attempted
+                    else "命中生成后硬拦截，禁止自动改写"
+                ),
                 "blocking_failure": {
                     "source": source,
                     "reasons": review.reasons,
                     "hits": blocking_hits,
+                    "rewrite_allowed": rewrite_attempted,
                 },
             }
         )
@@ -2493,7 +2647,8 @@ class ContentBatchExecutionService:
         }
         item.quality_json = quality
         item.status = "failed"
-        item.error_message = "硬性规则改写后仍命中：" + "、".join(blocking_hits or review.reasons)
+        prefix = "硬性规则改写后仍命中：" if rewrite_attempted else "生成后硬拦截命中："
+        item.error_message = prefix + "、".join(blocking_hits or review.reasons)
 
     def _mark_royal_friso_structure_review(
         self,
@@ -3191,9 +3346,12 @@ def _append_product_experience_review_reason(
 
 
 def _persona_style_rewrite_enabled(plan: dict[str, Any] | None) -> bool:
+    plan = plan or {}
+    if str(plan.get("asset_key") or "").strip() in PERSONA_STYLE_REWRITE_DISABLED_ASSET_KEYS:
+        return False
     if should_review_product_experience(plan):
         return False
-    value = (plan or {}).get("persona_style_rewrite_enabled")
+    value = plan.get("persona_style_rewrite_enabled")
     return value is not False
 
 
@@ -3206,6 +3364,8 @@ def _blocking_product_experience_phrase_hits(review: ProductExperiencePhraseRevi
     return list(
         dict.fromkeys(
             review.wangyue_time_event_context_hits
+            + review.wangyue_no_rewrite_block_hits
+            + review.wangyue_public_disease_context_hits
             + review.temporal_context_hits
             + review.wangyue_wrong_brand_hits
             + review.wangyue_explicit_age_hits
@@ -3219,6 +3379,10 @@ def _blocking_product_experience_phrase_hits(review: ProductExperiencePhraseRevi
             + [hit for hit in review.hard_risk_hits if hit.startswith("症状效果证明：")]
         )
     )
+
+
+def _has_no_rewrite_product_experience_phrase_review(review: ProductExperiencePhraseReview) -> bool:
+    return bool(review.wangyue_no_rewrite_block_hits)
 
 
 def _has_blocking_product_experience_phrase_review(review: ProductExperiencePhraseReview) -> bool:
@@ -3244,6 +3408,8 @@ def _should_rewrite_product_experience_llm_quality(
     review: ProductExperienceLLMReview,
 ) -> bool:
     plan = plan or {}
+    if _is_current_wangyue_article_plan(plan):
+        return _product_experience_rewrite_mode(review) is not None
     if _is_wangyue_mark_only_llm_quality_review(plan, review):
         return False
     if _is_overcomplete_decision_chain_only_llm_review(review):
@@ -3274,6 +3440,23 @@ def _should_repair_product_experience_llm_quality(
     if _is_soft_wangyue_strong_seeding_llm_review(review):
         return False
     return True
+
+
+def _is_current_wangyue_article_plan(plan: dict[str, Any] | None) -> bool:
+    return str((plan or {}).get("asset_key") or "") == CURRENT_WANGYUE_ARTICLE_ASSET_KEY
+
+
+def _product_experience_rewrite_mode(review: ProductExperienceLLMReview) -> str | None:
+    codes = {issue.code for issue in review.issues}
+    if codes.intersection(PRODUCT_EXPERIENCE_COMPLIANCE_ISSUE_CODES):
+        return "compliance_cleanup"
+    if codes and codes.issubset(PRODUCT_EXPERIENCE_FLUENCY_ISSUE_CODES):
+        return "fluency_humanize"
+    return None
+
+
+def _max_product_experience_llm_rewrite_rounds(plan: dict[str, Any] | None) -> int:
+    return 2 if _is_current_wangyue_article_plan(plan) else MAX_PRODUCT_EXPERIENCE_LLM_REWRITE_ROUNDS
 
 
 def _rewrite_removed_required_wangyue_product(
@@ -3341,7 +3524,7 @@ def _should_mark_only_product_experience_phrase_review(
     ):
         return True
     if (
-        asset_key.startswith("wangyue_v2_")
+        asset_key == CURRENT_WANGYUE_ARTICLE_ASSET_KEY
         and set(review.reasons).issubset(
             {
                 "common_ai_closure_phrase",

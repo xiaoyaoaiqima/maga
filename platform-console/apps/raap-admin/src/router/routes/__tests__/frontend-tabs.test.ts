@@ -30,6 +30,7 @@ describe('frontend controlled sidebar tabs', () => {
 
     expect(paths).toEqual([
       '/business-rules',
+      '/content-agent/workbench',
       '/content-agent/feedback',
       '/content-agent/system-prompt-keywords',
       '/content-agent/experts',
@@ -39,6 +40,7 @@ describe('frontend controlled sidebar tabs', () => {
     ]);
     expect(titles).toEqual([
       '生产工作台',
+      '生成历史',
       '评价反馈',
       '表达扩散语料',
       '生文 Expert',
@@ -64,11 +66,11 @@ describe('frontend controlled sidebar tabs', () => {
     expect(overridesPreferences.app?.defaultHomePath).toBe('/business-rules');
   });
 
-  it('does not expose the legacy agent workbench in the MVP sidebar', () => {
+  it('exposes generation history without restoring the legacy agent workbench', () => {
     const paths = collectPaths(frontendTabRoutes);
 
     expect(paths).not.toContain('/agent/workbench');
-    expect(paths).not.toContain('/content-agent/workbench');
+    expect(paths).toContain('/content-agent/workbench');
   });
 
   it('does not expose legacy RAAP modules in the MVP sidebar', () => {

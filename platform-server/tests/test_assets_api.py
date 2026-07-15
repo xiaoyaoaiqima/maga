@@ -1599,3 +1599,31 @@ async def test_upload_article_business_rule_set_infers_activity_and_word_count(a
         == "逐条参考：中短文约120-150字，短一点但像真人不要硬扩写；短文40-80字；标题不计；正文单段不换行"
     )
     assert asset["metadata_json"]["word_count"] == asset["content_json"]["word_count"]
+
+
+@pytest.mark.asyncio
+async def test_upload_article_business_rule_set_uses_its_display_name_as_activity_fallback(asset_client):
+    csv_content = "\n".join(
+        [
+            "业务规则名称,规则语料,示例",
+            '"妈妈班+月子中心","写一篇a2妈妈班活动后的分享。","示例"',
+        ]
+    )
+
+    response = await asset_client.post(
+        "/api/v1/assets/imports/article-business-rule-set",
+        data={
+            "asset_key": "a2_momclass_month_center",
+            "display_name": "a2妈妈班+月子中心",
+            "created_by": "ops",
+        },
+        files={"file": ("a2妈妈班业务规则.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+
+    assert response.status_code == 200
+    detail_response = await asset_client.get(
+        "/api/v1/assets/article_business_rule_set/a2_momclass_month_center"
+    )
+    asset = detail_response.json()["data"]
+    assert asset["content_json"]["activity_name"] == "a2妈妈班+月子中心"
+    assert asset["metadata_json"]["activity_name"] == "a2妈妈班+月子中心"

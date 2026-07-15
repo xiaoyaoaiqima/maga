@@ -18,6 +18,8 @@
     "build": "pnpm vite build --mode production",
     "build:analyze": "pnpm vite build --mode analyze",
     "dev": "pnpm vite --mode development",
+    "prebuild": "pnpm --filter @vben/node-utils run build && pnpm --filter @vben/vite-config run build && pnpm --filter @vben/tailwind-config run build && pnpm --filter @vben-core/shared run build",
+    "prebuild:analyze": "pnpm --filter @vben/node-utils run build && pnpm --filter @vben/vite-config run build && pnpm --filter @vben/tailwind-config run build && pnpm --filter @vben-core/shared run build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit --skipLibCheck"
   },

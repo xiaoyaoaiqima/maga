@@ -823,28 +823,41 @@ def build_article_pool_context_list(item: Any, profile_key: Any = None) -> dict[
     plan = _dict_value(getattr(item, "plan_json", None))
     selected_keywords = _selected_keywords(plan, _dict_value(getattr(item, "quality_json", None)))
     keyword = _derive_keyword(item, plan, profile)
+    persona = _keyword_name(selected_keywords, codes=("persona",), names=("人设",)) or ""
+    perturbation_rule = _keyword_name(
+        selected_keywords,
+        codes=("perturbation_rule",),
+        names=("扰动规则",),
+    )
+    writing_instruction = _keyword_name(
+        selected_keywords,
+        codes=("comment_writing_instruction", "writing_instruction"),
+        names=("生文指令", "写作指令"),
+    )
+    output_format = _keyword_name(
+        selected_keywords,
+        codes=("comment_format_control", "format_control"),
+        names=("生文输出格式", "输出格式"),
+    )
+    is_article = any(
+        str(field or "").strip() in {"title", "body"}
+        for field in plan.get("output_fields") or []
+    )
     context = {
-        "人设": _keyword_name(selected_keywords, codes=("persona",), names=("人设",)) or "",
+        "人设": persona,
         "关键词": keyword or "",
-        "扰动规则": _keyword_name(selected_keywords, codes=("perturbation_rule",), names=("扰动规则",)) or "通用",
-        "生文指令": _keyword_name(
-            selected_keywords,
-            codes=("comment_writing_instruction", "writing_instruction"),
-            names=("生文指令", "写作指令"),
-        )
-        or "评论-短句",
+        "扰动规则": perturbation_rule or "通用",
+        "生文指令": writing_instruction or ("" if is_article else "评论-短句"),
         "业务规则": _derive_business_rule(item, plan, keyword=keyword, profile=profile),
-        "生文输出格式": _keyword_name(
-            selected_keywords,
-            codes=("comment_format_control", "format_control"),
-            names=("生文输出格式", "输出格式"),
-        )
-        or "生文输出格式-评论",
+        "生文输出格式": output_format or ("" if is_article else "生文输出格式-评论"),
     }
-    return {
+    sanitized = {
         key: _sanitize_context_value(str(value or "").strip(), profile)
         for key, value in context.items()
     }
+    if is_article:
+        return {key: value for key, value in sanitized.items() if value}
+    return sanitized
 
 
 class ActivityQualityGuardService:
@@ -1229,8 +1242,9 @@ def _trim_activity_comment(text: str, max_chars: int = 60) -> str:
 
 def _collapse_repeated_activity_terms(text: str) -> str:
     value = str(text or "")
-    value = re.sub(r"扫物流码底(?:物流码|码)?", "扫罐底物流码", value)
-    value = re.sub(r"物流码底(?:物流码|码)?", "罐底物流码", value)
+    value = re.sub(r"扫物流码底的?(?:物流码|码)?", "扫罐底物流码", value)
+    value = re.sub(r"物流码底的?(?:物流码|码)?", "罐底物流码", value)
+    value = re.sub(r"物流码的物流码", "物流码", value)
     value = re.sub(r"物流码码", "物流码", value)
     value = re.sub(r"物流码(?:那个|这个)码", "物流码", value)
     value = re.sub(r"物流码(?:那个|这个|这边|这里)?物流码", "物流码", value)

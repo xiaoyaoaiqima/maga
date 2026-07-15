@@ -6,7 +6,7 @@ import type { ChatContext } from '#/api/core/chat';
 import type { ContentAgentApi } from '#/api/core/content-agent';
 
 import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRouter } from 'vue-router';
 
 import { useUserStore } from '@vben/stores';
 
@@ -23,7 +23,6 @@ import {
 import {
   Button,
   Card,
-  Checkbox,
   Drawer,
   Empty,
   Input,
@@ -59,8 +58,6 @@ import {
 import { useMagaChatStore } from '#/store';
 
 type RulePackageType = 'comment_business' | 'article_business';
-type BatchScope = 'asset' | 'rule';
-
 const ARTICLE_TEST_ARTICLES_PER_RUN = 2;
 
 interface RulePackageConfig {
@@ -117,14 +114,8 @@ const selectedSummary = ref<AssetsApi.AssetSummary | null>(null);
 const selectedAsset = ref<AssetsApi.AssetRegistry | null>(null);
 const userStore = useUserStore();
 const chatStore = useMagaChatStore();
-const route = useRoute();
-const batchLoading = ref(false);
-const reportLoading = ref(false);
+const router = useRouter();
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
-const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
-const batchTotal = ref(0);
-const batchScope = ref<BatchScope>('asset');
-const compareBatchIds = ref<number[]>([]);
 const compareDrawerOpen = ref(false);
 const compareLoading = ref(false);
 const contrastTesting = ref(false);
@@ -133,7 +124,6 @@ const compareReportLabels = ref<string[]>([]);
 const ruleSearchText = ref('');
 const selectedRuleKey = ref('');
 const packagePaneCollapsed = ref(false);
-const batchDetailOpen = ref(false);
 const preflightResult = ref<ContentAgentApi.PreflightResponse | null>(null);
 const preflightLoading = ref(false);
 const packageSearchText = ref('');
@@ -208,7 +198,6 @@ const activeDraftReady = computed(
   () => Boolean(activeRule.value) && selectedDraftRuleKey.value === ruleKey(activeRule.value),
 );
 const selectedReportItems = computed(() => selectedReport.value?.items || []);
-const currentBatchPreviewItems = computed(() => selectedReportItems.value.slice(0, 2));
 const selectedReportSummary = computed(
   () => selectedReport.value?.summary || null,
 );
@@ -291,28 +280,6 @@ const reportRiskCount = computed(() => {
     (summary.similarity_warning_count || 0)
   );
 });
-const selectedAssetBatches = computed(() => batchList.value);
-const selectedAssetBatchTotal = computed(() => batchTotal.value);
-const batchScopeTitle = computed(() =>
-  batchScope.value === 'rule' ? '当前规则最近测试' : '规则包最近测试',
-);
-const batchScopeEmptyText = computed(() =>
-  batchScope.value === 'rule'
-    ? '当前规则暂无测试批次'
-    : '当前规则包暂无测试批次',
-);
-const canUseRuleBatchScope = computed(() => Boolean(activeRule.value));
-const inspectorReportTitle = computed(() => {
-  if (!inspectorReport.value) return '';
-  return inspectorReport.value.batch_code || `#${inspectorReport.value.batch_id}`;
-});
-const inspectorReport = computed(() => {
-  if (!selectedAsset.value || !selectedReport.value) return null;
-  return selectedReport.value.asset_key === selectedAsset.value.asset_key
-    ? selectedReport.value
-    : null;
-});
-const inspectorReportSummary = computed(() => inspectorReport.value?.summary || null);
 const compareLeftReport = computed(() => compareReports.value[0] || null);
 const compareRightReport = computed(() => compareReports.value[1] || null);
 const compareLeftLabel = computed(() => compareReportLabels.value[0] || '基准批次');
@@ -360,17 +327,6 @@ const compareMetricRows = computed(() => {
     },
   ];
 });
-const batchDetailColumns: any[] = [
-  { title: '序号', dataIndex: 'item_no', key: 'item_no', width: 72 },
-  { title: '状态', dataIndex: 'status', key: 'status', width: 110 },
-  { title: '标题', dataIndex: 'title', key: 'title', width: 180 },
-  { title: '正文', dataIndex: 'body', key: 'body', minWidth: 320 },
-  { title: '抽中示例', key: 'selected_examples', width: 220 },
-  { title: '红线', dataIndex: 'hard_pass', key: 'hard_pass', width: 90 },
-  { title: '风险', key: 'risk', width: 220 },
-  { title: '字数', dataIndex: 'body_chars', key: 'body_chars', width: 80 },
-];
-
 const previewColumns = computed<any[]>(() => {
   if (isSelectedArticleBusinessRuleSet.value) {
     return [
@@ -450,16 +406,6 @@ const itemFailureMessage = (item: ContentAgentApi.BatchReportItem | Record<strin
     '正文尚未生成，请查看执行链路。'
   );
 };
-
-function batchItemPreviewText(item: ContentAgentApi.BatchReportItem | Record<string, any>) {
-  return String(item.body || item.body_preview || itemFailureMessage(item) || '').trim();
-}
-
-function batchItemNote(item: ContentAgentApi.BatchReportItem | Record<string, any>) {
-  if (item.status === 'failed') return itemFailureMessage(item);
-  if (item.rewrite_required) return item.rewrite_reason || '需要改写';
-  return '';
-}
 
 function riskTagsOf(item: ContentAgentApi.BatchReportItem | Record<string, any>) {
   const tags: Array<{ color: string; label: string }> = [];
@@ -631,62 +577,20 @@ async function openAsset(row: AssetsApi.AssetSummary | Record<string, any>) {
     setInlineDraftRule(selectedRuleItems.value[0]);
   }
   selectedReport.value = null;
-  compareBatchIds.value = [];
-  await loadBatches();
+  await loadLatestReport();
 }
 
-const openReport = async (batchId: number, showLoading = true) => {
-  if (showLoading) reportLoading.value = true;
-  try {
-    selectedReport.value = await getContentBatchReportApi(batchId);
-  } finally {
-    if (showLoading) reportLoading.value = false;
-  }
-};
-
-const loadBatches = async () => {
-  batchLoading.value = true;
-  try {
-    const params: Parameters<typeof getContentBatchListApi>[0] = {
-      asset_key: selectedAsset.value?.asset_key,
-      limit: 20,
-      offset: 0,
-    };
-    if (batchScope.value === 'rule' && activeRule.value) {
-      params.rule_id = String(activeRule.value.rule_id || '') || null;
-      params.source_row_no =
-        Number(activeRule.value.source_row_no || 0) || null;
-    }
-    const data = await getContentBatchListApi(params);
-    batchList.value = data?.items || [];
-    batchTotal.value = data?.total || 0;
-    compareBatchIds.value = compareBatchIds.value.filter((batchId) =>
-      batchList.value.some((batch) => batch.batch_id === batchId),
-    );
-
-    const queryBatchId = Number(route.query.batch_id || 0);
-    if (queryBatchId > 0 && !selectedReport.value) {
-      await openReport(queryBatchId, false);
-      return;
-    }
-    if (selectedReport.value?.batch_id) {
-      await openReport(selectedReport.value.batch_id, false);
-      return;
-    }
-    if (!selectedReport.value && batchList.value[0]) {
-      await openReport(batchList.value[0].batch_id, false);
-    }
-    await syncAssetRecentReport();
-  } finally {
-    batchLoading.value = false;
-  }
-};
-
-async function syncAssetRecentReport() {
-  const latestBatch = selectedAssetBatches.value[0];
-  if (!latestBatch) return;
-  if (selectedReport.value?.asset_key === selectedAsset.value?.asset_key) return;
-  await openReport(latestBatch.batch_id, false);
+async function loadLatestReport() {
+  if (!selectedAsset.value?.asset_key) return;
+  const data = await getContentBatchListApi({
+    asset_key: selectedAsset.value.asset_key,
+    limit: 1,
+    offset: 0,
+  });
+  const latestBatch = data?.items?.[0];
+  selectedReport.value = latestBatch
+    ? await getContentBatchReportApi(latestBatch.batch_id)
+    : null;
 }
 
 function openFocusGeneration() {
@@ -707,6 +611,15 @@ function openFocusGeneration() {
     count: focusGenerateForm.value.count || 10,
   };
   focusGenerateOpen.value = true;
+}
+
+function openGenerationHistory() {
+  router.push({
+    path: '/content-agent/workbench',
+    query: selectedReport.value?.batch_id
+      ? { batch_id: String(selectedReport.value.batch_id) }
+      : {},
+  });
 }
 
 function openRuleGeneration(record: Record<string, any>) {
@@ -767,7 +680,6 @@ async function generateFocusedRule() {
     );
     focusGenerateOpen.value = false;
     selectedReport.value = result.report;
-    await loadBatches();
   } catch {
     message.error('业务规则测试失败，请检查业务规则内容和模型配置');
   } finally {
@@ -897,66 +809,6 @@ async function runPreflightCheck() {
   }
 }
 
-async function openBatchDetail(batchId?: number) {
-  const targetBatchId =
-    batchId || inspectorReport.value?.batch_id || selectedAssetBatches.value[0]?.batch_id;
-  if (!targetBatchId) {
-    message.warning('暂无可查看的测试批次');
-    return;
-  }
-  await openReport(targetBatchId);
-  batchDetailOpen.value = true;
-}
-
-async function selectRecentBatch(batchId: number) {
-  await openReport(batchId);
-}
-
-async function changeBatchScope(scope: BatchScope) {
-  if (scope === 'rule' && !canUseRuleBatchScope.value) {
-    message.warning('请先选择一条业务规则');
-    return;
-  }
-  if (batchScope.value === scope) return;
-  batchScope.value = scope;
-  selectedReport.value = null;
-  compareBatchIds.value = [];
-  await loadBatches();
-}
-
-function isBatchSelectedForCompare(batchId: number) {
-  return compareBatchIds.value.includes(batchId);
-}
-
-function toggleCompareBatch(batchId: number) {
-  if (isBatchSelectedForCompare(batchId)) {
-    compareBatchIds.value = compareBatchIds.value.filter((id) => id !== batchId);
-    return;
-  }
-  if (compareBatchIds.value.length >= 2) {
-    message.warning('最多选择两个批次对比');
-    return;
-  }
-  compareBatchIds.value = [...compareBatchIds.value, batchId];
-}
-
-async function openBatchCompare() {
-  if (compareBatchIds.value.length !== 2) {
-    message.warning('请选择两个批次对比');
-    return;
-  }
-  compareLoading.value = true;
-  compareDrawerOpen.value = true;
-  compareReportLabels.value = ['基准批次', '对比批次'];
-  try {
-    compareReports.value = await Promise.all(
-      compareBatchIds.value.map((batchId) => getContentBatchReportApi(batchId)),
-    );
-  } finally {
-    compareLoading.value = false;
-  }
-}
-
 function buildRuleDraftTestPayload(
   count: number,
   draftText?: string,
@@ -1018,7 +870,6 @@ async function testRuleDraft(
       : await startCommentBatchApi(sharedPayload);
     message.success(formatRuleTestSuccessMessage(result, count, isQuickTrial));
     selectedReport.value = result.report;
-    await loadBatches();
   } catch (error: any) {
     message.error(error?.message || '规则测试失败');
   } finally {
@@ -1067,13 +918,11 @@ async function runRuleDraftContrast() {
         postprocess_mode: 'generate_only',
       }),
     ]);
-    compareBatchIds.value = [baseResult.batch_id, draftResult.batch_id];
     compareReports.value = [baseResult.report, draftResult.report];
     selectedReport.value = draftResult.report;
     message.success(
       `对照试跑完成：A #${baseResult.batch_id}，B #${draftResult.batch_id}`,
     );
-    await loadBatches();
   } catch (error: any) {
     message.error(error?.message || '对照试跑失败');
   } finally {
@@ -1269,13 +1118,6 @@ function defaultExampleSampleCount(_record: Record<string, any>) {
   return 3;
 }
 
-function selectedExamplesOf(record: Record<string, any>) {
-  const businessRule = record.generation_snapshot?.business_rule || {};
-  return Array.isArray(businessRule.examples)
-    ? businessRule.examples.map((item: unknown) => String(item || '').trim()).filter(Boolean)
-    : [];
-}
-
 function ruleKey(record: Record<string, any>) {
   return [
     record.rule_id || '',
@@ -1345,11 +1187,6 @@ function riskSamplesOf(report?: ContentAgentApi.BatchReport | null, limit = 5) {
         riskTagsOf(item).length > 0,
     )
     .slice(0, limit);
-}
-
-function formatBatchTime(value?: null | string) {
-  if (!value) return '-';
-  return value.replace('T', ' ').slice(0, 16);
 }
 
 function assetTimeMs(value?: null | string) {
@@ -1434,14 +1271,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateViewportHeight);
 });
 
-watch(
-  () => route.query.batch_id,
-  () => {
-    selectedReport.value = null;
-    loadBatches();
-  },
-);
-
 watch(showHiddenRules, () => {
   loadRuleAssets();
 });
@@ -1477,16 +1306,6 @@ watch(
     if (!selectedVisible) {
       selectedRuleKey.value = ruleKey(filteredRuleItems.value[0]);
     }
-  },
-);
-
-watch(
-  () => selectedRuleKey.value,
-  () => {
-    if (batchScope.value !== 'rule') return;
-    selectedReport.value = null;
-    compareBatchIds.value = [];
-    loadBatches();
   },
 );
 
@@ -1591,9 +1410,8 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
           <template #icon><ReloadOutlined /></template>
           刷新规则
         </Button>
-        <Button @click="loadBatches">
-          <template #icon><ReloadOutlined /></template>
-          刷新测试
+        <Button @click="openGenerationHistory">
+          生成历史
         </Button>
         <Button @click="downloadSimpleRuleTemplate">
           下载规则模板
@@ -1927,125 +1745,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
         </Card>
       </aside>
 
-      <Card class="recent-batches-card" :bordered="false">
-        <Spin :spinning="batchLoading || reportLoading">
-          <div class="recent-batches-layout">
-            <div class="recent-batches-head">
-              <div class="recent-batches-title-row">
-                <div class="inspector-title">
-                  <strong>{{ batchScopeTitle }}</strong>
-                  <Tag>最近 {{ selectedAssetBatchTotal }} 个</Tag>
-                </div>
-                <div class="batch-scope-switch">
-                  <Button
-                    size="small"
-                    :type="batchScope === 'asset' ? 'primary' : 'default'"
-                    @click="changeBatchScope('asset')"
-                  >
-                    规则包
-                  </Button>
-                  <Button
-                    size="small"
-                    :disabled="!canUseRuleBatchScope"
-                    :type="batchScope === 'rule' ? 'primary' : 'default'"
-                    @click="changeBatchScope('rule')"
-                  >
-                    当前规则
-                  </Button>
-                </div>
-              </div>
-              <Space class="batch-footer-actions">
-                <Button
-                  :disabled="compareBatchIds.length !== 2"
-                  @click="openBatchCompare"
-                >
-                  对比批次
-                </Button>
-                <Button
-                  :disabled="!selectedAssetBatches.length"
-                  @click="openBatchDetail()"
-                >
-                  查看完整明细
-                </Button>
-              </Space>
-            </div>
-
-            <template v-if="inspectorReport">
-              <div class="recent-batch-summary">
-                <div class="current-batch-strip">
-                  <div class="current-batch-title">
-                    <span>当前批次</span>
-                    <strong>{{ inspectorReportTitle }}</strong>
-                  </div>
-                  <div class="current-batch-stats">
-                    <Tag :color="statusColor(inspectorReport.status)">
-                      {{ statusLabel(inspectorReport.status) }}
-                    </Tag>
-                    <span>
-                      {{ inspectorReportSummary?.generated_count ?? '-' }}/{{
-                        inspectorReportSummary?.total_count ?? '-'
-                      }}
-                      已生成
-                    </span>
-                    <span>失败 {{ failedCountOf(inspectorReportSummary) }}</span>
-                    <span>风险 {{ batchRiskCount(inspectorReportSummary) }}</span>
-                  </div>
-                </div>
-                <div v-if="currentBatchPreviewItems.length" class="current-batch-samples">
-                  <div
-                    v-for="item in currentBatchPreviewItems"
-                    :key="item.item_id"
-                    class="current-batch-sample"
-                  >
-                    <div class="current-batch-sample-head">
-                      <Tag :color="statusColor(item.status)">
-                        #{{ item.item_no }} · {{ statusLabel(item.status) }}
-                      </Tag>
-                      <strong>{{ item.title || '-' }}</strong>
-                    </div>
-                    <p>{{ batchItemPreviewText(item) }}</p>
-                    <div v-if="batchItemNote(item)" class="current-batch-sample-note">
-                      {{ batchItemNote(item) }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <div v-if="selectedAssetBatches.length" class="batch-list compact-list">
-              <button
-                v-for="batch in selectedAssetBatches.slice(0, 6)"
-                :key="batch.batch_id"
-                class="batch-list-item compact"
-                :class="{ active: inspectorReport?.batch_id === batch.batch_id }"
-                type="button"
-                @click="selectRecentBatch(batch.batch_id)"
-              >
-                <Checkbox
-                  :checked="isBatchSelectedForCompare(batch.batch_id)"
-                  @change="toggleCompareBatch(batch.batch_id)"
-                  @click.stop
-                />
-                <span class="batch-title">
-                  <span>#{{ batch.batch_id }}</span>
-                  <Tag :color="statusColor(batch.status)">
-                    {{ statusLabel(batch.status) }}
-                  </Tag>
-                </span>
-                <span class="batch-meta">
-                  {{ batch.summary.generated_count }}/{{ batch.summary.total_count }}
-                  条 · 失败 {{ failedCountOf(batch.summary) }} · 风险
-                  {{ batchRiskCount(batch.summary) }}
-                </span>
-                <span class="batch-time">
-                  {{ formatBatchTime(batch.create_time) }}
-                </span>
-              </button>
-            </div>
-            <Empty v-else :description="batchScopeEmptyText" />
-          </div>
-        </Spin>
-      </Card>
     </div>
 
     <Modal
@@ -2123,118 +1822,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
         </div>
       </Space>
     </Modal>
-
-    <Drawer
-      v-model:open="batchDetailOpen"
-      class="batch-detail-drawer"
-      placement="right"
-      title="批次明细"
-      width="980"
-    >
-      <template #extra>
-        <Button
-          size="small"
-          :disabled="!selectedReport"
-          :loading="reportLoading"
-          @click="selectedReport && openReport(selectedReport.batch_id)"
-        >
-          <template #icon><ReloadOutlined /></template>
-          刷新
-        </Button>
-      </template>
-
-      <Spin :spinning="reportLoading">
-        <template v-if="selectedReport">
-          <div class="batch-detail-summary">
-            <div class="metric-block">
-              <span>业务规则</span>
-              <strong>{{ selectedReport.asset_key }}</strong>
-            </div>
-            <div class="metric-block">
-              <span>总数</span>
-              <strong>{{ selectedReportSummary?.total_count ?? '-' }}</strong>
-            </div>
-            <div class="metric-block">
-              <span>已生成</span>
-              <strong>{{ selectedReportSummary?.generated_count ?? '-' }}</strong>
-            </div>
-            <div class="metric-block">
-              <span>失败</span>
-              <strong>{{ reportFailureCount }}</strong>
-            </div>
-            <div class="metric-block">
-              <span>红线通过</span>
-              <strong>{{ selectedReportSummary?.hard_pass_count ?? '-' }}</strong>
-            </div>
-            <div class="metric-block">
-              <span>待关注</span>
-              <strong>{{ reportRiskCount }}</strong>
-            </div>
-          </div>
-
-          <Table
-            class="batch-detail-table"
-            :columns="batchDetailColumns"
-            :data-source="selectedReportItems"
-            :pagination="{ pageSize: 10, showSizeChanger: false }"
-            :scroll="{ x: 980, y: 520 }"
-            row-key="item_id"
-            size="small"
-          >
-            <template #bodyCell="{ column, record, text }">
-              <template v-if="column.key === 'status'">
-                <Tag :color="statusColor(record.status)">
-                  {{ statusLabel(record.status) }}
-                </Tag>
-              </template>
-              <template v-else-if="column.key === 'body'">
-                <div v-if="record.body" class="batch-body-cell">
-                  {{ record.body }}
-                </div>
-                <div v-else class="batch-error-cell">
-                  {{ itemFailureMessage(record) }}
-                </div>
-              </template>
-              <template v-else-if="column.key === 'selected_examples'">
-                <div v-if="selectedExamplesOf(record).length" class="selected-examples-cell">
-                  <p
-                    v-for="example in selectedExamplesOf(record)"
-                    :key="example"
-                  >
-                    {{ example }}
-                  </p>
-                </div>
-                <span v-else class="muted">-</span>
-              </template>
-              <template v-else-if="column.key === 'title'">
-                <span>{{ record.title || '-' }}</span>
-              </template>
-              <template v-else-if="column.key === 'hard_pass'">
-                <Tag :color="passColor(record.hard_pass)">
-                  {{ passLabel(record.hard_pass) }}
-                </Tag>
-              </template>
-              <template v-else-if="column.key === 'risk'">
-                <Space v-if="riskTagsOf(record).length" wrap size="small">
-                  <Tag
-                    v-for="tag in riskTagsOf(record)"
-                    :key="tag.label"
-                    :color="tag.color"
-                  >
-                    {{ tag.label }}
-                  </Tag>
-                </Space>
-                <span v-else class="muted">-</span>
-              </template>
-              <template v-else>
-                {{ formatValue(text) }}
-              </template>
-            </template>
-          </Table>
-        </template>
-        <Empty v-else description="请选择批次查看明细" />
-      </Spin>
-    </Drawer>
 
     <Drawer
       v-model:open="compareDrawerOpen"
@@ -2448,7 +2035,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   display: grid;
   gap: 12px;
   grid-template-columns: 300px minmax(520px, 1fr) 360px;
-  grid-template-rows: minmax(0, 1fr) auto;
   height: calc(100vh - 154px);
   min-height: 760px;
   overflow: hidden;
@@ -2460,18 +2046,9 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 
 .rule-package-pane,
 .rule-list-pane,
-.rule-inspector-pane,
-.recent-batches-card {
+.rule-inspector-pane {
   min-height: 0;
   min-width: 0;
-}
-
-.recent-batches-card {
-  grid-column: 1 / -1;
-}
-
-.recent-batches-card :deep(.ant-card-body) {
-  padding: 12px 14px;
 }
 
 .rule-package-pane.collapsed {
@@ -2577,7 +2154,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 }
 
 .rule-package-list,
-.batch-list,
 .risk-sample-list {
   display: flex;
   flex-direction: column;
@@ -2597,8 +2173,7 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   margin-top: 12px;
 }
 
-.rule-package-option,
-.batch-list-item {
+.rule-package-option {
   background: var(--maga-surface-soft);
   border: 1px solid var(--maga-border);
   border-radius: 8px;
@@ -2618,16 +2193,13 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 }
 
 .rule-package-option:hover,
-.batch-list-item:hover,
-.rule-package-option.active,
-.batch-list-item.active {
+.rule-package-option.active {
   background: var(--maga-surface-active);
   border-color: #1677ff;
   box-shadow: 0 0 0 1px rgb(22 119 255 / 10%);
 }
 
-.option-main,
-.batch-title {
+.option-main {
   align-items: flex-start;
   display: flex;
   font-weight: 600;
@@ -2785,20 +2357,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   font-size: 12px;
 }
 
-.selected-examples-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 120px;
-  overflow: auto;
-}
-
-.selected-examples-cell p {
-  color: var(--maga-text-muted);
-  line-height: 1.5;
-  margin: 0;
-}
-
 .inspector-section {
   margin-bottom: 14px;
   min-width: 0;
@@ -2886,58 +2444,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   color: var(--maga-text);
 }
 
-.current-batch-title {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-  min-width: 0;
-}
-
-.current-batch-title span {
-  color: var(--maga-text-muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.current-batch-title strong {
-  color: var(--maga-text);
-  font-size: 13px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.batch-scope-switch {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: 1fr 1fr;
-  margin-top: 10px;
-}
-
-.metric-block {
-  background: var(--maga-surface-soft);
-  border: 1px solid var(--maga-border);
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 10px 12px;
-}
-
-.metric-block span {
-  color: var(--maga-text-muted);
-  font-size: 12px;
-}
-
-.metric-block strong {
-  color: var(--maga-text);
-  font-size: 14px;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .risk-sample-card {
   background: var(--maga-surface-soft);
   border: 1px solid var(--maga-border);
@@ -2961,195 +2467,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   white-space: pre-wrap;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
-}
-
-.compact-list {
-  margin-top: 12px;
-  max-height: 260px;
-}
-
-.batch-list-item.compact {
-  display: grid;
-  gap: 4px 8px;
-  grid-template-columns: auto minmax(0, 1fr);
-  min-height: 74px;
-}
-
-.batch-list-item.compact :deep(.ant-checkbox-wrapper),
-.batch-list-item.compact :deep(.ant-checkbox) {
-  grid-row: 1 / span 3;
-  margin-top: 2px;
-}
-
-.batch-list-item.compact .batch-title,
-.batch-list-item.compact .batch-meta,
-.batch-list-item.compact .batch-time {
-  min-width: 0;
-}
-
-.recent-batches-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-}
-
-.recent-batches-head {
-  align-items: center;
-  display: flex;
-  gap: 16px;
-  justify-content: space-between;
-  min-width: 0;
-}
-
-.recent-batches-title-row {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  min-width: 0;
-}
-
-.recent-batch-summary {
-  display: grid;
-  gap: 10px;
-}
-
-.current-batch-samples {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-}
-
-.current-batch-strip {
-  align-items: center;
-  background: var(--maga-surface-soft);
-  border: 1px solid var(--maga-border);
-  border-radius: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  justify-content: space-between;
-  min-width: 0;
-  padding: 8px 10px;
-}
-
-.current-batch-stats {
-  align-items: center;
-  color: var(--maga-text-muted);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 12px;
-  gap: 6px 10px;
-}
-
-.current-batch-sample {
-  background: var(--maga-surface-soft);
-  border: 1px solid var(--maga-border);
-  border-radius: 8px;
-  min-width: 0;
-  padding: 10px 12px;
-}
-
-.current-batch-sample-head {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-}
-
-.current-batch-sample-head strong {
-  color: var(--maga-text);
-  flex: 1;
-  font-size: 13px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.current-batch-sample p {
-  color: var(--maga-text);
-  font-size: 12px;
-  line-height: 1.6;
-  margin: 8px 0 0;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.current-batch-sample-note {
-  color: var(--maga-error);
-  font-size: 12px;
-  line-height: 1.5;
-  margin-top: 6px;
-  overflow-wrap: anywhere;
-}
-
-.recent-batches-card .compact-list {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(150px, 1fr));
-  margin-top: 0;
-  max-height: none;
-  overflow: visible;
-  padding-right: 0;
-}
-
-.recent-batches-card .batch-footer-actions {
-  margin-top: 0;
-  width: auto;
-}
-
-.recent-batches-card .batch-footer-actions :deep(.ant-space-item) {
-  width: auto;
-}
-
-.recent-batches-card .batch-scope-switch {
-  display: flex;
-  gap: 8px;
-  margin-top: 0;
-}
-
-.recent-batches-card .batch-list-item.compact {
-  min-height: 64px;
-  padding: 8px 10px;
-}
-
-.batch-time {
-  color: var(--maga-text-muted);
-  font-size: 12px;
-}
-
-.batch-footer-actions {
-  margin-top: 12px;
-  width: 100%;
-}
-
-.batch-footer-actions :deep(.ant-space-item) {
-  width: 100%;
-}
-
-.batch-detail-summary {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(180px, 2fr) repeat(5, minmax(96px, 1fr));
-  margin-bottom: 14px;
-}
-
-.batch-detail-table {
-  margin-top: 4px;
-}
-
-.batch-body-cell {
-  color: var(--maga-text);
-  line-height: 1.65;
-  max-height: 88px;
-  overflow: auto;
-  white-space: pre-wrap;
-}
-
-.batch-error-cell {
-  color: var(--maga-error);
-  line-height: 1.6;
-  white-space: pre-wrap;
 }
 
 .batch-compare-head,
@@ -3343,13 +2660,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
     min-height: 420px;
   }
 
-  .recent-batch-summary {
-    grid-template-columns: 1fr;
-  }
-
-  .recent-batches-card .compact-list {
-    grid-template-columns: repeat(3, minmax(180px, 1fr));
-  }
 }
 
 @media (max-width: 768px) {
@@ -3380,7 +2690,6 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
   .rule-package-pane,
   .rule-list-pane,
   .rule-inspector-pane,
-  .recent-batches-card,
   .fill-card {
     height: auto;
   }
@@ -3407,17 +2716,5 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
     display: flex;
   }
 
-  .recent-batches-head {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .recent-batches-card .compact-list {
-    grid-template-columns: 1fr;
-  }
-
-  .batch-detail-summary {
-    grid-template-columns: 1fr 1fr;
-  }
 }
 </style>

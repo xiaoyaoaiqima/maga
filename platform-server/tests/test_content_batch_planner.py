@@ -10,12 +10,34 @@ from app.models.content_agent import ContentBatchJob, ContentBatchItem
 from app.services.content_batch_planner import (
     ContentBatchPlanner,
     _article_rules_with_draft_override,
+    _corpus_for_ugc_post_type,
     _normalize_article_draft_rule_override,
     _resolve_prompt_mode,
     _resolve_real_user_pool_config,
     _rotated_model_config,
     _select_article_business_rules_for_generation,
 )
+
+
+def test_rule_corpus_prompt_skips_planner_product_position_guard():
+    corpus = _corpus_for_ugc_post_type(
+        "任务：写选奶复盘。",
+        "对比选择型",
+        product_position_mode="先抛问题后出现",
+        include_product_position_guard=False,
+    )
+
+    assert corpus == "任务：写选奶复盘。"
+
+
+def test_legacy_prompt_keeps_planner_product_position_guard():
+    corpus = _corpus_for_ugc_post_type(
+        "任务：写选奶复盘。",
+        "对比选择型",
+        product_position_mode="先抛问题后出现",
+    )
+
+    assert "正文第一句不要出现产品名或品牌名" in str(corpus)
 
 
 def test_article_business_generation_limit_prefers_requested_count():

@@ -776,20 +776,31 @@ watch(
                       </Space>
                     </template>
 
-                    <h3>
-                      {{
-                        item.title ||
-                        (item.status === 'failed' ? '生成失败' : '未生成标题')
-                      }}
-                    </h3>
-                    <div v-if="item.body" class="content-body">
-                      {{ item.body }}
+                    <div class="article-content">
+                      <section class="article-field article-title-field">
+                        <div class="article-field-label">标题</div>
+                        <h3 class="content-title">
+                          {{
+                            item.title ||
+                            (item.status === 'failed'
+                              ? '生成失败'
+                              : '未生成标题')
+                          }}
+                        </h3>
+                      </section>
+
+                      <section class="article-field article-body-field">
+                        <div class="article-field-label">正文</div>
+                        <div v-if="item.body" class="content-body">
+                          {{ item.body }}
+                        </div>
+                        <Alert
+                          v-else
+                          :message="itemFailureMessage(item)"
+                          type="error"
+                        />
+                      </section>
                     </div>
-                    <Alert
-                      v-else
-                      :message="itemFailureMessage(item)"
-                      type="error"
-                    />
 
                     <VersionComparePanel
                       v-if="item.version_compare"
@@ -1008,6 +1019,40 @@ watch(
 
 .content-card {
   width: 100%;
+}
+
+.article-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.article-field {
+  padding: 12px 14px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+}
+
+.article-title-field {
+  background: #fafafa;
+}
+
+.article-body-field {
+  background: #fff;
+}
+
+.article-field-label {
+  margin-bottom: 6px;
+  color: #8c8c8c;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.content-title {
+  margin: 0;
+  color: #141414;
+  font-size: 18px;
+  line-height: 1.5;
 }
 
 .content-body {
