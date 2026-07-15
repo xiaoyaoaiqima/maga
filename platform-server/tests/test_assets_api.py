@@ -12,7 +12,7 @@ from app.models.base import Base
 from app.models.content_agent import ExecutorRegistry
 from app.models.expert_config import ExpertConfig
 from app.models.maga_assets import AssetChangeProposal, AssetChangeRequest, AssetImportRun, AssetRegistry
-from app.services.product_experience_rule_service import _row_to_rule_item
+from app.services.product_experience_rule_service import _row_to_rule_item, _warnings_for_items
 
 
 def test_row_to_rule_item_does_not_infer_product_mode_when_post_type_is_explicit():
@@ -70,6 +70,19 @@ def test_row_to_rule_item_parses_layered_article_fields_and_activity_pools():
             "options": ["扫罐底码能看检测报告。", "每批检测报告可对应查询。"],
         },
     ]
+
+
+def test_layered_article_rules_do_not_require_examples():
+    assert _warnings_for_items(
+        [
+            {
+                "business_rule": "妈妈班｜老师讲解",
+                "prompt_mode": "layered_article",
+                "examples": [],
+                "supplements": [],
+            }
+        ]
+    ) == []
 
 
 @pytest_asyncio.fixture

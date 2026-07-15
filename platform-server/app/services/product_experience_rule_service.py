@@ -714,6 +714,7 @@ def _warnings_for_items(items: list[dict[str, Any]]) -> list[str]:
     missing_examples = [
         item["business_rule"]
         for item in items
+        if item.get("prompt_mode") != "layered_article"
         if not item.get("examples") and not item.get("supplements")
     ]
     if missing_examples:
@@ -721,6 +722,7 @@ def _warnings_for_items(items: list[dict[str, Any]]) -> list[str]:
     sparse_examples = [
         item["business_rule"]
         for item in items
+        if item.get("prompt_mode") != "layered_article"
         if 0 < len(item.get("examples") or []) + len(item.get("supplements") or []) < 3
     ]
     if sparse_examples:
