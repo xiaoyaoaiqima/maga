@@ -164,6 +164,22 @@ class ContentBatchBusinessUsabilityReviewResponse(BaseSchema):
     report: ContentBatchReportResponse
 
 
+class ContentCommentBatchReviewReplayRequest(BaseSchema):
+    item_nos: list[int] = Field(default_factory=list, max_length=100)
+    created_by: str | None = Field(default=None, max_length=100)
+
+
+class ContentCommentBatchReviewReplayResponse(BaseSchema):
+    batch_id: int
+    reviewed_count: int = 0
+    skipped_count: int = 0
+    reviewed_item_nos: list[int] = Field(default_factory=list)
+    skipped_item_nos: list[int] = Field(default_factory=list)
+    changed_pass_item_nos: list[int] = Field(default_factory=list)
+    body_changed_item_nos: list[int] = Field(default_factory=list)
+    report: ContentBatchReportResponse
+
+
 class ContentBatchModelConfig(BaseSchema):
     provider_code: str | None = Field(default=None, max_length=64)
     model_code: str | None = Field(default=None, max_length=128)

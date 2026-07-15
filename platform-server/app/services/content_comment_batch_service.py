@@ -2,18 +2,22 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import os
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import re
 from random import SystemRandom
+from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
-from app.models.content_agent import ContentBatchItem, ContentBatchJob
+from app.models.content_agent import ContentBatchItem, ContentBatchItemVersion, ContentBatchJob
 from app.models.maga_assets import AssetRegistry
 from app.schemas.content_agent import ContentAgentTaskCreate
 from app.services.business_rule_asset_types import COMMENT_BUSINESS_RULE_ASSET_TYPES
@@ -217,6 +221,17 @@ class CommentBatchExecutionResult:
     item_ids: list[int]
 
 
+@dataclass(frozen=True)
+class CommentBatchReviewReplayResult:
+    batch_id: int
+    reviewed_count: int
+    skipped_count: int
+    reviewed_item_nos: list[int]
+    skipped_item_nos: list[int]
+    changed_pass_item_nos: list[int]
+    body_changed_item_nos: list[int]
+
+
 class ContentCommentBatchService:
     """Use a comment business-rule asset as the only operator input."""
 
@@ -240,6 +255,135 @@ class ContentCommentBatchService:
             autocommit=False,
             autoflush=False,
         )
+
+    async def replay_review(
+        self,
+        batch_id: int,
+        *,
+        item_nos: list[int] | None = None,
+        created_by: str | None = None,
+    ) -> CommentBatchReviewReplayResult:
+        await self._require_job(batch_id)
+        selected_item_nos = {int(item_no) for item_no in item_nos or [] if int(item_no) > 0}
+        result = await self.db.execute(
+            select(ContentBatchItem)
+            .where(ContentBatchItem.batch_id == batch_id)
+            .order_by(ContentBatchItem.item_no)
+        )
+        all_items = list(result.scalars().all())
+        if not any(_is_comment_review_item(item) for item in all_items):
+            raise ValueError("batch is not a comment batch")
+        review_items = [
+            item
+            for item in all_items
+            if item.status == "generated"
+            and str(item.body or "").strip()
+            and _is_comment_review_item(item)
+            and (not selected_item_nos or item.item_no in selected_item_nos)
+        ]
+        skipped_item_nos = [
+            item.item_no
+            for item in all_items
+            if (not selected_item_nos or item.item_no in selected_item_nos) and item not in review_items
+        ]
+        if not review_items:
+            return CommentBatchReviewReplayResult(
+                batch_id=batch_id,
+                reviewed_count=0,
+                skipped_count=len(skipped_item_nos),
+                reviewed_item_nos=[],
+                skipped_item_nos=skipped_item_nos,
+                changed_pass_item_nos=[],
+                body_changed_item_nos=[],
+            )
+
+        before_by_item_id: dict[int, dict[str, Any]] = {}
+        guard = ActivityQualityGuardService()
+        for item in review_items:
+            before_quality = copy.deepcopy(item.quality_json or {})
+            before_by_item_id[item.id] = {
+                "hard_pass": before_quality.get("hard_pass"),
+                "body": item.body,
+                "activity_quality_guard": copy.deepcopy(before_quality.get("activity_quality_guard")),
+            }
+            candidate = SimpleNamespace(
+                item_no=item.item_no,
+                status=item.status,
+                title=item.title,
+                body=item.body,
+                plan_json=copy.deepcopy(item.plan_json or {}),
+                quality_json=_quality_without_replayable_comment_reviews(before_quality),
+            )
+            guard.review_item(candidate)
+            item.quality_json = candidate.quality_json
+            flag_modified(item, "quality_json")
+
+        CommentBatchVariationReviewService().review_batch(review_items)
+        reviewed_at = datetime.now(timezone.utc).isoformat()
+        changed_pass_item_nos: list[int] = []
+        body_changed_item_nos: list[int] = []
+        for item in review_items:
+            before = before_by_item_id[item.id]
+            quality = dict(item.quality_json or {})
+            after_pass = quality.get("hard_pass")
+            if before["hard_pass"] != after_pass:
+                changed_pass_item_nos.append(item.item_no)
+            if before["body"] != item.body:
+                body_changed_item_nos.append(item.item_no)
+            history = list(quality.get("review_replay_history") or [])
+            history.append(
+                {
+                    "reviewed_at": reviewed_at,
+                    "created_by": created_by,
+                    "stages": ["activity_quality_guard", "comment_batch_variation_review"],
+                    "before_hard_pass": before["hard_pass"],
+                    "after_hard_pass": after_pass,
+                    "body_changed": before["body"] != item.body,
+                    "before_activity_quality_guard": before["activity_quality_guard"],
+                    "after_activity_quality_guard": copy.deepcopy(quality.get("activity_quality_guard")),
+                }
+            )
+            quality["review_replay_history"] = history
+            item.quality_json = quality
+            flag_modified(item, "quality_json")
+            self.db.add(
+                ContentBatchItemVersion(
+                    item_id=item.id,
+                    version_no=await self._next_item_version_no(item.id),
+                    source_action="comment_review_replay",
+                    review_status="generated",
+                    title=item.title,
+                    body=item.body,
+                    feedback_text=None,
+                    created_by=created_by,
+                    metadata_json={
+                        "batch_id": batch_id,
+                        "item_no": item.item_no,
+                        "task_id": item.task_id,
+                        "run_id": item.run_id,
+                        "body_changed": before["body"] != item.body,
+                        "before_hard_pass": before["hard_pass"],
+                        "after_hard_pass": after_pass,
+                        "stages": ["activity_quality_guard", "comment_batch_variation_review"],
+                    },
+                )
+            )
+        await self.db.flush()
+        return CommentBatchReviewReplayResult(
+            batch_id=batch_id,
+            reviewed_count=len(review_items),
+            skipped_count=len(skipped_item_nos),
+            reviewed_item_nos=[item.item_no for item in review_items],
+            skipped_item_nos=skipped_item_nos,
+            changed_pass_item_nos=changed_pass_item_nos,
+            body_changed_item_nos=body_changed_item_nos,
+        )
+
+    async def _next_item_version_no(self, item_id: int) -> int:
+        result = await self.db.execute(
+            select(func.max(ContentBatchItemVersion.version_no)).where(ContentBatchItemVersion.item_id == item_id)
+        )
+        return int(result.scalar_one_or_none() or 0) + 1
 
     async def create_and_execute_batch(
         self,
@@ -2698,6 +2842,35 @@ def _comment_batch_product_topic(asset: AssetRegistry) -> str:
         normalized = re.sub(r"(?:评论)?业务规则(?:规则)?$", "评论", display_name).strip()
         return normalized or display_name
     return DEFAULT_COMMENT_BATCH_TOPIC
+
+
+def _quality_without_replayable_comment_reviews(quality_json: dict[str, Any]) -> dict[str, Any]:
+    quality = copy.deepcopy(quality_json or {})
+    quality.pop("activity_quality_guard", None)
+    quality.pop("batch_variation_review", None)
+    review_report = dict(quality.get("review_report") or {})
+    hard_results = [
+        dict(result)
+        for result in review_report.get("hard_results") or []
+        if isinstance(result, dict)
+        and not str(result.get("ae_code") or "").startswith("activity_quality_guard")
+        and not str(result.get("ae_code") or "").startswith("batch_variation.")
+    ]
+    review_report["hard_results"] = hard_results
+    if review_report.get("rewrite_reason") in {
+        "活动专项质量守卫未通过",
+        "批次表达同质化审核未通过",
+    }:
+        review_report.pop("rewrite_reason", None)
+        review_report["rewrite_required"] = any(result.get("pass") is False for result in hard_results)
+    quality["review_report"] = review_report
+    quality["hard_pass"] = not any(result.get("pass") is False for result in hard_results)
+    return quality
+
+
+def _is_comment_review_item(item: ContentBatchItem) -> bool:
+    plan = item.plan_json if isinstance(item.plan_json, dict) else {}
+    return "comment" in {str(field or "").strip() for field in plan.get("output_fields") or []}
 
 
 def _comment_item_soft_timeout_seconds() -> float:

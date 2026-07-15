@@ -13,6 +13,8 @@ from app.schemas.base import ResponseData
 from app.schemas.content_batch_report import (
     ContentBatchBusinessUsabilityReviewRequest,
     ContentBatchBusinessUsabilityReviewResponse,
+    ContentCommentBatchReviewReplayRequest,
+    ContentCommentBatchReviewReplayResponse,
     ContentCommentBatchStartRequest,
     ContentBatchExecutionSummary,
     ContentBatchFeedbackInsightResponse,
@@ -357,6 +359,45 @@ async def start_comment_batch_generation(
         report=report,
     )
     return ResponseData(message="Comment batch generation completed", data=response)
+
+
+@router.post(
+    "/comment-batches/{batch_id}/review-replay",
+    response_model=ResponseData[ContentCommentBatchReviewReplayResponse],
+    response_model_exclude_none=True,
+)
+async def replay_comment_batch_review(
+    batch_id: int,
+    request: ContentCommentBatchReviewReplayRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentCommentBatchReviewReplayResponse]:
+    try:
+        result = await ContentCommentBatchService(
+            db,
+            callback_base_url="/api/v1/content-agent",
+        ).replay_review(
+            batch_id,
+            item_nos=request.item_nos,
+            created_by=request.created_by,
+        )
+        await db.commit()
+        db.expire_all()
+        report = await ContentBatchReportService(db).get_batch_report(batch_id, include_details=True)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    return ResponseData(
+        message="Comment batch review replay completed",
+        data=ContentCommentBatchReviewReplayResponse(
+            batch_id=result.batch_id,
+            reviewed_count=result.reviewed_count,
+            skipped_count=result.skipped_count,
+            reviewed_item_nos=result.reviewed_item_nos,
+            skipped_item_nos=result.skipped_item_nos,
+            changed_pass_item_nos=result.changed_pass_item_nos,
+            body_changed_item_nos=result.body_changed_item_nos,
+            report=report,
+        ),
+    )
 
 
 @router.post("/preflight-check", response_model=ResponseData[ContentGenerationPreflightResponse])

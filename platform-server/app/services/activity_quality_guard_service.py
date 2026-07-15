@@ -1888,11 +1888,22 @@ def _a2_vague_deictic_without_product_reason(body: str, *, keyword: str | None =
         return None
     if keyword == "有货+转奶" and _a2_is_contextual_supply_transfer_short_reply(text):
         return None
+    if keyword == "有货+批批检" and _a2_is_contextual_batch_check_deictic_reply(text):
+        return None
     if any(marker in text for marker in ("姐妹", "哪买", "哪里买", "哪家", "求问", "+1", "我也")):
         return None
     if "这罐" in text and any(marker in text for marker in ("刚收", "收到", "喝完", "补上", "拿了")):
         return "缺少产品对象"
     return None
+
+
+def _a2_is_contextual_batch_check_deictic_reply(text: str) -> bool:
+    normalized = re.sub(r"\s+", "", str(text or "").strip("，。！？,!?；;、 "))
+    if "这罐" not in normalized:
+        return False
+    has_scan_action = any(marker in normalized for marker in ("扫码", "扫物流码", "扫罐底", "罐底码", "二维码"))
+    has_report_object = any(marker in normalized for marker in ("检测报告", "质检报告", "报告"))
+    return has_scan_action and has_report_object
 
 
 def _a2_is_contextual_supply_transfer_short_reply(text: str) -> bool:

@@ -482,7 +482,7 @@ class ContentBatchPlanner:
         asset: AssetRegistry,
         item_no: int,
         keyword_asset_key: str,
-        prompt_mode: str | None,
+        prompt_mode: str | None = None,
         quality_guard_profile_key: str | None,
         model_config: dict[str, Any] | None,
         real_user_pool_asset: AssetRegistry | None = None,
@@ -498,6 +498,10 @@ class ContentBatchPlanner:
         asset_content = asset.content_json or {}
         asset_metadata = asset.metadata_json or {}
         rule, rule_override_meta = _apply_source_row_rule_override(asset, rule, item_no=item_no)
+        resolved_rule_prompt_mode = (
+            _normalize_prompt_mode(rule.get("prompt_mode") or rule.get("generation_prompt_mode"))
+            or prompt_mode
+        )
         rule_type = (
             rule.get("rule_type")
             or asset_content.get("rule_type")
@@ -669,7 +673,7 @@ class ContentBatchPlanner:
             "item_no": item_no,
             "asset_key": asset.asset_key,
             "keyword_asset_key": keyword_asset_key,
-            "prompt_mode": prompt_mode,
+            "prompt_mode": resolved_rule_prompt_mode,
             "quality_guard_profile_key": quality_guard_profile_key,
             "keyword_selection": _resolve_keyword_selection(asset),
             "generation_requirements": _resolve_generation_requirements(asset),
@@ -709,6 +713,13 @@ class ContentBatchPlanner:
             "product_position_mode": product_position_mode,
             "ending_mode": ending_mode,
             "corpus": corpus,
+            "generation_instruction": rule.get("generation_instruction"),
+            "content_direction": rule.get("content_direction"),
+            "activity_material": rule.get("activity_material"),
+            "selling_expression": rule.get("selling_expression"),
+            "selling_expression_note": rule.get("selling_expression_note"),
+            "hard_boundaries": rule.get("hard_boundaries"),
+            "writing_requirements": rule.get("writing_requirements"),
             "variation_slots": variation_slots,
             "examples": selected_examples,
             "supplements": [],
@@ -2535,6 +2546,7 @@ def _normalize_prompt_mode(value: Any) -> str | None:
         "rule_as_prompt": "rule_corpus_as_prompt",
         "royal_compact": "royal_compact",
         "royal_compact_prompt": "royal_compact",
+        "layered_article": "layered_article",
     }
     return aliases.get(normalized, normalized or None)
 

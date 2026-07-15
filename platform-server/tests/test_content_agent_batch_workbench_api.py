@@ -3126,6 +3126,20 @@ def test_a2_activity_guard_rejects_vague_deictic_comment_without_product():
     assert any(issue["code"] == "activity_body_vague_deictic_without_product" for issue in payload["issues"])
 
 
+def test_a2_activity_guard_accepts_contextual_can_reference_with_scan_report_detail():
+    item = ContentBatchItem(
+        body="刚在门店拿了这罐，扫物流码能看到检测报告，虽然那些专业词没记住",
+        plan_json=_a2_guard_plan("报告查询互动：\n关键词方向是有货+批批检，像妈妈在a2评论区顺手接一句。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_vague_deictic_without_product" for issue in payload["issues"])
+
+
 @pytest.mark.parametrize(
     "body",
     [
@@ -5996,6 +6010,89 @@ async def test_training_feedback_samples_list_returns_cross_batch_feedback(conte
     assert filtered_data["total"] == 1
     assert filtered_data["items"][0]["review_status"] == "needs_revision"
     assert filtered_data["items"][0]["comment"] == "开头像真实妈妈一点，少一点口号。"
+
+
+@pytest.mark.asyncio
+async def test_comment_review_replay_reuses_generated_body_and_updates_guard_result(
+    content_agent_workbench_client,
+):
+    client, session_factory = content_agent_workbench_client
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="comment_review_replay_test",
+            asset_key="yuanyue_comment_activity",
+            product_topic="A2舆情改善评论",
+            count=1,
+            status="generated",
+            strategy_json={"quality_guard_profile_key": "a2_sentiment_comment_202606"},
+        )
+        session.add(job)
+        await session.flush()
+        body = "刚在门店拿了这罐，扫物流码能看到检测报告，虽然那些专业词没记住"
+        plan = _a2_guard_plan(
+            "报告查询互动：\n关键词方向是有货+批批检，像妈妈在a2评论区顺手接一句。"
+        )
+        plan["output_fields"] = ["comment"]
+        item = ContentBatchItem(
+            batch_id=job.id,
+            item_no=1,
+            status="generated",
+            plan_json=plan,
+            title="批批检-报告查询互动",
+            body=body,
+            quality_json={
+                "hard_pass": False,
+                "review_report": {
+                    "hard_results": [
+                        {
+                            "ae_code": "activity_quality_guard.activity_body_vague_deictic_without_product",
+                            "pass": False,
+                            "feedback": "旧规则误判",
+                        }
+                    ],
+                    "rewrite_required": True,
+                    "rewrite_reason": "活动专项质量守卫未通过",
+                },
+                "activity_quality_guard": {
+                    "pass": False,
+                    "issues": [{"code": "activity_body_vague_deictic_without_product"}],
+                },
+            },
+        )
+        session.add(item)
+        await session.commit()
+        batch_id = job.id
+        item_id = item.id
+
+    response = await client.post(
+        f"/api/v1/content-agent/comment-batches/{batch_id}/review-replay",
+        json={"item_nos": [1], "created_by": "reviewer-a"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["reviewed_item_nos"] == [1]
+    assert data["changed_pass_item_nos"] == [1]
+    assert data["body_changed_item_nos"] == []
+    report_item = data["report"]["items"][0]
+    assert report_item["body"] == body
+    assert report_item["hard_pass"] is True
+
+    async with session_factory() as session:
+        persisted = await session.get(ContentBatchItem, item_id)
+        versions = list(
+            (
+                await session.execute(
+                    select(ContentBatchItemVersion).where(ContentBatchItemVersion.item_id == item_id)
+                )
+            ).scalars().all()
+        )
+    assert persisted is not None
+    assert persisted.body == body
+    assert persisted.quality_json["review_replay_history"][-1]["after_hard_pass"] is True
+    assert len(versions) == 1
+    assert versions[0].source_action == "comment_review_replay"
+    assert versions[0].body == body
 
 
 def _yuanyue_assets() -> list[AssetRegistry]:

@@ -2934,6 +2934,14 @@ async def test_content_batch_planner_accepts_article_business_rule_set_focus_rul
                             "rule_id": "post_rule_002",
                             "business_rule": "线上有货",
                             "corpus": "写线上看到a2有货后的真实短帖。",
+                            "prompt_mode": "layered_article",
+                            "generation_instruction": "写一篇小红书妈妈 UGC 正向记录。",
+                            "content_direction": "写线上看到a2有货后先补一罐。",
+                            "activity_material": ["官方渠道显示可以下单。"],
+                            "selling_expression": "熟悉口粮能接上。",
+                            "selling_expression_note": "不扩成产品效果。",
+                            "hard_boundaries": ["不写成促销公告。"],
+                            "writing_requirements": ["标题从正文自然提炼。"],
                             "source_row_no": 2,
                         },
                     ],
@@ -2965,6 +2973,10 @@ async def test_content_batch_planner_accepts_article_business_rule_set_focus_rul
     assert {item.plan_json["rule_id"] for item in items} == {"post_rule_002"}
     assert all(item.plan_json["output_fields"] == ["title", "body"] for item in items)
     assert all(item.plan_json["quality_guard_profile_key"] == "a2_sentiment_post_202606" for item in items)
+    assert all(item.plan_json["prompt_mode"] == "layered_article" for item in items)
+    assert all(item.plan_json["content_direction"] == "写线上看到a2有货后先补一罐。" for item in items)
+    assert all(item.plan_json["activity_material"] == ["官方渠道显示可以下单。"] for item in items)
+    assert all(item.plan_json["hard_boundaries"] == ["不写成促销公告。"] for item in items)
     assert job.diversity_plan_json == {}
     assert all("diversity_slot" not in item.plan_json for item in items)
 
