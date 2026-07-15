@@ -210,12 +210,15 @@ def _normalize_keyword_selection(value: dict[str, Any] | str | None) -> dict[str
 
 
 def _infer_activity_name(items: list[dict[str, Any]]) -> str | None:
+    activity_names: list[str] = []
     for item in items:
         corpus = str(item.get("corpus") or "")
         match = re.search(r"活动[:：]\s*([^。\n；;]+)", corpus)
         if match:
-            return match.group(1).strip()
-    return None
+            activity_name = match.group(1).strip()
+            if activity_name and activity_name not in activity_names:
+                activity_names.append(activity_name)
+    return activity_names[0] if len(activity_names) == 1 else None
 
 
 def _infer_activity_name_from_display_name(display_name: str | None) -> str | None:
@@ -302,9 +305,96 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         or row.get("business_rule")
         or ""
     ).strip()
-    corpus = (row.get("规则语料") or row.get("语料") or row.get("corpus") or "").strip()
+    generation_instruction = (
+        row.get("生文指令")
+        or row.get("生成指令")
+        or row.get("generation_instruction")
+        or ""
+    ).strip()
+    content_direction = (
+        row.get("内容方向")
+        or row.get("这篇要写的事")
+        or row.get("content_direction")
+        or ""
+    ).strip()
+    corpus = (
+        row.get("规则语料")
+        or row.get("语料")
+        or row.get("corpus")
+        or content_direction
+        or ""
+    ).strip()
     if not raw_rule or not corpus:
         return None
+    prompt_mode = (
+        row.get("提示词模式")
+        or row.get("prompt_mode")
+        or row.get("generation_prompt_mode")
+        or ""
+    ).strip()
+    activity_material = _cell_lines(row.get("活动素材") or row.get("activity_material"))
+    prize_material = _cell_lines(
+        row.get("奖品素材")
+        or row.get("活动奖品素材")
+        or row.get("prize_material")
+    )
+    batch_detection_material = _cell_lines(
+        row.get("批批检素材")
+        or row.get("批批检表达")
+        or row.get("batch_detection_material")
+    )
+    selling_expression = (
+        row.get("卖点表达")
+        or row.get("selling_expression")
+        or ""
+    ).strip()
+    selling_expression_note = (
+        row.get("卖点表达说明")
+        or row.get("卖点注意")
+        or row.get("selling_expression_note")
+        or ""
+    ).strip()
+    hard_boundaries = _cell_lines(
+        row.get("事实与合规边界")
+        or row.get("硬边界")
+        or row.get("hard_boundaries")
+    )
+    writing_requirements = _cell_lines(
+        row.get("成文要求")
+        or row.get("写法")
+        or row.get("writing_requirements")
+    )
+    layered_fields_present = any(
+        (
+            generation_instruction,
+            content_direction,
+            activity_material,
+            prize_material,
+            batch_detection_material,
+            selling_expression,
+            hard_boundaries,
+            writing_requirements,
+        )
+    )
+    if layered_fields_present and not prompt_mode:
+        prompt_mode = "layered_article"
+    variation_slots: list[dict[str, Any]] = []
+    if prize_material:
+        variation_slots.append(
+            {
+                "slot_code": "activity_prize",
+                "slot_name": "活动奖品素材",
+                "options": prize_material,
+            }
+        )
+    if batch_detection_material:
+        variation_slots.append(
+            {
+                "slot_code": "batch_detection",
+                "slot_name": "批批检素材",
+                "options": batch_detection_material,
+            }
+        )
     explicit_post_type = (
         row.get("帖子类型")
         or row.get("内容类型")
@@ -497,6 +587,15 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         "examples": examples,
         "supplements": [],
         "source_row_no": index,
+        **({"prompt_mode": prompt_mode} if prompt_mode else {}),
+        **({"generation_instruction": generation_instruction} if generation_instruction else {}),
+        **({"content_direction": content_direction} if content_direction else {}),
+        **({"activity_material": activity_material} if activity_material else {}),
+        **({"selling_expression": selling_expression} if selling_expression else {}),
+        **({"selling_expression_note": selling_expression_note} if selling_expression_note else {}),
+        **({"hard_boundaries": hard_boundaries} if hard_boundaries else {}),
+        **({"writing_requirements": writing_requirements} if writing_requirements else {}),
+        **({"variation_slots": variation_slots} if variation_slots else {}),
         **({"post_type": post_type} if post_type else {}),
         **({"product_appearance_mode": product_appearance_mode} if product_appearance_mode else {}),
         **({"painpoint": painpoint} if painpoint else {}),
@@ -524,6 +623,15 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         **({"product_position_mode": product_position_mode} if product_position_mode else {}),
         **({"ending_mode": ending_mode} if ending_mode else {}),
     }
+
+
+def _cell_lines(value: str | None) -> list[str]:
+    lines: list[str] = []
+    for raw in re.split(r"\r?\n|\s*\|\|\s*", str(value or "")):
+        line = _clean_example_line(raw)
+        if line and line not in lines:
+            lines.append(line)
+    return lines
 
 
 def _build_selling_kernel(

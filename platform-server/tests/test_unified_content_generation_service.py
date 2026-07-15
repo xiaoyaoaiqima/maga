@@ -14,6 +14,7 @@ from app.services.unified_content_generation_service import (
     _article_output_format_requirement,
     _business_rule_text,
     _comment_prompt_text,
+    _layered_article_prompt,
     _select_comment_prompt_slots,
     _select_comment_tone,
     _normalize_model_config,
@@ -63,6 +64,96 @@ def test_rule_corpus_as_prompt_keeps_single_article_output_format():
     assert "字段只能包含 title 和 body" in prompt
     assert "items 必须正好" not in prompt
     assert '"items"' not in prompt
+
+
+def test_layered_article_prompt_renders_six_layers_and_selected_expression_keywords():
+    prompt = _layered_article_prompt(
+        {
+            "generation_instruction": "写一篇小红书妈妈 UGC 正向记录。",
+            "content_direction": "写妈妈在常买门店看到a2至初到货，顺手补上熟悉口粮。",
+            "activity_material": ["门店已经到货。", "现场可以自行查看对应报告。"],
+            "selling_expression": "熟悉口粮能接上，家里不用临时换来换去。",
+            "selling_expression_note": "只写家庭安排，不扩成产品效果。",
+            "hard_boundaries": ["不写成官方到货公告。"],
+            "writing_requirements": ["标题从正文自然提炼。"],
+            "variation_slots": [
+                {
+                    "slot_code": "inspiration_material",
+                    "slot_name": "本篇灵感线索",
+                    "value": "和下班顺路有关",
+                },
+                {
+                    "slot_code": "activity_prize",
+                    "slot_name": "活动奖品素材",
+                    "value": "现场看到一份新客礼盒。",
+                },
+                {
+                    "slot_code": "batch_detection",
+                    "slot_name": "批批检素材",
+                    "value": "扫罐底码能看对应批次的检测报告。",
+                },
+            ],
+            "examples": ["今天路过常买母婴店，看到a2至初已经到了。"],
+        },
+        selected_keywords=[
+            {
+                "category_code": "writing_instruction",
+                "corpus": ["像真实妈妈写一段完整分享。"],
+            },
+            {
+                "category_code": "persona",
+                "corpus": ["像普通家庭妈妈自然表达。"],
+            },
+            {
+                "category_code": "article_format_control",
+                "corpus": ["正文保持紧凑。"],
+            },
+        ],
+        output_format="只输出 JSON 对象，字段只能包含 title 和 body。",
+    )
+
+    assert prompt.startswith("任务：写一篇小红书妈妈 UGC 正向记录。")
+    assert "生文指令：\n- 像真实妈妈写一段完整分享。" in prompt
+    assert "这篇要写的事：\n写妈妈在常买门店看到a2至初到货" in prompt
+    assert "本篇灵感线索：和下班顺路有关" in prompt
+    assert "活动素材：\n- 门店已经到货。" in prompt
+    assert "- 现场看到一份新客礼盒。" in prompt
+    assert "- 扫罐底码能看对应批次的检测报告。" in prompt
+    assert "卖点表达：熟悉口粮能接上" in prompt
+    assert "硬边界：\n- 不写成官方到货公告。" in prompt
+    assert "写法：\n- 标题从正文自然提炼。" in prompt
+    assert "- 人设：像普通家庭妈妈自然表达。" in prompt
+    assert "- 格式控制：正文保持紧凑。" in prompt
+    assert "输出格式：\n只输出 JSON 对象" in prompt
+
+
+def test_comment_prompt_renders_selected_instruction_and_format_layers():
+    prompt = _comment_prompt_text(
+        {
+            "asset_key": "a2_sentiment_comment_activity",
+            "business_rule": "批批检-报告查询互动",
+            "corpus": "围绕检测报告顺手问一句。",
+        },
+        selected_keywords=[
+            {
+                "category_code": "comment_generation_requirement",
+                "corpus": ["生成一条小红书母婴社区真实用户评论。"],
+            },
+            {
+                "category_code": "comment_writing_instruction",
+                "corpus": ["语言像妈妈在评论区顺手补一句。"],
+            },
+            {
+                "category_code": "comment_format_control",
+                "corpus": ["评论控制在21到30字。"],
+            },
+        ],
+    )
+
+    assert "任务：\n- 生成一条小红书母婴社区真实用户评论。" in prompt
+    assert "生评论指令：\n- 语言像妈妈在评论区顺手补一句。" in prompt
+    assert "本条要写的事：\n围绕检测报告顺手问一句。" in prompt
+    assert "写法：\n- 评论控制在21到30字。" in prompt
 
 
 def test_rule_corpus_as_prompt_mode_skips_legacy_article_layers():
@@ -164,8 +255,8 @@ def test_rule_corpus_as_prompt_selects_one_life_entry_slot_by_item_no():
             "item_no": 2,
             "slot_rotation_no": 2,
             "business_rule": (
-                "任务：写妈妈UGC。\n\n"
-                "这篇要写的事：\n"
+                "生文指令：写妈妈UGC。\n\n"
+                "内容方向：\n"
                 "从【生活入口】写起，再写孩子比以前更能坐住一点。\n\n"
                 "【生活入口槽位】\n"
                 "- 妈妈们聊天时提到孩子坐不住\n"
@@ -179,18 +270,18 @@ def test_rule_corpus_as_prompt_selects_one_life_entry_slot_by_item_no():
                 "- 外出回来还愿意讲路上的事\n"
                 "- 到饭点照常坐下来吃饭\n"
                 "- 回家后继续做自己惦记的事\n\n"
-                "【本篇灵感线索槽位】\n"
+                "【本篇灵感线索】\n"
                 "- 和动物相关\n"
                 "- 和游戏相关\n"
                 "- 和一次出门的小插曲相关\n\n"
-                "【卖点表达槽位】\n"
+                "【卖点表达】\n"
                 "- 卖点表达：乳铁蛋白含量优秀\n"
                 "  注意：不要讲得太专业\n"
                 "- 卖点表达：添加了免疫球蛋白\n"
                 "  注意：不要解释免疫机制\n"
                 "- 卖点表达：有5大HMO\n"
                 "  注意：可以只记得大概\n\n"
-                "硬边界：\n"
+                "事实与合规边界：\n"
                 "- 不写保证有效。"
             ),
             "output_format_requirement": (
@@ -220,14 +311,14 @@ def test_rule_corpus_as_prompt_selects_one_life_entry_slot_by_item_no():
     assert "本篇灵感线索：和游戏相关" in prompt
     assert "和动物相关" not in prompt
     assert "和一次出门的小插曲相关" not in prompt
-    assert "【本篇灵感线索槽位】" not in prompt
+    assert "【本篇灵感线索】" not in prompt
     assert "卖点表达：添加了免疫球蛋白" in prompt
     assert "注意：不要解释免疫机制" in prompt
     assert "乳铁蛋白含量优秀" not in prompt
     assert "不要讲得太专业" not in prompt
     assert "有5大HMO" not in prompt
     assert "可以只记得大概" not in prompt
-    assert "【卖点表达槽位】" not in prompt
+    assert "【卖点表达】" not in prompt
     assert "产品出现位置" not in prompt
     assert "产品叙事推进" not in prompt
     assert "低权重表达扰动" not in prompt

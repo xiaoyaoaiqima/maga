@@ -35,6 +35,43 @@ def test_row_to_rule_item_does_not_infer_product_mode_when_post_type_is_explicit
     assert "product_relation" not in item
 
 
+def test_row_to_rule_item_parses_layered_article_fields_and_activity_pools():
+    item = _row_to_rule_item(
+        {
+            "业务规则名称": "妈妈班｜老师讲解",
+            "生文指令": "写一篇真实待产妈妈参加a2妈妈班后的分享。",
+            "内容方向": "写老师讲完后，妈妈理清新生儿奶粉选择标准。",
+            "活动素材": "活动发生在妈妈班。",
+            "奖品素材": "现场看到待产包。||现场看到新客礼盒。",
+            "批批检素材": "扫罐底码能看检测报告。||每批检测报告可对应查询。",
+            "卖点表达": "a2至初含A2型蛋白质。",
+            "卖点表达说明": "不要写成保证吸收。",
+            "硬边界": "宝宝尚未出生。||不写宝宝已经喝过。",
+            "写法": "标题少于20字。||正文130-200字。",
+        },
+        1,
+    )
+
+    assert item is not None
+    assert item["prompt_mode"] == "layered_article"
+    assert item["corpus"] == item["content_direction"]
+    assert item["activity_material"] == ["活动发生在妈妈班。"]
+    assert item["hard_boundaries"] == ["宝宝尚未出生。", "不写宝宝已经喝过。"]
+    assert item["writing_requirements"] == ["标题少于20字。", "正文130-200字。"]
+    assert item["variation_slots"] == [
+        {
+            "slot_code": "activity_prize",
+            "slot_name": "活动奖品素材",
+            "options": ["现场看到待产包。", "现场看到新客礼盒。"],
+        },
+        {
+            "slot_code": "batch_detection",
+            "slot_name": "批批检素材",
+            "options": ["扫罐底码能看检测报告。", "每批检测报告可对应查询。"],
+        },
+    ]
+
+
 @pytest_asyncio.fixture
 async def asset_client():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -1627,3 +1664,33 @@ async def test_upload_article_business_rule_set_uses_its_display_name_as_activit
     asset = detail_response.json()["data"]
     assert asset["content_json"]["activity_name"] == "a2妈妈班+月子中心"
     assert asset["metadata_json"]["activity_name"] == "a2妈妈班+月子中心"
+
+
+@pytest.mark.asyncio
+async def test_upload_multi_activity_rule_set_uses_package_display_name(asset_client):
+    csv_content = "\n".join(
+        [
+            "业务规则名称,规则语料,示例",
+            '"妈妈班","活动：a2妈妈班。\\n\\n这篇要写的事：写待产妈妈参加妈妈班。","示例1"',
+            '"月子中心","活动：a2月子中心活动。\\n\\n这篇要写的事：写产后妈妈参加月子中心活动。","示例2"',
+        ]
+    )
+
+    response = await asset_client.post(
+        "/api/v1/assets/imports/article-business-rule-set",
+        data={
+            "asset_key": "a2_momclass_month_center",
+            "display_name": "妈妈班+月子中心",
+            "created_by": "ops",
+        },
+        files={"file": ("a2妈妈班+月子中心.csv", csv_content.encode("utf-8-sig"), "text/csv")},
+    )
+
+    assert response.status_code == 200
+    detail_response = await asset_client.get(
+        "/api/v1/assets/article_business_rule_set/a2_momclass_month_center"
+    )
+    asset = detail_response.json()["data"]
+    assert asset["content_json"]["activity_name"] == "妈妈班+月子中心"
+    assert asset["metadata_json"]["activity_name"] == "妈妈班+月子中心"
+    assert [item["business_rule"] for item in asset["content_json"]["items"]] == ["妈妈班", "月子中心"]

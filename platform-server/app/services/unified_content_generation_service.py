@@ -126,11 +126,18 @@ class UnifiedContentGenerationService:
                 selected_prompt_slots=selected_prompt_slots,
                 comment_tone=selected_comment_tone,
                 output_format=comment_output_format,
+                selected_keywords=selected_keywords,
             )
             rendered_prompt = _normalize_comment_prompt_labels(rendered_prompt)
         else:
             if _uses_royal_compact_prompt(business_rule):
                 rendered_prompt = _royal_compact_article_prompt(
+                    business_rule,
+                    selected_keywords=selected_keywords,
+                    output_format=str(variables.get("output_format_requirement") or ""),
+                )
+            elif _uses_layered_article_prompt(business_rule):
+                rendered_prompt = _layered_article_prompt(
                     business_rule,
                     selected_keywords=selected_keywords,
                     output_format=str(variables.get("output_format_requirement") or ""),
@@ -724,12 +731,37 @@ def _comment_rule_text(rule: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _comment_keyword_prompt_layers(selected_keywords: list[dict[str, Any]]) -> dict[str, list[str]]:
+    layers = {
+        "task": [],
+        "instruction": [],
+        "speaking_style": [],
+        "format": [],
+    }
+    category_to_layer = {
+        "comment_generation_requirement": "task",
+        "comment_writing_instruction": "instruction",
+        "comment_speaking_style": "speaking_style",
+        "comment_format_control": "format",
+    }
+    for item in selected_keywords:
+        layer = category_to_layer.get(str(item.get("category_code") or "").strip())
+        if not layer:
+            continue
+        for raw_line in item.get("corpus") or []:
+            line = str(raw_line or "").strip()
+            if line and line not in layers[layer]:
+                layers[layer].append(line)
+    return layers
+
+
 def _comment_prompt_text(
     rule: dict[str, Any],
     *,
     selected_prompt_slots: list[dict[str, Any]] | None = None,
     comment_tone: dict[str, str] | None = None,
     output_format: dict[str, Any] | None = None,
+    selected_keywords: list[dict[str, Any]] | None = None,
 ) -> str:
     product_name = _comment_product_name(rule)
     major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
@@ -749,6 +781,7 @@ def _comment_prompt_text(
     if configured:
         generation_lines.append(configured)
     generation_lines.extend(_comment_generation_lines(output_format))
+    keyword_layers = _comment_keyword_prompt_layers(selected_keywords or [])
 
     if _is_a2_sentiment_comment_rule(rule):
         lines = [context]
@@ -760,6 +793,12 @@ def _comment_prompt_text(
             "",
             context,
         ]
+    if keyword_layers["task"]:
+        lines.extend(["", "任务：", *[f"- {line}" for line in keyword_layers["task"]]])
+    if keyword_layers["instruction"]:
+        lines.extend(["", "生评论指令：", *[f"- {line}" for line in keyword_layers["instruction"]]])
+    if keyword_layers["speaking_style"]:
+        lines.extend(["", "说话方式：", *[f"- {line}" for line in keyword_layers["speaking_style"]]])
     if rule_detail:
         lines.extend(["", "本条要写的事：", rule_detail])
     elif focus:
@@ -773,6 +812,8 @@ def _comment_prompt_text(
         rendered_slot = _render_comment_prompt_slot(slot)
         if rendered_slot:
             lines.extend(["", rendered_slot])
+    if keyword_layers["format"]:
+        lines.extend(["", "写法：", *[f"- {line}" for line in keyword_layers["format"]]])
     if notes:
         lines.extend(["", "注意：", *[f"- {note}" for note in notes]])
     if examples:
@@ -2241,6 +2282,15 @@ def _uses_royal_compact_prompt(business_rule: dict[str, Any] | None) -> bool:
     return mode == "royal_compact"
 
 
+def _uses_layered_article_prompt(business_rule: dict[str, Any] | None) -> bool:
+    if not isinstance(business_rule, dict):
+        return False
+    mode = _normalize_prompt_mode(
+        business_rule.get("prompt_mode") or business_rule.get("generation_prompt_mode")
+    )
+    return mode == "layered_article"
+
+
 def _normalize_prompt_mode(value: Any) -> str | None:
     normalized = str(value or "").strip().lower().replace("-", "_")
     aliases = {
@@ -2249,6 +2299,7 @@ def _normalize_prompt_mode(value: Any) -> str | None:
         "rule_as_prompt": "rule_corpus_as_prompt",
         "royal_compact": "royal_compact",
         "royal_compact_prompt": "royal_compact",
+        "layered_article": "layered_article",
     }
     return aliases.get(normalized, normalized or None)
 
@@ -2572,6 +2623,111 @@ def _rule_corpus_as_prompt_article_prompt(
     return (base_prompt + "\n\n" + generation_block).strip()
 
 
+def _layered_article_prompt(
+    business_rule: dict[str, Any],
+    *,
+    selected_keywords: list[dict[str, Any]],
+    output_format: str,
+) -> str:
+    generation_instruction = str(business_rule.get("generation_instruction") or "").strip()
+    if not generation_instruction:
+        generation_instruction = "写一篇小红书妈妈 UGC 内容。"
+    content_direction = str(
+        business_rule.get("content_direction") or business_rule.get("corpus") or ""
+    ).strip()
+    inspiration_material = str(business_rule.get("inspiration_material") or "").strip()
+    for slot in business_rule.get("variation_slots") or []:
+        if not isinstance(slot, dict):
+            continue
+        slot_code = str(slot.get("slot_code") or "").strip()
+        slot_name = str(slot.get("slot_name") or "").strip()
+        slot_value = str(slot.get("value") or "").strip()
+        if slot_value and (slot_code == "inspiration_material" or "灵感" in slot_name):
+            inspiration_material = slot_value
+            break
+
+    activity_material = _string_list(business_rule.get("activity_material"))
+    for slot in business_rule.get("variation_slots") or []:
+        if not isinstance(slot, dict):
+            continue
+        slot_code = str(slot.get("slot_code") or "").strip()
+        slot_name = str(slot.get("slot_name") or "").strip()
+        slot_value = str(slot.get("value") or "").strip()
+        is_activity_slot = slot_code in {
+            "activity_material",
+            "activity_prize",
+            "batch_detection",
+        } or any(marker in slot_name for marker in ("活动", "奖品", "批批检", "检测报告"))
+        if is_activity_slot and slot_value and slot_value not in activity_material:
+            activity_material.append(slot_value)
+    selling_expression = str(business_rule.get("selling_expression") or "").strip()
+    selling_expression_note = str(business_rule.get("selling_expression_note") or "").strip()
+    hard_boundaries = _string_list(business_rule.get("hard_boundaries"))
+    writing_requirements = _string_list(business_rule.get("writing_requirements"))
+    keyword_layers = _article_keyword_prompt_layers(selected_keywords)
+
+    lines = [f"任务：{generation_instruction}"]
+    if keyword_layers["instruction"]:
+        lines.extend(["", "生文指令：", *[f"- {line}" for line in keyword_layers["instruction"]]])
+    lines.extend(["", "这篇要写的事：", content_direction or "按本篇业务规则自然展开。"])
+    if inspiration_material:
+        lines.extend(["", f"本篇灵感线索：{inspiration_material}"])
+    if activity_material:
+        lines.extend(["", "活动素材：", *[f"- {line}" for line in activity_material]])
+    if selling_expression:
+        lines.extend(["", f"卖点表达：{selling_expression}"])
+        if selling_expression_note:
+            lines.append(f"注意：{selling_expression_note}")
+    if hard_boundaries:
+        lines.extend(["", "硬边界：", *[f"- {line}" for line in hard_boundaries]])
+
+    layered_writing_requirements = list(writing_requirements)
+    layered_writing_requirements.extend(keyword_layers["writing"])
+    if layered_writing_requirements:
+        lines.extend(["", "写法：", *[f"- {line}" for line in layered_writing_requirements]])
+
+    examples = _string_list(business_rule.get("examples"))
+    if examples:
+        lines.extend(
+            [
+                "",
+                "参考示例（低权重，只借真人表达，不照抄事实和句式）：",
+                *[f"- {line}" for line in examples],
+            ]
+        )
+    if output_format:
+        lines.extend(["", "输出格式：", output_format])
+    return "\n".join(lines).strip()
+
+
+def _article_keyword_prompt_layers(selected_keywords: list[dict[str, Any]]) -> dict[str, list[str]]:
+    instruction: list[str] = []
+    writing: list[str] = []
+    writing_labels = {
+        "persona": "人设",
+        "article_speaking_style": "说话方式",
+        "perturbation_rule": "扰动规则",
+        "writing_method": "写作手法",
+        "article_format_control": "格式控制",
+    }
+    for item in selected_keywords:
+        category_code = str(item.get("category_code") or "").strip()
+        corpus_lines = [str(line or "").strip() for line in item.get("corpus") or [] if str(line or "").strip()]
+        if category_code == "writing_instruction":
+            for line in corpus_lines:
+                if line not in instruction:
+                    instruction.append(line)
+            continue
+        label = writing_labels.get(category_code)
+        if not label:
+            continue
+        for line in corpus_lines:
+            rendered = f"{label}：{line}"
+            if rendered not in writing:
+                writing.append(rendered)
+    return {"instruction": instruction, "writing": writing}
+
+
 _LIFE_ENTRY_SLOT_SECTION = re.compile(
     r"\n*【生活入口槽位】\s*\n(?P<options>(?:\s*-\s*[^\n]+\n?)+)"
 )
@@ -2645,7 +2801,7 @@ def _render_rule_corpus_protection_feedback_slot(corpus: str, *, item_no: int) -
 
 
 _INSPIRATION_CLUE_SLOT_SECTION = re.compile(
-    r"\n*【本篇灵感线索槽位】\s*\n(?P<options>(?:\s*-\s*[^\n]+\n?)+)"
+    r"\n*【本篇灵感线索(?:槽位)?】\s*\n(?P<options>(?:\s*-\s*[^\n]+\n?)+)"
 )
 
 
@@ -2668,7 +2824,7 @@ def _render_rule_corpus_inspiration_clue_slot(corpus: str, *, item_no: int) -> s
 
 
 _SELLING_EXPRESSION_SLOT_SECTION = re.compile(
-    r"\n*【卖点表达槽位】[ \t]*\n"
+    r"\n*【卖点表达(?:槽位)?】[ \t]*\n"
     r"(?P<options>(?:[ \t]*-[ \t]*卖点表达：[^\n]+\n[ \t]+注意：[^\n]+(?:\n|$))+)"
 )
 _SELLING_EXPRESSION_SLOT_ENTRY = re.compile(
