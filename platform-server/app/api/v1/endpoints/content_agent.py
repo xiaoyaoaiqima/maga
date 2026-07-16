@@ -14,6 +14,16 @@ from app.schemas.base import ResponseData
 from app.schemas.content_batch_report import (
     ContentBatchBusinessUsabilityReviewRequest,
     ContentBatchBusinessUsabilityReviewResponse,
+    ContentBatchClaimPublicDiseaseShadowReviewRequest,
+    ContentBatchClaimPublicDiseaseShadowReviewResponse,
+    ContentBatchContentFitShadowReviewRequest,
+    ContentBatchContentFitShadowReviewResponse,
+    ContentBatchFluencyShadowReviewRequest,
+    ContentBatchFluencyShadowReviewResponse,
+    ContentBatchFocusedPipelineShadowReviewRequest,
+    ContentBatchFocusedPipelineShadowReviewResponse,
+    ContentBatchTemporalLogicShadowReviewRequest,
+    ContentBatchTemporalLogicShadowReviewResponse,
     ContentCommentBatchReviewReplayRequest,
     ContentCommentBatchReviewReplayResponse,
     ContentCommentBatchStartRequest,
@@ -534,6 +544,230 @@ async def review_batch_business_usability(
             skipped_item_nos=result.skipped_item_nos,
             failed_items=result.failed_items,
             tier_counts=result.tier_counts,
+            report=report,
+        ),
+    )
+
+
+@router.post(
+    "/batches/{batch_id}/temporal-logic-shadow-review",
+    response_model=ResponseData[ContentBatchTemporalLogicShadowReviewResponse],
+    response_model_exclude_none=True,
+)
+async def review_batch_temporal_logic_shadow(
+    batch_id: int,
+    request: ContentBatchTemporalLogicShadowReviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchTemporalLogicShadowReviewResponse]:
+    try:
+        result = await ContentBatchExecutionService(
+            db,
+            callback_base_url="/api/v1/content-agent",
+        ).review_temporal_logic_shadow_items(
+            batch_id,
+            force=request.force,
+            limit=request.limit,
+            concurrency=request.concurrency,
+        )
+        await db.commit()
+        db.expire_all()
+        report = await ContentBatchReportService(db).get_batch_report(batch_id, include_details=True)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    return ResponseData(
+        message="Temporal logic shadow review completed",
+        data=ContentBatchTemporalLogicShadowReviewResponse(
+            batch_id=result.batch_id,
+            reviewed_count=result.reviewed_count,
+            skipped_count=result.skipped_count,
+            failed_count=result.failed_count,
+            reviewed_item_nos=result.reviewed_item_nos,
+            skipped_item_nos=result.skipped_item_nos,
+            failed_items=result.failed_items,
+            label_counts=result.label_counts,
+            usage_totals=result.usage_totals,
+            latency_totals=result.latency_totals,
+            report=report,
+        ),
+    )
+
+
+@router.post(
+    "/batches/{batch_id}/claim-public-disease-shadow-review",
+    response_model=ResponseData[ContentBatchClaimPublicDiseaseShadowReviewResponse],
+    response_model_exclude_none=True,
+)
+async def review_batch_claim_public_disease_shadow(
+    batch_id: int,
+    request: ContentBatchClaimPublicDiseaseShadowReviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchClaimPublicDiseaseShadowReviewResponse]:
+    try:
+        result = await ContentBatchExecutionService(
+            db,
+            callback_base_url="/api/v1/content-agent",
+        ).review_claim_public_disease_shadow_items(
+            batch_id,
+            force=request.force,
+            limit=request.limit,
+            concurrency=request.concurrency,
+        )
+        await db.commit()
+        db.expire_all()
+        report = await ContentBatchReportService(db).get_batch_report(batch_id, include_details=True)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    return ResponseData(
+        message="Claim and public disease shadow review completed",
+        data=ContentBatchClaimPublicDiseaseShadowReviewResponse(
+            batch_id=result.batch_id,
+            reviewed_count=result.reviewed_count,
+            skipped_count=result.skipped_count,
+            failed_count=result.failed_count,
+            reviewed_item_nos=result.reviewed_item_nos,
+            skipped_item_nos=result.skipped_item_nos,
+            failed_items=result.failed_items,
+            label_counts=result.label_counts,
+            usage_totals=result.usage_totals,
+            latency_totals=result.latency_totals,
+            report=report,
+        ),
+    )
+
+
+@router.post(
+    "/batches/{batch_id}/content-fit-shadow-review",
+    response_model=ResponseData[ContentBatchContentFitShadowReviewResponse],
+    response_model_exclude_none=True,
+)
+async def review_batch_content_fit_shadow(
+    batch_id: int,
+    request: ContentBatchContentFitShadowReviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchContentFitShadowReviewResponse]:
+    try:
+        result = await ContentBatchExecutionService(
+            db,
+            callback_base_url="/api/v1/content-agent",
+        ).review_content_fit_shadow_items(
+            batch_id,
+            force=request.force,
+            limit=request.limit,
+            concurrency=request.concurrency,
+        )
+        await db.commit()
+        db.expire_all()
+        report = await ContentBatchReportService(db).get_batch_report(batch_id, include_details=True)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    return ResponseData(
+        message="Content fit shadow review completed",
+        data=ContentBatchContentFitShadowReviewResponse(
+            batch_id=result.batch_id,
+            reviewed_count=result.reviewed_count,
+            skipped_count=result.skipped_count,
+            failed_count=result.failed_count,
+            reviewed_item_nos=result.reviewed_item_nos,
+            skipped_item_nos=result.skipped_item_nos,
+            failed_items=result.failed_items,
+            label_counts=result.label_counts,
+            usage_totals=result.usage_totals,
+            latency_totals=result.latency_totals,
+            report=report,
+        ),
+    )
+
+
+@router.post(
+    "/batches/{batch_id}/fluency-shadow-review",
+    response_model=ResponseData[ContentBatchFluencyShadowReviewResponse],
+    response_model_exclude_none=True,
+)
+async def review_batch_fluency_shadow(
+    batch_id: int,
+    request: ContentBatchFluencyShadowReviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchFluencyShadowReviewResponse]:
+    try:
+        result = await ContentBatchExecutionService(
+            db,
+            callback_base_url="/api/v1/content-agent",
+        ).review_fluency_shadow_items(
+            batch_id,
+            force=request.force,
+            limit=request.limit,
+            concurrency=request.concurrency,
+        )
+        await db.commit()
+        db.expire_all()
+        report = await ContentBatchReportService(db).get_batch_report(batch_id, include_details=True)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    return ResponseData(
+        message="Fluency shadow review completed",
+        data=ContentBatchFluencyShadowReviewResponse(
+            batch_id=result.batch_id,
+            reviewed_count=result.reviewed_count,
+            skipped_count=result.skipped_count,
+            failed_count=result.failed_count,
+            reviewed_item_nos=result.reviewed_item_nos,
+            skipped_item_nos=result.skipped_item_nos,
+            failed_items=result.failed_items,
+            label_counts=result.label_counts,
+            usage_totals=result.usage_totals,
+            latency_totals=result.latency_totals,
+            report=report,
+        ),
+    )
+
+
+@router.post(
+    "/batches/{batch_id}/focused-pipeline-shadow-review",
+    response_model=ResponseData[ContentBatchFocusedPipelineShadowReviewResponse],
+    response_model_exclude_none=True,
+)
+async def review_batch_focused_pipeline_shadow(
+    batch_id: int,
+    request: ContentBatchFocusedPipelineShadowReviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchFocusedPipelineShadowReviewResponse]:
+    try:
+        result = await ContentBatchExecutionService(
+            db,
+            callback_base_url="/api/v1/content-agent",
+        ).review_focused_pipeline_shadow_items(
+            batch_id,
+            force=request.force,
+            limit=request.limit,
+            concurrency=request.concurrency,
+            rehearse_rewrites=request.rehearse_rewrites,
+        )
+        await db.commit()
+        db.expire_all()
+        report = await ContentBatchReportService(db).get_batch_report(batch_id, include_details=True)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    return ResponseData(
+        message="Focused review pipeline shadow validation completed",
+        data=ContentBatchFocusedPipelineShadowReviewResponse(
+            batch_id=result.batch_id,
+            reviewed_count=result.reviewed_count,
+            skipped_count=result.skipped_count,
+            failed_count=result.failed_count,
+            reviewed_item_nos=result.reviewed_item_nos,
+            skipped_item_nos=result.skipped_item_nos,
+            failed_items=result.failed_items,
+            decision_counts=result.decision_counts,
+            rewrite_mode_counts=result.rewrite_mode_counts,
+            comparison_counts=result.comparison_counts,
+            mismatch_item_nos=result.mismatch_item_nos,
+            action_comparison_counts=result.action_comparison_counts,
+            action_mismatch_item_nos=result.action_mismatch_item_nos,
+            rewrite_rehearsal_counts=result.rewrite_rehearsal_counts,
+            accepted_rewrite_item_nos=result.accepted_rewrite_item_nos,
+            manual_review_item_nos=result.manual_review_item_nos,
+            usage_totals=result.usage_totals,
+            latency_totals=result.latency_totals,
             report=report,
         ),
     )

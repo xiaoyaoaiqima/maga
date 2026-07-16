@@ -7,10 +7,19 @@
   "labels": ["pass", "watch", "block"],
   "rubric": [
     "同一个时间窗口同时承接持续负面状态和持续正面状态，且没有明确前后阶段转换，判 block。",
+    "“这段时间……回看这段时间……”表示同一时间窗口；持续不好与整体稳定并存时必须 block。“前段时间……现在/这段时间……”则表示旧阶段与当前阶段已经分开，可以 pass。",
     "前阵子、以前、上个月等旧阶段与最近、现在、这个月等新阶段边界清楚，可以 pass。",
     "一次打喷嚏、刚换产品、刚开罐等单点事件立刻承接长期保护力或累计效果，判 block。",
-    "过去式季节或疾病环境可以保留；当前流感季、换季、入冬等依赖发布时间成立的锚点判 block。",
-    "局部小状况与整体状态稳定可以同时成立，但表达含混时标 watch，不自动改写。"
+    "刚换、昨天换、才喝一两次等不超过短期适应窗口的表达，如果用“就、一下、马上”承接保护力稳住或产品生效，固定判 block，不得降为 watch。",
+    "发布时间锚点是独立硬规则，不要求文章内部存在时间矛盾，也不判断审核当天的真实季节或天气；只要用“现在、最近、目前”等断言当前正值流感季、换季、入冬、降温等动态环境，判 block。明确过去式可以保留；其中“流感”另属于出现即 ban 的确定性硬禁词。",
+    "局部小状况与整体状态稳定可以同时成立，但表达含混时标 watch，不自动改写。",
+    "一顿饭没吃好后正常冲泡旺玥补充日常营养，不属于疾病症状后的立即补救。",
+    "昨晚、凌晨、当天、第二天、刚喝或才喝几次仍有严重问题，马上写彻底稳定或多方面明显变好，且没有合理观察跨度，判 block。",
+    "问题状态后直接出现奶量、便便、睡眠、精神等多方面明显改善，却没有适应、观察或时间过程，判 block。",
+    "还在纠结、考虑或犹豫要不要换，和已经换了、喝了一周、转奶后不能同时作为当前阶段，判 block。",
+    "近期问题后接已经饮用数月，必须说明问题发生在数月前；否则时间阶段重叠，判 block。",
+    "时间词定义：在本审核中，“前阵子”按距今 15-45 天理解；不得将它解释为 45 天以前或数月前。",
+    "一直喝或从小喝同一产品时，用现在不像以前、终于稳定了建立产品前后变化，必须解释以前属于什么阶段。"
   ],
   "items": [
     {
@@ -113,7 +122,7 @@
         "expected_label": "block",
         "issue_code": "immediate_rescue_causality",
         "evidence": ["打了个喷嚏", "马上把奶粉换成旺玥", "赶紧把保护力补回来"],
-        "reason": "把单次小状况写成需要产品即时补救，时间和功效因果都不成立。",
+        "reason": "打喷嚏后马上换旺玥并想着赶紧补回保护力，已经把产品当成即时补救手段；补救行为或意图本身就必须block，不要求已经宣称生效。",
         "source": "human_feedback_standard"
       },
       "tags": {
@@ -131,7 +140,7 @@
         "expected_label": "block",
         "issue_code": "insufficient_effect_duration",
         "evidence": ["昨天刚给孩子换成旺玥", "今天去幼儿园就没请假", "一下稳住了"],
-        "reason": "一天的单点结果不能证明累计保护力效果。",
+        "reason": "“昨天刚换、今天就没请假、保护力一下稳住”明确表达产品在不超过一天内生效；一天的单点结果不能证明累计保护力效果，必须block，不得降为watch。",
         "source": "synthetic_boundary"
       },
       "tags": {
@@ -203,7 +212,7 @@
         "expected_label": "block",
         "issue_code": "publication_time_anchor",
         "evidence": ["现在正是流感季"],
-        "reason": "内容依赖当前疾病季节成立，会和实际发布时间冲突。",
+        "reason": "“流感”是旺玥硬禁词，出现即由确定性禁词审核直接ban；同时“现在正是流感季”还构成publication_time_anchor。",
         "source": "existing_policy_boundary"
       },
       "tags": {
@@ -282,6 +291,240 @@
         "brand": "旺玥",
         "dimension": "temporal_logic",
         "boundary": "same_period_contradiction",
+        "source_type": "minimal_pair"
+      }
+    },
+    {
+      "title": "一顿饭没吃好，泡杯旺玥补一补",
+      "content": "昨天晚饭，孩子扒拉两口就说饱了。后来给他泡了杯旺玥，就当把正餐里没吃够的营养补一补。看中它营养配得全，钙铁锌什么的一大堆。",
+      "meta": {
+        "case_code": "WYT-016",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["一顿饭没吃好", "把正餐里没吃够的营养补一补"],
+        "reason": "普通进食不足后的日常营养补充不等于打喷嚏、疾病症状后的即时功效补救。",
+        "source": "batch514_item6_human_review"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "ordinary_meal_gap_support",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "昨晚还折腾，今天就彻底稳了",
+      "content": "昨晚孩子还折腾到凌晨，奶也不肯喝。刚换成旺玥，今天已经完全不闹了，喝奶、睡觉和精神头一下全稳了。",
+      "meta": {
+        "case_code": "WYT-017",
+        "expected_label": "block",
+        "issue_code": "short_period_hard_reversal",
+        "evidence": ["昨晚孩子还折腾到凌晨", "刚换成旺玥", "今天已经完全不闹了", "一下全稳了"],
+        "reason": "严重负面状态在不足一天和刚换产品后立刻变成多方面彻底改善，没有合理观察跨度。",
+        "source": "user_provided_temporal_rule_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "short_period_hard_reversal",
+        "source_type": "rule_regression"
+      }
+    },
+    {
+      "title": "适应一段时间再回看",
+      "content": "刚换旺玥那几天孩子喝奶还有点不顺，我就先按原来的节奏慢慢适应。观察了一个多月再回看，最近奶量和日常状态才逐渐稳定些。",
+      "meta": {
+        "case_code": "WYT-018",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["刚换旺玥那几天", "慢慢适应", "观察了一个多月", "逐渐稳定些"],
+        "reason": "前期问题、适应过程、观察跨度和近期结果完整，改善不是短时间硬反转。",
+        "source": "user_provided_temporal_rule_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "gradual_change_with_duration",
+        "source_type": "minimal_pair"
+      }
+    },
+    {
+      "title": "没有过程就全好了",
+      "content": "孩子前面还肚肚不舒服，喝奶也不顺。后来奶量上来了，便便顺了，晚上也睡得安稳，整个人精神多了。",
+      "meta": {
+        "case_code": "WYT-019",
+        "expected_label": "block",
+        "issue_code": "missing_transition_duration",
+        "evidence": ["前面还肚肚不舒服，喝奶也不顺", "后来奶量上来了，便便顺了，晚上也睡得安稳"],
+        "reason": "只有问题和多维度改善结果，没有换奶、适应、观察或时间跨度，属于无过程硬改善。",
+        "source": "user_provided_temporal_rule_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "missing_transition_duration",
+        "source_type": "rule_regression"
+      }
+    },
+    {
+      "title": "一个月里慢慢调整",
+      "content": "刚开始那阵孩子肚肚有点不舒服，喝奶也不算顺。换成旺玥后先适应了几天，我又观察了一个月，奶量和便便状态才慢慢顺下来。",
+      "meta": {
+        "case_code": "WYT-020",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["刚开始那阵", "先适应了几天", "观察了一个月", "才慢慢顺下来"],
+        "reason": "问题、执行动作、适应过程和观察跨度均明确，时间线成立。",
+        "source": "user_provided_temporal_rule_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "transition_process_present",
+        "source_type": "minimal_pair"
+      }
+    },
+    {
+      "title": "还在纠结，已经喝了一周",
+      "content": "最近我一直在纠结要不要给孩子换旺玥，配方表翻来覆去看。换成旺玥后已经喝了一周多，孩子接受得还可以。",
+      "meta": {
+        "case_code": "WYT-021",
+        "expected_label": "block",
+        "issue_code": "decision_execution_stage_conflict",
+        "evidence": ["最近我一直在纠结要不要给孩子换旺玥", "换成旺玥后已经喝了一周多"],
+        "reason": "前句把换奶描述为当前尚未执行，后句又表明已经执行一周多，当前阶段冲突。",
+        "source": "user_provided_temporal_rule_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "decision_execution_stage_conflict",
+        "source_type": "rule_regression"
+      }
+    },
+    {
+      "title": "之前纠结过，后来换了",
+      "content": "之前我纠结过要不要给孩子换旺玥，配方表也看了好几遍。后来决定换了，现在喝了一周多，孩子接受得还可以。",
+      "meta": {
+        "case_code": "WYT-022",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["之前我纠结过", "后来决定换了", "现在喝了一周多"],
+        "reason": "犹豫属于过去阶段，后来完成决策并开始饮用，阶段转换清楚。",
+        "source": "user_provided_temporal_rule_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "decision_then_execution",
+        "source_type": "minimal_pair"
+      }
+    },
+    {
+      "title": "前阵子焦虑，已经喝了四个月",
+      "content": "前阵子我还挺焦虑的，孩子喝奶忽高忽低。后来给他换了旺玥，现在已经喝了四个多月，状态稳定多了。",
+      "meta": {
+        "case_code": "WYT-023",
+        "expected_label": "block",
+        "issue_code": "recent_problem_long_usage_conflict",
+        "evidence": ["前阵子我还挺焦虑的", "后来给他换了旺玥", "现在已经喝了四个多月"],
+        "reason": "本审核将“前阵子”定义为距今15-45天；已经饮用四个多月约为120天，说明换奶发生在“前阵子”之前，两段时间无法按原文顺接。",
+        "source": "user_provided_temporal_rule_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "recent_problem_long_usage_conflict",
+        "source_type": "rule_regression"
+      }
+    },
+    {
+      "title": "几个月前焦虑，现在喝了四个月",
+      "content": "几个月前孩子喝奶忽高忽低，我那阵子确实挺焦虑。后来给他换了旺玥，现在喝了四个多月，状态慢慢稳定了些。",
+      "meta": {
+        "case_code": "WYT-024",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["几个月前", "后来给他换了旺玥", "现在喝了四个多月"],
+        "reason": "问题明确发生在数月前，与四个月饮用时长和当前结果能够顺序衔接。",
+        "source": "user_provided_temporal_rule_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "long_usage_with_past_problem",
+        "source_type": "minimal_pair"
+      }
+    },
+    {
+      "title": "这两年一直喝，现在终于不像以前",
+      "content": "孩子这两年一直喝旺玥，现在终于不像以前那样三天两头让我提心吊胆，状态稳多了。",
+      "meta": {
+        "case_code": "WYT-025",
+        "expected_label": "block",
+        "issue_code": "continuous_use_baseline_conflict",
+        "evidence": ["这两年一直喝旺玥", "现在终于不像以前那样", "状态稳多了"],
+        "reason": "原文声称产品始终未变，却直接建立以前不好、现在变稳的产品效果对比，没有解释阶段或其它变化。",
+        "source": "existing_temporal_prompt_gap_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "continuous_use_baseline_conflict",
+        "source_type": "rule_regression"
+      }
+    },
+    {
+      "title": "刚开始适应，后来一直喝",
+      "content": "刚开始喝旺玥那阵，孩子有过一小段适应期。后来一直按原来的节奏喝，几个月回看下来，最近日常状态稳了些。",
+      "meta": {
+        "case_code": "WYT-026",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["刚开始喝旺玥那阵", "一小段适应期", "后来一直", "几个月回看下来"],
+        "reason": "以前明确指向刚开始的适应阶段，后续持续饮用和观察跨度清楚。",
+        "source": "existing_temporal_prompt_gap_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "continuous_use_with_explained_baseline",
+        "source_type": "minimal_pair"
+      }
+    },
+    {
+      "title": "前段时间容易中招，现在回看挺稳",
+      "content": "前段时间他好像特别容易中招，三天两头喉咙不舒服，班里一有人打喷嚏我就紧张。家里现在喝旺玥，回看这段时间状态倒是挺稳，日常活动也在线。",
+      "meta": {
+        "case_code": "WYT-027",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["前段时间他好像特别容易中招", "家里现在喝旺玥", "回看这段时间状态倒是挺稳"],
+        "reason": "“前段时间”明确指向旧阶段，“现在/这段时间”指向当前阶段，持续负面与稳定状态没有落在同一时间窗口。",
+        "source": "user_defined_same_period_boundary_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "explicit_previous_vs_current_period",
+        "source_type": "minimal_pair"
+      }
+    },
+    {
+      "title": "最近降温挺明显",
+      "content": "最近降温挺明显，我开始多留意孩子每天的状态。家里旺玥一直喝着，日常安排没怎么变。",
+      "meta": {
+        "case_code": "WYT-028",
+        "expected_label": "block",
+        "issue_code": "publication_time_anchor",
+        "evidence": ["最近降温挺明显"],
+        "reason": "“最近降温”断言内容发布时正处于动态天气环境；发布时间锚点不要求内部时间矛盾，也不核验审核当天是否真的降温，必须block。",
+        "source": "user_defined_publication_anchor_20260716"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "publication_time_anchor_without_forbidden_term",
         "source_type": "minimal_pair"
       }
     }

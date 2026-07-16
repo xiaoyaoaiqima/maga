@@ -1,0 +1,246 @@
+{
+  "dataset_code": "wangyue_review_gold_v1",
+  "slice": "fluency_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-16",
+  "description": "旺玥审核金标第五批候选：只判断标题和正文是否是成立、可理解、前后连续的自然中文，不审核产品事实、功效、内容方向或种草强弱。",
+  "labels": ["pass", "watch", "block"],
+  "label_semantics": {
+    "pass": "表达成立，无需因流畅性改写。",
+    "watch": "意思清楚但略泛或略生硬，单篇可用，不自动改写。",
+    "block": "存在病句、残句、语义断裂、标题正文冲突或指令泄露，需要局部说人话改写。"
+  },
+  "rubric": [
+    "只判断中文表达是否成立，不判断卖点是否专业、产品出现是否自然、疾病或时间逻辑是否合规。",
+    "饭量不稳定、吃饭看心情等表达可以成立；饭菜经常不稳定、饭菜吃得不稳等主谓搭配不自然时判 block。",
+    "真实 UGC 可以口语化、带毛边、用蔫蔫的、精神头足、狗都嫌的年纪、保护力撑起来等表达，不要因为不正式而改写。",
+    "标题写旧负面状态、正文却写新正面状态，且标题没有以前/之前等阶段提示，判 block。",
+    "模型压缩造成搭配错误、指代不明、词语碰撞、残句或上下文接不上，判 block。",
+    "输出里出现‘你来发挥、本篇灵感线索、请继续写’等生成指令或提示词残留，判 block。",
+    "真实 UGC 不要求每个变化都补齐旧状态参照，也不要求生活问题、产品和结果形成完整因果链；句子本身成立、上下文能读懂即可。"
+  ],
+  "items": [
+    {
+      "title": "饭菜经常不稳定",
+      "content": "孩子最近饭菜经常不稳定，我就想把日常营养安排好一点。",
+      "meta": {
+        "case_code": "WYL-001",
+        "expected_label": "block",
+        "issue_code": "unnatural_collocation",
+        "evidence": ["饭菜经常不稳定"],
+        "reason": "饭菜与不稳定搭配生硬，无法自然表达孩子的饭量或进食状态。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "meal_collocation_error", "source_type": "human_feedback"}
+    },
+    {
+      "title": "有时候吃得香，有时候随便对付",
+      "content": "孩子大一点之后明显更能跑了，饭量却不太稳定。有时候吃得挺香，有时候一顿饭就随便对付过去。",
+      "meta": {
+        "case_code": "WYL-002",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["饭量却不太稳定", "有时候吃得挺香"],
+        "reason": "饭量不稳定后面有具体解释，表达自然完整。",
+        "source": "human_feedback_approved_copy"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "natural_meal_variation", "source_type": "human_feedback"}
+    },
+    {
+      "title": "放学回来照样能吃饭、玩会儿乐高",
+      "content": "放学回来照样能吃饭、玩会儿乐高，最近状态还不错。",
+      "meta": {
+        "case_code": "WYL-003",
+        "expected_label": "block",
+        "issue_code": "semantic_discontinuity",
+        "evidence": ["照样能吃饭、玩会儿乐高"],
+        "reason": "吃饭和玩会儿乐高被压成不自然并列，问题在句子本身，不是因为缺少完整旧状态参照。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "compressed_parallel_phrase", "source_type": "human_feedback"}
+    },
+    {
+      "title": "状态不会一下掉下去",
+      "content": "孩子这阵活动多了，但他整个人不会一下子就掉下去。",
+      "meta": {
+        "case_code": "WYL-004",
+        "expected_label": "block",
+        "issue_code": "unnatural_collocation",
+        "evidence": ["他整个人不会一下子就掉下去"],
+        "reason": "整个人与掉下去的搭配缺少明确含义，像模型压缩后的抽象结果句。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "abstract_state_drop", "source_type": "human_feedback"}
+    },
+    {
+      "title": "最近能坐一会儿了",
+      "content": "做安静动作，画两笔旧换东西，妈妈观察能接住。",
+      "meta": {
+        "case_code": "WYL-005",
+        "expected_label": "block",
+        "issue_code": "semantic_discontinuity",
+        "evidence": ["画两笔旧换东西", "妈妈观察能接住"],
+        "reason": "多个短语无法组成可理解的生活叙述，语义和指代均不成立。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "compressed_nonsense", "source_type": "human_feedback"}
+    },
+    {
+      "title": "从公园回来直接趴沙发",
+      "content": "孩子出去撒欢能连玩两小时不喊累，回家也不蔫，日常活动一直有劲。",
+      "meta": {
+        "case_code": "WYL-006",
+        "expected_label": "block",
+        "issue_code": "title_body_contradiction",
+        "evidence": ["标题：从公园回来直接趴沙发", "正文：回家也不蔫"],
+        "reason": "标题停在负面状态，正文写相反的正面状态，没有以前或之前等阶段提示。",
+        "source": "batch251_item10_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "title_body_direction_conflict", "source_type": "historical_failure"}
+    },
+    {
+      "title": "以前请假那阵",
+      "content": "回想之前时候交替总要请几天假，今年倒全勤了。",
+      "meta": {
+        "case_code": "WYL-007",
+        "expected_label": "block",
+        "issue_code": "unnatural_collocation",
+        "evidence": ["之前时候交替"],
+        "reason": "时候交替不是自然中文搭配，是删除词语后的改写回归。",
+        "source": "rewrite_quality_historical_failure"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "rewrite_collocation_regression", "source_type": "historical_failure"}
+    },
+    {
+      "title": "以前请假那阵",
+      "content": "回想以前总要请几天假，今年倒是全勤了。",
+      "meta": {
+        "case_code": "WYL-008",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["回想以前", "今年倒是全勤了"],
+        "reason": "前后时间关系和句子搭配都成立。",
+        "source": "rewrite_quality_approved_fix"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "readable_after_rewrite", "source_type": "boundary_case"}
+    },
+    {
+      "title": "最近状态不错",
+      "content": "反正现在日常孩子状态不错。具体状态怎么不错，你来发挥。",
+      "meta": {
+        "case_code": "WYL-009",
+        "expected_label": "block",
+        "issue_code": "instruction_leak",
+        "evidence": ["具体状态怎么不错，你来发挥"],
+        "reason": "生成指令泄露到正文，不是面向读者的文章内容。",
+        "source": "prompt_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "generation_instruction_leak", "source_type": "policy_case"}
+    },
+    {
+      "title": "后来选了旺玥",
+      "content": "孩子活动量大了，后来选了旺玥，主要是看它。",
+      "meta": {
+        "case_code": "WYL-010",
+        "expected_label": "block",
+        "issue_code": "incomplete_sentence",
+        "evidence": ["主要是看它"],
+        "reason": "句子停在未完成的宾语关系上，正文信息残缺。",
+        "source": "synthetic_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "unfinished_reference", "source_type": "boundary_case"}
+    },
+    {
+      "title": "玩回来也不蔫",
+      "content": "以前从外面玩回来总是蔫蔫的，这阵子精神头足，回家还惦记着继续搭积木。",
+      "meta": {
+        "case_code": "WYL-011",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["蔫蔫的", "精神头足"],
+        "reason": "蔫蔫的和精神头足都是自然妈妈口语，前后阶段清楚。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "allowed_mom_colloquial", "source_type": "human_feedback"}
+    },
+    {
+      "title": "保护力慢慢撑起来了",
+      "content": "喝了一阵再回看，孩子自己的保护屏障慢慢撑起来了，最近日常状态挺稳。",
+      "meta": {
+        "case_code": "WYL-012",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["保护屏障慢慢撑起来了"],
+        "reason": "属于可理解的口语化比喻，不应因为不够专业或具象而判病句。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "allowed_colloquial_metaphor", "source_type": "human_feedback"}
+    },
+    {
+      "title": "省心——不对，是开心",
+      "content": "翻手机相册才发现，他最近能坐着拼挺久。老母亲省心——不对，是看他玩得投入还挺开心。",
+      "meta": {
+        "case_code": "WYL-013",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["省心——不对，是开心"],
+        "reason": "自我修正和相册触发都属于自然 UGC 口语节奏。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "natural_self_correction", "source_type": "human_feedback"}
+    },
+    {
+      "title": "狗都嫌的年纪",
+      "content": "正是狗都嫌的年纪，一出门就满场跑，回家还能继续折腾玩具。",
+      "meta": {
+        "case_code": "WYL-014",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["狗都嫌的年纪"],
+        "reason": "符合个人 UGC 身份下的自然吐槽，不是品牌官号语言审核。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "ugc_persona_colloquial", "source_type": "human_feedback"}
+    },
+    {
+      "title": "最近状态在线",
+      "content": "孩子最近状态在线，吃饭也稳了点，家里安排没那么乱。",
+      "meta": {
+        "case_code": "WYL-015",
+        "expected_label": "watch",
+        "acceptable_labels": ["pass", "watch"],
+        "issue_code": "generic_but_readable",
+        "evidence": ["状态在线", "家里安排没那么乱"],
+        "reason": "意思清楚、句子成立，只是略泛，不值得自动改写。",
+        "source": "human_feedback_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "generic_but_readable", "source_type": "human_feedback"}
+    },
+    {
+      "title": "公园里自己爬上高梯，老母亲有点意外",
+      "content": "那天在公园碰到邻居，随口说她家孩子最近老喊累。\n我回想一下，我家这个三岁后每天跑跑跳跳，活动量越来越大。\n当时正好在爬那个攀爬架，他蹭蹭蹭自己就上去了，我在下面仰着头看——以前总要我托一把的。\n\n家里一直喝旺玥，营养够够的，怪不得长那么高。\n当然每个孩子节奏不一样，我自己观察下来确实有这变化。",
+      "meta": {
+        "case_code": "WYL-016",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["以前总要我托一把的"],
+        "reason": "生活叙述可以跳着写，不要求每个变化都补齐完整参照；原文也已经提供了自然的旧状态信息。",
+        "source": "batch498_item7_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "ugc_incomplete_logic_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "临时改计划也不慌",
+      "content": "我们家小朋友吃饭是典型随缘型：上一顿风卷残云，下一顿筷子都懒得动。今天本来打算带他去外面吃顿好的，临时接到通知取消计划，只好回家凑合。果然，晚上正餐扒拉几口就喊饱。\n\n还好家里常备着旺玥奶粉，大人正常冲一杯，钙铁锌和多种关键营养一块儿补充。一天两杯喝下来，至少基础营养这块不用我额外费心搭配了。",
+      "meta": {
+        "case_code": "WYL-017",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["正餐扒拉几口就喊饱", "基础营养这块不用我额外费心搭配了"],
+        "reason": "正文写的是正餐不稳定时的日常营养安排，不需要额外解释产品如何改善食欲；句子和上下文本身成立。",
+        "source": "batch514_item5_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "meal_support_without_appetite_claim", "source_type": "human_feedback"}
+    }
+  ]
+}

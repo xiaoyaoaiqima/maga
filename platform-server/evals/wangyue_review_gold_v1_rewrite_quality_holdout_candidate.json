@@ -1,0 +1,211 @@
+{
+  "dataset_code": "wangyue_review_gold_v1",
+  "slice": "rewrite_quality_holdout_v1_candidate",
+  "review_status": "candidate",
+  "created_date": "2026-07-16",
+  "description": "从真实 content.rewrite before/after 事故中整理。只判断改写是否引入病句、语义断裂或无故丢失关键事实；不判断目标合规问题是否修掉，后者由代码硬审和对应 Focused Judge 复审。",
+  "labels": ["accept", "retry", "reject"],
+  "items": [
+    {
+      "case_code": "WYR-001",
+      "source": "batch497_item5_historical_failure",
+      "rewrite_source": "product_experience_phrase_guard",
+      "target_issue": "删除时间环境词",
+      "before": {"title": "以前请假那阵", "body": "回想之前换季总要请几天假，今年倒全勤了。"},
+      "after": {"title": "以前请假那阵", "body": "回想之前时候交替总要请几天假，今年倒全勤了。"},
+      "suggested_label": "reject",
+      "issue_code": "fluency_regression",
+      "rationale": "时候交替不是自然中文搭配，改写直接制造病句。"
+    },
+    {
+      "case_code": "WYR-002",
+      "source": "batch497_item5_approved_fix",
+      "rewrite_source": "product_experience_phrase_guard",
+      "target_issue": "删除时间环境词",
+      "before": {"title": "以前请假那阵", "body": "回想之前换季总要请几天假，今年倒全勤了。"},
+      "after": {"title": "以前请假那阵", "body": "回想以前总要请几天假，今年倒是全勤了。"},
+      "suggested_label": "accept",
+      "issue_code": "none",
+      "rationale": "目标词已删除，前后时间关系和原意保留。"
+    },
+    {
+      "case_code": "WYR-003",
+      "source": "batch521_item9",
+      "rewrite_source": "product_experience_phrase_guard",
+      "target_issue": "wangyue_child_product_promo_context",
+      "before": {
+        "title": "一次聊天，让我换了口粮",
+        "body": "跟闺蜜聊孩子营养，她说她家一直喝旺玥，钙铁锌这些基础营养都在里面，省得一样样单独补。回来我就把之前的换掉了——调一次日常，省我多少事。\n\n现在每天早起冲一杯，孩子喝得挺自然，我也没再追着补这补那。想想以前东拼西凑的日子，真该早点聊这一回。"
+      },
+      "after": {
+        "title": "一次聊天，让我换了口粮",
+        "body": "跟闺蜜聊孩子营养，她说她家一直喝旺玥，钙铁锌这些基础营养都在里面，省得一样样单独补。回来我就把之前的换掉了——调一次日常，省我多少事。\n\n我也没再追着补这补那。想想以前东拼西凑的日子，真该早点聊这一回。"
+      },
+      "suggested_label": "reject",
+      "issue_code": "required_fact_loss",
+      "rationale": "删除了原文独立的每日冲泡、孩子接受和持续使用事实，且这些不是目标问题。"
+    },
+    {
+      "case_code": "WYR-004",
+      "source": "batch521_item5",
+      "rewrite_source": "product_experience_phrase_guard",
+      "target_issue": "post_delete_cleanup_fluency_check",
+      "before": {
+        "title": "临时改计划，倒让我找到了它",
+        "body": "本来周末打算带娃去爬山的，结果临时有事取消了。在家闲下来，翻看之前做的奶粉功课，想起闺女最近喝奶总说‘有点怪’，夜里也不踏实。我做了好久的功课，也打算给孩子准备这款旺玥——选的时候最看重接受度和营养吸收，开封喝了一周，她倒是主动端着杯说‘这个好喝’，夜里翻身的动静也少了。这个很不错，记录一下自己的选择。}"
+      },
+      "after": {
+        "title": "临时改计划，倒让我找到了它",
+        "body": "本来周末打算带娃去爬山的，结果临时有事取消了。在家闲下来，翻看之前做的奶粉功课，想起闺女最近喝奶总说‘有点怪’，夜里也睡不安稳。我做了好久的功课，也打算给孩子准备这款旺玥——选的时候最看重接受度和营养吸收，开封喝了一周，她倒是主动端着杯说‘这个好喝’，夜里翻身的动静也少了。这个很不错，记录一下自己的选择。"
+      },
+      "suggested_label": "accept",
+      "issue_code": "none",
+      "rationale": "清除了尾部多余符号并保持原有事实；睡眠卖点是否合规由后续目标复审判断。"
+    },
+    {
+      "case_code": "WYR-005",
+      "source": "batch510_item6",
+      "rewrite_source": "product_experience_phrase_guard",
+      "target_issue": "wangyue_portable_form_context",
+      "before": {
+        "title": "动物园日，发现娃的体能升级了",
+        "body": "以前带娃去动物园，走到猴山他就喊腿软，非要坐推车。上周末又去，他居然一路自己逛完整个园区，还追着孔雀模仿开屏叫。\n\n我观察了几个月，感觉是每天喝旺玥让他的日常状态稳了不少，出门活动后也没那么容易喊累。看中的就是它营养配得全，不用我再东补西补，省心不少。\n\n最近精气神确实不一样了，追动物跑的时候活像只小猴子。"
+      },
+      "after": {
+        "title": "动物园日，发现娃的体能升级了",
+        "body": "以前带娃去动物园，走到猴山他就喊腿软，非要坐推车。上周末又去，他居然一路自己逛完整个园区，还追着孔雀模仿开屏叫。\n\n我观察了几个月，感觉是喝旺玥这段时间让他的日常状态稳了不少，出门活动后也没那么容易喊累。看中的就是它营养配得全，不用我再东补西补。\n\n最近精气神确实不一样了，追动物跑的时候活像只小猴子。"
+      },
+      "suggested_label": "accept",
+      "issue_code": "none",
+      "rationale": "局部删除频次和泛情绪词，叙事、产品和效果事实仍连续。"
+    },
+    {
+      "case_code": "WYR-006",
+      "source": "batch506_item2",
+      "rewrite_source": "product_experience_phrase_guard",
+      "target_issue": "公共疾病环境与强保护力表达",
+      "before": {
+        "title": "出门躲雨发现的小变化",
+        "body": "当初挑奶粉，我比较看中乳铁蛋白这块，旺玥还加了免疫球蛋白，觉得更全面。\n\n前几天带娃出门，半路突然下雨，跟几个小朋友挤在亭子里躲了好一会儿。回家后听其他妈妈说，好几个娃晚上都打喷嚏了。我家这个倒跟没事人似的，照样玩到点。\n\n换以前，可能第二天就得请假。现在感觉日常保护力确实跟上了，不是那种突然的大变化，就是慢慢累积起来的状态。"
+      },
+      "after": {
+        "title": "出门躲雨发现的小变化",
+        "body": "当初挑奶粉，我比较看中乳铁蛋白这块，旺玥还加了免疫球蛋白，觉得更全面。\n\n前几天带娃出门，半路突然下雨，跟几个小朋友挤在亭子里躲了好一会儿。回家后听其他妈妈说，有几个娃晚上有点闹腾。我家这个倒跟没事人似的，照样玩到点。\n\n换以前，可能第二天就得请假。现在感觉日常状态稳了不少，不是那种突然的大变化，就是慢慢累积起来的状态。"
+      },
+      "suggested_label": "accept",
+      "issue_code": "none",
+      "rationale": "目标风险表达被降调，人物、时间、场景和主要状态观察保留。"
+    },
+    {
+      "case_code": "WYR-007",
+      "source": "batch504_item4",
+      "rewrite_source": "product_experience_phrase_guard",
+      "target_issue": "wangyue_explicit_age_context",
+      "before": {
+        "title": "翻出旧玩具，才发现",
+        "body": "前几天整理储物间，翻出孩子两岁时玩的小滑梯。邻居随口说，你家小朋友最近跑跑跳跳，好像长高不少。\n\n确实，满三岁后活动量大很多。这段时间家里一直喝旺玥，每天冲一杯，他自己端着喝得挺香。我看着那架小滑梯突然意识到，以前他爬上去都费劲，现在早就用不上了。\n\n奶粉真不错，营养满满的感觉，孩子的变化就藏在这样的日常里。"
+      },
+      "after": {
+        "title": "翻出旧玩具，才发现",
+        "body": "前几天整理储物间，翻出孩子两岁时玩的小滑梯。邻居随口说，你家小朋友最近跑跑跳跳，好像长高不少。\n\n确实，满三岁后活动量大很多，这段时间家里一直喝旺玥。我看着那架小滑梯突然意识到，以前他爬上去都费劲，现在早就用不上了。\n\n奶粉真不错，营养满满的感觉，孩子的变化就藏在这样的日常里。"
+      },
+      "suggested_label": "reject",
+      "issue_code": "required_fact_loss",
+      "rationale": "删除了持续冲泡、孩子接受等独立使用事实，却没有删除真正命中的低龄回忆。"
+    },
+    {
+      "case_code": "WYR-008",
+      "source": "batch519_item2",
+      "rewrite_source": "product_experience_fluency_humanize",
+      "target_issue": "ad_like_closure",
+      "before": {
+        "title": "补货空罐，顺手数数收获",
+        "body": "翻订单看到旺玥又补了一罐，顺手开新罐时复盘了下。孩子正餐吃得散，这阵子搭配下来，一杯高钙高铁高锌，基本把日常该补的营养都补齐了。喝得挺顺，没怎么换过。空罐见底的速度，就是最好的答案。"
+      },
+      "after": {
+        "title": "补货空罐，顺手数数收获",
+        "body": "翻订单看到旺玥又补了一罐，顺手开新罐时复盘了下。孩子正餐吃得散，这阵子搭配下来，一杯高钙高铁高锌，基本把日常该补的营养都补齐了。喝得挺顺，没怎么换过。空罐见底，说明一切。"
+      },
+      "suggested_label": "accept",
+      "issue_code": "none",
+      "rationale": "after 中文成立且事实保留；广告式收口是否真正消除应由目标 Content Fit 复审。"
+    },
+    {
+      "case_code": "WYR-009",
+      "source": "batch518_item1",
+      "rewrite_source": "product_experience_llm_quality_review",
+      "target_issue": "轻微模板化表达",
+      "before": {"title": "补货时又顺手加了一罐", "body": "刚拆完快递，旺玥到了。孩子平时吃饭有时挑，旺玥就成了家里的固定选项——每天一杯，钙铁锌和多种关键营养都补上了，我也少操那份额外搭配的心。孩子自己倒挺接受这个安排，喝得习惯。"},
+      "after": {"title": "补货时又顺手加了一罐", "body": "刚拆完快递，旺玥到了。孩子平时吃饭有时挑，旺玥就成了家里的固定选项——每天一杯，钙铁锌和多种关键营养都补上了，我也少操心搭配上的事。孩子自己倒挺接受这个安排，喝得习惯。"},
+      "suggested_label": "accept",
+      "issue_code": "none",
+      "rationale": "只把生硬搭配改成自然说法，其余事实不变。"
+    },
+    {
+      "case_code": "WYR-010",
+      "source": "batch517_item6",
+      "rewrite_source": "product_experience_compliance_cleanup",
+      "target_issue": "effect_scope_drift",
+      "before": {"title": "一顿饭让我彻底不纠结选奶了", "body": "看中旺玥就因为它配得全：钙铁锌、多种维生素都有，营养安排得清楚。出门遛弯、跑跳，精神头一直在线，晚间入睡也安稳。现在每餐吃多吃少随他去，至少日常营养有这杯托底。"},
+      "after": {"title": "一顿饭让我彻底不纠结选奶了", "body": "看中旺玥就因为它配得全：钙铁锌、多种维生素都有，营养安排得清楚。出门遛弯、跑跳，精神头一直在线。现在每餐吃多吃少随他去，至少日常营养有这杯托底。"},
+      "suggested_label": "accept",
+      "issue_code": "none",
+      "rationale": "只删除目标睡眠效果，其他产品依据和正向反馈保留。"
+    },
+    {
+      "case_code": "WYR-011",
+      "source": "batch514_item6",
+      "rewrite_source": "product_experience_fluency_humanize",
+      "target_issue": "ad_like_closure",
+      "before": {"title": "一顿饭没吃好，还好有它兜底", "body": "昨天晚饭，孩子扒拉两口就说饱了。后来给他泡了杯旺玥，就当把正餐里没吃够的营养补一补。看中它营养配得全，不用我再东补西补，心里有底多了。一顿饭吃得随缘，日常有这份安排，至少不会太慌。"},
+      "after": {"title": "一顿饭没吃好，泡杯旺玥补一补", "body": "昨天晚饭，孩子扒拉两口就说饱了。后来给他泡了杯旺玥，就当把正餐里没吃够的营养补一补。看中它营养配得全，不用我再东补西补就行。一顿饭吃得随缘，日常有这份安排，至少不会太慌。"},
+      "suggested_label": "accept",
+      "issue_code": "none",
+      "rationale": "标题和收口局部调整后仍通顺，关键事实保留；产品动作是否命中 guard 由代码复审。"
+    },
+    {
+      "case_code": "WYR-012",
+      "source": "batch449_item4",
+      "rewrite_source": "product_experience_fluency_humanize",
+      "target_issue": "ad_like_closure",
+      "before": {"title": "被朋友反向种草了", "body": "本来觉得3岁后奶粉随便选就行，直到朋友吐槽她家娃隔三差五请假，我才认真做功课。对比下来选了旺玥。现在喝了一阵，确实很少因为小状况缺课，朋友也跟着换了。选对奶粉，当妈的省心不少。"},
+      "after": {"title": "被朋友反向种草了", "body": "本来觉得3岁后奶粉随便选就行，直到朋友吐槽她家娃隔三差五请假，我才认真做功课。对比下来选了旺玥。现在喝了一阵，确实很少因为小状况缺课，朋友也跟着换了。现在孩子状态稳多了，朋友也跟着换了。"},
+      "suggested_label": "retry",
+      "issue_code": "semantic_discontinuity",
+      "rationale": "新增的收口重复‘朋友也跟着换了’，局部删除重复即可修复。"
+    },
+    {
+      "case_code": "WYR-013",
+      "source": "batch437_item14",
+      "rewrite_source": "product_experience_compliance_cleanup",
+      "target_issue": "effect_scope_drift",
+      "before": {"title": "翻到以前的记录本", "body": "整理书架时掉出一本旧记录本，里面记着娃刚上幼儿园时请假的日子。翻着翻着就想到现在，自从换了旺玥，这学期班里几轮身体不适都没落下她。当初就是冲着乳铁蛋白含量选的，没想到日常状态变化这么明显——晚上睡得沉，白天精力旺盛，连身高都窜了一截。小孩子的成长啊，真的藏在每天喝的那杯奶里。"},
+      "after": {"title": "翻到以前的记录本", "body": "整理书架时掉出一本旧记录本，里面记着娃刚上幼儿园时请假的日子。翻着翻着就想到现在，自从换了旺玥，这学期班里几轮身体不适都没落下她。当初就是冲着乳铁蛋白含量选的。小孩子的成长啊，真的藏在每天喝的那杯奶里。"},
+      "suggested_label": "reject",
+      "issue_code": "required_fact_loss",
+      "rationale": "为删除睡眠效果，一并删掉白天精力和身高等多个独立反馈，导致文章核心证据大面积丢失。"
+    },
+    {
+      "case_code": "WYR-014",
+      "source": "batch436_item16",
+      "rewrite_source": "product_experience_compliance_cleanup",
+      "target_issue": "child_self_brewing",
+      "before": {"title": "终于找到对的配方", "body": "记录一下孩子最近的改变。换了旺玥之后，早起打喷嚏少了很多，整个人看着精神。当初做功课就是冲着它的乳铁蛋白含量。每天放学回来自己就会去倒水冲奶粉，这周末居然主动要求去游泳，以前可没这劲头。"},
+      "after": {"title": "终于找到对的配方", "body": "记录一下孩子最近的改变。换了旺玥之后，早起打喷嚏少了很多，整个人看着精神。当初做功课就是冲着它的乳铁蛋白含量。这周末居然主动要求去游泳，以前可没这劲头。"},
+      "suggested_label": "accept",
+      "issue_code": "none",
+      "rationale": "只删除孩子自行冲泡的目标句，其他观察和产品依据完整保留。"
+    },
+    {
+      "case_code": "WYR-015",
+      "source": "batch63_item198",
+      "rewrite_source": "product_experience_phrase_guard",
+      "target_issue": "malformed_fragment",
+      "before": {"title": "睡前翻笔记想起选奶", "body": "晚上收拾书桌，翻到以前记的功课，想起给娃选奶粉那会儿。主要看中旺玥对保护力的支持，也留意了乳铁蛋白和HMO。这段时间用下来，孩子状态挺稳的，晚上完奶，躺下就睡着了"},
+      "after": {"title": "睡前翻笔记想起选奶", "body": "晚上收拾书桌，翻到以前记的功课，想起给娃选奶粉那会儿。主要看中旺玥对保护力的支持，也留意了乳铁蛋白和HMO。这段时间用下来，孩子状态挺稳的，晚上喝完奶，躺下就睡着了"},
+      "suggested_label": "accept",
+      "issue_code": "none",
+      "rationale": "补回缺失动词后句子成立，事实和顺序没有变化。"
+    }
+  ]
+}

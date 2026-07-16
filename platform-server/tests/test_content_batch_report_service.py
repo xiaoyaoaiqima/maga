@@ -211,6 +211,95 @@ def test_article_pool_export_allows_mark_only_phrase_review():
     assert _article_pool_item_exportable(item) is True
 
 
+def test_article_pool_export_uses_wangyue_focused_pipeline_decision():
+    watch_item = ContentBatchReportItem(
+        item_id=1,
+        item_no=1,
+        status="generated",
+        title="日常记录",
+        body="正文",
+        hard_pass=True,
+        rewrite_required=False,
+        quality={
+            "hard_pass": True,
+            "review_report": {"rewrite_required": False},
+            "wangyue_focused_pipeline_review": {
+                "decision": "watch",
+                "unavailable_dimensions": [],
+                "requires_rewrite": False,
+                "can_auto_pool": True,
+                "status": "watch",
+            },
+        },
+    )
+    unavailable_item = watch_item.model_copy(
+        update={
+            "item_id": 2,
+            "item_no": 2,
+            "quality": {
+                "hard_pass": True,
+                "review_report": {"rewrite_required": False},
+                "wangyue_focused_pipeline_review": {
+                    "decision": "watch",
+                    "unavailable_dimensions": ["fluency"],
+                    "requires_rewrite": False,
+                    "can_auto_pool": False,
+                    "status": "hold",
+                },
+            },
+        }
+    )
+    block_item = watch_item.model_copy(
+        update={
+            "item_id": 3,
+            "item_no": 3,
+            "quality": {
+                "hard_pass": True,
+                "review_report": {"rewrite_required": False},
+                "wangyue_focused_pipeline_review": {
+                    "decision": "block",
+                    "unavailable_dimensions": [],
+                    "requires_rewrite": True,
+                    "can_auto_pool": False,
+                    "status": "manual_review",
+                },
+            },
+        }
+    )
+
+    assert _article_pool_item_exportable(watch_item) is True
+    assert _article_pool_item_exportable(unavailable_item) is False
+    assert _article_pool_item_exportable(block_item) is False
+
+
+def test_compact_quality_summary_exposes_wangyue_focused_pipeline_status():
+    summary = ContentBatchReportService(db=None)._quality_summary(
+        {
+            "hard_pass": True,
+            "review_report": {"rewrite_required": False},
+            "wangyue_focused_pipeline_review": {
+                "status": "watch",
+                "decision": "watch",
+                "unavailable_dimensions": [],
+                "rewrite_modes": [],
+                "requires_rewrite": False,
+                "can_auto_pool": True,
+                "affects_pool": True,
+            },
+        }
+    )
+
+    assert summary["wangyue_focused_pipeline_review"] == {
+        "status": "watch",
+        "decision": "watch",
+        "unavailable_dimensions": [],
+        "rewrite_modes": [],
+        "requires_rewrite": False,
+        "can_auto_pool": True,
+        "affects_pool": True,
+    }
+
+
 def test_summary_reports_complete_content_path_skeleton():
     service = ContentBatchReportService(db=None)
     items = [

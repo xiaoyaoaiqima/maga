@@ -1,0 +1,250 @@
+{
+  "dataset_code": "wangyue_review_gold_v1",
+  "slice": "fluency_holdout_v1_candidate",
+  "review_status": "candidate",
+  "created_date": "2026-07-16",
+  "description": "从真实 content.rewrite stage 的 after 结果中抽取的旺玥流畅性 holdout 候选。只判断中文是否成立、标题正文是否连续；不审核产品事实、功效、广告感、内容取向或改写是否丢失事实。",
+  "labels": ["pass", "watch", "block"],
+  "items": [
+    {
+      "title": "随口一句「钙铁锌还够吗」，结果…",
+      "content": "昨天跟孩子爸随口说了句：最近挑食，钙铁锌还够吗？他指了指柜子上的旺玥——这个月一直喝，居然没断过。\n回想之前时候交替总要请几天假，今年倒全勤了，吃饭也不怎么费劲了。不求它替代所有，但至少钙铁锌这些基础营养稳了，状态肉眼可见好起来。\n昨晚自己咕咚喝完一杯，还说了句「这个奶好喝」。当妈的听到这，比什么都实在。",
+      "meta": {
+        "case_code": "WYH-001",
+        "expected_label": "block",
+        "issue_code": "unnatural_collocation",
+        "evidence": ["之前时候交替"],
+        "reason": "违禁词删除后留下不成立的时间搭配。",
+        "source_item_id": 8130,
+        "source_run_id": 6994,
+        "source_stage_seq": 3,
+        "rewrite_source": "product_experience_phrase_guard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "rewrite_collocation_regression", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "朋友问给孩子喝啥，我说这个营养配得全",
+      "content": "上次和朋友遛弯，她家孩子刚生完病，蔫蔫的。她说天天补钙补锌补维生素，瓶瓶罐罐一大堆，还是该感冒感冒。我就想起当初给孩子选奶粉那会儿，也是各种研究，最后定了旺玥。\n\n说实话，看中的就是它营养配得全，钙铁锌和关键维生素都在里头，每天一杯当日常营养补充，营养安排更清楚。朋友听完立马问哪里买，我说你先别急，我家孩子喝了大半年，状态肉眼可见稳多了。过去他几乎全勤——当然这是以前的事了。\n\n现在每天放学回家放下书包，就等我泡奶。我倒是不用再琢磨今天补啥明天补啥。\n\n朋友回去后发消息说她也在看奶粉了。哈哈，同款妈妈。",
+      "meta": {
+        "case_code": "WYH-002",
+        "expected_label": "block",
+        "issue_code": "semantic_discontinuity",
+        "evidence": ["过去他几乎全勤——当然这是以前的事了"],
+        "reason": "过去和以前重复，而全勤的阶段与当前反馈失去连接。",
+        "source_item_id": 8071,
+        "source_run_id": 6937,
+        "source_stage_seq": 3,
+        "rewrite_source": "product_experience_phrase_guard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "rewrite_temporal_discontinuity", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "看她踮脚够书架，才发觉真的在长",
+      "content": "前两天突然发现，小家伙踮起脚尖居然能碰到书架第三层了。上个月还要我抱起来够。心里咕噔一下——长速有点猛。\n\n那阵子正愁营养搭配。幼儿园回来饿得前胸贴后背，追着要零食。早饭加钙，晚饭补铁，睡前再念叨一句锌。我自己都嫌烦，孩子也没耐心。\n\n后来听朋友说，不如换一款营养全面的奶粉，日常冲一杯当加餐。做了一圈功课，选了旺玥。看配方表，钙铁锌和多种维生素都列得清清爽爽。心想就它了，给日常饮食兜个底，不用再天天盘算今天少补什么。\n\n喝下来最明显的变化是我不焦虑了。放学回来冲一杯，她咕咚咕咚喝掉，晚饭照常吃。零食确实要得少了。营养挺丰富的，我也不用天天想补什么。书架第三层，算是这段时间最好的证明。",
+      "meta": {
+        "case_code": "WYH-003",
+        "expected_label": "block",
+        "issue_code": "unnatural_collocation",
+        "evidence": ["长速有点猛"],
+        "reason": "长速不是自然的妈妈口语，是压缩改写产生的词语碰撞。",
+        "source_item_id": 8085,
+        "source_run_id": 6948,
+        "source_stage_seq": 2,
+        "rewrite_source": "ai_flavor_humanizer"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "coined_word_collision", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "奶奶的连环问，停在这杯奶上",
+      "content": "有段时间，我妈隔几天就问我家小宝：吃饭香不香？怕缺营养，总念叨邻居家孩子补这补那。我知道她心疼，可每次让孩子吃那些补剂，孩子都直往后躲，我看着也难受。\n\n后来侄子来家里玩，喝的就是旺玥。我妈看他喝得香，就问嫂子在喝啥。嫂子说这个营养挺全面，一直喝这个，不用每天愁该补啥。我之后也给大宝试了一罐，小家伙第一回就说好喝，喝完大半天不闹着吃零食。我妈都说：“这个奶粉可以，不用再额外加了。”现在每天早晚冲一杯，孩子喝着挺好，也没再喊累。老人看孩子喝得惯，也就信了，不再追着问了。",
+      "meta": {
+        "case_code": "WYH-004",
+        "expected_label": "block",
+        "issue_code": "unnatural_collocation",
+        "evidence": ["奶奶的连环问，停在这杯奶上"],
+        "reason": "连环问与停在奶上的搭配不成立，是为避免广告标题强行换出的比喻。",
+        "source_item_id": 8068,
+        "source_run_id": 6933,
+        "source_stage_seq": 3,
+        "rewrite_source": "ai_flavor_humanizer"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "unnatural_title_metaphor", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "晚饭后那句喝奶",
+      "content": "上周洗菜时我就在想，女儿老吃几口就说饱，天天变着花样做，她没吃多少我还累。那阵子正看儿童奶粉，想着多一个顺手补充。对比下来，旺玥钙铁锌都挺到位的，一杯基本把几样关键营养补上了。现在每天晚饭后她自己说“妈妈我要喝奶”，我就冲一杯。喝了大半个月，她胃口好像稳了些，我也不用老盯着碗纠结了。",
+      "meta": {
+        "case_code": "WYH-005",
+        "expected_label": "block",
+        "issue_code": "incomplete_sentence",
+        "evidence": ["晚饭后那句喝奶"],
+        "reason": "标题把孩子的完整台词压成残缺的名词短语。",
+        "source_item_id": 8057,
+        "source_run_id": 6925,
+        "source_stage_seq": 2,
+        "rewrite_source": "ai_flavor_humanizer"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "compressed_title_fragment", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "今天这点变化",
+      "content": "聚会聊到娃坐不住，我随口说我家以前贴纸跑开，现在能坐小桌子前捣鼓一阵。喝旺玥后，当初选它主要看DHA和燕窝酸，想着护着用眼用脑的地方。反馈就是比以前更能坐得住一点。",
+      "meta": {
+        "case_code": "WYH-006",
+        "expected_label": "block",
+        "issue_code": "unnatural_collocation",
+        "evidence": ["以前贴纸跑开"],
+        "reason": "删除主语和动作连接后变成贴纸自己跑开。",
+        "source_item_id": 7260,
+        "source_run_id": 6404,
+        "source_stage_seq": 2,
+        "rewrite_source": "product_experience_phrase_guard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "subject_action_collision", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "今天这点变化",
+      "content": "昨天聚会妈妈们聊开，都说孩子在家画画、搭积木坐不住。我没多想就接了句：我们家最近倒是比以前坐得住一点。确实，之前也是贴纸贴不稳就换，拼图拼几下就跑。现在能自己坐小桌子前弄一会儿。这个变化恰好是喝旺玥之后慢慢出来的。当时选它就是为了DHA和燕窝酸，想着她每天看书画画用眼用脑，能多一层补充。不是突然就特别专注，就是比原来更能静下来一点点。",
+      "meta": {
+        "case_code": "WYH-007",
+        "expected_label": "block",
+        "issue_code": "unnatural_collocation",
+        "evidence": ["贴纸贴不稳就换"],
+        "reason": "原意是孩子没耐心，改写后变成贴纸粘不稳，语义错位。",
+        "source_item_id": 7212,
+        "source_run_id": 6390,
+        "source_stage_seq": 2,
+        "rewrite_source": "product_experience_phrase_guard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "action_meaning_collision", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "盯着保护力选，没看走眼",
+      "content": "同龄好几个妈妈都开始关注孩子的保护力配置，我原来没太在意。直到发现每次聚会回来孩子都蔫蔫的，吃饭也没胃口，才认真筛奶粉。\n\n朋友推荐旺玥时主要提了乳铁蛋白和HMO，说这两个对增强状态比较关键。翻配料表确认后开了一罐，目前喝了大半罐。现在接他放学回家，状态是松快的，晚饭也不需要追着喂——自己坐在桌前就能吃完。\n\n阶段性回看，这个选择没做错。",
+      "meta": {
+        "case_code": "WYH-008",
+        "expected_label": "block",
+        "issue_code": "unnatural_collocation",
+        "evidence": ["状态是松快的"],
+        "reason": "松快通常形容人的心情或身体感受，与抽象状态的搭配生硬。",
+        "source_item_ids": [5559, 5560],
+        "source_run_id": 5245,
+        "source_stage_seq": 2,
+        "rewrite_source": "forbidden_term_rewrite"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "abstract_state_collocation", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "游戏搭子终于不请假了",
+      "content": "最近陪孩子玩双人游戏，一口气通关三个小时都没喊累。\n\n以前一到周末就怕他请假，全勤记录老断。现在连着几周都能准时上线，体格确实比以前好了，能跑能跳，小脸也长了肉。这段时间给他喝旺玥，他接受度高，每天都喝一杯。我自己觉得中招的次数少了。能这样陪他一起疯玩就好。",
+      "meta": {
+        "case_code": "WYH-009",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["以前一到周末就怕他请假", "现在连着几周都能准时上线"],
+        "reason": "标题的游戏比喻在正文中有完整的旧状态和现状对照，不应误判为标题正文冲突。",
+        "source_item_id": 8038,
+        "source_run_id": 6903,
+        "source_stage_seq": 2,
+        "rewrite_source": "product_experience_phrase_guard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "supported_title_metaphor", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "组队通关两小时，娃没喊累😂",
+      "content": "周末和儿子组队搭积木城堡，以前半小时就开始哼哼唧唧“妈妈我累了”，最近居然一口气专注了两小时，全程兴致勃勃自己设计机关。\n\n我复盘了下，可能就是每天那杯旺玥喝出来的。30多种营养听着不花哨，用起来真不费劲——不需要绞尽脑汁搭配每日餐食，一杯下去该有的都有了。状态稳了，我也能歇口气，不用时刻备着零食哄他。\n\n不是马上见效那种神奇，是日子过下来，突然发现孩子扛得住玩了。",
+      "meta": {
+        "case_code": "WYH-010",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["一杯下去该有的都有了"],
+        "reason": "表达虽然强种草，但中文句子本身成立；产品功效与广告感应由其它审核维度处理。",
+        "source_item_id": 8132,
+        "source_run_id": 6995,
+        "source_stage_seq": 2,
+        "rewrite_source": "product_experience_phrase_guard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "strong_claim_but_fluent", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "出门玩一圈，娃居然没喊累",
+      "content": "上周临时决定带娃去爬山，以前走半小时就要抱，这次全程自己爬完还哼着歌。回家后我问他不累吗，他说“旺玥好好喝，喝完就有力气啦”。\n\n当初选旺玥就是看中它营养丰富，每天早上一杯，全面又方便。\n\n现在出门活动后恢复也快，状态比之前稳多了，连爸爸都夸最近带娃轻松不少。",
+      "meta": {
+        "case_code": "WYH-011",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["他说“旺玥好好喝，喝完就有力气啦”"],
+        "reason": "孩子替产品发言是产品角色错误，但台词中文通顺；Fluency Judge 不应越权 block。",
+        "source_item_id": 8123,
+        "source_run_id": 6984,
+        "source_stage_seq": 2,
+        "rewrite_source": "product_experience_phrase_guard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "role_error_but_fluent", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "出门放电一整天，她居然还有余力",
+      "content": "上周带她去爬山，全程自己走，回程大巴上还跟邻座小朋友聊天，到家洗完澡还主动整理绘本。回想起来，当初换成旺玥就是看中它营养比较丰富，关键营养都有，日常安排更清楚。对我来说，营养一站搞定，对我这种懒人妈妈真的很友好。长期喝下来，日常状态确实更稳了。",
+      "meta": {
+        "case_code": "WYH-012",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["营养一站搞定"],
+        "reason": "一站搞定偏广告口语，但语法和意思成立，不属于流畅性 block。",
+        "source_item_id": 8103,
+        "source_run_id": 6966,
+        "source_stage_seq": 2,
+        "rewrite_source": "product_experience_phrase_guard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "ad_tone_but_fluent", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "少了那顿饭的焦虑，多了个简单选择",
+      "content": "这学期孩子中午在学校吃，晚饭总挑食。闺蜜推荐旺玥，说睡前一杯当补漏。到货开罐，粉质挺细，晚饭后冲了一杯，他咕咚几口喝完说好喝。喝了两周，周末去姥姥家居然主动添饭。旺玥里钙铁锌和多种关键营养都有，不用每天想着额外搭配什么。现在晚饭后一杯成了习惯，偶尔忘了，他还会提醒。起码我知道日常营养底子够了，不用老盯着那顿饭较劲。",
+      "meta": {
+        "case_code": "WYH-013",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["这学期孩子中午在学校吃，晚饭总挑食"],
+        "reason": "改写压缩了大量事实，但 after 单独阅读仍然连续通顺；事实丢失应由 Rewrite Quality Validator 审核。",
+        "source_item_id": 8072,
+        "source_run_id": 6936,
+        "source_stage_seq": 2,
+        "rewrite_source": "product_experience_phrase_guard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "fact_loss_but_fluent", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "最近发现他听故事能跟住了",
+      "content": "和别的妈妈聊到孩子在家怎么打发时间，我说主要就是翻绘本。以前讲一本，他听两页就跑去玩别的了。最近发现他能跟住一段故事，后面讲到前面出现过的角色，居然能接上话。\n\n平时看动画、认字、搭积木，用眼用脑多，所以选奶粉特意看了DHA和燕窝酸。家里一直喝旺玥。\n\n这种变化不是突然变专注，就是慢慢能坐住了。看到他指着画面说“这个刚刚出现过呀”，觉得日常投入很值。",
+      "meta": {
+        "case_code": "WYH-014",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["最近发现他能跟住一段故事"],
+        "reason": "上游输出是破损 JSON，但提取改写后的 title/body 已经是完整自然中文。",
+        "source_item_id": 7440,
+        "source_run_id": 6550,
+        "source_stage_seq": 2,
+        "rewrite_source": "product_experience_phrase_guard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "repaired_json_to_fluent", "source_type": "real_rewrite_incident"}
+    },
+    {
+      "title": "婆婆老念着娃缺营养，我换个路子",
+      "content": "婆婆总觉得孩子幼儿园吃不够，钙片锌剂买了一堆。我干脆找了罐旺玥，日常营养基本都包了。早上冲一杯，孩子自己端去喝。不用再记啥时候补啥，清静多了，她也不追着喂小药片了。",
+      "meta": {
+        "case_code": "WYH-015",
+        "expected_label": "watch",
+        "issue_code": "generic_but_readable",
+        "evidence": ["日常营养基本都包了"],
+        "reason": "包了的宾语略模糊，但结合上下文能稳定理解，不应为了更漂亮自动改写。",
+        "source_item_id": 8063,
+        "source_run_id": 6924,
+        "source_stage_seq": 2,
+        "rewrite_source": "ai_flavor_humanizer"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "rough_but_readable_rewrite", "source_type": "real_rewrite_incident"}
+    }
+  ]
+}

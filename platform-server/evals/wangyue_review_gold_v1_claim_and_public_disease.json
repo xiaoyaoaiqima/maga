@@ -1,0 +1,215 @@
+{
+  "dataset_code": "wangyue_review_gold_v1",
+  "slice": "claim_and_public_disease_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-15",
+  "description": "旺玥审核金标第三批候选：只判断疾病相关功效宣称、医疗背书、即时补救和公共疾病环境，不判断一般时间逻辑、人味或种草强弱。",
+  "labels": ["pass", "watch", "block"],
+  "rubric": [
+    "过去发生的感冒、请假，以及长期使用后的全勤、少请假、少中招等普通自家观察，不自动判 block。",
+    "过去式同伴生病或班级请假可以保留，但作为对照表达时优先标 watch，不自动改写。",
+    "孩子出现当下症状后，马上把旺玥写成临时补救、治疗或加量手段，判 block。",
+    "医生背书、治疗疾病、防止感冒或保证不生病等医疗化、绝对化宣称，判 block。",
+    "“流感”是旺玥确定性硬禁词，无论当前或过去语境，出现即直接 ban；其它不含硬禁词的公共疾病环境表达，当前时态判 block，明确过去式不按此项硬拦。"
+  ],
+  "items": [
+    {
+      "title": "去年感冒那阵",
+      "content": "去年孩子有阵子感冒，前前后后折腾了几天，现在翻到那会儿的照片还记得。",
+      "meta": {
+        "case_code": "WYC-001",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["去年孩子有阵子感冒"],
+        "reason": "明确过去发生的普通经历，没有把产品写成治疗或即时补救。",
+        "source": "human_feedback_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "past_own_illness", "source_type": "human_feedback"}
+    },
+    {
+      "title": "以前请过假",
+      "content": "以前有点小状况就请过假，后来旺玥喝了一阵，最近回看出勤挺稳。",
+      "meta": {
+        "case_code": "WYC-002",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["以前有点小状况就请过假", "旺玥喝了一阵", "最近回看出勤挺稳"],
+        "reason": "过去请假与长期使用后的普通出勤观察都在当前允许口径内。",
+        "source": "human_feedback_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "past_leave_and_attendance", "source_type": "human_feedback"}
+    },
+    {
+      "title": "这学期全勤",
+      "content": "家里旺玥一直喝着，这学期孩子到现在还是全勤，周末也照常出去玩。",
+      "meta": {
+        "case_code": "WYC-003",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["旺玥一直喝着", "这学期孩子到现在还是全勤"],
+        "reason": "全勤是自家长期观察，不等于保证产品防病。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "own_attendance_observation", "source_type": "human_feedback"}
+    },
+    {
+      "title": "最近少请假",
+      "content": "旺玥喝到现在有一阵了，最近没怎么请假，日常状态也还行。",
+      "meta": {
+        "case_code": "WYC-004",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["喝到现在有一阵了", "最近没怎么请假"],
+        "reason": "少请假是有观察跨度的普通自家反馈，不是医疗保证。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "less_leave_observation", "source_type": "human_feedback"}
+    },
+    {
+      "title": "感冒都少了",
+      "content": "坚持喝了一阵，整体状态挺在线，回头看连感冒都比以前少了。",
+      "meta": {
+        "case_code": "WYC-005",
+        "expected_label": "watch",
+        "acceptable_labels": ["pass", "watch"],
+        "issue_code": "own_illness_reduction_observation",
+        "evidence": ["坚持喝了一阵", "感冒都比以前少了"],
+        "reason": "人工口径允许这类长期自家观察，但可以作为疾病效果承接观察项。",
+        "source": "human_feedback_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "less_cold_observation", "source_type": "human_feedback"}
+    },
+    {
+      "title": "朋友家娃去年总生病",
+      "content": "去年朋友家娃有阵子总生病，她看我家孩子状态还行，就问我平时怎么选奶粉。",
+      "meta": {
+        "case_code": "WYC-006",
+        "expected_label": "watch",
+        "acceptable_labels": ["pass", "watch"],
+        "issue_code": "past_public_disease_reference",
+        "evidence": ["去年朋友家娃有阵子总生病"],
+        "reason": "过去式同伴生病不应硬拦，但存在对照意味，保留 watch 空间。",
+        "source": "human_feedback_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "past_peer_illness", "source_type": "human_feedback"}
+    },
+    {
+      "title": "去年班里请假的多",
+      "content": "去年冬天班里有阵子请假的孩子挺多，我家那段时间出勤倒还算稳。",
+      "meta": {
+        "case_code": "WYC-007",
+        "expected_label": "watch",
+        "acceptable_labels": ["pass", "watch"],
+        "issue_code": "past_public_disease_reference",
+        "evidence": ["去年冬天", "班里有阵子请假的孩子挺多"],
+        "reason": "公共疾病环境已经明确落在过去，不依赖当前发布时间成立。",
+        "source": "human_feedback_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "past_class_absence", "source_type": "human_feedback"}
+    },
+    {
+      "title": "哈啾后赶紧补",
+      "content": "孩子早上打了个喷嚏，我马上换成旺玥，想着赶紧把保护力补回来。",
+      "meta": {
+        "case_code": "WYC-008",
+        "expected_label": "block",
+        "issue_code": "immediate_rescue_claim",
+        "evidence": ["打了个喷嚏", "马上换成旺玥", "赶紧把保护力补回来"],
+        "reason": "把当下单次症状和产品即时补救直接绑定。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "immediate_rescue", "source_type": "human_feedback"}
+    },
+    {
+      "title": "喉咙不舒服多冲一杯",
+      "content": "今天孩子说喉咙不舒服，我赶紧多冲一杯旺玥，想着喝下去缓一缓。",
+      "meta": {
+        "case_code": "WYC-009",
+        "expected_label": "block",
+        "issue_code": "immediate_rescue_claim",
+        "evidence": ["今天孩子说喉咙不舒服", "赶紧多冲一杯旺玥", "喝下去缓一缓"],
+        "reason": "把旺玥作为当前症状的临时加量缓解手段。",
+        "source": "synthetic_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "symptom_relief", "source_type": "boundary_case"}
+    },
+    {
+      "title": "医生说能防感冒",
+      "content": "医生说坚持喝旺玥能提高免疫力、防感冒，所以我就一直给孩子喝。",
+      "meta": {
+        "case_code": "WYC-010",
+        "expected_label": "block",
+        "issue_code": "medical_authority_claim",
+        "evidence": ["医生说", "能提高免疫力、防感冒"],
+        "reason": "使用医生背书承接明确防病功效。",
+        "source": "policy_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "doctor_endorsement", "source_type": "policy_case"}
+    },
+    {
+      "title": "专治容易感冒",
+      "content": "旺玥就是专治孩子容易感冒的，喝一阵就能把这个问题解决掉。",
+      "meta": {
+        "case_code": "WYC-011",
+        "expected_label": "block",
+        "issue_code": "medical_treatment_claim",
+        "evidence": ["专治孩子容易感冒", "把这个问题解决掉"],
+        "reason": "直接把儿童奶粉写成治疗疾病的产品。",
+        "source": "policy_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "treatment_claim", "source_type": "policy_case"}
+    },
+    {
+      "title": "喝了就不会生病",
+      "content": "孩子喝了旺玥就不会生病，保护力这块完全不用担心。",
+      "meta": {
+        "case_code": "WYC-012",
+        "expected_label": "block",
+        "issue_code": "disease_prevention_guarantee",
+        "evidence": ["喝了旺玥就不会生病", "完全不用担心"],
+        "reason": "对不生病作绝对保证。",
+        "source": "policy_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "absolute_prevention", "source_type": "policy_case"}
+    },
+    {
+      "title": "现在正是流感季",
+      "content": "现在正是流感季，班里不少孩子都中招了，我更庆幸家里一直喝旺玥。",
+      "meta": {
+        "case_code": "WYC-013",
+        "expected_label": "block",
+        "issue_code": "current_public_disease_environment",
+        "evidence": ["现在正是流感季", "班里不少孩子都中招了"],
+        "reason": "“流感”是旺玥硬禁词，出现即由确定性禁词审核直接ban；当前公共疾病环境对照同时构成current_public_disease_environment。",
+        "source": "policy_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "current_flu_environment", "source_type": "policy_case"}
+    },
+    {
+      "title": "最近班里都病了",
+      "content": "最近班里好多孩子都生病请假了，我家因为一直喝旺玥，到现在还稳稳的。",
+      "meta": {
+        "case_code": "WYC-014",
+        "expected_label": "block",
+        "issue_code": "current_public_disease_environment",
+        "evidence": ["最近班里好多孩子都生病请假了", "因为一直喝旺玥，到现在还稳稳的"],
+        "reason": "用当前群体疾病环境与自家产品结果作直接对照和因果承接。",
+        "source": "policy_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "current_class_illness_contrast", "source_type": "policy_case"}
+    },
+    {
+      "title": "小状况比以前少些",
+      "content": "旺玥喝了一阵再回看，孩子平时小状况比以前少些，出去玩状态也在线。",
+      "meta": {
+        "case_code": "WYC-015",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["喝了一阵再回看", "小状况比以前少些"],
+        "reason": "有观察跨度的非绝对化自家状态反馈，未写治疗、防病保证或公共疾病环境。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "ordinary_self_observation", "source_type": "human_feedback"}
+    }
+  ]
+}

@@ -10,6 +10,7 @@ from app.services.executor_invocation_service import call_direct_llm_text
 
 
 REWRITE_QUALITY_LABELS = {"accept", "retry", "reject"}
+REWRITE_QUALITY_MODEL_CODE = "qwen-plus"
 REWRITE_QUALITY_ISSUE_CODES = {
     "none",
     "fluency_regression",

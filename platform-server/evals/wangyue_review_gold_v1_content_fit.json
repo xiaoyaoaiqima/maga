@@ -1,0 +1,291 @@
+{
+  "dataset_code": "wangyue_review_gold_v1",
+  "slice": "content_fit_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-15",
+  "description": "旺玥审核金标第四批候选：只判断产品出现是否自然、是否把业务 brief 翻译成妈妈话术、帖子类型是否真正成立，以及广告式收口是否只需观察。",
+  "labels": ["pass", "watch", "block"],
+  "label_semantics": {
+    "pass": "无需因内容适配问题改写。",
+    "watch": "单篇可用，只做批量分布观察，不自动改写。",
+    "block": "不能直接入池，需要进入 fluency/content-fit 局部改写；不等于合规 hard fail。"
+  },
+  "rubric": [
+    "具体成分、配方或自家反馈可以直接说；不要因为种草链完整、产品价值强或出现省心、选对等词就自动 block。",
+    "省心、踏实、安心、心里有数、不用纠结等收口词通常只标 watch；只有它们替代了整篇具体内容时才考虑 block。",
+    "节点多、朋友问起、成分依据和多个自家反馈属于批量治理问题；各节点自然成立时单篇必须 pass，不进入 Content Fit watch 或改写。",
+    "把业务规则翻译成‘这个方向我会看、产品依据我记住的是、营养这块要优先’等抽象选品总结，且成为正文主要承接时，判 block。",
+    "把旺玥写成‘安排进日常奶粉里、放进日常奶粉里’，或用开罐动作生硬触发产品复盘，判 block。",
+    "post_type 主要用于生成多样化和批量分布优化。家庭清单没有其它家庭物件或清单关系时，单篇内容只要自然可用，就判 pass 或 watch，不得仅因类型没有充分展开而 block；求助后的回访只剩纯求助等真正导致内容任务不成立的情况仍可 block。",
+    "复购/长期使用类型明确写到已喝两周或更久即可成立；低于两周且没有补货、复购或持续使用关系时才判帖子类型不成立。"
+  ],
+  "items": [
+    {
+      "title": "给孩子喝对奶粉 省心不少",
+      "content": "放学回来照样能吃完饭、玩会儿积木。家里旺玥喝了一阵，最近状态还不错，选对了确实省心不少。",
+      "context": {"post_type": "使用反馈"},
+      "meta": {
+        "case_code": "WYF-001",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["选对了确实省心不少"],
+        "reason": "省心和选对本身不是问题，正文已经有具体生活反馈。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "closure_allowed_with_detail", "source_type": "human_feedback"}
+    },
+    {
+      "title": "终于不用再纠结奶粉了",
+      "content": "前后看了几款，最后选了旺玥。钙铁锌和多种关键营养都有，孩子日常状态也不错，终于不用再纠结奶粉了。",
+      "context": {"post_type": "选奶复盘"},
+      "meta": {
+        "case_code": "WYF-002",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["终于不用再纠结奶粉了"],
+        "reason": "正文已有正常选奶过程、具体营养信息和自家使用反馈；‘终于不用再纠结奶粉了’只是自然收口，不构成Content Fit问题，应直接pass。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "closure_allowed_with_detail", "source_type": "human_feedback"}
+    },
+    {
+      "title": "看成分表时记住了这几个",
+      "content": "别的参数我也看不太懂，就记住旺玥的钙铁锌挺全，DHA和燕窝酸也写得清楚。喝下来孩子状态不错。",
+      "context": {"post_type": "轻测评"},
+      "meta": {
+        "case_code": "WYF-003",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["钙铁锌挺全", "DHA和燕窝酸也写得清楚"],
+        "reason": "具体成分大白话可以直接说，不属于 brief 翻译腔。",
+        "source": "existing_calibration_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "concrete_ingredient_plain_speech", "source_type": "boundary_case"}
+    },
+    {
+      "title": "保护力方向我会看",
+      "content": "选儿童奶粉时，保护力方向是我会重点看的点。旺玥在这个方向比较清楚，所以后来就选了它。",
+      "context": {"post_type": "选奶复盘"},
+      "meta": {
+        "case_code": "WYF-004",
+        "expected_label": "block",
+        "issue_code": "abstract_brief_translation",
+        "evidence": ["保护力方向是我会重点看的点", "在这个方向比较清楚"],
+        "reason": "主要内容是抽象选品总结，像把卖点方向翻译成妈妈话术。",
+        "source": "existing_policy_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "abstract_selection_summary", "source_type": "policy_case"}
+    },
+    {
+      "title": "产品依据我记住的是",
+      "content": "产品依据我记住的是乳铁蛋白和HMO，这两个点能让日常保护力安排得更顺。",
+      "context": {"post_type": "轻测评"},
+      "meta": {
+        "case_code": "WYF-005",
+        "expected_label": "block",
+        "issue_code": "abstract_brief_translation",
+        "evidence": ["产品依据我记住的是", "让日常保护力安排得更顺"],
+        "reason": "出现明显 brief 字段语言和抽象安排总结，不像真实发帖动作。",
+        "source": "existing_policy_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "brief_field_leak", "source_type": "policy_case"}
+    },
+    {
+      "title": "闺蜜问起我才聊了几句",
+      "content": "闺蜜问我旺玥喝下来怎么样，我说当初主要看了乳铁蛋白和HMO。喝到现在，孩子放学回来还有劲玩，最近出勤也挺稳。",
+      "context": {"post_type": "选奶复盘"},
+      "meta": {
+        "case_code": "WYF-006",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["闺蜜问我", "主要看了乳铁蛋白和HMO", "放学回来还有劲玩"],
+        "reason": "朋友问起、成分依据和多个自家反馈可以构成真实强种草链。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "complete_seeding_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "从选奶写到继续喝",
+      "content": "孩子饭量不稳，我对比了几款儿童奶粉，最后看中旺玥的钙铁锌和30多种关键营养。孩子喝得顺，最近状态不错，我也打算继续喝。",
+      "context": {"post_type": "选奶复盘"},
+      "meta": {
+        "case_code": "WYF-007",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["饭量不稳", "对比了几款", "孩子喝得顺", "继续喝"],
+        "reason": "问题、对比、产品依据、使用反馈和继续使用均自然成立；链路节点多只属于批量治理，不是Content Fit问题，单篇应直接pass。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "complete_chain_batch_governance", "source_type": "human_feedback"}
+    },
+    {
+      "title": "后来安排进日常奶粉里",
+      "content": "三岁后想把营养补得稳一点，后来把旺玥安排进日常奶粉里，喝下来状态还不错。",
+      "context": {"post_type": "使用反馈"},
+      "meta": {
+        "case_code": "WYF-008",
+        "expected_label": "block",
+        "issue_code": "unnatural_product_appearance",
+        "evidence": ["把旺玥安排进日常奶粉里"],
+        "reason": "产品与日常奶粉的关系表达不成立，产品出现明显生硬。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "arrange_into_formula", "source_type": "human_feedback"}
+    },
+    {
+      "title": "后来选了旺玥",
+      "content": "孩子三岁后活动量大了，我重新看了儿童奶粉，后来选了旺玥。喝了一阵，日常状态还不错。",
+      "context": {"post_type": "阶段选择复盘"},
+      "meta": {
+        "case_code": "WYF-009",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["后来选了旺玥"],
+        "reason": "生活阶段触发后重新看儿童奶粉、直接选择旺玥并补充使用反馈，是自然选择链；不能因为出现“重新看奶粉、后来选了”就判成抽象brief翻译。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "plain_product_choice", "source_type": "human_feedback"}
+    },
+    {
+      "title": "新罐开封时想起回购理由",
+      "content": "新罐开封，顺手想一下为什么旺玥总在回购名单里。前面喝下来，孩子日常状态一直挺稳。",
+      "context": {"post_type": "复购长期使用"},
+      "meta": {
+        "case_code": "WYF-010",
+        "expected_label": "block",
+        "issue_code": "unnatural_product_appearance",
+        "evidence": ["新罐开封，顺手想一下为什么旺玥总在回购名单里"],
+        "reason": "问题不在新罐开封本身，而是用开罐动作强行触发“为什么回购”的产品复盘，开头像任务说明。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "forced_repurchase_trigger", "source_type": "human_feedback"}
+    },
+    {
+      "title": "这罐快空了",
+      "content": "家里这罐旺玥快空了，我又补了一罐。喝了挺长一段时间，孩子日常状态一直不错。",
+      "context": {"post_type": "复购长期使用"},
+      "meta": {
+        "case_code": "WYF-011",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["这罐旺玥快空了", "又补了一罐"],
+        "reason": "产品消耗和补货是自然的复购发帖动作。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "natural_restock_trigger", "source_type": "human_feedback"}
+    },
+    {
+      "title": "家里安排更好接上",
+      "content": "孩子饭量不稳的时候，家里有这罐旺玥，日常安排会更好接上。钙铁锌这些也都有。",
+      "context": {"post_type": "问题解决"},
+      "meta": {
+        "case_code": "WYF-012",
+        "expected_label": "block",
+        "issue_code": "unnatural_product_appearance",
+        "evidence": ["家里有这罐旺玥，日常安排会更好接上"],
+        "reason": "“饭量不稳”本身自然，但“家里有这罐旺玥，日常安排会更好接上”仍然缺少成立的动作和用途，产品与生活问题的承接逻辑不通。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "abstract_arrangement_bridge", "source_type": "human_feedback"}
+    },
+    {
+      "title": "三岁后营养这块心里有数",
+      "content": "孩子三岁后跑跳多了，饭量却不太稳定。后来选了旺玥，钙铁锌和多种关键营养都有，最近日常状态不错，营养这块也算心里有数。",
+      "context": {"post_type": "阶段选择复盘"},
+      "meta": {
+        "case_code": "WYF-013",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["营养这块也算心里有数"],
+        "reason": "正文已有生活阶段、产品选择、具体营养和自家状态反馈；‘营养这块也算心里有数’只是自然收口，不构成Content Fit问题，应直接pass。",
+        "source": "human_feedback_standard"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "closure_allowed_with_detail", "source_type": "human_feedback"}
+    },
+    {
+      "title": "挑食娃的固定选择",
+      "content": "孩子吃饭挑食，总担心营养跟不上。我试了旺玥奶粉，孩子不排斥。它钙铁锌和多种关键营养配得比较全，现在家里常备一罐。",
+      "context": {"post_type": "家庭清单"},
+      "meta": {
+        "case_code": "WYF-014",
+        "expected_label": "watch",
+        "acceptable_labels": ["pass", "watch"],
+        "issue_code": "post_type_mismatch",
+        "evidence": ["我试了旺玥奶粉", "现在家里常备一罐"],
+        "reason": "正文是自然可用的旺玥使用内容；没有其它家庭物件只代表家庭清单类型展开不足，属于批量多样化优化，不应触发单篇block或自动改写。",
+        "source": "batch251_item8_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "family_list_not_realized", "source_type": "historical_failure"}
+    },
+    {
+      "title": "厨房那层常放的几样",
+      "content": "厨房下面那层一直放着米、面、孩子的小零食，还有一罐旺玥。饭菜简单的时候，大人给他冲一杯，钙铁锌这些日常营养也能顾上一点。",
+      "context": {"post_type": "家庭清单"},
+      "meta": {
+        "case_code": "WYF-015",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["米、面、孩子的小零食，还有一罐旺玥"],
+        "reason": "产品作为真实家庭清单中的一个物件出现，帖子类型成立。",
+        "source": "synthetic_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "family_list_realized", "source_type": "boundary_case"}
+    },
+    {
+      "title": "晚上吃饭胃口也好",
+      "content": "上周带孩子去爬山，搁以前回来准得瘫沙发上不想动。这回不一样，到家还能自己收拾书包，晚上吃饭胃口也好。仔细想想就这两周开始喝的旺玥，每天一杯，大人冲好给他就行。日常状态肉眼可见稳了。",
+      "context": {"post_type": "复购/长期使用"},
+      "meta": {
+        "case_code": "WYF-016",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["这两周开始喝的旺玥", "每天一杯"],
+        "reason": "两周是复购/长期使用类型的最低成立时间，已有明确持续使用和自家反馈，不要求必须出现补货动作。",
+        "source": "batch497_item4_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "two_week_long_term_minimum", "source_type": "human_feedback"}
+    },
+    {
+      "title": "被朋友反向种草了",
+      "content": "本来觉得3岁后奶粉随便选就行，直到朋友吐槽她家娃隔三差五请假，我才认真做功课。对比下来选了旺玥。现在喝了一阵，确实很少因为小状况缺课，朋友也跟着换了。选对奶粉，当妈的省心不少。",
+      "context": {"post_type": "选奶复盘"},
+      "meta": {
+        "case_code": "WYF-017",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["选对奶粉，当妈的省心不少"],
+        "reason": "正文已有选奶过程、产品选择和具体使用反馈，省心只是自然收口，不需要进入流畅性改写。",
+        "source": "batch449_item4_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "detailed_post_with_peace_of_mind_closure", "source_type": "human_feedback"}
+    },
+    {
+      "title": "饭量不稳时补一点日常营养",
+      "content": "孩子饭量不稳的时候，家里会正常冲一杯旺玥，就当补充一点日常营养。钙铁锌这些也都有。",
+      "context": {"post_type": "问题解决"},
+      "meta": {
+        "case_code": "WYF-018",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["正常冲一杯旺玥", "补充一点日常营养"],
+        "reason": "饭量不稳后写大人正常冲泡旺玥作为日常营养补充，动作和用途具体，产品承接成立。",
+        "source": "user_defined_arrangement_bridge_boundary_20260716"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "concrete_daily_nutrition_bridge", "source_type": "minimal_pair"}
+    },
+    {
+      "title": "刚开一罐新的",
+      "content": "今天刚开一罐新的旺玥，大人照常冲好递给孩子。孩子喝完就跑去搭积木了，和平时一样。",
+      "context": {"post_type": "使用反馈"},
+      "meta": {
+        "case_code": "WYF-019",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["刚开一罐新的旺玥", "照常冲好递给孩子"],
+        "reason": "新罐开封只是普通生活动作，没有借此复盘购买或回购理由，产品出现自然。",
+        "source": "user_defined_new_can_boundary_20260716"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "new_can_as_daily_action", "source_type": "minimal_pair"}
+    }
+  ]
+}

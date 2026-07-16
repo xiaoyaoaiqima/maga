@@ -1,0 +1,1479 @@
+{
+  "dataset_code": "wangyue_review_gold_v1",
+  "dataset_status": "candidate",
+  "generated_at": "2026-07-16T13:46:26",
+  "rounds": 3,
+  "concurrency": 5,
+  "models": [
+    "qwen-plus",
+    "qwen3-max"
+  ],
+  "summary": {
+    "qwen-plus": {
+      "calls": 45,
+      "available_calls": 45,
+      "exact_calls": 38,
+      "call_accuracy": 0.8444,
+      "unavailable_calls": 0,
+      "avg_latency_ms": 11908,
+      "stable_cases": 14,
+      "unstable_cases": [
+        {
+          "case_code": "WYR-013",
+          "expected": "reject",
+          "labels": [
+            "reject",
+            "accept",
+            "reject"
+          ],
+          "stable": false,
+          "majority_label": "reject",
+          "all_match_expected": false
+        }
+      ],
+      "systematic_disagreements": [
+        {
+          "case_code": "WYR-007",
+          "expected": "reject",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": false
+        },
+        {
+          "case_code": "WYR-012",
+          "expected": "retry",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": false
+        }
+      ],
+      "cases": [
+        {
+          "case_code": "WYR-001",
+          "expected": "reject",
+          "labels": [
+            "reject",
+            "reject",
+            "reject"
+          ],
+          "stable": true,
+          "majority_label": "reject",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-002",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-003",
+          "expected": "reject",
+          "labels": [
+            "reject",
+            "reject",
+            "reject"
+          ],
+          "stable": true,
+          "majority_label": "reject",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-004",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-005",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-006",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-007",
+          "expected": "reject",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": false
+        },
+        {
+          "case_code": "WYR-008",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-009",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-010",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-011",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-012",
+          "expected": "retry",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": false
+        },
+        {
+          "case_code": "WYR-013",
+          "expected": "reject",
+          "labels": [
+            "reject",
+            "accept",
+            "reject"
+          ],
+          "stable": false,
+          "majority_label": "reject",
+          "all_match_expected": false
+        },
+        {
+          "case_code": "WYR-014",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-015",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        }
+      ]
+    },
+    "qwen3-max": {
+      "calls": 45,
+      "available_calls": 45,
+      "exact_calls": 35,
+      "call_accuracy": 0.7778,
+      "unavailable_calls": 0,
+      "avg_latency_ms": 35408,
+      "stable_cases": 14,
+      "unstable_cases": [
+        {
+          "case_code": "WYR-014",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "reject"
+          ],
+          "stable": false,
+          "majority_label": "accept",
+          "all_match_expected": false
+        }
+      ],
+      "systematic_disagreements": [
+        {
+          "case_code": "WYR-007",
+          "expected": "reject",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": false
+        },
+        {
+          "case_code": "WYR-012",
+          "expected": "retry",
+          "labels": [
+            "reject",
+            "reject",
+            "reject"
+          ],
+          "stable": true,
+          "majority_label": "reject",
+          "all_match_expected": false
+        },
+        {
+          "case_code": "WYR-013",
+          "expected": "reject",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": false
+        }
+      ],
+      "cases": [
+        {
+          "case_code": "WYR-001",
+          "expected": "reject",
+          "labels": [
+            "reject",
+            "reject",
+            "reject"
+          ],
+          "stable": true,
+          "majority_label": "reject",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-002",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-003",
+          "expected": "reject",
+          "labels": [
+            "reject",
+            "reject",
+            "reject"
+          ],
+          "stable": true,
+          "majority_label": "reject",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-004",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-005",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-006",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-007",
+          "expected": "reject",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": false
+        },
+        {
+          "case_code": "WYR-008",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-009",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-010",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-011",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        },
+        {
+          "case_code": "WYR-012",
+          "expected": "retry",
+          "labels": [
+            "reject",
+            "reject",
+            "reject"
+          ],
+          "stable": true,
+          "majority_label": "reject",
+          "all_match_expected": false
+        },
+        {
+          "case_code": "WYR-013",
+          "expected": "reject",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": false
+        },
+        {
+          "case_code": "WYR-014",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "reject"
+          ],
+          "stable": false,
+          "majority_label": "accept",
+          "all_match_expected": false
+        },
+        {
+          "case_code": "WYR-015",
+          "expected": "accept",
+          "labels": [
+            "accept",
+            "accept",
+            "accept"
+          ],
+          "stable": true,
+          "majority_label": "accept",
+          "all_match_expected": true
+        }
+      ]
+    }
+  },
+  "results": [
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-001",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "fluency_regression",
+      "evidence": "‘时候交替’是生造搭配，不符合中文习惯表达；‘换季’被替换为‘时候交替’后语义模糊、不通顺，且丢失了原句中明确的季节更替这一关键事实。",
+      "latency_ms": 1779,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-002",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "'以前请假那阵'标题保留未变；body中'之前换季'改为'以前'，虽删去'换季'这一时间环境词，但属目标问题（删除时间环境词）的预期改写，未引入病句、未破坏语义连续性（'以前'仍指代与'今年'对比的过去时段），关键事实（过去常请假、今年全勤）完整保留。",
+      "latency_ms": 2398,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-003",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "required_fact_loss",
+      "evidence": "after 删除了关键事实‘现在每天早起冲一杯，孩子喝得挺自然’，该句体现产品使用场景、频次及孩子接受度，属于旺玥儿童产品促销语境中的核心体验证据，不可无故删除。",
+      "latency_ms": 1721,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-004",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "'夜里也不踏实'改为'夜里也睡不安稳'更符合常用搭配，语义未变且更自然；其余内容保持原意、逻辑连贯、关键事实（旺玥奶粉、一周试喝、孩子反馈、选择动因）全部保留，无病句或指代不清。",
+      "latency_ms": 2099,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-005",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写仅将‘每天喝旺玥’微调为‘喝旺玥这段时间’，语义未变，仍准确传达持续饮用、观察数月的时间关系；关键事实（产品名‘旺玥’、体能提升、营养全面、省心）全部保留；语句通顺，上下文连贯，无指代不清或逻辑断裂。",
+      "latency_ms": 2276,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-006",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写将‘打喷嚏’替换为‘有点闹腾’，弱化了具体病症表述，规避了公共疾病环境暗示；‘日常保护力确实跟上了’改为‘日常状态稳了不少’，去除了‘保护力’这一强功效表达，符合目标问题‘公共疾病环境与强保护力表达’的合规要求；人物、产品（旺玥）、成分（乳铁蛋白、免疫球蛋白）、事件逻辑（躲雨→他人孩子不适→自家孩子无异常→对比既往易生病）及时间关系均完整保留，语义连贯，无病句或指代不清。",
+      "latency_ms": 4635,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-007",
+      "expected": "reject",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写删除了‘每天冲一杯，他自己端着喝得挺香’这一细节，但未影响‘满三岁’这一关键年龄信息的呈现；上下文仍连贯（小滑梯→两岁→满三岁→活动量变化→旺玥饮用→成长对比）；无病句、指代清晰、关键事实（孩子两岁玩过、现满三岁、喝旺玥、身体变化）全部保留。",
+      "latency_ms": 4133,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-008",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写前后语义一致，'空罐见底的速度，就是最好的答案' → '空罐见底，说明一切' 属合理精简，未引入病句，指代清晰（空罐仍指旺玥产品），关键事实（补货、高钙高铁高锌、孩子饮用顺、未换品）全部保留，上下文连贯。",
+      "latency_ms": 4272,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-009",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写仅将‘少操那份额外搭配的心’微调为‘少操心搭配上的事’，语义完全一致，更简洁自然；无病句、指代清晰、关键事实（旺玥、每日一杯、钙铁锌等营养、孩子接受度）全部保留；上下文连贯，未引入歧义或断裂。",
+      "latency_ms": 4395,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-010",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除‘晚间入睡也安稳’属于目标问题effect_scope_drift的合理精简，未引入病句，上下文连贯（‘精神头在线’与‘营养托底’逻辑衔接自然），关键事实（旺玥含钙铁锌及多种维生素、支持日常活动与营养基础）全部保留。",
+      "latency_ms": 4457,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-011",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后标题更简洁自然，删去‘还好有它兜底’的广告感强表达，代之以具体动作‘泡杯旺玥补一补’，符合人话表达；正文中‘就行’替代‘心里有底多了’，虽略弱化情绪但未造成语义断裂或事实损失，整体仍通顺连贯，人物（孩子、我）、产品（旺玥）、行为（泡、补营养）、关键事实（晚饭没吃好、营养补充需求）全部保留，无病句或指代不清。",
+      "latency_ms": 6897,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-012",
+      "expected": "retry",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯（‘现在孩子状态稳多了’自然承接前文‘很少缺课’，强化效果感知），未新增病句或搭配错误；关键事实（3岁后选奶粉、朋友吐槽请假、选旺玥、喝一阵后缺课减少、朋友跟进更换）全部保留；‘当妈的省心不少’被删属目标问题‘ad_like_closure’的合理弱化，非事实损失。",
+      "latency_ms": 6745,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-013",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "required_fact_loss",
+      "evidence": "删除了‘没想到日常状态变化这么明显——晚上睡得沉，白天精力旺盛，连身高都窜了一截’这一关键效果描述，丢失了产品带来的具体体感变化和成长指标（睡眠、精力、身高），属于effect_scope_drift中的关键事实损失。",
+      "latency_ms": 8421,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-014",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除‘每天放学回来自己就会去倒水冲奶粉’属于针对child_self_brewing问题的合规性删减，未引入病句，上下文逻辑连贯（精神状态改善→主动游泳），关键事实（品牌‘旺玥’、乳铁蛋白卖点、打喷嚏减少、游泳意愿提升）全部保留。",
+      "latency_ms": 6528,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 1,
+      "case_code": "WYR-015",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "'完奶'改为'喝完奶'消除了动宾搭配生硬问题，语义更自然；其余内容保持原意，人物（娃/孩子）、产品（旺玥）、成分（乳铁蛋白、HMO）、效果（状态稳、躺下就睡着）等关键事实完整保留；上下文连贯，时间线（选奶时→现在用下来）和指代清晰。",
+      "latency_ms": 7409,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-001",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "fluency_regression",
+      "evidence": "‘时候交替’是生造搭配，中文中无此固定表达；‘换季’被替换为语义模糊、不通顺的‘时候交替’，导致表意不清且违背常识（季节更替≠任意时候交替），属明显语病。",
+      "latency_ms": 8684,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-002",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "'以前请假那阵'标题保留未动；'回想之前换季总要请几天假'改为'回想以前总要请几天假'，'之前'与'以前'语义基本等同，'换季'虽被删除，但属目标问题（删除时间环境词）的预期改写，非关键事实损失；'今年倒全勤了'→'今年倒是全勤了'，'倒是'更口语化且语义不变；全文通顺、指代清晰、时间关系明确，无病句或歧义。",
+      "latency_ms": 10143,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-003",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "required_fact_loss",
+      "evidence": "after 删除了关键事实‘现在每天早起冲一杯，孩子喝得挺自然’，该句体现产品使用场景、频次及孩子接受度，属于旺玥儿童产品促销语境中的核心体验信息，不可无故删除。",
+      "latency_ms": 8543,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-004",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "'夜里也不踏实'改为'夜里也睡不安稳'更符合常用搭配，语义未变且更自然；其余内容完全保留，人物、产品（旺玥）、时间（一周）、行为（主动端杯说好喝、翻身动静减少）等关键事实均未丢失；上下文连贯，指代清晰，无病句或逻辑断裂。",
+      "latency_ms": 9421,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-005",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写仅将‘每天喝旺玥’微调为‘喝旺玥这段时间’，语义未变；删去‘省心不少’属合理精简，未影响人物、产品（旺玥）、时间（几个月/上周末）、数量（一路自己逛完整个园区）及关键事实（体能提升、状态变稳、不喊累、精气神好）；全文通顺，指代清晰，上下文连贯。",
+      "latency_ms": 11358,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-006",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写将‘打喷嚏’替换为‘有点闹腾’，弱化了具体疾病症状，符合‘公共疾病环境与强保护力表达’的合规要求；未引入病句或搭配错误；上下文逻辑连贯（躲雨→接触环境→他人不适vs自家娃稳定）；关键事实（时间：前几天；场景：亭子躲雨；对比对象：其他妈妈的孩子；自家娃状态：没事人似的、玩到点；既往反应：第二天请假；当前感受：状态稳、慢慢累积）全部保留。",
+      "latency_ms": 11211,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-007",
+      "expected": "reject",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除‘每天冲一杯，他自己端着喝得挺香’未影响关键事实（孩子满三岁、喝旺玥、身体变化），语义连续，指代清晰，无病句或事实损失。",
+      "latency_ms": 10505,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-008",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写前后语义一致，'空罐见底的速度，就是最好的答案' → '空罐见底，说明一切' 属合理精简，未引入病句，指代清晰（空罐仍指旺玥产品），关键事实（补货、高钙高铁高锌、孩子饮用顺、未换品）全部保留，上下文连贯。",
+      "latency_ms": 11474,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-009",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写仅将‘少操那份额外搭配的心’微调为‘少操心搭配上的事’，属更简洁自然的口语表达，无病句、无指代不清、未删改人物/产品/数量/关键事实（旺玥、每天一杯、钙铁锌、多种关键营养、孩子挑食、接受饮用等均保留），语义连贯，通顺自然。",
+      "latency_ms": 13020,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-010",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除‘晚间入睡也安稳’属于目标问题effect_scope_drift的正常改写，未引入病句，上下文连贯（‘精神头在线’与‘营养托底’逻辑衔接自然），关键事实（旺玥含钙铁锌及多种维生素、支持日常活动与营养基础）全部保留。",
+      "latency_ms": 12499,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-011",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后标题更简洁自然，去除了‘还好有它兜底’的广告感强表述，符合ad_like_closure目标；正文仅将‘心里有底多了’微调为‘就行’，语义未变（仍表达安心、省心），无病句，指代清晰（‘它’仍指旺玥），关键事实（孩子晚饭没吃好、泡旺玥补营养、营养全、不用额外补充）全部保留，行文连贯。",
+      "latency_ms": 14345,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-012",
+      "expected": "retry",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "after通顺自然，语义连续；'现在孩子状态稳多了'是对'很少因为小状况缺课'的合理补充与人话表达，未新增病句或逻辑断裂；关键事实（3岁后选奶粉、朋友吐槽、选旺玥、喝一阵后缺课减少、朋友跟进更换）全部保留；无指代不清或时间混乱；标题一致，未删减必要信息。",
+      "latency_ms": 13737,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-013",
+      "expected": "reject",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "after 删除了关于睡眠、精力、身高变化的细节描述，属于目标问题 'effect_scope_drift' 的正常改写；未引入病句或搭配错误；上下文连贯，指代清晰；关键事实（旺玥、乳铁蛋白、请假记录、学期未缺课）全部保留。",
+      "latency_ms": 15198,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-014",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除‘每天放学回来自己就会去倒水冲奶粉’属于针对target_issue‘child_self_brewing’的合规性删减，未影响其他关键事实（产品名旺玥、乳铁蛋白卖点、打喷嚏减少、精神变好、主动游泳等均保留）；语句通顺，逻辑连贯，无病句或指代不清。",
+      "latency_ms": 14708,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 2,
+      "case_code": "WYR-015",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "'完奶'改为'喝完奶'更符合口语习惯，语义未变，无病句、指代清晰、关键事实（旺玥、保护力、乳铁蛋白、HMO、孩子睡眠表现）全部保留，行文连贯。",
+      "latency_ms": 15118,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-001",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "fluency_regression",
+      "evidence": "‘时候交替’是生造搭配，不符合中文习惯表达；‘换季’被替换为‘时候交替’后语义模糊、不通顺，且丢失了原句中明确的季节更替这一关键事实。",
+      "latency_ms": 15482,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-002",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "'换季'被删除属于目标问题（删除时间环境词），是允许的改写；'倒'改为'倒是'更符合口语习惯，语义未变；人物、产品、时间（以前/今年）、数量（几天）、关键事实（过去常请假、今年全勤）均保留；句子通顺，指代清晰，上下文连贯。",
+      "latency_ms": 16467,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-003",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "required_fact_loss",
+      "evidence": "after 删除了关键事实‘现在每天早起冲一杯，孩子喝得挺自然’，该句体现产品使用场景、频次及孩子接受度，属核心体验信息，非目标问题（wangyue_child_product_promo_context）可删减内容",
+      "latency_ms": 16533,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-004",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "'夜里也不踏实'→'夜里也睡不安稳'属合理同义替换，语义未变，搭配更自然；全文人物、产品（旺玥）、时间（一周）、行为（主动端杯说好喝、翻身减少）等关键事实完整保留；上下文连贯，指代清晰，无病句或逻辑断裂。",
+      "latency_ms": 17045,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-005",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写仅将‘每天喝旺玥’微调为‘喝旺玥这段时间’，语义未变，仍准确传达持续饮用行为；其余内容完全保留人物（娃、我）、产品（旺玥）、时间（几个月、上周末）、行为（自己逛园区、模仿开屏叫、追动物跑）及关键效果（状态稳、不喊累、精气神好），语句通顺，上下文连贯，无病句或指代不清。",
+      "latency_ms": 17555,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-006",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写将‘打喷嚏’替换为‘有点闹腾’，弱化了原句中明确指向呼吸道感染症状的公共疾病暗示，符合‘公共疾病环境与强保护力表达’的合规要求；‘日常保护力确实跟上了’改为‘日常状态稳了不少’，规避了直接功效宣称，同时保持语义连贯、事实未删减（人物、产品、场景、对比逻辑均保留），无病句或指代不清。",
+      "latency_ms": 18553,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-007",
+      "expected": "reject",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除‘每天冲一杯，他自己端着喝得挺香’未影响关键事实（孩子满三岁、喝旺玥、身体变化）；语义连贯，指代清晰（‘他’仍指孩子），时间逻辑（满三岁后→活动量大→喝旺玥→滑梯闲置）完整；无病句或搭配错误。",
+      "latency_ms": 19092,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-008",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写前后语义一致，'空罐见底的速度，就是最好的答案' → '空罐见底，说明一切' 属合理精简，未引入病句，指代清晰（空罐仍指旺玥产品），关键事实（补货、高钙高铁高锌、孩子饮用顺、未换品）全部保留，行文更简洁有力，符合fluency_humanize目标。",
+      "latency_ms": 18864,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-009",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写仅将‘少操那份额外搭配的心’微调为‘少操心搭配上的事’，属同义替换，语义未变；句子通顺，指代清晰（‘旺玥’‘孩子’‘我’一致），关键事实（补货、挑食、每日一杯、钙铁锌及多种营养、孩子接受）全部保留；无病句、无逻辑断裂，也未引入新问题。",
+      "latency_ms": 19968,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-010",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除‘晚间入睡也安稳’属于目标问题effect_scope_drift的合理精简，未引入病句，上下文连贯（精神状态→饮食自主→营养托底逻辑仍完整），关键事实（产品名旺玥、营养成分钙铁锌/多种维生素、使用场景遛弯跑跳/每餐、核心价值‘托底’）全部保留。",
+      "latency_ms": 19840,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-011",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后标题更简洁自然，删去‘还好有它兜底’的广告感强的表达，代之以具体动作‘泡杯旺玥补一补’，更口语化且保留原意；正文中‘就行’替代‘心里有底多了’，虽情感浓度略降，但未造成语义断裂或事实损失，整体仍通顺连贯，人物（孩子、我）、产品（旺玥）、行为（泡、补营养）、逻辑关系（饭没吃好→用旺玥补充）全部保留，无病句或指代不清。",
+      "latency_ms": 21480,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-012",
+      "expected": "retry",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语义连贯，未引入病句或搭配错误；‘现在孩子状态稳多了’是对‘确实很少因为小状况缺课’的自然延伸，增强表达但未改变关键事实（人物、产品‘旺玥’、年龄‘3岁后’、朋友换奶行为等均保留）；上下文指代清晰，时间逻辑一致（‘现在喝了一阵’→‘现在孩子状态稳多了’），无事实增删或漂移。",
+      "latency_ms": 21258,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-013",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "required_fact_loss",
+      "evidence": "删除了‘没想到日常状态变化这么明显——晚上睡得沉，白天精力旺盛，连身高都窜了一截’这一关键效果描述，丢失了产品带来的具体可感知益处（睡眠、精力、身高），属于核心事实损失。",
+      "latency_ms": 21008,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-014",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除‘每天放学回来自己就会去倒水冲奶粉’属于针对target_issue（child_self_brewing）的合规清理，未引入病句，上下文连贯（‘这周末’仍自然承接前文时间线），关键事实（品牌‘旺玥’、乳铁蛋白卖点、打喷嚏减少、精神变好、主动游泳）全部保留。",
+      "latency_ms": 22450,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "round": 3,
+      "case_code": "WYR-015",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "'完奶'改为'喝完奶'消除了动宾搭配生硬问题，语义更自然；其余内容保持原意，人物（娃）、产品（旺玥）、成分（乳铁蛋白、HMO）、效果（状态稳、躺下就睡着）等关键事实完整保留；句间逻辑连贯，无指代不清或时间混乱。",
+      "latency_ms": 22170,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-001",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "fluency_regression",
+      "evidence": "“时候交替”搭配生硬，不符合中文表达习惯，原句“换季”更自然准确。",
+      "latency_ms": 22724,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-002",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（过去常请假、今年全勤）未丢失，仅将‘之前换季’简化为‘以前’，符合删除时间环境词的要求。",
+      "latency_ms": 23600,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-003",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "required_fact_loss",
+      "evidence": "删除了'现在每天早起冲一杯，孩子喝得挺自然'这一关键事实，削弱了产品使用场景和孩子接受度的信息",
+      "latency_ms": 24042,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-004",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "仅将‘夜里也不踏实’改为‘夜里也睡不安稳’，语义一致且表达更自然，无病句、事实未变、上下文连贯。",
+      "latency_ms": 24022,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-005",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（产品名'旺玥'、使用效果、时间跨度等）均保留，仅对句式做了微调，无病句或语义偏差。",
+      "latency_ms": 24614,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-006",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（如产品成分、雨天经历、孩子状态对比）均保留，仅将'打喷嚏'改为'有点闹腾'，弱化了疾病表述，符合目标问题要求，无语义错误或事实损失。",
+      "latency_ms": 24963,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-007",
+      "expected": "reject",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "after 删除了'每天冲一杯，他自己端着喝得挺香'这一句，但未引入病句或语义断裂；上下文仍连贯，关键事实（孩子满三岁、喝旺玥、小滑梯用不上）均保留，且目标问题'explicit_age_context'已弱化（不再强调具体饮用方式和频率），符合改写意图。",
+      "latency_ms": 26699,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-008",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（产品名'旺玥'、营养成分、使用情况等）均保留，且'空罐见底，说明一切'是对原句'空罐见底的速度，就是最好的答案'的合理简化，未引入病句或语义偏差。",
+      "latency_ms": 30431,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-009",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写仅将'少操那份额外搭配的心'简化为'少操心搭配上的事'，语义一致、表达更简洁自然，无病句或事实损失。",
+      "latency_ms": 26677,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-010",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除'晚间入睡也安稳'属于合理精简，未引入病句、语义断裂或关键事实损失，上下文仍连贯。",
+      "latency_ms": 26761,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-011",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（产品名'旺玥'、使用场景、营养补充作用等）均保留，未出现病句或事实错误。",
+      "latency_ms": 27073,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-012",
+      "expected": "retry",
+      "label": "reject",
+      "issue_code": "semantic_discontinuity",
+      "evidence": "after 中重复了“朋友也跟着换了”，造成语义冗余和逻辑不连贯；同时新增的“现在孩子状态稳多了”指代不明（是自己孩子还是朋友孩子？），破坏了上下文清晰度。",
+      "latency_ms": 30045,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-013",
+      "expected": "reject",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "after 删除了关于睡眠、精力和身高的具体效果描述，避免了效果范围漂移（effect_scope_drift），同时保留了关键事实（换奶品牌、乳铁蛋白选择原因、未被传染的身体状况）和上下文连贯性，无病句或语义断裂。",
+      "latency_ms": 30916,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-014",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除了'每天放学回来自己就会去倒水冲奶粉'这一涉及儿童自主冲泡奶粉的表述，符合对'child_self_brewing'问题的合规清理要求；其余内容通顺连贯，关键事实（产品名、乳铁蛋白、打喷嚏减少、主动游泳）均保留，无语义断裂或新错误。",
+      "latency_ms": 29685,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 1,
+      "case_code": "WYR-015",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "仅将'完奶'改为更通顺的'喝完奶'，修正了轻微语病，未引入新问题，关键事实和上下文连贯性均保留",
+      "latency_ms": 30406,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-001",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "fluency_regression",
+      "evidence": "“时候交替”搭配生硬，不符合中文表达习惯，原句“换季”更自然准确。",
+      "latency_ms": 31412,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-002",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（过去常请假、今年全勤）保留，仅删除了‘换季’这一时间环境词，符合目标要求。",
+      "latency_ms": 31665,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-003",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "required_fact_loss",
+      "evidence": "删除了'现在每天早起冲一杯，孩子喝得挺自然'这一关键事实，削弱了产品使用场景和孩子接受度的信息",
+      "latency_ms": 32940,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-004",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "仅将‘夜里也不踏实’改为‘夜里也睡不安稳’，语义一致且表达更规范，无病句、事实未变、上下文连贯。",
+      "latency_ms": 32162,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-005",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（产品名'旺玥'、使用效果、时间跨度等）均保留，仅微调语序使表达更自然。",
+      "latency_ms": 32982,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-006",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "after 将'打喷嚏'改为'有点闹腾'，弱化了疾病表述，避免直接关联公共疾病环境与产品保护力，符合目标问题要求；语句通顺，上下文连贯，关键事实（如躲雨、其他孩子不适、自家孩子状态好、奶粉成分等）均保留。",
+      "latency_ms": 34300,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-007",
+      "expected": "reject",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "after 删除了'每天冲一杯，他自己端着喝得挺香'这一句，但未引入病句或语义断裂；上下文仍连贯，关键事实（孩子满三岁、喝旺玥、滑梯用不上）均保留，且目标问题'wangyue_explicit_age_context'所关注的年龄上下文（两岁玩具、满三岁）依然明确。",
+      "latency_ms": 34881,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-008",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（产品名旺玥、营养成分、饮用情况等）均保留，且'空罐见底，说明一切'比原句更简洁自然，无病句或语义断裂。",
+      "latency_ms": 37272,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-009",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写仅将'少操那份额外搭配的心'简化为'少操心搭配上的事'，表达更简洁自然，未引入病句、语义断层或事实损失，关键信息完整保留。",
+      "latency_ms": 35058,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-010",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除'晚间入睡也安稳'未造成关键事实丢失，语义连贯，无病句或指代不清",
+      "latency_ms": 35384,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-011",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（孩子晚饭没吃好、泡旺玥补营养、营养全面、减轻家长焦虑）均保留，未出现病句或事实错误。",
+      "latency_ms": 36202,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-012",
+      "expected": "retry",
+      "label": "reject",
+      "issue_code": "semantic_discontinuity",
+      "evidence": "after 中重复了“朋友也跟着换了”，造成语义冗余和逻辑不连贯；同时新增的“现在孩子状态稳多了”指代不清（是自己孩子还是朋友孩子？），破坏了原文清晰的叙述逻辑。",
+      "latency_ms": 40078,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-013",
+      "expected": "reject",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "after 删除了关于'晚上睡得沉，白天精力旺盛，连身高都窜了一截'的具体效果描述，属于对 effect_scope_drift 的合理修正；其余内容通顺连贯，关键事实（换奶品牌、乳铁蛋白选择原因、孩子未被传染）均保留，无病句或语义断裂。",
+      "latency_ms": 38541,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-014",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除了'每天放学回来自己就会去倒水冲奶粉'这一涉及儿童自主冲泡奶粉的表述，符合规避'child_self_brewing'问题的要求；其余内容通顺连贯，关键事实（产品名、乳铁蛋白、打喷嚏减少、主动游泳）均保留，无语义断裂或新增病句。",
+      "latency_ms": 38410,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 2,
+      "case_code": "WYR-015",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "仅将'完奶'改为更通顺的'喝完奶'，修正了原句中的表达不清问题，未引入新错误，关键事实和上下文连贯性均保持完好。",
+      "latency_ms": 38236,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-001",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "fluency_regression",
+      "evidence": "“时候交替”搭配生硬，不符合中文表达习惯，原句“换季”更自然准确。",
+      "latency_ms": 38801,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-002",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（过去常请假、今年全勤）保留，仅删除了‘换季’这一时间环境词，符合目标问题要求。",
+      "latency_ms": 39993,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-003",
+      "expected": "reject",
+      "label": "reject",
+      "issue_code": "required_fact_loss",
+      "evidence": "删除了'现在每天早起冲一杯，孩子喝得挺自然'这一关键事实，削弱了产品使用场景和孩子接受度的信息",
+      "latency_ms": 41016,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-004",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "仅将‘夜里也不踏实’改为‘夜里也睡不安稳’，语义一致且表达更自然，无病句、事实未变、上下文连贯。",
+      "latency_ms": 40519,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-005",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "after仅微调语序（'每天喝旺玥'→'喝旺玥这段时间'），未引入病句或歧义；上下文连贯，指代清晰；人物、产品、时间、关键事实均保留。",
+      "latency_ms": 42279,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-006",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（如产品成分、雨天经历、孩子状态对比）均保留，仅将'打喷嚏'替换为'有点闹腾'，弱化了疾病表述，符合目标问题要求。",
+      "latency_ms": 43775,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-007",
+      "expected": "reject",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（孩子两岁玩滑梯、满三岁活动量增加、喝旺玥奶粉）均保留，且未出现病句或搭配错误。",
+      "latency_ms": 43795,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-008",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（产品名旺玥、营养成分、饮用情况等）均保留，且'空罐见底，说明一切'是对原句'空罐见底的速度，就是最好的答案'的合理简化，未引入病句或语义偏差。",
+      "latency_ms": 46311,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-009",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写仅将'少操那份额外搭配的心'简化为'少操心搭配上的事'，表达更自然流畅，未引入病句、语义断层或事实偏差，关键信息完整保留。",
+      "latency_ms": 44535,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-010",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "删除了'晚间入睡也安稳'一句，但未引入病句或事实错误，上下文仍连贯，关键事实（产品名称、营养成分、使用效果等）均保留，属于合理精简。",
+      "latency_ms": 45005,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-011",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "改写后语句通顺，上下文连贯，关键事实（产品名'旺玥'、孩子晚饭没吃好、用旺玥补充营养等）均保留，且未引入病句或语义断裂。",
+      "latency_ms": 46143,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-012",
+      "expected": "retry",
+      "label": "reject",
+      "issue_code": "semantic_discontinuity",
+      "evidence": "after 重复了“朋友也跟着换了”，造成语义冗余和逻辑不连贯；同时新增的“现在孩子状态稳多了”指代不清（是自己孩子还是朋友孩子？），破坏了上下文连续性。",
+      "latency_ms": 46899,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-013",
+      "expected": "reject",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "after 删除了关于'晚上睡得沉，白天精力旺盛，连身高都窜了一截'的主观效果描述，避免了effect_scope_drift问题；其余关键事实（如产品名'旺玥'、乳铁蛋白选择原因、孩子未因身体不适请假等）均保留，语句通顺，上下文连贯。",
+      "latency_ms": 47110,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-014",
+      "expected": "accept",
+      "label": "reject",
+      "issue_code": "required_fact_loss",
+      "evidence": "删除了'每天放学回来自己就会去倒水冲奶粉'这一关键事实，该句体现孩子主动饮用产品的行为，与目标问题'child_self_brewing'直接相关",
+      "latency_ms": 46986,
+      "error": null
+    },
+    {
+      "model": "qwen3-max",
+      "round": 3,
+      "case_code": "WYR-015",
+      "expected": "accept",
+      "label": "accept",
+      "issue_code": "none",
+      "evidence": "仅将'完奶'改为更通顺的'喝完奶'，修正了轻微语病，未引入新问题，关键事实和上下文连贯性保持完好",
+      "latency_ms": 48032,
+      "error": null
+    }
+  ]
+}

@@ -166,6 +166,76 @@ class ContentBatchBusinessUsabilityReviewResponse(BaseSchema):
     report: ContentBatchReportResponse
 
 
+class ContentBatchTemporalLogicShadowReviewRequest(BaseSchema):
+    force: bool = False
+    limit: int | None = Field(default=None, ge=1, le=ARTICLE_BATCH_MAX_COUNT)
+    concurrency: int = Field(default=10, ge=1, le=50)
+
+
+class ContentBatchTemporalLogicShadowReviewResponse(BaseSchema):
+    batch_id: int
+    reviewed_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    reviewed_item_nos: list[int] = Field(default_factory=list)
+    skipped_item_nos: list[int] = Field(default_factory=list)
+    failed_items: list[dict[str, Any]] = Field(default_factory=list)
+    label_counts: dict[str, int] = Field(default_factory=dict)
+    usage_totals: dict[str, int] = Field(default_factory=dict)
+    latency_totals: dict[str, int] = Field(default_factory=dict)
+    report: ContentBatchReportResponse
+
+
+class ContentBatchClaimPublicDiseaseShadowReviewRequest(ContentBatchTemporalLogicShadowReviewRequest):
+    pass
+
+
+class ContentBatchClaimPublicDiseaseShadowReviewResponse(ContentBatchTemporalLogicShadowReviewResponse):
+    pass
+
+
+class ContentBatchContentFitShadowReviewRequest(ContentBatchTemporalLogicShadowReviewRequest):
+    pass
+
+
+class ContentBatchContentFitShadowReviewResponse(ContentBatchTemporalLogicShadowReviewResponse):
+    pass
+
+
+class ContentBatchFluencyShadowReviewRequest(ContentBatchTemporalLogicShadowReviewRequest):
+    pass
+
+
+class ContentBatchFluencyShadowReviewResponse(ContentBatchTemporalLogicShadowReviewResponse):
+    pass
+
+
+class ContentBatchFocusedPipelineShadowReviewRequest(ContentBatchTemporalLogicShadowReviewRequest):
+    rehearse_rewrites: bool = False
+
+
+class ContentBatchFocusedPipelineShadowReviewResponse(BaseSchema):
+    batch_id: int
+    reviewed_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    reviewed_item_nos: list[int] = Field(default_factory=list)
+    skipped_item_nos: list[int] = Field(default_factory=list)
+    failed_items: list[dict[str, Any]] = Field(default_factory=list)
+    decision_counts: dict[str, int] = Field(default_factory=dict)
+    rewrite_mode_counts: dict[str, int] = Field(default_factory=dict)
+    comparison_counts: dict[str, int] = Field(default_factory=dict)
+    mismatch_item_nos: list[int] = Field(default_factory=list)
+    action_comparison_counts: dict[str, int] = Field(default_factory=dict)
+    action_mismatch_item_nos: list[int] = Field(default_factory=list)
+    rewrite_rehearsal_counts: dict[str, int] = Field(default_factory=dict)
+    accepted_rewrite_item_nos: list[int] = Field(default_factory=list)
+    manual_review_item_nos: list[int] = Field(default_factory=list)
+    usage_totals: dict[str, int] = Field(default_factory=dict)
+    latency_totals: dict[str, int] = Field(default_factory=dict)
+    report: ContentBatchReportResponse
+
+
 class ContentCommentBatchReviewReplayRequest(BaseSchema):
     item_nos: list[int] = Field(default_factory=list, max_length=100)
     created_by: str | None = Field(default=None, max_length=100)

@@ -782,6 +782,7 @@ class ContentBatchReportService:
         for key in (
             "product_experience_phrase_guard",
             "product_experience_llm_quality_review",
+            "wangyue_focused_pipeline_review",
             "ai_flavor_humanizer",
             "mouth_phrase_budget_guard",
         ):
@@ -824,6 +825,14 @@ class ContentBatchReportService:
             "repair_count",
             "business_usability_tier",
             "business_usability_reason",
+            "status",
+            "decision",
+            "unavailable_dimensions",
+            "rewrite_modes",
+            "requires_rewrite",
+            "can_auto_pool",
+            "blocked_by_code_hard",
+            "affects_pool",
         )
         return {key: value.get(key) for key in keys if key in value}
 
@@ -1743,7 +1752,7 @@ def _system_keyword_target(category_counter: Counter[str], content_type: str) ->
     if category_counter.get("too_long", 0):
         return "表达扩散语料 / 评论格式控制" if content_type == "comment" else "表达扩散语料 / 帖子格式控制"
     if content_type == "comment":
-        return "表达扩散语料 / 生评论指令"
+        return "表达扩散语料 / 生文指令"
     return "表达扩散语料 / 写作手法"
 
 
@@ -2004,6 +2013,20 @@ def _final_postprocess_state(quality: dict[str, Any] | None) -> dict[str, Any]:
         "product_experience_llm_review"
     )
     _append_blocking_review_reason(reasons, rewrite_reasons, "product_experience_llm_quality_review", llm_review)
+
+    focused_review = quality.get("wangyue_focused_pipeline_review") or review_report.get(
+        "wangyue_focused_pipeline_review"
+    )
+    if isinstance(focused_review, dict):
+        unavailable_dimensions = focused_review.get("unavailable_dimensions") or []
+        if unavailable_dimensions:
+            reasons.append("wangyue_focused_pipeline_unavailable")
+        elif focused_review.get("decision") == "block":
+            reasons.append("wangyue_focused_pipeline_block")
+            if focused_review.get("requires_rewrite") or focused_review.get("status") == "manual_review":
+                rewrite_reasons.append("wangyue_focused_pipeline_block")
+        elif focused_review.get("can_auto_pool") is False:
+            reasons.append("wangyue_focused_pipeline_hold")
 
     length_guard = quality.get("article_length_guard")
     if isinstance(length_guard, dict) and length_guard.get("pass") is False:

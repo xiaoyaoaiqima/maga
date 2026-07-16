@@ -2203,7 +2203,10 @@ def review_product_experience_phrase(
         reasons.append("physical_action_carrier_mismatch")
     if product_fact_number_drift_hits:
         reasons.append("product_fact_number_drift")
-    if effect_scope_drift_hits:
+    # Current Wangyue V3 lets the active business rule control positive effect scope.
+    # Keep the hits observable, but do not turn sleep/energy/growth wording into a
+    # deterministic rewrite by itself.
+    if effect_scope_drift_hits and not is_wangyue_article_rules:
         reasons.append("effect_scope_drift")
     if scene_motive_drift_hits:
         reasons.append("scene_motive_drift")
@@ -3711,10 +3714,53 @@ def _filter_allowed_wangyue_age_hits(hits: list[str], *, text: str, plan: dict[s
     for hit in hits:
         if _is_allowed_wangyue_three_plus_context_hit(hit, text=context):
             continue
+        if _is_allowed_wangyue_historical_age_reference(hit, text=text):
+            continue
         if _is_allowed_wangyue_target_age_hit(hit, allowed_context=allowed_context):
             continue
         filtered.append(hit)
     return filtered
+
+
+def _is_allowed_wangyue_historical_age_reference(hit: str, *, text: str) -> bool:
+    normalized = str(hit or "").replace("歲", "岁")
+    if not any(term in normalized for term in ("一岁", "1岁", "两岁", "二岁", "2岁")):
+        return False
+    if not re.search(
+        r"(?:刚满|满了|满|到了|到|一进)?\s*(?:三|3)\s*岁\s*(?:半|多|后|以后|以上)",
+        text,
+    ):
+        return False
+
+    positions: list[int] = []
+    start = 0
+    while True:
+        index = text.find(hit, start)
+        if index < 0:
+            break
+        positions.append(index)
+        start = index + max(len(hit), 1)
+    if not positions:
+        return False
+
+    sentence_breaks = "。！？；;\n\r"
+    product_relation = re.compile(
+        r"(?:旺玥|儿童奶粉|奶粉)[^。！？；;\n\r]{0,16}(?:喝|冲|泡|买|选|换|备|囤|开始)"
+        r"|(?:喝|冲|泡|买|选|换|备|囤|开始)[^。！？；;\n\r]{0,16}(?:旺玥|儿童奶粉|奶粉)"
+    )
+    for index in positions:
+        sentence_start = max(text.rfind(mark, 0, index) for mark in sentence_breaks) + 1
+        sentence_end_candidates = [text.find(mark, index) for mark in sentence_breaks]
+        sentence_end_candidates = [value for value in sentence_end_candidates if value >= 0]
+        sentence_end = min(sentence_end_candidates) if sentence_end_candidates else len(text)
+        sentence = text[sentence_start:sentence_end]
+        relative_index = index - sentence_start
+        tail = sentence[relative_index + len(hit) : relative_index + len(hit) + 5]
+        if not re.match(r"\s*(?:时|时候|那会儿?|那阵)", tail):
+            return False
+        if product_relation.search(sentence):
+            return False
+    return True
 
 
 def _is_allowed_wangyue_three_plus_context_hit(hit: str, *, text: str) -> bool:

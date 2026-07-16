@@ -1,0 +1,835 @@
+{
+  "dataset": "temporal_logic_v1",
+  "generated_at": "2026-07-16T15:04:28",
+  "models": [
+    "deepseek-v4-flash",
+    "qwen-plus"
+  ],
+  "concurrency": 5,
+  "summary": {
+    "deepseek-v4-flash": {
+      "total": 28,
+      "available": 28,
+      "allowed_label_matches": 28,
+      "allowed_label_accuracy": 1.0,
+      "exact_label_issue_matches": 27,
+      "exact_label_issue_accuracy": 0.9643,
+      "block_recall": 1.0,
+      "false_block_count": 0,
+      "unavailable": 0,
+      "avg_latency_ms": 11354,
+      "label_counts": {
+        "block": 12,
+        "pass": 15,
+        "watch": 1
+      },
+      "disagreements": []
+    },
+    "qwen-plus": {
+      "total": 28,
+      "available": 28,
+      "allowed_label_matches": 28,
+      "allowed_label_accuracy": 1.0,
+      "exact_label_issue_matches": 27,
+      "exact_label_issue_accuracy": 0.9643,
+      "block_recall": 1.0,
+      "false_block_count": 0,
+      "unavailable": 0,
+      "avg_latency_ms": 26001,
+      "label_counts": {
+        "block": 12,
+        "pass": 15,
+        "watch": 1
+      },
+      "disagreements": []
+    }
+  },
+  "results": [
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-001",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "same_period_state_contradiction",
+      "actual_label": "block",
+      "actual_issue_code": "same_period_state_contradiction",
+      "evidence": "正文中'这段时间他好像特别容易中招，三天两头喉咙不舒服'与'回看这段时间状态倒是挺稳'描述同一时间段内持续负面与持续稳定，且无阶段转换词。",
+      "latency_ms": 5810,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-002",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "same_period_state_contradiction",
+      "actual_label": "block",
+      "actual_issue_code": "same_period_state_contradiction",
+      "evidence": "原文第一句'这段时间他总是三天两头不舒服'与第二句'回看这段时间状态倒是挺稳'在同一时间窗口内同时描述持续不好的状态和持续稳定的状态，且没有阶段转换词。",
+      "latency_ms": 2527,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-003",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "前阵子（负面阶段）→后来换旺玥→这段时间（状态稳），时间阶段清楚分离，无矛盾。",
+      "latency_ms": 3806,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-004",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "原文明确区分了“以前”和“后来换了旺玥、喝了一段时间、最近回看”，时间阶段清晰，有合理观察跨度。",
+      "latency_ms": 3843,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-005",
+      "expected_label": "watch",
+      "acceptable_labels": [
+        "pass",
+        "watch"
+      ],
+      "expected_issue_code": "past_public_disease_reference",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "去年朋友家娃有阵子总生病，回头看我家这个，喝旺玥这段时间出勤一直挺稳。",
+      "latency_ms": 3172,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-006",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "immediate_rescue_causality",
+      "actual_label": "block",
+      "actual_issue_code": "immediate_rescue_causality",
+      "evidence": "孩子早上打了个喷嚏，我马上把奶粉换成旺玥，想着赶紧把保护力补回来。",
+      "latency_ms": 5782,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-007",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "insufficient_effect_duration",
+      "actual_label": "block",
+      "actual_issue_code": "insufficient_effect_duration",
+      "evidence": "昨天刚给孩子换成旺玥，今天去幼儿园就没请假，感觉保护力一下稳住了。",
+      "latency_ms": 6307,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-008",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "标题与正文均未出现时间矛盾、因果关系冲突或环境锚定，仅描述喝了一阵后回看日常状态稳定。",
+      "latency_ms": 7314,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-009",
+      "expected_label": "watch",
+      "acceptable_labels": [
+        "watch"
+      ],
+      "expected_issue_code": "mixed_state_same_period",
+      "actual_label": "watch",
+      "actual_issue_code": "mixed_state_same_period",
+      "evidence": "这段时间偶尔也会有点喉咙不舒服，不过整体看下来状态还算稳，平时该跑该玩都没耽误。",
+      "latency_ms": 6103,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-010",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "正文未提及产品及时间矛盾，仅描述上个月请假和这个月出勤稳定。",
+      "latency_ms": 7881,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-011",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "publication_time_anchor",
+      "actual_label": "block",
+      "actual_issue_code": "publication_time_anchor",
+      "evidence": "现在正是流感季",
+      "latency_ms": 9304,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-012",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "文章标题和正文均描述去年冬天的背景，未涉及当前时间或产品使用，无时间逻辑冲突。",
+      "latency_ms": 9094,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-013",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "原文没有负面状态或时间逻辑矛盾，只描述了今天出去玩状态不错以及喝旺玥期间整体状态还不错。",
+      "latency_ms": 11520,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-014",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "标题：刚拆新罐时想起来；正文：今天刚拆一罐新的旺玥，顺手回想了下前面一个月，孩子日常活动和出勤都挺稳。",
+      "latency_ms": 10346,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-015",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "same_period_state_contradiction",
+      "actual_label": "block",
+      "actual_issue_code": "same_period_state_contradiction",
+      "evidence": "正文中'这几天孩子状态一直挺稳'与'就是这几天又三天两头喉咙不舒服'在同一时间窗口（这几天）同时描述持续稳定和持续负面，且无阶段转换词。",
+      "latency_ms": 10061,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-016",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "原文：昨天晚饭，孩子扒拉两口就说饱了。后来给他泡了杯旺玥，就当把正餐里没吃够的营养补一补。时间顺序合理，无矛盾。",
+      "latency_ms": 12829,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-017",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "short_period_hard_reversal",
+      "actual_label": "block",
+      "actual_issue_code": "short_period_hard_reversal",
+      "evidence": "昨晚孩子还折腾到凌晨，奶也不肯喝。刚换成旺玥，今天已经完全不闹了，喝奶、睡觉和精神头一下全稳了。",
+      "latency_ms": 13604,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-018",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "正文有明确阶段转换：刚换那几天有不顺，慢慢适应，观察一个多月后最近逐渐稳定。",
+      "latency_ms": 12841,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-019",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "missing_transition_duration",
+      "actual_label": "block",
+      "actual_issue_code": "missing_transition_duration",
+      "evidence": "原文：'孩子前面还肚肚不舒服，喝奶也不顺。后来奶量上来了，便便顺了，晚上也睡得安稳，整个人精神多了。' 问题状态后直接写多方面明显改善，没有换奶、适应、观察或时间跨度。",
+      "latency_ms": 14176,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-020",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "原文明确写了'换成旺玥后先适应了几天，我又观察了一个月，奶量和便便状态才慢慢顺下来'，有适应期和观察跨度，时间逻辑合理。",
+      "latency_ms": 15001,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-021",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "decision_execution_stage_conflict",
+      "actual_label": "block",
+      "actual_issue_code": "decision_execution_stage_conflict",
+      "evidence": "标题'还在纠结'与正文'换成旺玥后已经喝了一周多'同时出现，表示尚未执行与已执行矛盾。",
+      "latency_ms": 15789,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-022",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "原文明确分阶段：'之前我纠结过'→'后来决定换了'→'现在喝了一周多'，时间逻辑清晰，无矛盾。",
+      "latency_ms": 16053,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-023",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "recent_problem_long_usage_conflict",
+      "actual_label": "block",
+      "actual_issue_code": "recent_problem_long_usage_conflict",
+      "evidence": "标题及正文：'前阵子我还挺焦虑的'（15-45天内）与'现在已经喝了四个多月'（约120天）时间矛盾，'后来'无法承接。",
+      "latency_ms": 16945,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-024",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "正文明确写'几个月前焦虑'和'现在喝了四个多月'，时间阶段分离，且有'后来'和'慢慢稳定'体现观察跨度，无内部时间矛盾。",
+      "latency_ms": 20312,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-025",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "continuous_use_baseline_conflict",
+      "actual_label": "block",
+      "actual_issue_code": "continuous_use_baseline_conflict",
+      "evidence": "孩子这两年一直喝旺玥，现在终于不像以前那样三天两头让我提心吊胆，状态稳多了。",
+      "latency_ms": 18889,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-026",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "刚开始喝旺玥那阵，孩子有过一小段适应期。后来一直按原来的节奏喝，几个月回看下来，最近日常状态稳了些。",
+      "latency_ms": 20260,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-027",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "标题明确分阶段，正文写'前段时间...三天两头不舒服'为过去阶段，'家里现在喝旺玥，回看这段时间状态挺稳'为当前阶段，阶段分开，无矛盾。",
+      "latency_ms": 19278,
+      "error": null
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "case_code": "WYT-028",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "publication_time_anchor",
+      "actual_label": "block",
+      "actual_issue_code": "publication_time_anchor",
+      "evidence": "正文明确写\"最近降温挺明显\"，断言当前正值降温动态环境，属于 publication_time_anchor 规则。",
+      "latency_ms": 19065,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-001",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "same_period_state_contradiction",
+      "actual_label": "block",
+      "actual_issue_code": "same_period_state_contradiction",
+      "evidence": "‘这段时间他好像特别容易中招，三天两头喉咙不舒服’与‘家里现在喝旺玥，回看这段时间状态倒是挺稳’中两个‘这段时间’指向同一时间窗口，前者描述持续负面健康状态（‘特别容易中招’‘三天两头不舒服’），后者断言同一时段‘状态挺稳’，构成同一时期内持续不好与持续稳定的直接矛盾，无‘前段时间/换后/后来’等阶段分隔词。",
+      "latency_ms": 22700,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-002",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "same_period_state_contradiction",
+      "actual_label": "block",
+      "actual_issue_code": "same_period_state_contradiction",
+      "evidence": "‘这段时间他总是三天两头不舒服’与‘回看这段时间状态倒是挺稳’中两个‘这段时间’指同一时间窗口，前者表持续负面状态（‘总是/三天两头’），后者表持续稳定状态，无阶段转换词（如‘前段时间/后来/换后’）分隔，构成同一时期内状态矛盾。",
+      "latency_ms": 22320,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-003",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "前阵子（15-45天前）描述负面状态‘三天两头有点小状况’，‘后来换了旺玥’明确阶段转换，‘这段时间’指换奶后的新阶段，‘回看下来状态挺稳’属新阶段观察结论，时间逻辑清晰无冲突。",
+      "latency_ms": 21990,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-004",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "原文明确区分阶段：‘以前’（旧阶段，频繁请假）→‘后来换了旺玥’（转换动作）→‘喝了一段时间再回看，最近出勤挺稳’（新阶段，观察后结论），时间逻辑清晰，无矛盾。",
+      "latency_ms": 22114,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-005",
+      "expected_label": "watch",
+      "acceptable_labels": [
+        "pass",
+        "watch"
+      ],
+      "expected_issue_code": "past_public_disease_reference",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "原文明确区分时间阶段：‘去年朋友家娃有阵子总生病’（过去时、他人事件，作背景参考）；‘回头看我家这个，喝旺玥这段时间出勤一直挺稳’（当前阶段，‘这段时间’与‘去年’无重叠，且‘回头看’表明是回溯性观察，隐含合理观察跨度）",
+      "latency_ms": 22659,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-006",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "immediate_rescue_causality",
+      "actual_label": "block",
+      "actual_issue_code": "immediate_rescue_causality",
+      "evidence": "孩子早上打了个喷嚏，我马上把奶粉换成旺玥，想着赶紧把保护力补回来。",
+      "latency_ms": 23370,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-007",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "insufficient_effect_duration",
+      "actual_label": "block",
+      "actual_issue_code": "insufficient_effect_duration",
+      "evidence": "昨天刚给孩子换成旺玥，今天去幼儿园就没请假，感觉保护力一下稳住了。",
+      "latency_ms": 23385,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-008",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "全文未出现时间矛盾、即时补救意图、短周期硬反转、缺失过渡、阶段冲突或动态环境锚点；‘喝了一阵’与‘回看最近的日常’时间逻辑自洽，无同一窗口内状态冲突，未提及问题发生与产品生效的紧密因果或超短时效验证",
+      "latency_ms": 24245,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-009",
+      "expected_label": "watch",
+      "acceptable_labels": [
+        "watch"
+      ],
+      "expected_issue_code": "mixed_state_same_period",
+      "actual_label": "watch",
+      "actual_issue_code": "mixed_state_same_period",
+      "evidence": "这段时间偶尔也会有点喉咙不舒服，不过整体看下来状态还算稳",
+      "latency_ms": 23686,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-010",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "上个月和这个月是明确区分的两个时间阶段，‘上个月请过两次假’为过去问题，‘这个月安排顺、出勤稳’为当前改善，存在自然时间过渡，无矛盾。",
+      "latency_ms": 24273,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-011",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "publication_time_anchor",
+      "actual_label": "block",
+      "actual_issue_code": "publication_time_anchor",
+      "evidence": "现在正是流感季",
+      "latency_ms": 24701,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-012",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "全文仅描述去年冬天的过去事件（‘去年冬天’），未出现任何当前时间锚点（如‘现在’‘最近’‘目前’断言流感季/换季/降温等），未将过去事件与当前产品使用状态强行挂钩，无阶段混淆、无即时因果、无时间跨度缺失。‘班里请假多’为过去公共疾病背景，‘我家出勤稳’为同期结果，时间阶段清晰，不依赖当前环境成立。",
+      "latency_ms": 26548,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-013",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "",
+      "latency_ms": 24684,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-014",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "今天刚拆新罐 → 当前行为；回想前面一个月 → 明确时间回溯，阶段分离清晰；‘日常活动和出勤都挺稳’描述的是过去一个月的状态，与‘刚拆罐’这一当下动作无时间重叠或矛盾。",
+      "latency_ms": 25922,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-015",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "same_period_state_contradiction",
+      "actual_label": "block",
+      "actual_issue_code": "same_period_state_contradiction",
+      "evidence": "这几天孩子状态一直挺稳，早上起床也有精神，就是这几天又三天两头喉咙不舒服。",
+      "latency_ms": 25659,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-016",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "全文未出现任何时间逻辑矛盾：仅描述‘昨天晚饭’的单次进食情况，随后‘后来’泡旺玥作为营养补充，属于常规日常营养补足行为，无疾病症状、无保护力补救意图、无状态反转断言、无阶段混淆或时间跨度冲突。",
+      "latency_ms": 27002,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-017",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "short_period_hard_reversal",
+      "actual_label": "block",
+      "actual_issue_code": "short_period_hard_reversal",
+      "evidence": "昨晚还折腾到凌晨，奶也不肯喝。刚换成旺玥，今天已经完全不闹了，喝奶、睡觉和精神头一下全稳了。",
+      "latency_ms": 26187,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-018",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "刚换旺玥那几天孩子喝奶还有点不顺，我就先按原来的节奏慢慢适应。观察了一个多月再回看，最近奶量和日常状态才逐渐稳定些。",
+      "latency_ms": 27105,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-019",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "missing_transition_duration",
+      "actual_label": "block",
+      "actual_issue_code": "missing_transition_duration",
+      "evidence": "前面还肚肚不舒服、喝奶不顺。后来奶量上来了、便便顺了、睡觉也好了。",
+      "latency_ms": 27437,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-020",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "原文明确写出‘刚开始那阵’问题期，‘换成旺玥后先适应了几天’，再‘观察了一个月’，‘才慢慢顺下来’，时间阶段清晰、有过渡过程和合理观察跨度，符合规则要求。",
+      "latency_ms": 27902,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-021",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "decision_execution_stage_conflict",
+      "actual_label": "block",
+      "actual_issue_code": "decision_execution_stage_conflict",
+      "evidence": "‘还在纠结要不要换’表示尚未执行换奶决策，而‘换成旺玥后已经喝了一周多’表明已执行并完成转奶，二者处于同一当前叙述阶段，存在决策与执行阶段冲突。",
+      "latency_ms": 28283,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-022",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "之前纠结过，后来换了，现在喝了一周多",
+      "latency_ms": 28064,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-023",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "recent_problem_long_usage_conflict",
+      "actual_label": "block",
+      "actual_issue_code": "recent_problem_long_usage_conflict",
+      "evidence": "前阵子还焦虑，后来换了旺玥，现在已经喝了四个多月。",
+      "latency_ms": 28534,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-024",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "原文明确区分时间阶段：‘几个月前’描述旧问题，‘后来换了旺玥’为转换节点，‘现在喝了四个多月’对应当前持续使用状态，‘状态慢慢稳定了些’含‘慢慢’体现观察过程，无时间逻辑矛盾。",
+      "latency_ms": 29400,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-025",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "continuous_use_baseline_conflict",
+      "actual_label": "block",
+      "actual_issue_code": "continuous_use_baseline_conflict",
+      "evidence": "孩子这两年一直喝旺玥，现在终于不像以前那样三天两头让我提心吊胆，状态稳多了。",
+      "latency_ms": 29254,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-026",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "原文明确区分‘刚开始喝旺玥那阵’（适应期）与‘后来一直按原来的节奏喝，几个月回看下来’（稳定期），时间阶段清晰，无矛盾；‘最近日常状态稳了些’中的‘最近’属于对长期观察后的阶段性小结，与‘几个月回看’逻辑自洽，未出现同一时间窗口内状态冲突或短时硬反转。",
+      "latency_ms": 30796,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-027",
+      "expected_label": "pass",
+      "acceptable_labels": [
+        "pass"
+      ],
+      "expected_issue_code": "none",
+      "actual_label": "pass",
+      "actual_issue_code": "none",
+      "evidence": "前文明确使用‘前段时间’指代过去问题阶段，后文‘现在’喝旺玥、‘回看这段时间’指代当前已稳定的观察期，两个时间阶段清晰分离，无同一窗口内状态矛盾。",
+      "latency_ms": 30133,
+      "error": null
+    },
+    {
+      "model": "qwen-plus",
+      "case_code": "WYT-028",
+      "expected_label": "block",
+      "acceptable_labels": [
+        "block"
+      ],
+      "expected_issue_code": "publication_time_anchor",
+      "actual_label": "block",
+      "actual_issue_code": "publication_time_anchor",
+      "evidence": "最近降温挺明显",
+      "latency_ms": 29694,
+      "error": null
+    }
+  ]
+}

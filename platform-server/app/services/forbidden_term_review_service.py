@@ -17,7 +17,7 @@ WANGYUE_STATIC_FORBIDDEN_REPLACEMENTS = {
     "体质": "状态",
     "脾胃": "肚肚状态",
 }
-WANGYUE_STATIC_BLOCK_ONLY_TERMS = {"底气"}
+WANGYUE_STATIC_BLOCK_ONLY_TERMS = {"底气", "流感"}
 STATIC_FORBIDDEN_TERMS = [
     "治疗便秘",
     "治好便秘",
@@ -51,6 +51,7 @@ WANGYUE_STATIC_FORBIDDEN_TERMS = [
 ]
 WANGYUE_STATIC_FORBIDDEN_TERM_REASONS = {
     "4段": "旺玥不是4段奶粉，品牌定位是儿童奶粉；不能把旺玥和4段奶粉放在一起关联。",
+    "流感": "旺玥内容禁止出现流感相关字样；无论当前或过去语境，命中即硬阻断，不改写。",
 }
 ALLOWED_PROPRIETARY_TERMS = {
     "天然乳脂": "__MAGA_ALLOWED_TIANRANRUZHI__",

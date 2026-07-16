@@ -12,10 +12,15 @@ from app.services.content_batch_execution_service import (
 )
 from app.services.product_experience_phrase_guard_service import review_product_experience_phrase
 from app.services.rewrite_quality_validator_service import (
+    REWRITE_QUALITY_MODEL_CODE,
     RewriteQualityJudgment,
     RewriteQualityValidatorService,
     parse_rewrite_quality_judgment,
 )
+
+
+def test_rewrite_quality_uses_qwen_plus_as_dedicated_model() -> None:
+    assert REWRITE_QUALITY_MODEL_CODE == "qwen-plus"
 
 
 def test_parse_rewrite_quality_judgment_accepts_valid_contract() -> None:

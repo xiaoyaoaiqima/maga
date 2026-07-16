@@ -207,6 +207,32 @@
         "source": "product_fact_boundary"
       },
       "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "nutrition_count_drift", "source_type": "boundary_case"}
+    },
+    {
+      "title": "翻出两岁时玩的小滑梯",
+      "content": "翻出孩子两岁时玩的小滑梯，才发现他现在变化挺大。满三岁后家里一直喝旺玥，每天冲一杯，他自己端着喝得挺香。",
+      "meta": {
+        "case_code": "WYU-016",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["两岁时玩的小滑梯", "满三岁后家里一直喝旺玥"],
+        "reason": "两岁只是在回忆历史玩具，旺玥使用明确发生在满三岁以后，不能仅凭年龄词误判低龄使用。",
+        "source": "batch504_item4_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "historical_age_reference", "source_type": "human_feedback"}
+    },
+    {
+      "title": "翻到以前的记录本",
+      "content": "自从换了旺玥，这学期日常状态变化挺明显，晚上睡得沉，白天精力旺盛，连身高都窜了一截。",
+      "meta": {
+        "case_code": "WYU-017",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["晚上睡得沉", "白天精力旺盛", "身高都窜了一截"],
+        "reason": "睡眠、精力和身高属于业务规则可控制的积极自家反馈，不由产品使用事实硬审自动拦截或改写。",
+        "source": "batch437_item14_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "positive_effect_scope_business_controlled", "source_type": "human_feedback"}
     }
   ]
 }

@@ -20,7 +20,11 @@ from app.services.content_rewrite_context import rewrite_business_rule_context
 from app.services.executor_invocation_service import ExecutorInvocationClient
 from app.services.activity_quality_guard_service import ActivityQualityGuardService
 from app.services.ai_flavor_humanizer_service import AIFlavorReview, review_ai_flavor
-from app.services.forbidden_term_review_service import ForbiddenTermReviewService
+from app.services.forbidden_term_review_service import (
+    WANGYUE_STATIC_FORBIDDEN_TERMS,
+    ForbiddenTermReviewService,
+    find_forbidden_hits,
+)
 from app.services.product_experience_phrase_guard_service import (
     ProductExperiencePhraseReview,
     SEMANTIC_ODD_PRODUCT_EXPERIENCE_PHRASES,
@@ -38,6 +42,7 @@ from app.services.product_experience_phrase_guard_service import (
     should_review_product_experience,
 )
 from app.services.product_experience_llm_review_service import (
+    ProductExperienceLLMIssue,
     ProductExperienceLLMReview,
     ProductExperienceLLMReviewService,
 )
@@ -46,12 +51,34 @@ from app.services.royal_friso_ugc_structure_guard_service import (
     RoyalFrisoUGCStructureReview,
 )
 from app.services.rewrite_quality_validator_service import (
+    REWRITE_QUALITY_MODEL_CODE,
     RewriteQualityJudgment,
     RewriteQualityValidatorService,
 )
 from app.services.unified_content_generation_service import (
     CONTENT_GENERATE_CAPABILITY,
     UnifiedContentGenerationService,
+)
+from app.services.wangyue_claim_public_disease_judge_service import (
+    CLAIM_PUBLIC_DISEASE_MODEL_CODE,
+    WangyueClaimPublicDiseaseJudgeService,
+)
+from app.services.wangyue_content_fit_judge_service import (
+    CONTENT_FIT_MODEL_CODE,
+    WangyueContentFitJudgeService,
+)
+from app.services.wangyue_fluency_judge_service import (
+    FLUENCY_JUDGE_MODEL_CODE,
+    WangyueFluencyJudgeService,
+)
+from app.services.wangyue_focused_review_aggregator_service import (
+    FOCUSED_REVIEW_DIMENSIONS,
+    aggregate_wangyue_focused_reviews,
+    compare_focused_review_with_legacy,
+)
+from app.services.wangyue_temporal_logic_judge_service import (
+    TEMPORAL_LOGIC_MODEL_CODE,
+    WangyueTemporalLogicJudgeService,
 )
 
 SIMILARITY_REWRITE_THRESHOLD = 0.42
@@ -133,12 +160,10 @@ PRODUCT_EXPERIENCE_COMPLIANCE_ISSUE_CODES = {
     "portable_product_error",
     "supplement_replacement_error",
     "product_fact_number_drift",
-    "effect_scope_drift",
 }
 PRODUCT_EXPERIENCE_FLUENCY_ISSUE_CODES = {
     "unnatural_product_appearance",
     "brief_translation_tone",
-    "ad_like_closure",
 }
 TITLE_GUARD_WATCH_ONLY_SUBSTRINGS = (
     "不用纠结",
@@ -293,6 +318,18 @@ def _default_unified_review_report() -> dict[str, Any]:
     }
 
 
+def _focused_judge_model_code(dimension: str) -> str:
+    if dimension == "temporal_logic":
+        return TEMPORAL_LOGIC_MODEL_CODE
+    if dimension == "claim_public_disease":
+        return CLAIM_PUBLIC_DISEASE_MODEL_CODE
+    if dimension == "content_fit":
+        return CONTENT_FIT_MODEL_CODE
+    if dimension == "fluency":
+        return FLUENCY_JUDGE_MODEL_CODE
+    raise ValueError(f"unsupported focused review dimension: {dimension}")
+
+
 @dataclass(frozen=True)
 class BatchExecutionResult:
     batch_id: int
@@ -312,6 +349,42 @@ class BatchBusinessUsabilityReviewResult:
     skipped_item_nos: list[int]
     failed_items: list[dict[str, Any]]
     tier_counts: dict[str, int]
+
+
+@dataclass(frozen=True)
+class BatchFocusedShadowReviewResult:
+    batch_id: int
+    reviewed_count: int
+    skipped_count: int
+    failed_count: int
+    reviewed_item_nos: list[int]
+    skipped_item_nos: list[int]
+    failed_items: list[dict[str, Any]]
+    label_counts: dict[str, int]
+    usage_totals: dict[str, int]
+    latency_totals: dict[str, int]
+
+
+@dataclass(frozen=True)
+class BatchFocusedPipelineShadowResult:
+    batch_id: int
+    reviewed_count: int
+    skipped_count: int
+    failed_count: int
+    reviewed_item_nos: list[int]
+    skipped_item_nos: list[int]
+    failed_items: list[dict[str, Any]]
+    decision_counts: dict[str, int]
+    rewrite_mode_counts: dict[str, int]
+    comparison_counts: dict[str, int]
+    mismatch_item_nos: list[int]
+    action_comparison_counts: dict[str, int]
+    action_mismatch_item_nos: list[int]
+    rewrite_rehearsal_counts: dict[str, int]
+    accepted_rewrite_item_nos: list[int]
+    manual_review_item_nos: list[int]
+    usage_totals: dict[str, int]
+    latency_totals: dict[str, int]
 
 
 @dataclass(frozen=True)
@@ -350,6 +423,10 @@ class ContentBatchExecutionService:
         session_factory: async_sessionmaker[AsyncSession] | None = None,
         product_experience_llm_reviewer: ProductExperienceLLMReviewService | None = None,
         rewrite_quality_validator: RewriteQualityValidatorService | None = None,
+        temporal_logic_judge: WangyueTemporalLogicJudgeService | None = None,
+        claim_public_disease_judge: WangyueClaimPublicDiseaseJudgeService | None = None,
+        content_fit_judge: WangyueContentFitJudgeService | None = None,
+        fluency_judge: WangyueFluencyJudgeService | None = None,
     ):
         self.db = db
         self.invocation_client = invocation_client
@@ -366,6 +443,12 @@ class ContentBatchExecutionService:
             product_experience_llm_reviewer or ProductExperienceLLMReviewService()
         )
         self.rewrite_quality_validator = rewrite_quality_validator or RewriteQualityValidatorService()
+        self.temporal_logic_judge = temporal_logic_judge or WangyueTemporalLogicJudgeService()
+        self.claim_public_disease_judge = (
+            claim_public_disease_judge or WangyueClaimPublicDiseaseJudgeService()
+        )
+        self.content_fit_judge = content_fit_judge or WangyueContentFitJudgeService()
+        self.fluency_judge = fluency_judge or WangyueFluencyJudgeService()
 
     async def execute_batch_items(
         self,
@@ -433,13 +516,18 @@ class ContentBatchExecutionService:
             )
 
         postprocess_errors = []
+        product_experience_review_step = (
+            self._run_wangyue_focused_pipeline_postprocess
+            if str(job.asset_key or "") == CURRENT_WANGYUE_ARTICLE_ASSET_KEY
+            else self._rewrite_product_experience_llm_quality_items
+        )
         postprocess_steps = [
             ("similarity_watch", self._watch_similar_generated_items),
             ("product_experience_phrase_rewrite", self._rewrite_product_experience_phrase_items),
             ("mouth_phrase_budget_rewrite", self._rewrite_mouth_phrase_budget_items),
             ("article_length_repair", self._repair_article_length_items),
             ("ai_flavor_rewrite", self._rewrite_ai_flavor_items),
-            ("product_experience_llm_quality_rewrite", self._rewrite_product_experience_llm_quality_items),
+            ("product_experience_review", product_experience_review_step),
             ("royal_friso_structure_review", self._review_royal_friso_structure_items),
             ("title_repair", self._repair_generated_titles),
             ("product_experience_phrase_refresh", self._refresh_product_experience_phrase_reviews),
@@ -482,7 +570,8 @@ class ContentBatchExecutionService:
             raise ValueError("limit must be positive")
         if concurrency <= 0:
             raise ValueError("concurrency must be positive")
-        await self._require_job(batch_id)
+        job = await self._require_job(batch_id)
+        use_focused_pipeline = str(job.asset_key or "") == CURRENT_WANGYUE_ARTICLE_ASSET_KEY
         result = await self.db.execute(
             select(ContentBatchItem.id)
             .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
@@ -506,6 +595,18 @@ class ContentBatchExecutionService:
 
         async def run_item(item_id: int) -> dict[str, Any]:
             async with semaphore:
+                if use_focused_pipeline:
+                    result = await self._review_wangyue_focused_pipeline_item(
+                        item_id,
+                        force=force,
+                    )
+                    if result.get("status") == "skipped":
+                        return result
+                    return {
+                        "status": "reviewed",
+                        "item_no": result["item_no"],
+                        "focused_status": result.get("status"),
+                    }
                 return await self._review_business_usability_item(item_id, force=force)
 
         results = await asyncio.gather(*(run_item(item_id) for item_id in item_ids))
@@ -527,6 +628,938 @@ class ContentBatchExecutionService:
             ],
             tier_counts=dict(tier_counts),
         )
+
+    async def review_temporal_logic_shadow_items(
+        self,
+        batch_id: int,
+        *,
+        force: bool = False,
+        limit: int | None = None,
+        concurrency: int = POSTPROCESS_REWRITE_CONCURRENCY,
+    ) -> BatchFocusedShadowReviewResult:
+        return await self._review_focused_shadow_items(
+            batch_id,
+            force=force,
+            limit=limit,
+            concurrency=concurrency,
+            worker=self._review_temporal_logic_shadow_item,
+        )
+
+    async def _run_wangyue_focused_pipeline_postprocess(
+        self,
+        batch_id: int,
+        _job: ContentBatchJob,
+    ) -> int:
+        async def worker(item_id: int) -> int:
+            result = await self._review_wangyue_focused_pipeline_item(item_id, force=True)
+            return int(result.get("status") == "rewritten")
+
+        return await self._run_generated_item_workers(batch_id, worker)
+
+    async def _review_wangyue_focused_pipeline_item(
+        self,
+        item_id: int,
+        *,
+        force: bool,
+    ) -> dict[str, Any]:
+        quality_key = "wangyue_focused_pipeline_review"
+        async with self.session_factory() as db:
+            item = await self._require_item(db, item_id)
+            if item.status != "generated" or not _is_current_wangyue_article_plan(item.plan_json):
+                return {"status": "skipped", "item_no": item.item_no}
+
+            quality = dict(item.quality_json or {})
+            if not force and isinstance(quality.get(quality_key), dict):
+                return {"status": "skipped", "item_no": item.item_no}
+
+            review_report = dict(quality.get("review_report") or {})
+            quality.pop("product_experience_llm_quality_review", None)
+            quality.pop("product_experience_llm_quality_failures", None)
+            quality.pop("product_experience_llm_quality_review_unavailable_mark_only", None)
+            review_report.pop("product_experience_llm_review", None)
+            if str(review_report.get("rewrite_reason") or "").startswith("LLM 判断产品出现"):
+                review_report["rewrite_required"] = False
+                review_report.pop("rewrite_reason", None)
+
+            if quality.get("hard_pass") is False:
+                payload = {
+                    "decision": "block",
+                    "issues": [],
+                    "unavailable_dimensions": [],
+                    "rewrite_modes": [],
+                    "requires_rewrite": False,
+                    "can_auto_pool": False,
+                    "blocked_by_code_hard": True,
+                    "status": "hard_block",
+                    "affects_pool": True,
+                }
+                quality[quality_key] = payload
+                review_report[quality_key] = dict(payload)
+                quality["review_report"] = review_report
+                item.quality_json = quality
+                flag_modified(item, "quality_json")
+                await db.commit()
+                return {"status": "hard_block", "item_no": item.item_no}
+
+            orchestrator = ContentAgentOrchestrator(
+                db,
+                invocation_client=self.invocation_client,
+                callback_base_url=self.callback_base_url,
+            )
+            initial_reviews = await self._review_focused_dimensions_with_unavailable(
+                item=item,
+                orchestrator=orchestrator,
+                title=item.title or "",
+                body=item.body or "",
+            )
+            aggregate = aggregate_wangyue_focused_reviews(
+                initial_reviews,
+                hard_pass=quality.get("hard_pass"),
+            )
+            final_reviews = initial_reviews
+            rewrite_result: dict[str, Any] | None = None
+            status = aggregate.decision
+
+            if aggregate.unavailable_dimensions:
+                status = "hold"
+            elif aggregate.requires_rewrite:
+                try:
+                    rewrite_result = await self._rehearse_focused_rewrite_candidate(
+                        item=item,
+                        aggregate=aggregate.model_dump(),
+                        orchestrator=orchestrator,
+                        rewrite_source_prefix="wangyue_focused_pipeline",
+                        shadow=False,
+                    )
+                except Exception as exc:  # noqa: BLE001 - failed focused rewrite must hold the item
+                    rewrite_result = {
+                        "status": "manual_review",
+                        "reason": f"focused rewrite unavailable: {exc}",
+                        "original": {"title": item.title or "", "body": item.body or ""},
+                        "attempts": [],
+                        "shadow": False,
+                        "affects_content": False,
+                    }
+
+                if rewrite_result.get("status") == "accepted":
+                    candidate = rewrite_result.get("accepted_candidate") or {}
+                    final_reviews = await self._review_focused_dimensions_with_unavailable(
+                        item=item,
+                        orchestrator=orchestrator,
+                        title=str(candidate.get("title") or ""),
+                        body=str(candidate.get("body") or ""),
+                    )
+                    final_aggregate = aggregate_wangyue_focused_reviews(
+                        final_reviews,
+                        hard_pass=quality.get("hard_pass"),
+                    )
+                    aggregate = final_aggregate
+                    if final_aggregate.can_auto_pool:
+                        item.title = str(candidate.get("title") or "")
+                        item.body = str(candidate.get("body") or "")
+                        item.error_message = None
+                        status = "rewritten"
+                    else:
+                        status = "hold"
+                else:
+                    status = "manual_review"
+            elif aggregate.decision == "block":
+                status = "manual_review"
+
+            for dimension, review in final_reviews.items():
+                quality[f"wangyue_{dimension}_review"] = dict(review)
+            payload = {
+                **aggregate.model_dump(),
+                "status": status,
+                "affects_pool": True,
+                "initial_reviews": initial_reviews,
+            }
+            if rewrite_result is not None:
+                payload["rewrite_result"] = rewrite_result
+                payload["post_rewrite_reviews"] = final_reviews
+            quality[quality_key] = payload
+            review_report[quality_key] = dict(payload)
+            quality["review_report"] = review_report
+            item.quality_json = quality
+            flag_modified(item, "quality_json")
+            await db.commit()
+            return {"status": status, "item_no": item.item_no}
+
+    async def _review_focused_dimensions_with_unavailable(
+        self,
+        *,
+        item: ContentBatchItem,
+        orchestrator: ContentAgentOrchestrator,
+        title: str,
+        body: str,
+    ) -> dict[str, dict[str, Any]]:
+        reviews: dict[str, dict[str, Any]] = {}
+        for dimension in FOCUSED_REVIEW_DIMENSIONS:
+            try:
+                reviews.update(
+                    await self._review_focused_candidate_dimensions(
+                        item=item,
+                        orchestrator=orchestrator,
+                        title=title,
+                        body=body,
+                        dimensions=[dimension],
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001 - one unavailable judge must hold, not abort, the item
+                reviews[dimension] = {
+                    "status": "unavailable",
+                    "error_message": str(exc),
+                }
+        return reviews
+
+    async def _review_temporal_logic_shadow_item(self, item_id: int, *, force: bool) -> dict[str, Any]:
+        return await self._review_focused_judge_shadow_item(
+            item_id,
+            force=force,
+            quality_key="wangyue_temporal_logic_shadow_review",
+            judge=self.temporal_logic_judge,
+            model_code=_focused_judge_model_code("temporal_logic"),
+        )
+
+    async def review_claim_public_disease_shadow_items(
+        self,
+        batch_id: int,
+        *,
+        force: bool = False,
+        limit: int | None = None,
+        concurrency: int = POSTPROCESS_REWRITE_CONCURRENCY,
+    ) -> BatchFocusedShadowReviewResult:
+        return await self._review_focused_shadow_items(
+            batch_id,
+            force=force,
+            limit=limit,
+            concurrency=concurrency,
+            worker=self._review_claim_public_disease_shadow_item,
+        )
+
+    async def review_content_fit_shadow_items(
+        self,
+        batch_id: int,
+        *,
+        force: bool = False,
+        limit: int | None = None,
+        concurrency: int = POSTPROCESS_REWRITE_CONCURRENCY,
+    ) -> BatchFocusedShadowReviewResult:
+        return await self._review_focused_shadow_items(
+            batch_id,
+            force=force,
+            limit=limit,
+            concurrency=concurrency,
+            worker=self._review_content_fit_shadow_item,
+        )
+
+    async def review_fluency_shadow_items(
+        self,
+        batch_id: int,
+        *,
+        force: bool = False,
+        limit: int | None = None,
+        concurrency: int = POSTPROCESS_REWRITE_CONCURRENCY,
+    ) -> BatchFocusedShadowReviewResult:
+        return await self._review_focused_shadow_items(
+            batch_id,
+            force=force,
+            limit=limit,
+            concurrency=concurrency,
+            worker=self._review_fluency_shadow_item,
+        )
+
+    async def review_focused_pipeline_shadow_items(
+        self,
+        batch_id: int,
+        *,
+        force: bool = False,
+        limit: int | None = None,
+        concurrency: int = POSTPROCESS_REWRITE_CONCURRENCY,
+        rehearse_rewrites: bool = False,
+    ) -> BatchFocusedPipelineShadowResult:
+        dimension_results = []
+        for dimension, reviewer in (
+            ("temporal_logic", self.review_temporal_logic_shadow_items),
+            ("claim_public_disease", self.review_claim_public_disease_shadow_items),
+            ("content_fit", self.review_content_fit_shadow_items),
+            ("fluency", self.review_fluency_shadow_items),
+        ):
+            result = await reviewer(
+                batch_id,
+                force=force,
+                limit=limit,
+                concurrency=concurrency,
+            )
+            dimension_results.append((dimension, result))
+
+        result = await self.db.execute(
+            select(ContentBatchItem.id)
+            .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
+            .order_by(ContentBatchItem.item_no)
+            .limit(limit)
+        )
+        item_ids = [int(item_id) for item_id in result.scalars().all()]
+        aggregate_results = [
+            await self._aggregate_focused_pipeline_shadow_item(item_id, force=force)
+            for item_id in item_ids
+        ]
+        reviewed = [item for item in aggregate_results if item.get("status") == "reviewed"]
+        skipped = [item for item in aggregate_results if item.get("status") == "skipped"]
+        rehearsal_results: list[dict[str, Any]] = []
+        if rehearse_rewrites:
+            semaphore = asyncio.Semaphore(concurrency)
+
+            async def rehearse(item_id: int) -> dict[str, Any]:
+                async with semaphore:
+                    return await self._rehearse_focused_pipeline_shadow_item(
+                        item_id,
+                        force=force,
+                    )
+
+            rehearsal_results = await asyncio.gather(
+                *(rehearse(int(item["item_id"])) for item in reviewed)
+            )
+        decision_counts = Counter(str(item.get("decision") or "") for item in reviewed)
+        decision_counts.pop("", None)
+        rewrite_mode_counts: Counter[str] = Counter()
+        comparison_counts: Counter[str] = Counter()
+        mismatch_item_nos: list[int] = []
+        action_comparison_counts: Counter[str] = Counter()
+        action_mismatch_item_nos: list[int] = []
+        for item in reviewed:
+            rewrite_mode_counts.update(item.get("rewrite_modes") or [])
+            comparison = item.get("comparison") or {}
+            if not comparison.get("legacy_available"):
+                comparison_counts["legacy_unavailable"] += 1
+            elif comparison.get("rewrite_decision_match"):
+                comparison_counts["match"] += 1
+            else:
+                comparison_counts["mismatch"] += 1
+                mismatch_item_nos.append(int(item["item_no"]))
+            if not comparison.get("legacy_available"):
+                action_comparison_counts["legacy_unavailable"] += 1
+            elif comparison.get("action_match") is None:
+                action_comparison_counts["out_of_scope_hard_block"] += 1
+            elif comparison.get("action_match"):
+                action_comparison_counts["match"] += 1
+            else:
+                action_comparison_counts["mismatch"] += 1
+                action_mismatch_item_nos.append(int(item["item_no"]))
+
+        failed_items = []
+        for dimension, dimension_result in dimension_results:
+            failed_items.extend(
+                {**failed_item, "dimension": dimension}
+                for failed_item in dimension_result.failed_items
+            )
+        failed_item_nos = {int(item["item_no"]) for item in failed_items}
+        rehearsal_counts = Counter(str(item.get("status") or "") for item in rehearsal_results)
+        rehearsal_counts.pop("", None)
+        usage_totals = {
+            key: sum(int(result.usage_totals.get(key) or 0) for _, result in dimension_results)
+            for key in ("input_tokens", "output_tokens", "total_tokens")
+        }
+        total_latency_ms = sum(
+            int(result.latency_totals.get("total_latency_ms") or 0)
+            for _, result in dimension_results
+        )
+        dimension_call_count = sum(result.reviewed_count for _, result in dimension_results)
+        max_latency_ms = max(
+            (int(result.latency_totals.get("max_latency_ms") or 0) for _, result in dimension_results),
+            default=0,
+        )
+        return BatchFocusedPipelineShadowResult(
+            batch_id=batch_id,
+            reviewed_count=len(reviewed),
+            skipped_count=len(skipped),
+            failed_count=len(failed_item_nos),
+            reviewed_item_nos=[int(item["item_no"]) for item in reviewed],
+            skipped_item_nos=[int(item["item_no"]) for item in skipped],
+            failed_items=failed_items,
+            decision_counts=dict(decision_counts),
+            rewrite_mode_counts=dict(rewrite_mode_counts),
+            comparison_counts=dict(comparison_counts),
+            mismatch_item_nos=mismatch_item_nos,
+            action_comparison_counts=dict(action_comparison_counts),
+            action_mismatch_item_nos=action_mismatch_item_nos,
+            rewrite_rehearsal_counts=dict(rehearsal_counts),
+            accepted_rewrite_item_nos=[
+                int(item["item_no"])
+                for item in rehearsal_results
+                if item.get("status") == "accepted"
+            ],
+            manual_review_item_nos=[
+                int(item["item_no"])
+                for item in rehearsal_results
+                if item.get("status") == "manual_review"
+            ],
+            usage_totals=usage_totals,
+            latency_totals={
+                "total_latency_ms": total_latency_ms,
+                "average_latency_ms": (
+                    round(total_latency_ms / dimension_call_count) if dimension_call_count else 0
+                ),
+                "max_latency_ms": max_latency_ms,
+            },
+        )
+
+    async def _run_focused_pipeline_shadow_postprocess(
+        self,
+        batch_id: int,
+        _job: ContentBatchJob,
+    ) -> int:
+        result = await self.review_focused_pipeline_shadow_items(
+            batch_id,
+            force=True,
+            concurrency=POSTPROCESS_REWRITE_CONCURRENCY,
+        )
+        return result.reviewed_count
+
+    async def _aggregate_focused_pipeline_shadow_item(
+        self,
+        item_id: int,
+        *,
+        force: bool,
+    ) -> dict[str, Any]:
+        quality_key = "wangyue_focused_pipeline_shadow_review"
+        async with self.session_factory() as db:
+            item = await self._require_item(db, item_id)
+            quality = dict(item.quality_json or {})
+            if item.status != "generated" or not _is_current_wangyue_article_plan(item.plan_json):
+                return {"status": "skipped", "item_no": item.item_no}
+            if not force and isinstance(quality.get(quality_key), dict):
+                return {"status": "skipped", "item_no": item.item_no}
+
+            judgments = {
+                "temporal_logic": quality.get("wangyue_temporal_logic_shadow_review"),
+                "claim_public_disease": quality.get("wangyue_claim_public_disease_shadow_review"),
+                "content_fit": quality.get("wangyue_content_fit_shadow_review"),
+                "fluency": quality.get("wangyue_fluency_shadow_review"),
+            }
+            aggregate = aggregate_wangyue_focused_reviews(
+                judgments,
+                hard_pass=quality.get("hard_pass"),
+            )
+            comparison = compare_focused_review_with_legacy(
+                aggregate,
+                quality.get("product_experience_llm_quality_review"),
+            )
+            payload = {
+                **aggregate.model_dump(),
+                "comparison": comparison,
+                "shadow": True,
+                "affects_hard_pass": False,
+            }
+            quality[quality_key] = payload
+            review_report = dict(quality.get("review_report") or {})
+            review_report[quality_key] = dict(payload)
+            quality["review_report"] = review_report
+            item.quality_json = quality
+            flag_modified(item, "quality_json")
+            await db.commit()
+            return {
+                "status": "reviewed",
+                "item_id": item.id,
+                "item_no": item.item_no,
+                "decision": aggregate.decision,
+                "rewrite_modes": aggregate.rewrite_modes,
+                "comparison": comparison,
+            }
+
+    async def _rehearse_focused_pipeline_shadow_item(
+        self,
+        item_id: int,
+        *,
+        force: bool,
+    ) -> dict[str, Any]:
+        quality_key = "wangyue_focused_pipeline_cutover_rehearsal"
+        async with self.session_factory() as db:
+            item = await self._require_item(db, item_id)
+            quality = dict(item.quality_json or {})
+            if item.status != "generated" or not _is_current_wangyue_article_plan(item.plan_json):
+                return {"status": "skipped", "item_no": item.item_no}
+            if not force and isinstance(quality.get(quality_key), dict):
+                return {"status": "skipped", "item_no": item.item_no}
+
+            aggregate = quality.get("wangyue_focused_pipeline_shadow_review")
+            if not isinstance(aggregate, dict):
+                return {
+                    "status": "failed",
+                    "item_no": item.item_no,
+                    "error_message": "focused pipeline aggregate is unavailable",
+                }
+
+            if quality.get("hard_pass") is False:
+                payload = {
+                    "status": "hard_block",
+                    "reason": "code hard review already failed; LLM rewrite is not allowed to revive it",
+                    "shadow": True,
+                    "affects_content": False,
+                }
+            elif not aggregate.get("rewrite_modes"):
+                payload = {
+                    "status": (
+                        "manual_review" if aggregate.get("decision") == "block" else "not_required"
+                    ),
+                    "reason": (
+                        "focused block has no safe local rewrite route"
+                        if aggregate.get("decision") == "block"
+                        else "focused aggregate does not require rewrite"
+                    ),
+                    "shadow": True,
+                    "affects_content": False,
+                }
+            else:
+                orchestrator = ContentAgentOrchestrator(
+                    db,
+                    invocation_client=self.invocation_client,
+                    callback_base_url=self.callback_base_url,
+                )
+                try:
+                    payload = await self._rehearse_focused_rewrite_candidate(
+                        item=item,
+                        aggregate=aggregate,
+                        orchestrator=orchestrator,
+                    )
+                except Exception as exc:  # noqa: BLE001 - rehearsal must never alter production content
+                    payload = {
+                        "status": "manual_review",
+                        "reason": f"focused rewrite rehearsal unavailable: {exc}",
+                        "shadow": True,
+                        "affects_content": False,
+                    }
+
+            quality[quality_key] = payload
+            review_report = dict(quality.get("review_report") or {})
+            review_report[quality_key] = dict(payload)
+            quality["review_report"] = review_report
+            item.quality_json = quality
+            flag_modified(item, "quality_json")
+            await db.commit()
+            return {"status": payload["status"], "item_no": item.item_no}
+
+    async def _rehearse_focused_rewrite_candidate(
+        self,
+        *,
+        item: ContentBatchItem,
+        aggregate: dict[str, Any],
+        orchestrator: ContentAgentOrchestrator,
+        rewrite_source_prefix: str = "wangyue_focused_pipeline_shadow",
+        shadow: bool = True,
+    ) -> dict[str, Any]:
+        original = {"title": item.title or "", "body": item.body or ""}
+        current = dict(original)
+        attempts: list[dict[str, Any]] = []
+
+        for rewrite_mode in aggregate.get("rewrite_modes") or []:
+            focused_issues = [
+                issue
+                for issue in aggregate.get("issues") or []
+                if issue.get("label") == "block" and issue.get("rewrite_mode") == rewrite_mode
+            ]
+            if not focused_issues:
+                continue
+            review = _focused_issues_as_rewrite_review(focused_issues, rewrite_mode=rewrite_mode)
+            target_dimensions = list(
+                dict.fromkeys(str(issue.get("dimension") or "") for issue in focused_issues)
+            )
+            validator_feedback = ""
+            accepted = False
+
+            for attempt_no in range(1, 3):
+                candidate_item = ContentBatchItem(
+                    run_id=item.run_id,
+                    title=current["title"],
+                    body=current["body"],
+                    plan_json=item.plan_json,
+                    quality_json=item.quality_json,
+                )
+                if rewrite_mode == "compliance_cleanup":
+                    input_payload = self._product_experience_compliance_cleanup_input(
+                        candidate_item,
+                        review,
+                    )
+                else:
+                    input_payload = self._product_experience_fluency_humanize_input(
+                        candidate_item,
+                        review,
+                    )
+                input_payload["rewrite_source"] = f"{rewrite_source_prefix}_{rewrite_mode}"
+                if validator_feedback:
+                    input_payload["rewrite_instructions"] = [
+                        *list(input_payload.get("rewrite_instructions") or []),
+                        f"上一个候选未通过验收：{validator_feedback}。本轮只修正这个问题，不要扩写。",
+                    ]
+
+                result = await orchestrator.run_content_rewrite_stage(
+                    run_id=item.run_id,
+                    executor_code=self.executor_code,
+                    input_payload=input_payload,
+                )
+                final = result.output or {}
+                final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
+                title = str(final.get("title") or final_content.get("title") or "").strip()
+                body = str(final.get("body") or final_content.get("body") or "").strip()
+                if not title or not body:
+                    raise ValueError("content.rewrite returned empty article")
+                body = _preserve_rewrite_paragraphs(current["body"], body, item.plan_json)
+                after = {"title": title, "body": body}
+                code_hard_review = _focused_rewrite_candidate_code_hard_review(
+                    item=item,
+                    after=after,
+                )
+                if not code_hard_review["pass"]:
+                    attempts.append(
+                        {
+                            "rewrite_mode": rewrite_mode,
+                            "attempt": attempt_no,
+                            "before": dict(current),
+                            "after": after,
+                            "code_hard_review": code_hard_review,
+                            "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
+                        }
+                    )
+                    return {
+                        "status": "manual_review",
+                        "reason": "rewrite candidate failed deterministic hard review",
+                        "original": original,
+                        "attempts": attempts,
+                        "shadow": shadow,
+                        "affects_content": False,
+                    }
+                if _rewrite_removed_required_wangyue_product(current, after, item.plan_json):
+                    validation = RewriteQualityJudgment(
+                        label="reject",
+                        issue_code="required_fact_loss",
+                        evidence="改写后删除了原文已有的旺玥产品信息",
+                    )
+                else:
+                    validation = await self._validate_product_experience_llm_rewrite_candidate(
+                        item=item,
+                        orchestrator=orchestrator,
+                        before=current,
+                        after=after,
+                        review=review,
+                        rewrite_source=str(input_payload["rewrite_source"]),
+                    )
+
+                attempt_payload: dict[str, Any] = {
+                    "rewrite_mode": rewrite_mode,
+                    "attempt": attempt_no,
+                    "before": dict(current),
+                    "after": after,
+                    "code_hard_review": code_hard_review,
+                    "rewrite_quality_validation": validation.model_dump(),
+                    "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
+                }
+                if validation.label == "reject":
+                    attempts.append(attempt_payload)
+                    return {
+                        "status": "manual_review",
+                        "reason": validation.evidence or validation.issue_code,
+                        "original": original,
+                        "attempts": attempts,
+                        "shadow": shadow,
+                        "affects_content": False,
+                    }
+                if validation.label == "retry":
+                    validator_feedback = validation.evidence or validation.issue_code
+                    attempts.append(attempt_payload)
+                    continue
+
+                target_reviews = await self._review_focused_candidate_dimensions(
+                    item=item,
+                    orchestrator=orchestrator,
+                    title=after["title"],
+                    body=after["body"],
+                    dimensions=target_dimensions,
+                )
+                attempt_payload["target_reviews"] = target_reviews
+                attempts.append(attempt_payload)
+                remaining_blocks = [
+                    review_payload
+                    for review_payload in target_reviews.values()
+                    if review_payload.get("label") == "block"
+                ]
+                if remaining_blocks:
+                    validator_feedback = "；".join(
+                        str(review_payload.get("evidence") or review_payload.get("issue_code") or "")
+                        for review_payload in remaining_blocks
+                    )
+                    continue
+
+                current = after
+                accepted = True
+                break
+
+            if not accepted:
+                return {
+                    "status": "manual_review",
+                    "reason": "focused target issue remained after two local rewrite attempts",
+                    "original": original,
+                    "attempts": attempts,
+                    "shadow": shadow,
+                    "affects_content": False,
+                }
+
+        return {
+            "status": "accepted",
+            "reason": "rewrite quality and affected focused judges accepted the candidate",
+            "original": original,
+            "accepted_candidate": current,
+            "attempts": attempts,
+            "shadow": shadow,
+            "affects_content": not shadow,
+        }
+
+    async def _review_focused_candidate_dimensions(
+        self,
+        *,
+        item: ContentBatchItem,
+        orchestrator: ContentAgentOrchestrator,
+        title: str,
+        body: str,
+        dimensions: list[str],
+    ) -> dict[str, dict[str, Any]]:
+        reviews: dict[str, dict[str, Any]] = {}
+        for dimension in dimensions:
+            if dimension == "temporal_logic":
+                judge = self.temporal_logic_judge
+            elif dimension == "claim_public_disease":
+                judge = self.claim_public_disease_judge
+            elif dimension == "content_fit":
+                judge = self.content_fit_judge
+            elif dimension == "fluency":
+                judge = self.fluency_judge
+            else:
+                raise ValueError(f"unsupported focused review dimension: {dimension}")
+            model_code = _focused_judge_model_code(dimension)
+            source_plan = {"model_config": {"model_code": model_code}}
+            review_plan = await self._plan_with_provider_config_for_llm_review(
+                source_plan,
+                orchestrator=orchestrator,
+            )
+            if (review_plan.get("model_config") or {}).get("route_model_code") != model_code:
+                raise RuntimeError(f"dedicated judge model route not found: {model_code}")
+            review_kwargs: dict[str, Any] = {
+                "title": title,
+                "body": body,
+                "model_config": review_plan.get("model_config") or {},
+            }
+            if dimension == "content_fit":
+                review_kwargs["post_type"] = str(
+                    (item.plan_json or {}).get("post_type")
+                    or (item.plan_json or {}).get("ugc_post_type")
+                    or ""
+                )
+            judgment = await judge.review(**review_kwargs)
+            reviews[dimension] = {
+                **judgment.model_dump(),
+                "runtime_metadata": dict(judgment.runtime_metadata or {}),
+            }
+        return reviews
+
+    async def _review_focused_shadow_items(
+        self,
+        batch_id: int,
+        *,
+        force: bool,
+        limit: int | None,
+        concurrency: int,
+        worker: Callable[..., Awaitable[dict[str, Any]]],
+    ) -> BatchFocusedShadowReviewResult:
+        if limit is not None and limit <= 0:
+            raise ValueError("limit must be positive")
+        if concurrency <= 0:
+            raise ValueError("concurrency must be positive")
+        await self._require_job(batch_id)
+        result = await self.db.execute(
+            select(ContentBatchItem.id)
+            .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
+            .order_by(ContentBatchItem.item_no)
+            .limit(limit)
+        )
+        item_ids = [int(item_id) for item_id in result.scalars().all()]
+        if not item_ids:
+            return BatchFocusedShadowReviewResult(
+                batch_id=batch_id,
+                reviewed_count=0,
+                skipped_count=0,
+                failed_count=0,
+                reviewed_item_nos=[],
+                skipped_item_nos=[],
+                failed_items=[],
+                label_counts={},
+                usage_totals={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+                latency_totals={"total_latency_ms": 0, "average_latency_ms": 0, "max_latency_ms": 0},
+            )
+
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def run_item(item_id: int) -> dict[str, Any]:
+            async with semaphore:
+                return await worker(item_id, force=force)
+
+        results = await asyncio.gather(*(run_item(item_id) for item_id in item_ids))
+        reviewed = [item for item in results if item.get("status") == "reviewed"]
+        skipped = [item for item in results if item.get("status") == "skipped"]
+        failed = [item for item in results if item.get("status") == "failed"]
+        label_counts = Counter(str(item.get("label") or "") for item in reviewed)
+        label_counts.pop("", None)
+        usage_totals = {
+            key: sum(int((item.get("usage") or {}).get(key) or 0) for item in reviewed)
+            for key in ("input_tokens", "output_tokens", "total_tokens")
+        }
+        latencies = [int(item.get("latency_ms") or 0) for item in reviewed]
+        total_latency_ms = sum(latencies)
+        return BatchFocusedShadowReviewResult(
+            batch_id=batch_id,
+            reviewed_count=len(reviewed),
+            skipped_count=len(skipped),
+            failed_count=len(failed),
+            reviewed_item_nos=[int(item["item_no"]) for item in reviewed],
+            skipped_item_nos=[int(item["item_no"]) for item in skipped],
+            failed_items=[
+                {"item_no": int(item["item_no"]), "error_message": str(item.get("error_message") or "")}
+                for item in failed
+            ],
+            label_counts=dict(label_counts),
+            usage_totals=usage_totals,
+            latency_totals={
+                "total_latency_ms": total_latency_ms,
+                "average_latency_ms": round(total_latency_ms / len(latencies)) if latencies else 0,
+                "max_latency_ms": max(latencies, default=0),
+            },
+        )
+
+    async def _review_claim_public_disease_shadow_item(
+        self,
+        item_id: int,
+        *,
+        force: bool,
+    ) -> dict[str, Any]:
+        return await self._review_focused_judge_shadow_item(
+            item_id,
+            force=force,
+            quality_key="wangyue_claim_public_disease_shadow_review",
+            judge=self.claim_public_disease_judge,
+            model_code=_focused_judge_model_code("claim_public_disease"),
+        )
+
+    async def _review_content_fit_shadow_item(self, item_id: int, *, force: bool) -> dict[str, Any]:
+        return await self._review_focused_judge_shadow_item(
+            item_id,
+            force=force,
+            quality_key="wangyue_content_fit_shadow_review",
+            judge=self.content_fit_judge,
+            include_post_type=True,
+            model_code=_focused_judge_model_code("content_fit"),
+        )
+
+    async def _review_fluency_shadow_item(self, item_id: int, *, force: bool) -> dict[str, Any]:
+        return await self._review_focused_judge_shadow_item(
+            item_id,
+            force=force,
+            quality_key="wangyue_fluency_shadow_review",
+            judge=self.fluency_judge,
+            model_code=_focused_judge_model_code("fluency"),
+        )
+
+    async def _review_focused_judge_shadow_item(
+        self,
+        item_id: int,
+        *,
+        force: bool,
+        quality_key: str,
+        judge: Any,
+        include_post_type: bool = False,
+        model_code: str | None = None,
+    ) -> dict[str, Any]:
+        async with self.session_factory() as db:
+            item = await self._require_item(db, item_id)
+            quality = dict(item.quality_json or {})
+            if item.status != "generated" or not _is_current_wangyue_article_plan(item.plan_json):
+                return {"status": "skipped", "item_no": item.item_no}
+            if not force and isinstance(quality.get(quality_key), dict):
+                return {"status": "skipped", "item_no": item.item_no}
+
+            async def mark_unavailable(error_message: str) -> dict[str, Any]:
+                payload = {
+                    "status": "unavailable",
+                    "error_message": error_message,
+                    "shadow": True,
+                    "affects_hard_pass": False,
+                }
+                quality[quality_key] = payload
+                review_report = dict(quality.get("review_report") or {})
+                review_report[quality_key] = dict(payload)
+                quality["review_report"] = review_report
+                item.quality_json = quality
+                flag_modified(item, "quality_json")
+                await db.commit()
+                return {
+                    "status": "failed",
+                    "item_no": item.item_no,
+                    "error_message": error_message,
+                }
+
+            orchestrator = ContentAgentOrchestrator(
+                db,
+                invocation_client=self.invocation_client,
+                callback_base_url=self.callback_base_url,
+            )
+            try:
+                source_plan = (
+                    {"model_config": {"model_code": model_code}}
+                    if model_code
+                    else item.plan_json
+                )
+                review_plan = await self._plan_with_provider_config_for_llm_review(
+                    source_plan,
+                    orchestrator=orchestrator,
+                )
+                review_model_config = review_plan.get("model_config") or {}
+                if model_code and review_model_config.get("route_model_code") != model_code:
+                    return await mark_unavailable(f"dedicated judge model route not found: {model_code}")
+                review_kwargs = {
+                    "title": item.title,
+                    "body": item.body,
+                    "model_config": review_model_config,
+                }
+                if include_post_type:
+                    review_kwargs["post_type"] = str(
+                        (item.plan_json or {}).get("post_type")
+                        or (item.plan_json or {}).get("ugc_post_type")
+                        or ""
+                    )
+                judgment = await judge.review(
+                    **review_kwargs,
+                )
+            except Exception as exc:  # noqa: BLE001 - shadow review must never alter production decisions
+                return await mark_unavailable(str(exc))
+
+            payload = {
+                **judgment.model_dump(),
+                "runtime_metadata": dict(judgment.runtime_metadata or {}),
+                "shadow": True,
+                "affects_hard_pass": False,
+            }
+            quality[quality_key] = payload
+            review_report = dict(quality.get("review_report") or {})
+            review_report[quality_key] = dict(payload)
+            quality["review_report"] = review_report
+            item.quality_json = quality
+            flag_modified(item, "quality_json")
+            await db.commit()
+            runtime_metadata = judgment.runtime_metadata or {}
+            return {
+                "status": "reviewed",
+                "item_no": item.item_no,
+                "label": judgment.label,
+                "usage": runtime_metadata.get("usage") or {},
+                "latency_ms": int(runtime_metadata.get("latency_ms") or 0),
+            }
 
     async def _review_business_usability_item(self, item_id: int, *, force: bool) -> dict[str, Any]:
         async with self.session_factory() as db:
@@ -1018,7 +2051,10 @@ class ContentBatchExecutionService:
                     return 0
                 if _is_postprocess_blocked(item):
                     return 0
-                if _should_review_product_experience_llm_quality(item.plan_json):
+                if (
+                    _should_review_product_experience_llm_quality(item.plan_json)
+                    and not _is_current_wangyue_article_plan(item.plan_json)
+                ):
                     return 0
                 rewrite_count = 0
                 review_count = 0
@@ -1450,48 +2486,107 @@ class ContentBatchExecutionService:
     ) -> bool:
         if not item.run_id or not item.body:
             return False
+        before = {"title": item.title or "", "body": item.body or ""}
+        input_payload = self._product_experience_llm_quality_rewrite_input(item, review)
+        validator_feedback = ""
+        stage_call_count = 0
         try:
-            input_payload = self._product_experience_llm_quality_rewrite_input(item, review)
-            result = await orchestrator.run_content_rewrite_stage(
-                run_id=item.run_id,
-                executor_code=self.executor_code,
-                input_payload=input_payload,
+            for attempt in range(1, 3):
+                attempt_payload = input_payload
+                if validator_feedback:
+                    attempt_payload = {
+                        **input_payload,
+                        "rewrite_instructions": [
+                            *list(input_payload.get("rewrite_instructions") or []),
+                            f"上一个候选未通过改写验收：{validator_feedback}。本轮只修正这个问题，不要扩写。",
+                        ],
+                    }
+                result = await orchestrator.run_content_rewrite_stage(
+                    run_id=item.run_id,
+                    executor_code=self.executor_code,
+                    input_payload=attempt_payload,
+                )
+                stage_call_count += len(result.stage_calls)
+                final = result.output or {}
+                final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
+                title = str(final.get("title") or final_content.get("title") or "").strip()
+                body = str(final.get("body") or final_content.get("body") or "").strip()
+                if not title or not body:
+                    raise ValueError("content.rewrite returned empty article")
+                body = _preserve_rewrite_paragraphs(before["body"], body, item.plan_json)
+                after = {"title": title, "body": body}
+                if _rewrite_removed_required_wangyue_product(before, after, item.plan_json):
+                    raise ValueError("rewrite_removed_required_wangyue_product")
+                try:
+                    validation = await self._validate_product_experience_llm_rewrite_candidate(
+                        item=item,
+                        orchestrator=orchestrator,
+                        before=before,
+                        after=after,
+                        review=review,
+                        rewrite_source=str(attempt_payload.get("rewrite_source") or ""),
+                    )
+                except Exception as exc:  # noqa: BLE001 - unavailable validator must not auto-accept
+                    self._mark_rewrite_quality_validation_failure(
+                        item,
+                        reason="改写后验收不可用，禁止自动写回",
+                    )
+                    raise ValueError(f"rewrite_quality_validation_unavailable: {exc}") from exc
+                self._record_rewrite_quality_validation(
+                    item,
+                    validation=validation,
+                    before=before,
+                    after=after,
+                    attempt=attempt,
+                    stage_call_ids=[stage.stage_call_id for stage in result.stage_calls],
+                )
+                if validation.label == "reject":
+                    self._mark_rewrite_quality_validation_failure(
+                        item,
+                        reason="改写候选引入流畅性、语义连续或事实保留问题，需要人工复核",
+                    )
+                    await orchestrator.db.flush()
+                    return False
+                if validation.label == "retry":
+                    validator_feedback = validation.evidence or validation.issue_code
+                    continue
+
+                item.title = title
+                item.body = body
+                phrase_review = review_product_experience_phrase(
+                    title=item.title,
+                    body=item.body,
+                    plan=item.plan_json,
+                )
+                quality = dict(item.quality_json or {})
+                rewrites = list(quality.get("product_experience_llm_quality_rewrites") or [])
+                rewrites.append(
+                    {
+                        "pre_review": review.model_dump(),
+                        "before": before,
+                        "after": {"title": item.title, "body": item.body},
+                        "rewrite_source": attempt_payload.get("rewrite_source"),
+                        "rewrite_mode": attempt_payload.get("rewrite_mode"),
+                        "rewrite_quality_validation": validation.model_dump(),
+                        "phrase_review_after_rewrite": phrase_review.model_dump(),
+                        "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
+                    }
+                )
+                quality["product_experience_llm_quality_rewrites"] = rewrites
+                quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + stage_call_count
+                quality["run_status"] = result.run.status
+                item.quality_json = quality
+                self._mark_product_experience_phrase_review(item, phrase_review)
+                item.error_message = None
+                await orchestrator.db.flush()
+                return True
+
+            self._mark_rewrite_quality_validation_failure(
+                item,
+                reason="改写候选连续两次未通过验收，需要人工复核",
             )
-            final = result.output or {}
-            final_content = final.get("final") if isinstance(final.get("final"), dict) else {}
-            title = str(final.get("title") or final_content.get("title") or "").strip()
-            body = str(final.get("body") or final_content.get("body") or "").strip()
-            if not title or not body:
-                raise ValueError("content.rewrite returned empty article")
-            before = {"title": item.title or "", "body": item.body or ""}
-            body = _preserve_rewrite_paragraphs(before["body"], body, item.plan_json)
-            after = {"title": title, "body": body}
-            if _rewrite_removed_required_wangyue_product(before, after, item.plan_json):
-                raise ValueError("rewrite_removed_required_wangyue_product")
-            item.title = title
-            item.body = body
-            phrase_review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-            quality = dict(item.quality_json or {})
-            rewrites = list(quality.get("product_experience_llm_quality_rewrites") or [])
-            rewrites.append(
-                {
-                    "pre_review": review.model_dump(),
-                    "before": before,
-                    "after": {"title": item.title, "body": item.body},
-                    "rewrite_source": input_payload.get("rewrite_source"),
-                    "rewrite_mode": input_payload.get("rewrite_mode"),
-                    "phrase_review_after_rewrite": phrase_review.model_dump(),
-                    "stage_call_ids": [stage.stage_call_id for stage in result.stage_calls],
-                }
-            )
-            quality["product_experience_llm_quality_rewrites"] = rewrites
-            quality["stage_call_count"] = int(quality.get("stage_call_count") or 0) + len(result.stage_calls)
-            quality["run_status"] = result.run.status
-            item.quality_json = quality
-            self._mark_product_experience_phrase_review(item, phrase_review)
-            item.error_message = None
             await orchestrator.db.flush()
-            return True
+            return False
         except Exception as exc:  # noqa: BLE001 - keep generated content if quality rewrite fails
             quality = dict(item.quality_json or {})
             failures = list(quality.get("product_experience_llm_quality_failures") or [])
@@ -1500,6 +2595,37 @@ class ContentBatchExecutionService:
             item.quality_json = quality
             await orchestrator.db.flush()
             return False
+
+    async def _validate_product_experience_llm_rewrite_candidate(
+        self,
+        *,
+        item: ContentBatchItem,
+        orchestrator: ContentAgentOrchestrator,
+        before: dict[str, str],
+        after: dict[str, str],
+        review: ProductExperienceLLMReview,
+        rewrite_source: str,
+    ) -> RewriteQualityJudgment:
+        review_plan = await self._rewrite_quality_plan_with_provider_config(
+            orchestrator=orchestrator,
+        )
+        return await self.rewrite_quality_validator.review(
+            before=before,
+            after=after,
+            rewrite_source=rewrite_source,
+            target_issue="、".join(issue.code for issue in review.issues),
+            plan=review_plan,
+        )
+
+    async def _rewrite_quality_plan_with_provider_config(
+        self,
+        *,
+        orchestrator: ContentAgentOrchestrator,
+    ) -> dict[str, Any]:
+        return await self._plan_with_provider_config_for_llm_review(
+            {"model_config": {"model_code": REWRITE_QUALITY_MODEL_CODE}},
+            orchestrator=orchestrator,
+        )
 
     def _product_experience_llm_quality_rewrite_input(
         self,
@@ -2348,8 +3474,7 @@ class ContentBatchExecutionService:
     ) -> RewriteQualityJudgment | None:
         if POST_DELETE_CLEANUP_FLUENCY_REASON not in review.reasons or before == after:
             return None
-        review_plan = await self._plan_with_provider_config_for_llm_review(
-            item.plan_json,
+        review_plan = await self._rewrite_quality_plan_with_provider_config(
             orchestrator=orchestrator,
         )
         return await self.rewrite_quality_validator.review(
@@ -2703,13 +3828,8 @@ class ContentBatchExecutionService:
             else "旺玥产品事实数字口径要稳定：可以写多种关键营养或30多种关键营养；不要新增十几种、十多种、20多种、几十种关键营养。"
         )
         effect_scope_instruction = (
-            "本轮命中非本痛点效果迁移："
-            f"{'/'.join(review.effect_scope_drift_hits)}。"
-            "改写时删掉旺玥/喝奶与睡觉、整夜安稳、不闹腾这类睡眠效果之间的连接；"
-            "保留本篇业务规则里的正向价值，例如保护力、活动后状态稳、精神头、日常营养或成长阶段营养。"
-            "不要改成合规声明式不确定，也不要新增新的睡眠、固定睡前喝奶或完整喝奶流程。"
-            if review.effect_scope_drift_hits
-            else "不要把旺玥效果迁移到本篇痛点外；除非业务规则明确要求，不要写旺玥/喝奶带来睡眠安稳、整夜不闹或入睡改善。"
+            "旺玥正向效果与本篇卖点的对应关系由当前业务规则控制；"
+            "本轮不要因为睡眠、精力、身高等积极反馈单独删除、降调或改写。"
         )
         product_effect_proof_instruction = (
             "本轮有产品动作和效果证明链路密度信号："
@@ -3657,7 +4777,7 @@ def _should_rewrite_product_experience_llm_quality(
 ) -> bool:
     plan = plan or {}
     if _is_current_wangyue_article_plan(plan):
-        return _product_experience_rewrite_mode(review) is not None
+        return review.rewrite_required and _product_experience_rewrite_mode(review) is not None
     if _is_wangyue_mark_only_llm_quality_review(plan, review):
         return False
     if _is_overcomplete_decision_chain_only_llm_review(review):
@@ -3673,6 +4793,8 @@ def _should_repair_product_experience_llm_quality(
     plan: dict[str, Any] | None,
     review: ProductExperienceLLMReview,
 ) -> bool:
+    if _is_current_wangyue_article_plan(plan):
+        return _should_rewrite_product_experience_llm_quality(plan, review)
     if _is_wangyue_mark_only_llm_quality_review(plan or {}, review):
         return False
     if _should_rewrite_product_experience_llm_quality(plan, review):
@@ -3697,6 +4819,68 @@ def _product_experience_rewrite_mode(review: ProductExperienceLLMReview) -> str 
     if codes and codes.issubset(PRODUCT_EXPERIENCE_FLUENCY_ISSUE_CODES):
         return "fluency_humanize"
     return None
+
+
+def _focused_issues_as_rewrite_review(
+    issues: list[dict[str, Any]],
+    *,
+    rewrite_mode: str,
+) -> ProductExperienceLLMReview:
+    mapped_issues = []
+    for issue in issues:
+        dimension = str(issue.get("dimension") or "")
+        issue_code = str(issue.get("issue_code") or "quality_issue")
+        if rewrite_mode == "compliance_cleanup":
+            mapped_code = "claim_risk"
+        elif dimension == "content_fit" and issue_code == "unnatural_product_appearance":
+            mapped_code = "unnatural_product_appearance"
+        else:
+            mapped_code = "brief_translation_tone"
+        mapped_issues.append(
+            ProductExperienceLLMIssue(
+                code=mapped_code,
+                evidence=str(issue.get("evidence") or "")[:200],
+                reason=f"{dimension}/{issue_code}",
+                rewrite_direction="只局部删除或修正命中表达",
+            )
+        )
+    return ProductExperienceLLMReview(
+        pass_=False,
+        rewrite_required=True,
+        severity="rewrite",
+        issues=mapped_issues,
+        business_usability_tier="light_fix_usable",
+        business_usability_reason="Focused Pipeline block routed to local rewrite rehearsal",
+        overall_reason="；".join(
+            f"{issue.get('dimension')}/{issue.get('issue_code')}: {issue.get('evidence') or ''}"
+            for issue in issues
+        )[:500],
+    )
+
+
+def _focused_rewrite_candidate_code_hard_review(
+    *,
+    item: ContentBatchItem,
+    after: dict[str, str],
+) -> dict[str, Any]:
+    title = str(after.get("title") or "")
+    body = str(after.get("body") or "")
+    forbidden_hits = find_forbidden_hits(
+        f"{title}\n{body}",
+        WANGYUE_STATIC_FORBIDDEN_TERMS,
+    )
+    phrase_review = review_product_experience_phrase(
+        title=title,
+        body=body,
+        plan=item.plan_json,
+    )
+    phrase_hits = _blocking_product_experience_phrase_hits(phrase_review)
+    return {
+        "pass": not forbidden_hits and not phrase_hits,
+        "forbidden_hits": forbidden_hits,
+        "phrase_guard_hits": phrase_hits,
+        "phrase_guard_reasons": list(phrase_review.reasons),
+    }
 
 
 def _max_product_experience_llm_rewrite_rounds(plan: dict[str, Any] | None) -> int:
