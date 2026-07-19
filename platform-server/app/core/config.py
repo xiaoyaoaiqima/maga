@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # MySQL
     DATABASE_URL: str = ""  # 可选：覆盖主库连接，便于本地 SQLite smoke test
-    MYSQL_HOST: str = "mysql"
+    MYSQL_HOST: str = "127.0.0.1"
     MYSQL_PORT: int = 3306
     MYSQL_USER: str = "maga"
     MYSQL_PASSWORD: str = "maga123456"
@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # MySQL - 分析库（Dashboard 专用，pre/prod 共用）
     # 注意：此配置为硬编码默认值，用于 pre/生产环境快速上线
     MYSQL_ANALYTICS_ENABLED: str = ""  # 分析库开关（空值=自动判断，true/false=强制开关）
-    MYSQL_ANALYTICS_HOST: str = "mysql"
+    MYSQL_ANALYTICS_HOST: str = "127.0.0.1"
     MYSQL_ANALYTICS_PORT: int = 3306
     MYSQL_ANALYTICS_USER: str = "maga"
     MYSQL_ANALYTICS_PASSWORD: str = "maga123456"
@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     MYSQL_ANALYTICS_MAX_OVERFLOW: int = 20
 
     # Redis
-    REDIS_HOST: str = "redis"
+    REDIS_HOST: str = "127.0.0.1"
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: str = ""
     REDIS_DB: int = 0

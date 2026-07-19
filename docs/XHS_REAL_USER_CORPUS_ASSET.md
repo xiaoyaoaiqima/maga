@@ -1,5 +1,28 @@
 # 小红书真人感语料资产说明
 
+## 当前操作边界（2026-07-18）
+
+- 本地统一池位于 `/Users/luxifa/maga/local_data/xhs_corpus_pool/`，帖子和评论分开保存并去重。
+- `notes.jsonl` 和 `comments.jsonl` 是事实源；`corpus.duckdb` 是只读查询用的派生索引，JSONL 更新后可重新构建。
+- RSCA 线上系统只允许只读导出已经存在的数据；禁止通过 RSCA 创建、运行、重跑、补采或修改采集任务。
+- 需要新增小红书帖子时，只能使用 MAGA 自己的 `xhs_real_post_acquisition_service.py`，采集结果只落本地，再合并进本地池。
+- MAGA 新增采集可以只读借用 RSCA 当前启用的 TikHub 密钥和 base URL；配置只允许保存在本地、已被 Git 忽略的 `.env`，不得打印、提交或调用 RSCA 的任务接口。
+- “从 RSCA 拉数据”默认含义是读取已有表和已有任务结果，不代表授权触发新的线上采集。
+
+快速查询索引构建命令：
+
+```bash
+uv run --with 'duckdb>=1.4,<1.5' scripts/build_xhs_corpus_duckdb.py
+```
+
+常用查询示例：
+
+```sql
+SELECT * FROM notes WHERE note_id = '目标 note_id';
+SELECT * FROM comments WHERE note_id = '目标 note_id';
+SELECT * FROM comments WHERE list_contains(keywords, '目标关键词') LIMIT 100;
+```
+
 > 生成时间：2026-06-01  
 > 资产定位：把昨晚采集的小红书帖子、评论、正文/tag、情感和战场评分整理成 MAGA 可复用的真人感语料来源。  
 > 迁移后资产根目录：`/Users/luxifa/rs-crawler-analysis/legacy/xhs_legacy`。
