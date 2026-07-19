@@ -1,0 +1,1668 @@
+{
+  "a2_direct_31": {
+    "category": "会员权益、集罐换奶粉、抽奖、礼遇升级",
+    "batch_id": 674,
+    "execution": {
+      "requested_limit": 40,
+      "generated_count": 40,
+      "failed_count": 0,
+      "item_ids": [
+        11235,
+        11239,
+        11243,
+        11247,
+        11251,
+        11255,
+        11259,
+        11263,
+        11267,
+        11271,
+        11275,
+        11279,
+        11283,
+        11286,
+        11290,
+        11294,
+        11299,
+        11304,
+        11308,
+        11312,
+        11316,
+        11320,
+        11324,
+        11328,
+        11332,
+        11336,
+        11340,
+        11344,
+        11348,
+        11351,
+        11355,
+        11359,
+        11363,
+        11367,
+        11371,
+        11375,
+        11379,
+        11383,
+        11387,
+        11391
+      ]
+    },
+    "request": {
+      "asset_key": "a2_sentiment_comment_activity",
+      "rule_id": "a2_direct_31",
+      "draft_rule_id": "a2_direct_31",
+      "draft_comment_prompt_bundle": {
+        "generation_instruction": "生成一条小红书的真实用户评论，口语化，有活人感",
+        "content_direction": "基于内容素材，写看到活动后的直接反应、询问或夸赞。每条只落一个礼品或一个准备动作。",
+        "activity_material": [
+          "a2会员活动包含溯源抽奖。",
+          "礼品包括新西兰溯源、a2&小马宝莉黄金手串、宝宝夏凉被、a2营养全家礼和积分。"
+        ],
+        "writing_requirements": [
+          "字数尽量在35字以内，表达自然优先"
+        ],
+        "notes": [
+          "评论里带a2，并说清抽奖动作。",
+          "不写已经中奖、收到礼品或礼品使用效果。",
+          "不补活动素材外的礼品、门槛、领取或中奖结果。",
+          "新西兰溯源是礼品名称，不改写成免费游或旅行。"
+        ]
+      },
+      "comment_prompt_slots": {
+        "本条表达路径": [
+          "直接说活动动作，结尾带一个自然小感叹。",
+          "写成一句自然询问，像在回复楼主。",
+          "先说个人反应，再落到一个权益动作。",
+          "先说一个权益动作，再轻轻夸一句。",
+          "省略多余背景，写成评论区随手接的一句。",
+          "用一个克制的口语词开头，不要夸张。",
+          "不用时间词，直接写反应。",
+          "用短句停顿，像边看边说。",
+          "写成确认口吻，不质疑内容素材。",
+          "只说一个礼品或一个活动动作。",
+          "一句话说清活动和反应，不增加结果。",
+          "像老用户顺手提醒一句，别写成宣传。"
+        ]
+      },
+      "comment_batch_variation_review": {
+        "enabled": true,
+        "expression_frequency": [
+          {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": [
+              "刚"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          },
+          {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": [
+              "终于"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": [
+              "看到"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_sao",
+            "label": "扫字开头",
+            "terms": [
+              "扫"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          }
+        ],
+        "opening_prefix_frequency": {
+          "prefix_chars": 3,
+          "max_count": 4
+        },
+        "opening_clause_frequency": {
+          "max_count": 2
+        }
+      },
+      "count": 40,
+      "concurrency": 10,
+      "executor_code": "maga_direct_llm_executor",
+      "created_by": "a2-diverse-full-20260719"
+    }
+  },
+  "a2_direct_28": {
+    "category": "会员权益、集罐换奶粉、抽奖、礼遇升级",
+    "batch_id": 673,
+    "execution": {
+      "requested_limit": 40,
+      "generated_count": 40,
+      "failed_count": 0,
+      "item_ids": [
+        11233,
+        11237,
+        11241,
+        11245,
+        11249,
+        11254,
+        11258,
+        11262,
+        11266,
+        11270,
+        11274,
+        11278,
+        11282,
+        11287,
+        11291,
+        11295,
+        11298,
+        11302,
+        11306,
+        11311,
+        11315,
+        11319,
+        11323,
+        11327,
+        11330,
+        11334,
+        11338,
+        11342,
+        11346,
+        11350,
+        11354,
+        11358,
+        11362,
+        11366,
+        11370,
+        11374,
+        11378,
+        11382,
+        11386,
+        11390
+      ]
+    },
+    "request": {
+      "asset_key": "a2_sentiment_comment_activity",
+      "rule_id": "a2_direct_28",
+      "draft_rule_id": "a2_direct_28",
+      "draft_comment_prompt_bundle": {
+        "generation_instruction": "生成一条小红书的真实用户评论，口语化，有活人感",
+        "content_direction": "基于内容素材，写看到活动后的直接反应、询问或夸赞。每条只落一个礼品或一个准备动作。",
+        "activity_material": [
+          "a2会员集罐活动可以兑换扭扭车、自行车、奶粉或婴儿推车。"
+        ],
+        "writing_requirements": [
+          "字数尽量在35字以内，表达自然优先"
+        ],
+        "notes": [
+          "评论里带a2，并说清集罐或换礼动作。",
+          "不写已经兑换成功、宝宝使用礼品或礼品效果。",
+          "不补活动素材外的礼品、门槛、领取或兑换结果。"
+        ]
+      },
+      "comment_prompt_slots": {
+        "本条表达路径": [
+          "直接说活动动作，结尾带一个自然小感叹。",
+          "写成一句自然询问，像在回复楼主。",
+          "先说个人反应，再落到一个权益动作。",
+          "先说一个权益动作，再轻轻夸一句。",
+          "省略多余背景，写成评论区随手接的一句。",
+          "用一个克制的口语词开头，不要夸张。",
+          "不用时间词，直接写反应。",
+          "用短句停顿，像边看边说。",
+          "写成确认口吻，不质疑内容素材。",
+          "只说一个礼品或一个活动动作。",
+          "一句话说清活动和反应，不增加结果。",
+          "像老用户顺手提醒一句，别写成宣传。"
+        ]
+      },
+      "comment_batch_variation_review": {
+        "enabled": true,
+        "expression_frequency": [
+          {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": [
+              "刚"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          },
+          {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": [
+              "终于"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": [
+              "看到"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_sao",
+            "label": "扫字开头",
+            "terms": [
+              "扫"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          }
+        ],
+        "opening_prefix_frequency": {
+          "prefix_chars": 3,
+          "max_count": 4
+        },
+        "opening_clause_frequency": {
+          "max_count": 2
+        }
+      },
+      "count": 40,
+      "concurrency": 10,
+      "executor_code": "maga_direct_llm_executor",
+      "created_by": "a2-diverse-full-20260719"
+    }
+  },
+  "a2_direct_33": {
+    "category": "会员权益、集罐换奶粉、抽奖、礼遇升级",
+    "batch_id": 675,
+    "execution": {
+      "requested_limit": 40,
+      "generated_count": 40,
+      "failed_count": 0,
+      "item_ids": [
+        11236,
+        11240,
+        11244,
+        11248,
+        11252,
+        11256,
+        11260,
+        11264,
+        11268,
+        11272,
+        11277,
+        11280,
+        11284,
+        11288,
+        11292,
+        11297,
+        11300,
+        11303,
+        11307,
+        11310,
+        11314,
+        11317,
+        11322,
+        11326,
+        11331,
+        11335,
+        11339,
+        11343,
+        11347,
+        11353,
+        11357,
+        11361,
+        11365,
+        11369,
+        11373,
+        11377,
+        11381,
+        11385,
+        11389,
+        11393
+      ]
+    },
+    "request": {
+      "asset_key": "a2_sentiment_comment_activity",
+      "rule_id": "a2_direct_33",
+      "draft_rule_id": "a2_direct_33",
+      "draft_comment_prompt_bundle": {
+        "generation_instruction": "生成一条小红书的真实用户评论，口语化，有活人感",
+        "content_direction": "基于内容素材，写直接、自然的反应、询问或夸赞。可以是老用户顺手关注规则。",
+        "activity_material": [
+          "a2会员权益有升级或加码，老用户也可以关注活动规则。"
+        ],
+        "writing_requirements": [
+          "字数尽量在35字以内，表达自然优先"
+        ],
+        "notes": [
+          "评论里带a2，并说清会员权益升级或加码。",
+          "不补活动素材外的礼品、门槛、领取或中奖结果。",
+          "不要写成会员权益一定更便宜。"
+        ]
+      },
+      "comment_prompt_slots": {
+        "本条表达路径": [
+          "直接说活动动作，结尾带一个自然小感叹。",
+          "写成一句自然询问，像在回复楼主。",
+          "先说个人反应，再落到一个权益动作。",
+          "先说一个权益动作，再轻轻夸一句。",
+          "省略多余背景，写成评论区随手接的一句。",
+          "用一个克制的口语词开头，不要夸张。",
+          "不用时间词，直接写反应。",
+          "用短句停顿，像边看边说。",
+          "写成确认口吻，不质疑内容素材。",
+          "只说一个礼品或一个活动动作。",
+          "一句话说清活动和反应，不增加结果。",
+          "像老用户顺手提醒一句，别写成宣传。"
+        ]
+      },
+      "comment_batch_variation_review": {
+        "enabled": true,
+        "expression_frequency": [
+          {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": [
+              "刚"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          },
+          {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": [
+              "终于"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": [
+              "看到"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_sao",
+            "label": "扫字开头",
+            "terms": [
+              "扫"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          }
+        ],
+        "opening_prefix_frequency": {
+          "prefix_chars": 3,
+          "max_count": 4
+        },
+        "opening_clause_frequency": {
+          "max_count": 2
+        }
+      },
+      "count": 40,
+      "concurrency": 10,
+      "executor_code": "maga_direct_llm_executor",
+      "created_by": "a2-diverse-full-20260719"
+    }
+  },
+  "a2_direct_45": {
+    "category": "批批检、批次报告、检测透明",
+    "batch_id": 678,
+    "execution": {
+      "requested_limit": 50,
+      "generated_count": 50,
+      "failed_count": 0,
+      "item_ids": [
+        11532,
+        11533,
+        11534,
+        11535,
+        11536,
+        11537,
+        11538,
+        11539,
+        11540,
+        11541,
+        11542,
+        11543,
+        11544,
+        11545,
+        11546,
+        11547,
+        11548,
+        11549,
+        11550,
+        11551,
+        11552,
+        11553,
+        11554,
+        11555,
+        11556,
+        11557,
+        11558,
+        11559,
+        11560,
+        11561,
+        11562,
+        11563,
+        11564,
+        11565,
+        11566,
+        11567,
+        11568,
+        11569,
+        11570,
+        11571,
+        11572,
+        11573,
+        11574,
+        11575,
+        11576,
+        11577,
+        11578,
+        11579,
+        11580,
+        11581
+      ]
+    },
+    "request": {
+      "asset_key": "a2_sentiment_comment_activity",
+      "rule_id": "a2_direct_45",
+      "draft_rule_id": "a2_direct_45",
+      "draft_comment_prompt_bundle": {
+        "generation_instruction": "生成一条小红书的真实用户评论，口语化，有活人感",
+        "content_direction": "基于内容素材，写直接、自然的反应、询问或夸赞。不要写成品牌口号。",
+        "activity_material": [
+          "a2公开每批检测信息。"
+        ],
+        "writing_requirements": [
+          "字数尽量在30字以内，表达自然优先"
+        ],
+        "notes": [
+          "不写具体检测项目、数值或绝对安全结论。",
+          "少用当妈的、硬核、路转粉等口号式表达。"
+        ]
+      },
+      "comment_prompt_slots": {
+        "本条表达路径": [
+          "直接陈述这件事，结尾带一个自然小感叹。",
+          "写成一句自然询问，像在回复楼主。",
+          "先说个人感受，再落到内容素材。",
+          "先说内容素材，再轻轻夸一句。",
+          "省略主语，写成评论区随手接的一句。",
+          "用一个克制的口语词开头，不要夸张。",
+          "不用时间词，直接写反应。",
+          "用短句停顿，像边看边说。",
+          "写成确认口吻，不质疑内容素材。",
+          "从能查、看得见或能对应里选一个点来说。",
+          "一句话说清事实和反应，不增加经历。",
+          "先轻轻肯定，再补一句素材事实。"
+        ]
+      },
+      "comment_batch_variation_review": {
+        "enabled": true,
+        "expression_frequency": [
+          {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": [
+              "刚"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          },
+          {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": [
+              "终于"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": [
+              "看到"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_sao",
+            "label": "扫字开头",
+            "terms": [
+              "扫"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          }
+        ],
+        "opening_prefix_frequency": {
+          "prefix_chars": 3,
+          "max_count": 4
+        },
+        "opening_clause_frequency": {
+          "max_count": 2
+        }
+      },
+      "count": 50,
+      "concurrency": 10,
+      "executor_code": "maga_direct_llm_executor",
+      "created_by": "a2-diverse-full-20260719"
+    }
+  },
+  "a2_direct_34": {
+    "category": "会员权益、集罐换奶粉、抽奖、礼遇升级",
+    "batch_id": 676,
+    "execution": {
+      "requested_limit": 40,
+      "generated_count": 39,
+      "failed_count": 1,
+      "item_ids": [
+        11422,
+        11423,
+        11424,
+        11425,
+        11426,
+        11427,
+        11428,
+        11429,
+        11430,
+        11431,
+        11432,
+        11433,
+        11434,
+        11435,
+        11436,
+        11437,
+        11438,
+        11439,
+        11440,
+        11441,
+        11442,
+        11443,
+        11444,
+        11445,
+        11446,
+        11447,
+        11448,
+        11449,
+        11450,
+        11451,
+        11452,
+        11453,
+        11454,
+        11455,
+        11456,
+        11457,
+        11458,
+        11459,
+        11460,
+        11461
+      ]
+    },
+    "request": {
+      "asset_key": "a2_sentiment_comment_activity",
+      "rule_id": "a2_direct_34",
+      "draft_rule_id": "a2_direct_34",
+      "draft_comment_prompt_bundle": {
+        "generation_instruction": "生成一条小红书的真实用户评论，口语化，有活人感",
+        "content_direction": "基于内容素材，写直接、自然的反应、询问或夸赞。每条只落一个具体活动动作。",
+        "activity_material": [
+          "a2会员活动可以包含集罐、积分、抽奖、换礼、老客礼或礼品。"
+        ],
+        "writing_requirements": [
+          "字数尽量在35字以内，表达自然优先"
+        ],
+        "notes": [
+          "评论里带a2，并说清会员、集罐、积分、抽奖、换礼或老客礼中的一个动作。",
+          "不补活动素材外的礼品、门槛、领取或中奖结果。",
+          "不要把积分换礼写成积分抽奖。"
+        ]
+      },
+      "comment_prompt_slots": {
+        "本条表达路径": [
+          "直接说活动动作，结尾带一个自然小感叹。",
+          "写成一句自然询问，像在回复楼主。",
+          "先说个人反应，再落到一个权益动作。",
+          "先说一个权益动作，再轻轻夸一句。",
+          "省略多余背景，写成评论区随手接的一句。",
+          "用一个克制的口语词开头，不要夸张。",
+          "不用时间词，直接写反应。",
+          "用短句停顿，像边看边说。",
+          "写成确认口吻，不质疑内容素材。",
+          "只说一个礼品或一个活动动作。",
+          "一句话说清活动和反应，不增加结果。",
+          "像老用户顺手提醒一句，别写成宣传。"
+        ]
+      },
+      "comment_batch_variation_review": {
+        "enabled": true,
+        "expression_frequency": [
+          {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": [
+              "刚"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          },
+          {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": [
+              "终于"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": [
+              "看到"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_sao",
+            "label": "扫字开头",
+            "terms": [
+              "扫"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          }
+        ],
+        "opening_prefix_frequency": {
+          "prefix_chars": 3,
+          "max_count": 4
+        },
+        "opening_clause_frequency": {
+          "max_count": 2
+        }
+      },
+      "count": 40,
+      "concurrency": 10,
+      "executor_code": "maga_direct_llm_executor",
+      "created_by": "a2-diverse-full-20260719"
+    }
+  },
+  "a2_direct_01": {
+    "category": "有货-直给",
+    "batch_id": 672,
+    "execution": {
+      "requested_limit": 70,
+      "generated_count": 70,
+      "failed_count": 0,
+      "item_ids": [
+        11232,
+        11234,
+        11238,
+        11242,
+        11246,
+        11250,
+        11253,
+        11257,
+        11261,
+        11265,
+        11269,
+        11273,
+        11276,
+        11281,
+        11285,
+        11289,
+        11293,
+        11296,
+        11301,
+        11305,
+        11309,
+        11313,
+        11318,
+        11321,
+        11325,
+        11329,
+        11333,
+        11337,
+        11341,
+        11345,
+        11349,
+        11352,
+        11356,
+        11360,
+        11364,
+        11368,
+        11372,
+        11376,
+        11380,
+        11384,
+        11388,
+        11392,
+        11394,
+        11395,
+        11396,
+        11397,
+        11398,
+        11399,
+        11400,
+        11401,
+        11402,
+        11403,
+        11404,
+        11405,
+        11406,
+        11407,
+        11408,
+        11409,
+        11410,
+        11411,
+        11412,
+        11413,
+        11414,
+        11415,
+        11416,
+        11417,
+        11418,
+        11419,
+        11420,
+        11421
+      ]
+    },
+    "request": {
+      "asset_key": "a2_sentiment_comment_activity",
+      "rule_id": "a2_direct_01",
+      "draft_rule_id": "a2_direct_01",
+      "draft_comment_prompt_bundle": {
+        "generation_instruction": "生成一条小红书的真实用户评论，口语化，有活人感",
+        "content_direction": "基于内容素材，写直接、自然的反应、询问或夸赞。信息渠道和句式可以变化。",
+        "activity_material": [
+          "a2或a2至初已经到货、来货，或重新能买到。"
+        ],
+        "writing_requirements": [
+          "尽量在30字以内，表达自然优先"
+        ],
+        "notes": [
+          "不要说缺货、断粮等消极词。",
+          "不要用一包、一袋形容奶粉。"
+        ]
+      },
+      "comment_prompt_slots": {
+        "本条表达路径": [
+          "直接陈述这件事，结尾带一个自然小感叹。",
+          "从顺手看到的日常场景切入，再说反应。",
+          "写成一句自然询问，像在回复楼主。",
+          "先说个人感受，再落到内容素材。",
+          "先说内容素材，再轻轻夸一句。",
+          "省略主语，写成评论区随手接的一句。",
+          "用一个克制的口语词开头，不要夸张。",
+          "不用时间词，直接写反应。",
+          "从聊天、群消息或熟人提醒切入。",
+          "从门店、页面或小程序里看到的信息切入。",
+          "用短句停顿，像边看边说。",
+          "写成确认口吻，不质疑内容素材。"
+        ]
+      },
+      "comment_batch_variation_review": {
+        "enabled": true,
+        "expression_frequency": [
+          {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": [
+              "刚"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          },
+          {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": [
+              "终于"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": [
+              "看到"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_sao",
+            "label": "扫字开头",
+            "terms": [
+              "扫"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          }
+        ],
+        "opening_prefix_frequency": {
+          "prefix_chars": 3,
+          "max_count": 4
+        },
+        "opening_clause_frequency": {
+          "max_count": 2
+        }
+      },
+      "count": 70,
+      "concurrency": 10,
+      "executor_code": "maga_direct_llm_executor",
+      "created_by": "a2-diverse-full-20260719"
+    }
+  },
+  "a2_direct_46": {
+    "category": "批批检、批次报告、检测透明",
+    "batch_id": 679,
+    "execution": {
+      "requested_limit": 50,
+      "generated_count": 50,
+      "failed_count": 0,
+      "item_ids": [
+        11582,
+        11583,
+        11584,
+        11585,
+        11586,
+        11587,
+        11588,
+        11589,
+        11590,
+        11591,
+        11592,
+        11593,
+        11594,
+        11595,
+        11596,
+        11597,
+        11598,
+        11599,
+        11600,
+        11601,
+        11602,
+        11603,
+        11604,
+        11605,
+        11606,
+        11607,
+        11608,
+        11609,
+        11610,
+        11611,
+        11612,
+        11613,
+        11614,
+        11615,
+        11616,
+        11617,
+        11618,
+        11619,
+        11620,
+        11621,
+        11622,
+        11623,
+        11624,
+        11625,
+        11626,
+        11627,
+        11628,
+        11629,
+        11630,
+        11631
+      ]
+    },
+    "request": {
+      "asset_key": "a2_sentiment_comment_activity",
+      "rule_id": "a2_direct_46",
+      "draft_rule_id": "a2_direct_46",
+      "draft_comment_prompt_bundle": {
+        "generation_instruction": "生成一条小红书的真实用户评论，口语化，有活人感",
+        "content_direction": "基于内容素材，写直接、自然的反应、询问或夸赞。可以说报告能查、内容看得见或信息能对应。",
+        "activity_material": [
+          "a2对应批次报告可以查询。"
+        ],
+        "writing_requirements": [
+          "字数尽量在30字以内，表达自然优先"
+        ],
+        "notes": [
+          "不写具体检测项目、数值或绝对安全结论。",
+          "不要虚构扫码、购买、开罐或喂养经历。"
+        ]
+      },
+      "comment_prompt_slots": {
+        "本条表达路径": [
+          "直接陈述这件事，结尾带一个自然小感叹。",
+          "写成一句自然询问，像在回复楼主。",
+          "先说个人感受，再落到内容素材。",
+          "先说内容素材，再轻轻夸一句。",
+          "省略主语，写成评论区随手接的一句。",
+          "用一个克制的口语词开头，不要夸张。",
+          "不用时间词，直接写反应。",
+          "用短句停顿，像边看边说。",
+          "写成确认口吻，不质疑内容素材。",
+          "从能查、看得见或能对应里选一个点来说。",
+          "一句话说清事实和反应，不增加经历。",
+          "先轻轻肯定，再补一句素材事实。"
+        ]
+      },
+      "comment_batch_variation_review": {
+        "enabled": true,
+        "expression_frequency": [
+          {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": [
+              "刚"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          },
+          {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": [
+              "终于"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": [
+              "看到"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_sao",
+            "label": "扫字开头",
+            "terms": [
+              "扫"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          }
+        ],
+        "opening_prefix_frequency": {
+          "prefix_chars": 3,
+          "max_count": 4
+        },
+        "opening_clause_frequency": {
+          "max_count": 2
+        }
+      },
+      "count": 50,
+      "concurrency": 10,
+      "executor_code": "maga_direct_llm_executor",
+      "created_by": "a2-diverse-full-20260719"
+    }
+  },
+  "a2_direct_47": {
+    "category": "批批检、批次报告、检测透明",
+    "batch_id": 680,
+    "execution": {
+      "requested_limit": 50,
+      "generated_count": 50,
+      "failed_count": 0,
+      "item_ids": [
+        11632,
+        11633,
+        11634,
+        11635,
+        11636,
+        11637,
+        11638,
+        11639,
+        11640,
+        11641,
+        11642,
+        11643,
+        11644,
+        11645,
+        11646,
+        11647,
+        11648,
+        11649,
+        11650,
+        11651,
+        11652,
+        11653,
+        11654,
+        11655,
+        11656,
+        11657,
+        11658,
+        11659,
+        11660,
+        11661,
+        11662,
+        11663,
+        11664,
+        11665,
+        11666,
+        11667,
+        11668,
+        11669,
+        11670,
+        11671,
+        11672,
+        11673,
+        11674,
+        11675,
+        11676,
+        11677,
+        11678,
+        11679,
+        11680,
+        11681
+      ]
+    },
+    "request": {
+      "asset_key": "a2_sentiment_comment_activity",
+      "rule_id": "a2_direct_47",
+      "draft_rule_id": "a2_direct_47",
+      "draft_comment_prompt_bundle": {
+        "generation_instruction": "生成一条小红书的真实用户评论，口语化，有活人感",
+        "content_direction": "基于内容素材，写直接、自然的认可、询问或夸赞。不要写成品牌口号。",
+        "activity_material": [
+          "a2公开每批检测信息，对应批次报告可以查询。"
+        ],
+        "writing_requirements": [
+          "字数尽量在30字以内，表达自然优先"
+        ],
+        "notes": [
+          "不写具体检测项目、数值或绝对安全结论。",
+          "不写观望、再观察或质疑。",
+          "不要虚构扫码、购买、开罐或喂养经历。"
+        ]
+      },
+      "comment_prompt_slots": {
+        "本条表达路径": [
+          "直接陈述这件事，结尾带一个自然小感叹。",
+          "写成一句自然询问，像在回复楼主。",
+          "先说个人感受，再落到内容素材。",
+          "先说内容素材，再轻轻夸一句。",
+          "省略主语，写成评论区随手接的一句。",
+          "用一个克制的口语词开头，不要夸张。",
+          "不用时间词，直接写反应。",
+          "用短句停顿，像边看边说。",
+          "写成确认口吻，不质疑内容素材。",
+          "从能查、看得见或能对应里选一个点来说。",
+          "一句话说清事实和反应，不增加经历。",
+          "先轻轻肯定，再补一句素材事实。"
+        ]
+      },
+      "comment_batch_variation_review": {
+        "enabled": true,
+        "expression_frequency": [
+          {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": [
+              "刚"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          },
+          {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": [
+              "终于"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": [
+              "看到"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_sao",
+            "label": "扫字开头",
+            "terms": [
+              "扫"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          }
+        ],
+        "opening_prefix_frequency": {
+          "prefix_chars": 3,
+          "max_count": 4
+        },
+        "opening_clause_frequency": {
+          "max_count": 2
+        }
+      },
+      "count": 50,
+      "concurrency": 10,
+      "executor_code": "maga_direct_llm_executor",
+      "created_by": "a2-diverse-full-20260719"
+    }
+  },
+  "a2_direct_43": {
+    "category": "有货-直给",
+    "batch_id": 677,
+    "execution": {
+      "requested_limit": 70,
+      "generated_count": 70,
+      "failed_count": 0,
+      "item_ids": [
+        11462,
+        11463,
+        11464,
+        11465,
+        11466,
+        11467,
+        11468,
+        11469,
+        11470,
+        11471,
+        11472,
+        11473,
+        11474,
+        11475,
+        11476,
+        11477,
+        11478,
+        11479,
+        11480,
+        11481,
+        11482,
+        11483,
+        11484,
+        11485,
+        11486,
+        11487,
+        11488,
+        11489,
+        11490,
+        11491,
+        11492,
+        11493,
+        11494,
+        11495,
+        11496,
+        11497,
+        11498,
+        11499,
+        11500,
+        11501,
+        11502,
+        11503,
+        11504,
+        11505,
+        11506,
+        11507,
+        11508,
+        11509,
+        11510,
+        11511,
+        11512,
+        11513,
+        11514,
+        11515,
+        11516,
+        11517,
+        11518,
+        11519,
+        11520,
+        11521,
+        11522,
+        11523,
+        11524,
+        11525,
+        11526,
+        11527,
+        11528,
+        11529,
+        11530,
+        11531
+      ]
+    },
+    "request": {
+      "asset_key": "a2_sentiment_comment_activity",
+      "rule_id": "a2_direct_43",
+      "draft_rule_id": "a2_direct_43",
+      "draft_comment_prompt_bundle": {
+        "generation_instruction": "生成一条小红书的真实用户评论，口语化，有活人感",
+        "content_direction": "基于内容素材，写直接、自然的反应、询问或夸赞。信息渠道和句式可以变化。",
+        "activity_material": [
+          "a2已经到货、来货，或重新能买到。生成时不要提产品名。"
+        ],
+        "writing_requirements": [
+          "尽量在30字以内，表达自然优先"
+        ],
+        "notes": [
+          "不要说缺货、断粮等消极词。",
+          "不要用一包、一袋形容奶粉。"
+        ]
+      },
+      "comment_prompt_slots": {
+        "本条表达路径": [
+          "直接陈述这件事，结尾带一个自然小感叹。",
+          "从顺手看到的日常场景切入，再说反应。",
+          "写成一句自然询问，像在回复楼主。",
+          "先说个人感受，再落到内容素材。",
+          "先说内容素材，再轻轻夸一句。",
+          "省略主语，写成评论区随手接的一句。",
+          "用一个克制的口语词开头，不要夸张。",
+          "不用时间词，直接写反应。",
+          "从聊天、群消息或熟人提醒切入。",
+          "从门店、页面或小程序里看到的信息切入。",
+          "用短句停顿，像边看边说。",
+          "写成确认口吻，不质疑内容素材。"
+        ]
+      },
+      "comment_batch_variation_review": {
+        "enabled": true,
+        "expression_frequency": [
+          {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": [
+              "刚"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          },
+          {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": [
+              "终于"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": [
+              "看到"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_sao",
+            "label": "扫字开头",
+            "terms": [
+              "扫"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          }
+        ],
+        "opening_prefix_frequency": {
+          "prefix_chars": 3,
+          "max_count": 4
+        },
+        "opening_clause_frequency": {
+          "max_count": 2
+        }
+      },
+      "count": 70,
+      "concurrency": 10,
+      "executor_code": "maga_direct_llm_executor",
+      "created_by": "a2-diverse-full-20260719"
+    }
+  },
+  "a2_direct_48": {
+    "category": "罐底扫码、三方质检报告",
+    "batch_id": 681,
+    "execution": {
+      "requested_limit": 65,
+      "generated_count": 65,
+      "failed_count": 0,
+      "item_ids": [
+        11682,
+        11683,
+        11684,
+        11685,
+        11686,
+        11687,
+        11688,
+        11689,
+        11690,
+        11691,
+        11692,
+        11693,
+        11694,
+        11695,
+        11696,
+        11697,
+        11698,
+        11699,
+        11700,
+        11701,
+        11702,
+        11703,
+        11704,
+        11705,
+        11706,
+        11707,
+        11708,
+        11709,
+        11710,
+        11711,
+        11712,
+        11713,
+        11714,
+        11715,
+        11716,
+        11717,
+        11718,
+        11719,
+        11720,
+        11721,
+        11722,
+        11723,
+        11724,
+        11725,
+        11726,
+        11727,
+        11728,
+        11729,
+        11730,
+        11731,
+        11732,
+        11733,
+        11734,
+        11735,
+        11736,
+        11737,
+        11738,
+        11739,
+        11740,
+        11741,
+        11742,
+        11743,
+        11744,
+        11745,
+        11746
+      ]
+    },
+    "request": {
+      "asset_key": "a2_sentiment_comment_activity",
+      "rule_id": "a2_direct_48",
+      "draft_rule_id": "a2_direct_48",
+      "draft_comment_prompt_bundle": {
+        "generation_instruction": "生成一条小红书的真实用户评论，口语化，有活人感",
+        "content_direction": "基于内容素材，写扫码后直接、自然的反应、询问或夸赞。可以说能查到、能对应或入口清楚。",
+        "activity_material": [
+          "扫a2罐底物流码可以查看自己这罐对应批次报告。"
+        ],
+        "writing_requirements": [
+          "字数尽量在35字以内，表达自然优先"
+        ],
+        "notes": [
+          "不写具体检测项目、数值或绝对安全结论。",
+          "避免每条都用刚扫了开头。"
+        ]
+      },
+      "comment_prompt_slots": {
+        "本条表达路径": [
+          "直接陈述这件事，结尾带一个自然小感叹。",
+          "写成一句自然询问，像在回复楼主。",
+          "先说个人感受，再落到内容素材。",
+          "先说内容素材，再轻轻夸一句。",
+          "省略主语，写成评论区随手接的一句。",
+          "用一个克制的口语词开头，不要夸张。",
+          "不用时间词，直接写反应。",
+          "用短句停顿，像边看边说。",
+          "写成确认口吻，不质疑内容素材。",
+          "从能查、看得见或能对应里选一个点来说。",
+          "一句话说清事实和反应，不增加经历。",
+          "先轻轻肯定，再补一句素材事实。"
+        ]
+      },
+      "comment_batch_variation_review": {
+        "enabled": true,
+        "expression_frequency": [
+          {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": [
+              "刚"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          },
+          {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": [
+              "终于"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": [
+              "看到"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_sao",
+            "label": "扫字开头",
+            "terms": [
+              "扫"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          }
+        ],
+        "opening_prefix_frequency": {
+          "prefix_chars": 3,
+          "max_count": 4
+        },
+        "opening_clause_frequency": {
+          "max_count": 2
+        }
+      },
+      "count": 65,
+      "concurrency": 10,
+      "executor_code": "maga_direct_llm_executor",
+      "created_by": "a2-diverse-full-20260719"
+    }
+  },
+  "a2_direct_49": {
+    "category": "罐底扫码、三方质检报告",
+    "batch_id": 682,
+    "execution": {
+      "requested_limit": 65,
+      "generated_count": 65,
+      "failed_count": 0,
+      "item_ids": [
+        11747,
+        11748,
+        11749,
+        11750,
+        11751,
+        11752,
+        11753,
+        11754,
+        11755,
+        11756,
+        11757,
+        11758,
+        11759,
+        11760,
+        11761,
+        11762,
+        11763,
+        11764,
+        11765,
+        11766,
+        11767,
+        11768,
+        11769,
+        11770,
+        11771,
+        11772,
+        11773,
+        11774,
+        11775,
+        11776,
+        11777,
+        11778,
+        11779,
+        11780,
+        11781,
+        11782,
+        11783,
+        11784,
+        11785,
+        11786,
+        11787,
+        11788,
+        11789,
+        11790,
+        11791,
+        11792,
+        11793,
+        11794,
+        11795,
+        11796,
+        11797,
+        11798,
+        11799,
+        11800,
+        11801,
+        11802,
+        11803,
+        11804,
+        11805,
+        11806,
+        11807,
+        11808,
+        11809,
+        11810,
+        11811
+      ]
+    },
+    "request": {
+      "asset_key": "a2_sentiment_comment_activity",
+      "rule_id": "a2_direct_49",
+      "draft_rule_id": "a2_direct_49",
+      "draft_comment_prompt_bundle": {
+        "generation_instruction": "生成一条小红书的真实用户评论，口语化，有活人感",
+        "content_direction": "基于内容素材，写查到报告后直接、自然的反应、询问或夸赞。可以说报告能查、信息清楚或自己能看。",
+        "activity_material": [
+          "扫a2罐底物流码可以查看自己这罐对应批次的三方质检报告。"
+        ],
+        "writing_requirements": [
+          "字数尽量在35字以内，表达自然优先"
+        ],
+        "notes": [
+          "不写具体检测项目、数值或绝对安全结论。",
+          "统一写三方质检报告。",
+          "避免每条都用刚扫了开头。"
+        ]
+      },
+      "comment_prompt_slots": {
+        "本条表达路径": [
+          "直接陈述这件事，结尾带一个自然小感叹。",
+          "写成一句自然询问，像在回复楼主。",
+          "先说个人感受，再落到内容素材。",
+          "先说内容素材，再轻轻夸一句。",
+          "省略主语，写成评论区随手接的一句。",
+          "用一个克制的口语词开头，不要夸张。",
+          "不用时间词，直接写反应。",
+          "用短句停顿，像边看边说。",
+          "写成确认口吻，不质疑内容素材。",
+          "从能查、看得见或能对应里选一个点来说。",
+          "一句话说清事实和反应，不增加经历。",
+          "先轻轻肯定，再补一句素材事实。"
+        ]
+      },
+      "comment_batch_variation_review": {
+        "enabled": true,
+        "expression_frequency": [
+          {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": [
+              "刚"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          },
+          {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": [
+              "终于"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": [
+              "看到"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.08
+          },
+          {
+            "group_key": "opener_sao",
+            "label": "扫字开头",
+            "terms": [
+              "扫"
+            ],
+            "match_mode": "prefix",
+            "max_ratio": 0.12
+          }
+        ],
+        "opening_prefix_frequency": {
+          "prefix_chars": 3,
+          "max_count": 4
+        },
+        "opening_clause_frequency": {
+          "max_count": 2
+        }
+      },
+      "count": 65,
+      "concurrency": 10,
+      "executor_code": "maga_direct_llm_executor",
+      "created_by": "a2-diverse-full-20260719"
+    }
+  }
+}
