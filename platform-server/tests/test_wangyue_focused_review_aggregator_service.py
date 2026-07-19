@@ -45,8 +45,8 @@ def test_aggregate_routes_added_temporal_issue_to_compliance_cleanup() -> None:
         {
             "temporal_logic": {
                 "label": "block",
-                "issue_code": "decision_execution_stage_conflict",
-                "evidence": "还在纠结但已经喝了一周",
+                "issue_code": "pre_usage_effect_evidence",
+                "evidence": "去年秋天早于喝旺玥小半年的使用周期",
             },
             "claim_public_disease": _pass(),
             "content_fit": _pass(),

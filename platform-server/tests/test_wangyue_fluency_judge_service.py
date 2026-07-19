@@ -39,6 +39,8 @@ def test_fluency_prompt_protects_real_ugc_colloquial_language() -> None:
     assert "不要求补齐旧状态、参照系、时间点或完整因果链" in FLUENCY_SYSTEM_PROMPT
     assert "没有解释如何改善食欲" in FLUENCY_SYSTEM_PROMPT
     assert "逻辑不完整、因果偏松、参照不足都不是流畅性 block" in FLUENCY_SYSTEM_PROMPT
+    assert "ta/Ta/TA" in FLUENCY_SYSTEM_PROMPT
+    assert "中英文混写代词" in FLUENCY_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio

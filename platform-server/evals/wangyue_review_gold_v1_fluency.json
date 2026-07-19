@@ -241,6 +241,45 @@
         "source": "batch514_item5_human_review"
       },
       "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "meal_support_without_appetite_claim", "source_type": "human_feedback"}
+    },
+    {
+      "title": "补货时的顺手复盘",
+      "content": "这孩子正餐时好时散，但旺玥从侄子那会就开始喝，现在大宝接着喝，吸收一直不错。",
+      "meta": {
+        "case_code": "WYL-018",
+        "expected_label": "block",
+        "issue_code": "unnatural_collocation",
+        "evidence": ["正餐时好时散"],
+        "reason": "“时好时散”是把“时好时坏”和“吃得散”错误拼接后的模型表达，不是自然中文或常见方言。",
+        "source": "batch561_item3_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "blended_meal_collocation", "source_type": "human_feedback"}
+    },
+    {
+      "title": "差点漏掉的一罐",
+      "content": "翻，我愣了一下——上次囤的，差点忘了。",
+      "meta": {
+        "case_code": "WYL-019",
+        "expected_label": "block",
+        "issue_code": "incomplete_sentence",
+        "evidence": ["翻，我愣了一下"],
+        "reason": "句首“翻”是缺少宾语和动作对象的残留动词，不能脑补成口语化起笔。",
+        "source": "batch558_item3_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "orphan_transitive_verb", "source_type": "human_feedback"}
+    },
+    {
+      "title": "记录下，喝旺玥这段时间",
+      "content": "看ta最近长个儿明显，吃饭也比以前积极，就感觉选对了。",
+      "meta": {
+        "case_code": "WYL-020",
+        "expected_label": "block",
+        "issue_code": "unnatural_collocation",
+        "evidence": ["看ta最近长个儿明显"],
+        "reason": "中文正文中用独立拼音 ta 指代孩子属于中英文混写代词，必须局部改成他、她或孩子。",
+        "source": "batch606_item4_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "fluency", "boundary": "mixed_script_pronoun", "source_type": "human_feedback"}
     }
   ]
 }

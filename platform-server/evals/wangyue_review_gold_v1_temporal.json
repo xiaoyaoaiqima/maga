@@ -527,6 +527,63 @@
         "boundary": "publication_time_anchor_without_forbidden_term",
         "source_type": "minimal_pair"
       }
+    },
+    {
+      "title": "吃饭不规律，吸收一直不错",
+      "content": "孩子最近吃饭不太规律，但旺玥喝下来吸收一直不错，家里这项日常安排也没怎么换。",
+      "meta": {
+        "case_code": "WYT-029",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["吃饭不太规律", "吸收一直不错"],
+        "reason": "正餐状态偶有波动与奶粉吸收反馈可以在同一阶段共存，不构成时间矛盾或前后状态冲突。",
+        "source": "batch561_item3_human_review"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "meal_variation_and_absorption_can_coexist",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "跑了一下午没喊累，这变化真惊喜",
+      "content": "上周末带娃去公园，以前出门走半小时就喊累要抱，那天居然自己跑了一下午，连我都有点追不上。回家路上还哼着歌说“今天真开心”。\n\n翻翻日历，喝旺玥也有小半年了，最大的感受就是孩子整个精气神足了。去年秋天流感季全班请了快一半假，他虽然也中招但两天就爬起来继续活蹦乱跳。\n\n现在每天放学回来还能主动拉着我下楼踢会儿球，这种肉眼可见的活力，当妈的都懂。",
+      "meta": {
+        "case_code": "WYT-030",
+        "expected_label": "block",
+        "issue_code": "pre_usage_effect_evidence",
+        "evidence": ["喝旺玥也有小半年了", "去年秋天", "两天就爬起来继续活蹦乱跳"],
+        "reason": "审核日期为2026-07-17，去年秋天距今约9至10个月，早于小半年所覆盖的最长约6个月使用周期；原文把当时的快速恢复放在喝后正面感受中，属于使用前事件被当作产品效果证据。流感一词同时由确定性禁词审核直接ban。",
+        "source": "batch618_item3_human_review",
+        "review_date": "2026-07-17",
+        "secondary_issue_codes": ["forbidden_terms_guard"]
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "pre_usage_effect_evidence",
+        "source_type": "historical_failure"
+      }
+    },
+    {
+      "title": "去年秋天只是使用前基线",
+      "content": "去年秋天孩子有阵子总请假，我那会儿确实挺操心。今年年初开始喝旺玥，到现在小半年了，最近放学和周末出去玩时状态稳了些。",
+      "meta": {
+        "case_code": "WYT-031",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["去年秋天孩子有阵子总请假", "今年年初开始喝旺玥", "到现在小半年了", "最近"],
+        "reason": "去年秋天明确作为开始使用旺玥之前的负面基线；今年年初开始使用、持续小半年和最近的正面观察按顺序衔接，没有把使用前事件当作产品效果证据。",
+        "source": "batch618_item3_minimal_pair",
+        "review_date": "2026-07-17"
+      },
+      "tags": {
+        "brand": "旺玥",
+        "dimension": "temporal_logic",
+        "boundary": "pre_usage_baseline_then_current_effect",
+        "source_type": "minimal_pair"
+      }
     }
   ]
 }

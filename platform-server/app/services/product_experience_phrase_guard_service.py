@@ -1493,40 +1493,6 @@ WANGYUE_PORTABLE_FORM_PHRASES = (
     "抱着奶粉罐",
 )
 
-WANGYUE_DIGESTIVE_EFFECT_PHRASES = (
-    "不是胀气就是不爱喝",
-    "胀气",
-    "肚子不适应",
-    "肚子咕噜",
-    "肚子咕噜咕噜",
-    "肚子软软的",
-    "大便也规律",
-    "大便规律",
-    "便便也规律",
-    "便便规律",
-    "哭闹",
-    "半夜翻来翻去",
-    "没闹过肚肚",
-    "闹过肚肚",
-    "闹肚子",
-    "肚肚",
-    "肠胃",
-    "脾胃",
-    "消化",
-    "舌苔白",
-    "舌苔",
-)
-WANGYUE_DIGESTIVE_EFFECT_PATTERNS = (
-    re.compile(
-        r"小肚子[^。！？；;\r\n]{0,10}"
-        r"(?:舒服|舒坦|软软|不胀|没胀|咕噜|规律|顺了|轻松)"
-    ),
-    re.compile(
-        r"(?:便便|大便|胀气|消化|肠胃|脾胃)"
-        r"[^。！？；;\r\n]{0,16}小肚子"
-    ),
-)
-
 CHILD_SUBJECT_PATTERN = r"(?:娃|孩子|宝贝|宝宝|小朋友|儿子|闺女|他|她)"
 CHILD_SELF_BREWING_PATTERNS = (
     re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;，,]{{0,12}}自己冲一杯"),
@@ -1883,7 +1849,6 @@ class ProductExperiencePhraseReview:
     wangyue_explicit_age_hits: list[str]
     wangyue_portable_form_hits: list[str]
     wangyue_supplement_replacement_hits: list[str]
-    wangyue_digestive_effect_hits: list[str]
     wangyue_growth_nutrition_drift_hits: list[str]
     wangyue_article_logic_drift_hits: list[str]
     wangyue_row2_drinking_action_hits: list[str]
@@ -1933,7 +1898,6 @@ class ProductExperiencePhraseReview:
             "wangyue_explicit_age_hits": self.wangyue_explicit_age_hits,
             "wangyue_portable_form_hits": self.wangyue_portable_form_hits,
             "wangyue_supplement_replacement_hits": self.wangyue_supplement_replacement_hits,
-            "wangyue_digestive_effect_hits": self.wangyue_digestive_effect_hits,
             "wangyue_growth_nutrition_drift_hits": self.wangyue_growth_nutrition_drift_hits,
             "wangyue_article_logic_drift_hits": self.wangyue_article_logic_drift_hits,
             "wangyue_row2_drinking_action_hits": self.wangyue_row2_drinking_action_hits,
@@ -2028,7 +1992,6 @@ def review_product_experience_phrase(
     wangyue_supplement_replacement_hits = (
         _wangyue_supplement_replacement_hits(text) if is_wangyue else []
     )
-    wangyue_digestive_effect_hits = _wangyue_digestive_effect_hits(text) if is_wangyue else []
     wangyue_missing_product_mention = is_wangyue and not any(
         term in text for term in ("旺玥", "皇家美素佳儿")
     )
@@ -2181,8 +2144,6 @@ def review_product_experience_phrase(
         reasons.append("wangyue_portable_form_context")
     if wangyue_supplement_replacement_hits:
         reasons.append("wangyue_supplement_replacement_context")
-    if wangyue_digestive_effect_hits:
-        reasons.append("wangyue_digestive_effect_context")
     if wangyue_missing_product_mention:
         reasons.append("wangyue_missing_product_mention")
     if wangyue_growth_nutrition_drift_hits:
@@ -2245,7 +2206,6 @@ def review_product_experience_phrase(
         wangyue_explicit_age_hits=wangyue_explicit_age_hits,
         wangyue_portable_form_hits=wangyue_portable_form_hits,
         wangyue_supplement_replacement_hits=wangyue_supplement_replacement_hits,
-        wangyue_digestive_effect_hits=wangyue_digestive_effect_hits,
         wangyue_growth_nutrition_drift_hits=wangyue_growth_nutrition_drift_hits,
         wangyue_article_logic_drift_hits=wangyue_article_logic_drift_hits,
         wangyue_public_disease_context_hits=wangyue_public_disease_context_hits,
@@ -2793,29 +2753,6 @@ def sanitize_wangyue_context_phrases(value: str | None) -> str:
     text = text.replace("路过就喝几口", "")
     text = text.replace("一盒旺玥", "一罐旺玥")
     text = text.replace("奶粉盒", "奶粉罐")
-    text = text.replace("不是胀气就是不爱喝", "喝奶一直不算顺")
-    text = text.replace("肚子软软的，便便也规律了", "日常状态看着还顺")
-    text = text.replace("肚子软软的，便便也规律", "日常状态看着还顺")
-    text = text.replace("肚子软软的", "日常状态看着还顺")
-    text = text.replace("便便也规律了", "日常状态还顺")
-    text = text.replace("便便也规律", "日常状态还顺")
-    text = text.replace("便便规律了", "日常状态还顺")
-    text = text.replace("便便规律", "日常状态还顺")
-    text = re.sub(
-        r"小肚子(?:看着|摸着)?(?:舒服|不舒服|舒坦|软软的?|不胀|没胀|胀|咕噜咕噜|咕噜|规律|顺了|轻松)",
-        "日常状态看着还顺",
-        text,
-    )
-    text = text.replace("没闹过肚肚", "喝着还算顺")
-    text = text.replace("闹过肚肚", "不太适应")
-    text = text.replace("闹肚子", "不太适应")
-    text = text.replace("肚肚", "状态")
-    text = text.replace("胀气", "不适应")
-    text = text.replace("舌苔白", "不太适应")
-    text = text.replace("舌苔", "状态")
-    text = text.replace("肠胃", "喝奶")
-    text = text.replace("脾胃", "喝奶")
-    text = text.replace("消化", "接受度")
     text = text.replace("孩子孩子", "孩子")
     text = re.sub(r"(?:^|[。！？；;，,])清早往(?=$|[。！？；;，,])", "", text)
     text = text.replace("，。", "。")
@@ -3130,16 +3067,6 @@ def _wangyue_public_disease_context_hits(text: str) -> list[str]:
     return ordered_hits
 
 
-def _wangyue_digestive_effect_hits(text: str) -> list[str]:
-    hits = _hits_prefer_longer(text, WANGYUE_DIGESTIVE_EFFECT_PHRASES)
-    for pattern in WANGYUE_DIGESTIVE_EFFECT_PATTERNS:
-        for match in pattern.finditer(text or ""):
-            hit = match.group(0).strip(" ，,。；;\n")
-            if hit and "小肚子" not in hits:
-                hits.append("小肚子")
-    return hits
-
-
 def _wangyue_ingredient_benefit_mismatch_hits(text: str) -> list[str]:
     hits: list[tuple[int, str]] = []
     for pattern in WANGYUE_INGREDIENT_BENEFIT_MISMATCH_PATTERNS:
@@ -3233,6 +3160,8 @@ def _wangyue_hidden_negative_comparison_hits(text: str) -> list[str]:
 
 
 def _scene_motive_drift_hits(text: str, plan: dict[str, Any]) -> list[str]:
+    if _is_wangyue_article_rules_plan(plan):
+        return []
     post_type = str(plan.get("post_type") or "")
     bucket = str(plan.get("scene_motive_bucket") or "")
     if not bucket or not ("补货" in post_type or "清单" in post_type):
@@ -3319,6 +3248,8 @@ def _allows_stronger_wangyue_product_story(plan: dict[str, Any]) -> bool:
 
 
 def _product_action_surface_hits(text: str, plan: dict[str, Any]) -> list[str]:
+    if _is_wangyue_article_rules_plan(plan):
+        return []
     post_type = str(plan.get("post_type") or "")
     product_mode = str(plan.get("product_appearance_mode") or "")
     surface = str(plan.get("product_action_surface") or "")
@@ -3442,6 +3373,8 @@ def _decision_chain_limit(plan: dict[str, Any]) -> int:
 
 
 def _ugc_post_type_drift_hits(text: str, plan: dict[str, Any]) -> list[str]:
+    if _is_wangyue_article_rules_plan(plan):
+        return []
     if str(plan.get("ugc_post_type") or "") != "轻复盘型":
         return []
     return _hits_prefer_longer(
@@ -3815,6 +3748,8 @@ def _malformed_fragment_hits(text: str) -> list[str]:
         hits.append("中文引号不成对")
     if "中文引号不成对" in hits and re.search(r"[“「][^”」。！？；;]{18,}[。！？；;]", text):
         hits.append("半截对话")
+    for match in re.finditer(r"(?<![A-Za-z])ta(?![A-Za-z])", text, flags=re.IGNORECASE):
+        hits.append(f"中英文混写代词：{match.group(0)}")
     if "没看了一眼" in text:
         hits.append("没看了一眼")
     for phrase in (

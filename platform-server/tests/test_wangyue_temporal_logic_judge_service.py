@@ -1,5 +1,7 @@
 """Tests for the focused Wangyue temporal-logic judge contract."""
 
+from datetime import date
+
 import pytest
 
 from app.services import focused_llm_judge_runtime as runtime_module
@@ -48,6 +50,9 @@ def test_temporal_prompt_covers_added_stage_and_duration_boundaries() -> None:
     assert "不判断审核当天是否真的处于对应季节或天气" in TEMPORAL_LOGIC_SYSTEM_PROMPT
     assert "即使正文没有疾病、群体请假、产品效果、前后反转或其它时间矛盾" in TEMPORAL_LOGIC_SYSTEM_PROMPT
     assert "最近降温挺明显" in TEMPORAL_LOGIC_SYSTEM_PROMPT
+    assert "pre_usage_effect_evidence" in TEMPORAL_LOGIC_SYSTEM_PROMPT
+    assert "去年秋天距今约9至10个月" in TEMPORAL_LOGIC_SYSTEM_PROMPT
+    assert "明确是使用前负面基线" in TEMPORAL_LOGIC_SYSTEM_PROMPT
 
 
 def test_parse_temporal_logic_judgment_keeps_minimal_contract() -> None:
@@ -67,11 +72,11 @@ def test_parse_temporal_logic_judgment_keeps_minimal_contract() -> None:
 
 def test_parse_temporal_logic_judgment_accepts_added_issue_code() -> None:
     result = parse_wangyue_temporal_logic_judgment(
-        '{"label":"block","issue_code":"decision_execution_stage_conflict","evidence":"还在纠结但已喝一周"}'
+        '{"label":"block","issue_code":"pre_usage_effect_evidence","evidence":"去年秋天早于喝旺玥小半年的使用周期"}'
     )
 
     assert result.label == "block"
-    assert result.issue_code == "decision_execution_stage_conflict"
+    assert result.issue_code == "pre_usage_effect_evidence"
 
 
 def test_parse_temporal_logic_judgment_normalizes_invalid_output_to_watch() -> None:
@@ -145,6 +150,7 @@ async def test_temporal_logic_judge_uses_direct_llm_path(monkeypatch) -> None:
         title="过去那阵",
         body="去年请过假，今年状态正常。",
         model_config={"provider_code": "test-provider", "model_code": "test-model"},
+        review_date=date(2026, 7, 17),
     )
 
     assert result.label == "pass"
@@ -152,6 +158,7 @@ async def test_temporal_logic_judge_uses_direct_llm_path(monkeypatch) -> None:
     assert calls[0]["model_config"]["provider"] == "test-provider"
     assert calls[0]["model_config"]["model"] == "test-model"
     assert calls[0]["max_tokens"] == TEMPORAL_LOGIC_MAX_TOKENS == 800
+    assert "审核日期：2026-07-17" in calls[0]["user_prompt"]
     assert result.runtime_metadata == {
         "model_code": "test-model",
         "provider_code": "test-provider",

@@ -44,17 +44,22 @@ def test_content_fit_prompt_preserves_watch_only_boundaries() -> None:
     assert "节点密度和同类链路占比属于批量治理" in CONTENT_FIT_SYSTEM_PROMPT
     assert "overcomplete_decision_chain" not in CONTENT_FIT_ISSUE_CODES
     assert "不是合规 hard fail" in CONTENT_FIT_SYSTEM_PROMPT
-    assert "已喝两周或更久即可成立" in CONTENT_FIT_SYSTEM_PROMPT
-    assert "不要求必须补货" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "没有写满两周、补货或明确复购" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "也必须 pass" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "完全没有实际使用" in CONTENT_FIT_SYSTEM_PROMPT
     assert "家里有这罐旺玥，日常安排会更好接上" in CONTENT_FIT_SYSTEM_PROMPT
     assert "正常冲一杯旺玥" in CONTENT_FIT_SYSTEM_PROMPT
     assert "新罐开封/刚开新罐”本身可以是普通生活动作" in CONTENT_FIT_SYSTEM_PROMPT
     assert "没有借开罐复盘产品理由，应 pass" in CONTENT_FIT_SYSTEM_PROMPT
     assert "不能因为目标帖子类型是复购/长期使用或后面有正常反馈而放行" in CONTENT_FIT_SYSTEM_PROMPT
     assert "不能仅因为出现“重新看奶粉、后来选了旺玥”就 block" in CONTENT_FIT_SYSTEM_PROMPT
-    assert "目标帖子类型主要用于生成多样化和批量分布优化" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "目标帖子类型只用于生成多样化和批量分布优化" in CONTENT_FIT_SYSTEM_PROMPT
     assert "家庭清单只写旺玥" in CONTENT_FIT_SYSTEM_PROMPT
     assert "应 pass 或 watch" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "“营养满满”是普通宝妈口语里的正向评价" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "不能仅凭这个词判" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "消化吸收体验可以直接表达" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "形成明确消化效果链" in CONTENT_FIT_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio

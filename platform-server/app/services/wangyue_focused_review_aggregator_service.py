@@ -21,6 +21,7 @@ FOCUSED_REWRITE_MODE_BY_ISSUE = {
     ("temporal_logic", "decision_execution_stage_conflict"): "compliance_cleanup",
     ("temporal_logic", "recent_problem_long_usage_conflict"): "compliance_cleanup",
     ("temporal_logic", "continuous_use_baseline_conflict"): "compliance_cleanup",
+    ("temporal_logic", "pre_usage_effect_evidence"): "compliance_cleanup",
     ("claim_public_disease", "immediate_rescue_claim"): "compliance_cleanup",
     ("claim_public_disease", "medical_authority_claim"): "compliance_cleanup",
     ("claim_public_disease", "medical_treatment_claim"): "compliance_cleanup",

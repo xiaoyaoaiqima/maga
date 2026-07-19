@@ -2247,16 +2247,6 @@ class ContentBatchExecutionService:
                 body=sanitize_wangyue_time_event_context(item.body or ""),
             )
             cleanup_applied = True
-        if "wangyue_digestive_effect_context" in review.reasons:
-            review = self._apply_product_experience_text_cleanup(
-                item,
-                review,
-                cleanup_key=f"{cleanup_key_prefix}_wangyue_digestive_effect_cleanups",
-                title=sanitize_wangyue_context_phrases(item.title or ""),
-                body=sanitize_wangyue_context_phrases(item.body or ""),
-            )
-            cleanup_applied = True
-
         review_for_llm = (
             _append_product_experience_review_reason(review, POST_DELETE_CLEANUP_FLUENCY_REASON)
             if cleanup_applied
@@ -3130,15 +3120,6 @@ class ContentBatchExecutionService:
                         body=sanitize_wangyue_time_event_context(item.body or ""),
                     )
                     cleanup_applied = True
-                if "wangyue_digestive_effect_context" in review.reasons:
-                    review = self._apply_product_experience_text_cleanup(
-                        item,
-                        review,
-                        cleanup_key="product_experience_wangyue_digestive_effect_cleanups",
-                        title=sanitize_wangyue_context_phrases(item.title or ""),
-                        body=sanitize_wangyue_context_phrases(item.body or ""),
-                    )
-                    cleanup_applied = True
                 review_for_llm = (
                     _append_product_experience_review_reason(review, POST_DELETE_CLEANUP_FLUENCY_REASON)
                     if cleanup_applied
@@ -3733,11 +3714,12 @@ class ContentBatchExecutionService:
             else "正文保持自然断句，不要把多个示例口气碎片粘成一长串。"
         )
         malformed_fragment_instruction = (
-            "本轮正文有半截引号或断裂句："
+            "本轮正文有半截引号、断裂句或中英文混写代词："
             f"{'/'.join(review.malformed_fragment_hits)}。"
-            "只把断掉的对话改顺或删掉半截，不要新增新剧情、不要扩写卖点。"
+            "只把断掉的对话改顺或删掉半截；如果命中 ta/Ta/TA，结合上下文局部改成“他”“她”或“孩子”，"
+            "不要保留拼音代词。不要新增新剧情、不要扩写卖点。"
             if review.malformed_fragment_hits
-            else "正文不要出现半截引号、断掉的对话或读不通的残句。"
+            else "正文不要出现半截引号、断掉的对话、读不通的残句或 ta/Ta/TA 这类中英文混写代词。"
         )
         growth_nutrition_drift_instruction = (
             "本轮命中旺玥营养/成长规则漂移："
@@ -3799,25 +3781,31 @@ class ContentBatchExecutionService:
             else "旺玥文章里产品名至少自然出现一次，避免只用“它/这款/里面”承接卖点。"
         )
         scene_motive_bucket = str((item.plan_json or {}).get("scene_motive_bucket") or "")
-        scene_motive_instruction = (
-            "本轮正文偏离了指定生活入口："
-            f"本篇入口是“{scene_motive_bucket}”，但命中了 {'/'.join(review.scene_motive_drift_hits)}。"
-            "硬性验收：改写后的 title/body 不能再出现这些命中词，也不要换成同类的整理柜子、翻柜子、快见底、购物清单。"
-            "请回到指定入口的第一现场，只修当前句子的入口偏移，不新增产品动作或另一套生活事件；"
-            "产品只作为其中一个物件轻带，不要再写库存归位。"
-            if review.scene_motive_drift_hits
-            else "正文要跟随 scene_motive_bucket 的生活入口，不要默认回到整理柜子、快见底、购物清单这一套。"
-        )
+        if _is_current_wangyue_article_plan(item.plan_json):
+            scene_motive_instruction = None
+        else:
+            scene_motive_instruction = (
+                "本轮正文偏离了指定生活入口："
+                f"本篇入口是“{scene_motive_bucket}”，但命中了 {'/'.join(review.scene_motive_drift_hits)}。"
+                "硬性验收：改写后的 title/body 不能再出现这些命中词，也不要换成同类的整理柜子、翻柜子、快见底、购物清单。"
+                "请回到指定入口的第一现场，只修当前句子的入口偏移，不新增产品动作或另一套生活事件；"
+                "产品只作为其中一个物件轻带，不要再写库存归位。"
+                if review.scene_motive_drift_hits
+                else "正文要跟随 scene_motive_bucket 的生活入口，不要默认回到整理柜子、快见底、购物清单这一套。"
+            )
         product_action_surface = str((item.plan_json or {}).get("product_action_surface") or "")
-        product_action_surface_instruction = (
-            "本轮产品动作露出强度过高："
-            f"本篇要求“{product_action_surface}”，但命中了 {'/'.join(review.product_action_surface_hits)}。"
-            "改写时降低产品动作：物件在场就只写杯子/罐子在桌上、餐边柜旁、早餐角；"
-            "妈妈顺手挪放就只写挪到一边、放到桌角、摆回原处；"
-            "不要再写孩子端起来喝、喝两口、喝完、妈妈专门冲一杯。"
-            if review.product_action_surface_hits
-            else "使用记录里的产品动作要服从 product_action_surface，不要每篇都写成冲一杯、端起来、喝两口。"
-        )
+        if _is_current_wangyue_article_plan(item.plan_json):
+            product_action_surface_instruction = None
+        else:
+            product_action_surface_instruction = (
+                "本轮产品动作露出强度过高："
+                f"本篇要求“{product_action_surface}”，但命中了 {'/'.join(review.product_action_surface_hits)}。"
+                "改写时降低产品动作：物件在场就只写杯子/罐子在桌上、餐边柜旁、早餐角；"
+                "妈妈顺手挪放就只写挪到一边、放到桌角、摆回原处；"
+                "不要再写孩子端起来喝、喝两口、喝完、妈妈专门冲一杯。"
+                if review.product_action_surface_hits
+                else "使用记录里的产品动作要服从 product_action_surface，不要每篇都写成冲一杯、端起来、喝两口。"
+            )
         product_fact_number_instruction = (
             "本轮命中旺玥产品事实数字口径漂移："
             f"{'/'.join(review.product_fact_number_drift_hits)}。"
@@ -3854,14 +3842,17 @@ class ContentBatchExecutionService:
             if review.decision_chain_hits
             else "不要主动把正文补成完整决策链；每篇保留必要的正向产品节点即可。"
         )
-        ugc_post_type_instruction = (
-            "本轮 UGC 类型跑偏："
-            f"本篇要求“{(item.plan_json or {}).get('ugc_post_type') or ''}”，但命中了 {'/'.join(review.ugc_post_type_drift_hits)}。"
-            "如果是轻复盘型，不要再用想问大家、求经验、怎么判断、要不要继续这类求问收尾；"
-            "改成“我这段时间回看后的正向依据/现实细节”，不要把动机变成征集答案，也不要用不确定感替代产品价值。"
-            if review.ugc_post_type_drift_hits
-            else "UGC 类型要稳定：轻复盘写自己的阶段性回看，求建议才可以以问题和征集经验为主。"
-        )
+        if _is_current_wangyue_article_plan(item.plan_json):
+            ugc_post_type_instruction = None
+        else:
+            ugc_post_type_instruction = (
+                "本轮 UGC 类型跑偏："
+                f"本篇要求“{(item.plan_json or {}).get('ugc_post_type') or ''}”，但命中了 {'/'.join(review.ugc_post_type_drift_hits)}。"
+                "如果是轻复盘型，不要再用想问大家、求经验、怎么判断、要不要继续这类求问收尾；"
+                "改成“我这段时间回看后的正向依据/现实细节”，不要把动机变成征集答案，也不要用不确定感替代产品价值。"
+                if review.ugc_post_type_drift_hits
+                else "UGC 类型要稳定：轻复盘写自己的阶段性回看，求建议才可以以问题和征集经验为主。"
+            )
         retry_instruction = (
             "这是同一条内容的再次改写：上一轮仍残留 row4 偏题表达。不要同义替换命中词，直接删掉偏题半句；"
             "正文只保留“选择旺玥儿童奶粉来补充成长阶段营养、支持成长”的自然表达。"
@@ -3930,13 +3921,13 @@ class ContentBatchExecutionService:
                 wangyue_time_event_instruction,
                 wangyue_hidden_negative_instruction,
                 wangyue_product_mention_instruction,
-                scene_motive_instruction,
-                product_action_surface_instruction,
+                *([scene_motive_instruction] if scene_motive_instruction else []),
+                *([product_action_surface_instruction] if product_action_surface_instruction else []),
                 product_fact_number_instruction,
                 effect_scope_instruction,
                 decision_chain_instruction,
                 product_effect_proof_instruction,
-                ugc_post_type_instruction,
+                *([ugc_post_type_instruction] if ugc_post_type_instruction else []),
                 retry_instruction,
                 "rewrite 优先删除问题内容或压缩问题句；不要为了多样化整段重写。只有删除后语义断裂时，才补极短连接。",
                 skeleton_redirect_instruction,
@@ -4237,7 +4228,6 @@ class ContentBatchExecutionService:
             "wangyue_wrong_brand" in review.reasons
             or "wangyue_portable_form_context" in review.reasons
             or "wangyue_supplement_replacement_context" in review.reasons
-            or "wangyue_digestive_effect_context" in review.reasons
             or "wangyue_article_logic_drift_context" in review.reasons
             or _semantic_wangyue_context_reasons(review)
         ):

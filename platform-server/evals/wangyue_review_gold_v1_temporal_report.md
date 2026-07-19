@@ -4,14 +4,14 @@
 
 首批 15 条已于 2026-07-15 完成人工确认并冻结。2026-07-16 在不改写首批样本的前提下，追加 1 条真实争议边界和 10 条规则回归/最小对照样本。
 
-`wangyue_review_gold_v1 / temporal_logic_v1` 当前包含 28 条人工金标：
+`wangyue_review_gold_v1 / temporal_logic_v1` 当前包含 31 条人工金标：
 
-- `block`：12 条
-- `pass`：14 条
+- `block`：13 条
+- `pass`：16 条
 - `watch`：2 条
 - `WYT-005` 按人工标准接受 `pass/watch`
 
-短时间逻辑 Judge 已完成离线候选验证，但尚未接入生产审核链路。
+时间逻辑 Judge 已接入旺玥正式 Focused Pipeline。`audit_only` 模式只跑确定性审核和相似度观察，不执行 Focused Judge；已经被代码硬审拦截的文章也会短路后续 Judge，避免为已确定淘汰的内容继续消耗模型调用。
 
 ## 目标问题
 
@@ -38,6 +38,7 @@
 - `WYT-025/WYT-026`：长期持续饮用时，未解释与已解释的“以前/现在”基线对照。
 - `WYT-001/WYT-027`：两处都写“这段时间”时，同期持续负面与整体稳定必须 block；把前文改成“前段时间”，和后文“现在/这段时间”形成明确前后阶段，可以 pass。
 - `WYT-011/WYT-028`：`流感` 词本身由确定性硬禁词直接 ban；不含“流感”的“最近降温”等当前动态环境仍按独立发布时间锚点 block。
+- `WYT-030/WYT-031`：产品使用时长必须覆盖被当作效果证据的历史事件；使用前事件作为负面基线可以保留，但不能反过来证明使用后的产品效果。
 
 新增 block issue codes：
 
@@ -46,6 +47,7 @@
 - `decision_execution_stage_conflict`
 - `recent_problem_long_usage_conflict`
 - `continuous_use_baseline_conflict`
+- `pre_usage_effect_evidence`
 
 时间词项目口径：
 
@@ -92,6 +94,13 @@
 | v1.3 | 明确 issue code 枚举 | 100% | 100% | 0% |
 | v1.4 | 金标扩充至 26 条并补齐 5 类时间问题 | 96.2%（单次） | 100% | 0% |
 | v1.5 | 时间 Judge 输出预算从 300 提到 800，金标扩充至 27 条 | 92.6%（单次） | 81.8% | 0% |
+| v1.6 | 注入审核日期；新增“使用前事件被当作使用后效果证据”边界 | batch 618 前三篇现场复测 3/3 | 1/1 | 0/2 |
+
+v1.6 现场复测：
+
+- `batch 618 item 3`：从旧版 `pass / none` 修正为 `block / pre_usage_effect_evidence`。
+- 证据：审核日期为 `2026-07-17`；“去年秋天”距今约 9 至 10 个月，早于“小半年”最长约 6 个月的使用周期。
+- 同批 item 1、item 2 仍为 `pass`，本次规则没有把普通过去/现在叙述统一升级为 block。
 
 v1.3 运行数据：
 

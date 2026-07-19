@@ -92,8 +92,9 @@ FLUENCY_SYSTEM_PROMPT = """你只审核旺玥文章的中文流畅性：标题�
 10. 不要把内容适配问题当流畅性问题。“安排进日常奶粉里”由 content-fit Judge 处理；本 Judge 不重复审核产品出现自然度。
 11. 不审核论证是否充分、功效因果是否成立、卖点是否有证据，也不要求标题里的每个概念都在正文逐项解释。状态比以前稳、长得快、小脸圆了、旺玥是日常营养补充等句子，只要读得懂就 pass 或 watch，不能因缺少参照数据或因果证明而 block。
 12. 不要要求旺玥必须改善前文生活问题，也不要要求正文交代孩子何时实际喝下。正餐吃得少或饭量不稳之后写旺玥作为日常营养补充，只要句子通顺、意思清楚就 pass；不能因为没有解释如何改善食欲而判语义断裂。
+13. 中文正文中用独立的 ta/Ta/TA 指代孩子或人物，属于中英文混写代词，必须 block，unnatural_collocation；不能因为网络上偶尔有人这样写就判 pass。
 
-决策优先级：只有句子本身不成立、读不懂，或命中第3至第6条明确问题时才 block。逻辑不完整、因果偏松、参照不足都不是流畅性 block。第8条的人工通过判例优先于一般风格判断。watch 只用于第9条这类句子成立、意思清楚但略泛的表达。
+决策优先级：只有句子本身不成立、读不懂，或命中第3至第6条、第13条明确问题时才 block。逻辑不完整、因果偏松、参照不足都不是流畅性 block。第8条的人工通过判例优先于一般风格判断。watch 只用于第9条这类句子成立、意思清楚但略泛的表达。
 
 issue_code 只能从以下值选择：none、unnatural_collocation、semantic_discontinuity、title_body_contradiction、instruction_leak、incomplete_sentence、generic_but_readable。label=pass 时 issue_code 必须是 none。
 

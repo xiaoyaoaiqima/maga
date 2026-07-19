@@ -64,7 +64,7 @@ def test_wangyue_temporal_gold_slice_has_stable_labels_and_boundaries() -> None:
     assert payload["dataset_code"] == "wangyue_review_gold_v1"
     assert payload["slice"] == "temporal_logic_v1"
     assert payload["review_status"] == "approved"
-    assert len(items) == 28
+    assert len(items) == 31
     assert {item["meta"]["expected_label"] for item in items} == {"pass", "watch", "block"}
 
     case_codes = [item["meta"]["case_code"] for item in items]
@@ -100,6 +100,12 @@ def test_wangyue_temporal_gold_slice_has_stable_labels_and_boundaries() -> None:
     assert by_code["WYT-028"]["meta"]["issue_code"] == "publication_time_anchor"
     assert "流感" not in by_code["WYT-028"]["content"]
     assert "最近降温" in by_code["WYT-028"]["content"]
+    assert by_code["WYT-029"]["meta"]["expected_label"] == "pass"
+    assert by_code["WYT-030"]["meta"]["issue_code"] == "pre_usage_effect_evidence"
+    assert by_code["WYT-030"]["meta"]["review_date"] == "2026-07-17"
+    assert by_code["WYT-031"]["meta"]["expected_label"] == "pass"
+    assert "负面基线" in by_code["WYT-031"]["meta"]["reason"]
+    assert "没有把使用前事件当作产品效果证据" in by_code["WYT-031"]["meta"]["reason"]
     assert "补救行为或意图本身就必须block" in by_code["WYT-006"]["meta"]["reason"]
     assert "确定性禁词审核直接ban" in by_code["WYT-011"]["meta"]["reason"]
 
@@ -156,18 +162,22 @@ def test_wangyue_fluency_gold_keeps_human_approved_incomplete_logic_samples() ->
     by_code = {item["meta"]["case_code"]: item for item in payload["items"]}
 
     assert payload["review_status"] == "approved"
-    assert len(payload["items"]) == 17
+    assert len(payload["items"]) == 20
     assert by_code["WYL-016"]["meta"]["expected_label"] == "pass"
     assert "以前总要我托一把的" in by_code["WYL-016"]["content"]
     assert by_code["WYL-017"]["meta"]["expected_label"] == "pass"
+    assert by_code["WYL-018"]["meta"]["issue_code"] == "unnatural_collocation"
+    assert by_code["WYL-019"]["meta"]["issue_code"] == "incomplete_sentence"
+    assert by_code["WYL-020"]["meta"]["expected_label"] == "block"
+    assert by_code["WYL-020"]["tags"]["boundary"] == "mixed_script_pronoun"
 
 
-def test_wangyue_content_fit_gold_sets_two_week_long_term_minimum() -> None:
+def test_wangyue_content_fit_gold_keeps_post_type_as_generation_direction() -> None:
     payload = json.loads(CONTENT_FIT_GOLD_PATH.read_text(encoding="utf-8"))
     by_code = {item["meta"]["case_code"]: item for item in payload["items"]}
 
     assert payload["review_status"] == "approved"
-    assert len(payload["items"]) == 19
+    assert len(payload["items"]) == 22
     assert by_code["WYF-002"]["meta"]["expected_label"] == "pass"
     assert by_code["WYF-002"]["meta"]["issue_code"] == "none"
     assert by_code["WYF-004"]["meta"]["expected_label"] == "block"
@@ -184,6 +194,14 @@ def test_wangyue_content_fit_gold_sets_two_week_long_term_minimum() -> None:
     assert by_code["WYF-018"]["meta"]["expected_label"] == "pass"
     assert "一直会看的方向" not in by_code["WYF-010"]["content"]
     assert by_code["WYF-019"]["meta"]["expected_label"] == "pass"
+    assert by_code["WYF-020"]["meta"]["expected_label"] == "pass"
+    assert "营养满满" in by_code["WYF-020"]["content"]
+    assert by_code["WYF-021"]["meta"]["expected_label"] == "pass"
+    assert by_code["WYF-021"]["tags"]["boundary"] == "digestive_experience_allowed"
+    assert "积食" in by_code["WYF-021"]["content"]
+    assert by_code["WYF-022"]["meta"]["expected_label"] == "pass"
+    assert by_code["WYF-022"]["tags"]["boundary"] == "post_type_is_generation_direction"
+    assert "连着几天" in by_code["WYF-022"]["content"]
     assert "不能因为出现“重新看奶粉、后来选了”" in by_code["WYF-009"]["meta"]["reason"]
     assert by_code["WYF-014"]["meta"]["expected_label"] == "watch"
     assert by_code["WYF-014"]["meta"]["acceptable_labels"] == ["pass", "watch"]

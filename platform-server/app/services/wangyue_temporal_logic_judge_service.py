@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from app.services.focused_llm_judge_runtime import (
@@ -25,6 +26,7 @@ TEMPORAL_ISSUE_CODES = {
     "decision_execution_stage_conflict",
     "recent_problem_long_usage_conflict",
     "continuous_use_baseline_conflict",
+    "pre_usage_effect_evidence",
 }
 TEMPORAL_LOGIC_MODEL_CODE = "deepseek-v4-flash"
 TEMPORAL_LOGIC_MAX_TOKENS = 800
@@ -47,7 +49,7 @@ class WangyueTemporalLogicJudgment:
 
 
 class WangyueTemporalLogicJudgeService:
-    """Judge only timeline coherence; this service is not wired into production review."""
+    """Judge timeline coherence inside the Wangyue focused-review pipeline."""
 
     async def review(
         self,
@@ -55,8 +57,13 @@ class WangyueTemporalLogicJudgeService:
         title: str | None,
         body: str | None,
         model_config: dict[str, Any] | None = None,
+        review_date: date | None = None,
     ) -> WangyueTemporalLogicJudgment:
-        user_prompt = f"标题：{title or ''}\n正文：{body or ''}"
+        effective_review_date = review_date or date.today()
+        user_prompt = (
+            f"审核日期：{effective_review_date.isoformat()}\n"
+            f"标题：{title or ''}\n正文：{body or ''}"
+        )
         call = await call_focused_judge(
             model_config=model_config,
             system_prompt=TEMPORAL_LOGIC_SYSTEM_PROMPT,
@@ -109,7 +116,8 @@ TEMPORAL_LOGIC_SYSTEM_PROMPT = """你只审核旺玥文章的时间逻辑，不�
 8. 发布时间锚点是独立硬规则，不要求文章内部存在时间矛盾，也不判断审核当天是否真的处于对应季节或天气。只要正文用“现在/最近/目前”断言当前正值流感季、换季、入冬、降温等动态环境，就必须 block / publication_time_anchor。即使正文没有疾病、群体请假、产品效果、前后反转或其它时间矛盾，也不得 pass。硬判示例：“最近降温挺明显，我开始多留意孩子每天的状态。家里旺玥一直喝着，日常安排没怎么变。”必须 block / publication_time_anchor。旺玥内容中的“流感”另属于确定性硬禁词，正式硬审应直接 ban，不依赖 LLM；不含硬禁词时，明确过去式的季节或天气环境可以保留。
 9. “偶尔/有点”这类局部小状况与整体状态稳定可以共存，但标 watch，mixed_state_same_period。
 10. 过去的周围孩子生病只作背景、不依赖当前环境成立：pass 或 watch；没有公共疾病对照且时间阶段清楚、效果有观察跨度：pass。
+11. 审核输入会提供明确的“审核日期”。如果文章写明产品已经使用的时长，又把早于产品开始使用时间的历史事件当作使用后的正面效果证据，必须 block / pre_usage_effect_evidence。必须根据审核日期、自然时间锚点和使用时长核对事件是否落在使用周期内。硬判示例：审核日期为2026-07-17，正文写“喝旺玥小半年”，却用“去年秋天孩子中招后两天就恢复”证明喝后的状态，去年秋天距今约9至10个月，早于最长约6个月的使用周期，必须 block。正常对照：“去年秋天总请假，今年开始喝旺玥，小半年回看下来最近状态稳了些”，去年秋天明确是使用前负面基线，当前状态才是使用后的观察，应 pass。不要因为两个阶段都写得清楚，就忽略历史效果证据发生在产品使用前。
 
-issue_code 只能从以下值选择：none、same_period_state_contradiction、immediate_rescue_causality、insufficient_effect_duration、publication_time_anchor、mixed_state_same_period、past_public_disease_reference、short_period_hard_reversal、missing_transition_duration、decision_execution_stage_conflict、recent_problem_long_usage_conflict、continuous_use_baseline_conflict。label=pass 时 issue_code 必须是 none。
+issue_code 只能从以下值选择：none、same_period_state_contradiction、immediate_rescue_causality、insufficient_effect_duration、publication_time_anchor、mixed_state_same_period、past_public_disease_reference、short_period_hard_reversal、missing_transition_duration、decision_execution_stage_conflict、recent_problem_long_usage_conflict、continuous_use_baseline_conflict、pre_usage_effect_evidence。label=pass 时 issue_code 必须是 none。
 
 只输出 JSON object：{"label":"pass|watch|block","issue_code":"上述枚举之一","evidence":"原文证据"}。"""

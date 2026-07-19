@@ -16,8 +16,9 @@
     "节点多、朋友问起、成分依据和多个自家反馈属于批量治理问题；各节点自然成立时单篇必须 pass，不进入 Content Fit watch 或改写。",
     "把业务规则翻译成‘这个方向我会看、产品依据我记住的是、营养这块要优先’等抽象选品总结，且成为正文主要承接时，判 block。",
     "把旺玥写成‘安排进日常奶粉里、放进日常奶粉里’，或用开罐动作生硬触发产品复盘，判 block。",
-    "post_type 主要用于生成多样化和批量分布优化。家庭清单没有其它家庭物件或清单关系时，单篇内容只要自然可用，就判 pass 或 watch，不得仅因类型没有充分展开而 block；求助后的回访只剩纯求助等真正导致内容任务不成立的情况仍可 block。",
-    "复购/长期使用类型明确写到已喝两周或更久即可成立；低于两周且没有补货、复购或持续使用关系时才判帖子类型不成立。"
+    "自家长期使用中的消化吸收体验可以直接表达，例如便便规律、胀气少、小肚子舒服、积食或排便状态前后变化；不要仅因形成消化效果链而 block。医疗化、治疗或保证有效由独立合规审核处理。",
+    "post_type 只用于生成多样化和批量分布优化。单篇内容只要有真实使用、孩子接受或自家反馈并且自然可用，就判 pass 或 watch，不得仅因复购/长期使用类型没有写满两周、补货或明确复购而 block。",
+    "只有正文完全没有实际使用，仍停留在打算买、准备试、以后再看等未来意图，或求助后的回访只剩纯求助，导致内容任务本身不成立时，才可判 post_type_mismatch block。"
   ],
   "items": [
     {
@@ -240,7 +241,7 @@
         "expected_label": "pass",
         "issue_code": "none",
         "evidence": ["这两周开始喝的旺玥", "每天一杯"],
-        "reason": "两周是复购/长期使用类型的最低成立时间，已有明确持续使用和自家反馈，不要求必须出现补货动作。",
+        "reason": "正文已有明确持续使用和自家反馈，文章自然成立；两周可以作为正常使用时间表达，但不是复购/长期使用类型的单篇硬验收线。",
         "source": "batch497_item4_human_review"
       },
       "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "two_week_long_term_minimum", "source_type": "human_feedback"}
@@ -286,6 +287,48 @@
         "source": "user_defined_new_can_boundary_20260716"
       },
       "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "new_can_as_daily_action", "source_type": "minimal_pair"}
+    },
+    {
+      "title": "营养满满也能直接说",
+      "content": "孩子最近吃饭不太规律，但睡前那杯旺玥一直喝得挺配合。喝下来接受度一直在线，营养满满，日常也没想过换。",
+      "context": {"post_type": "复购/长期使用"},
+      "meta": {
+        "case_code": "WYF-020",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["营养满满"],
+        "reason": "“营养满满”是普通宝妈口语里的正向评价，本身不是抽象brief翻译、产品出现生硬或广告式收口，不能单独触发审核或改写。",
+        "source": "batch563_item1_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "colloquial_nutrition_positive_phrase", "source_type": "human_feedback"}
+    },
+    {
+      "title": "下午茶的小惊喜",
+      "content": "最近下午给孩子冲了杯旺玥，他咕咚咕咚就喝完了。之前换了好几种，总是吸收不好，要么积食要么嗯嗯不顺畅。这次我特意把配料表翻来覆去研究过，才选定的。现在看他吃饭香、脸色好，这种看得见的成长，比什么都让人开心。",
+      "context": {"post_type": "复购/长期使用"},
+      "meta": {
+        "case_code": "WYF-021",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["积食", "嗯嗯不顺畅", "现在看他吃饭香、脸色好"],
+        "reason": "自家使用中的消化吸收前后变化可以正常表达，形成清晰效果链也不构成Content Fit问题；医疗化和保证性表达由独立合规审核处理。",
+        "source": "batch606_item2_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "digestive_experience_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "换了这款奶粉后，孩子吃早餐都积极了",
+      "content": "最近把家里的奶粉换了旺玥，身边好几个朋友都在喝这个，我也跟着试了试。冲泡的时候孩子就在旁边等着，说闻着香。喝了一杯后，连着几天早上主动说想喝，饭量也比之前好。以前换过几种，要么不爱喝要么喝了不习惯，这次倒是挺顺的。孩子自己跟我说“好喝”，我就觉得这步换对了。果然跟着朋友走不踩坑。",
+      "context": {"post_type": "复购/长期使用"},
+      "meta": {
+        "case_code": "WYF-022",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["连着几天早上主动说想喝", "这次倒是挺顺的"],
+        "reason": "正文已有真实使用、孩子接受和自家反馈。复购/长期使用只是生成方向，不能因为没有写满两周、补货或明确复购而把自然可用的文章判为post_type_mismatch。",
+        "source": "batch606_item6_human_review"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "post_type_is_generation_direction", "source_type": "human_feedback"}
     }
   ]
 }
