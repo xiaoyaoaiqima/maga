@@ -1,14 +1,5 @@
-stages:
-  - deploy
-
-deploy_maga_production:
-  stage: deploy
-  tags:
-    - maga-prod
+# GitLab 自动生产部署已停用。
+# 不再通过向 GitLab main 推送代码触发 MAGA 发布。
+workflow:
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-  resource_group: maga-production
-  variables:
-    GIT_SUBMODULE_STRATEGY: recursive
-  script:
-    - bash ci/deploy_prod.sh
+    - when: never
