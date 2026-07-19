@@ -312,6 +312,7 @@ async def start_batch_generation(
             keyword_asset_key=request.keyword_asset_key,
             prompt_mode=request.prompt_mode,
             draft_corpus=request.draft_corpus,
+            draft_selling_painpoint_group=request.draft_selling_painpoint_group,
             draft_rule_id=request.draft_rule_id,
             draft_source_row_no=request.draft_source_row_no,
             model_config=model_config,
@@ -379,9 +380,13 @@ async def start_comment_batch_generation(
             draft_corpus=request.draft_corpus,
             draft_rule_id=request.draft_rule_id,
             draft_source_row_no=request.draft_source_row_no,
+            draft_comment_prompt_bundle=request.draft_comment_prompt_bundle,
             comment_prompt_slots=request.comment_prompt_slots,
+            comment_batch_variation_review=request.comment_batch_variation_review,
+            comment_delivery_selection=request.comment_delivery_selection,
             comment_post_context=request.comment_post_context,
             count=request.count,
+            concurrency=request.concurrency,
             created_by=request.created_by,
         )
         db.expire_all()

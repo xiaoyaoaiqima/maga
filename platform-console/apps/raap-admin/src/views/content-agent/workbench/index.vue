@@ -5,6 +5,7 @@ import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { useUserStore } from '@vben/stores';
+import { formatDateTime } from '@vben/utils';
 
 import {
   Alert,
@@ -64,6 +65,14 @@ const currentOperator = computed(
 
 const selectedItems = computed(() => selectedReport.value?.items || []);
 const selectedSummary = computed(() => selectedReport.value?.summary || null);
+const selectedBatch = computed(() =>
+  batchList.value.find(
+    (batch) => batch.batch_id === selectedReport.value?.batch_id,
+  ),
+);
+
+const formatBatchTime = (value?: null | string) =>
+  value ? formatDateTime(value) : '-';
 
 const statusLabel = (status?: string) => {
   if (status === 'approved') return '已通过';
@@ -639,6 +648,9 @@ watch(
                   #{{ batch.batch_id }} · {{ batch.batch_code || '-' }}
                 </div>
                 <div class="batch-meta">
+                  生成时间：{{ formatBatchTime(batch.create_time) }}
+                </div>
+                <div class="batch-meta">
                   {{ batch.summary.generated_count }}/{{
                     batch.summary.total_count
                   }}
@@ -691,6 +703,14 @@ watch(
             </template>
 
             <Descriptions :column="2" size="small" bordered>
+              <DescriptionsItem label="批次">
+                {{
+                  selectedReport.batch_code || `#${selectedReport.batch_id}`
+                }}
+              </DescriptionsItem>
+              <DescriptionsItem label="生成时间">
+                {{ formatBatchTime(selectedBatch?.create_time) }}
+              </DescriptionsItem>
               <DescriptionsItem label="主题">
                 {{ selectedReport.product_topic }}
               </DescriptionsItem>

@@ -216,6 +216,7 @@ class CommentBusinessRuleDraftSave(BaseModel):
     rule_id: str | None = None
     source_row_no: int | None = Field(default=None, ge=1)
     draft_corpus: str = Field(..., min_length=1)
+    comment_prompt_bundle: dict[str, Any] | None = None
     created_by: str | None = "maga-operator"
 
 
@@ -230,6 +231,8 @@ class CommentBusinessRuleDraftResponse(BaseModel):
     business_rule: str | None = None
     original_corpus: str | None = None
     draft_corpus: str
+    original_comment_prompt_bundle: dict[str, Any] | None = None
+    draft_comment_prompt_bundle: dict[str, Any] | None = None
     created_by: str | None = None
     applied_by: str | None = None
     create_time: datetime | None = None
@@ -251,6 +254,20 @@ class CommentBusinessRuleExamplesUpdate(BaseModel):
     source_row_no: int | None = Field(default=None, ge=1)
     examples: list[str] = Field(default_factory=list)
     supplements: list[str] = Field(default_factory=list)
+    created_by: str | None = "maga-operator"
+
+
+class SellingPainpointExpressionUpdate(BaseModel):
+    expression: str = Field(..., min_length=1)
+    expected_expression: str | None = None
+    created_by: str | None = "maga-operator"
+
+
+class ArticleBusinessRuleFieldsUpdate(BaseModel):
+    corpus: str | None = None
+    selling_painpoint_group: str | None = None
+    expected_corpus: str | None = None
+    expected_selling_painpoint_group: str | None = None
     created_by: str | None = "maga-operator"
 
 

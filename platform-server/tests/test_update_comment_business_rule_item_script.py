@@ -143,6 +143,37 @@ def test_update_comment_business_rule_item_can_set_variation_slots():
     assert summary["changed"] is True
 
 
+def test_update_comment_business_rule_item_can_set_layered_comment_fields():
+    content = {
+        "items": [
+            {
+                "rule_id": "a2_direct_01",
+                "business_rule": "有货-直给到货情绪",
+                "source_row_no": 1,
+                "corpus": "保留旧语料",
+                "examples": ["旧示例"],
+            }
+        ]
+    }
+    args = SimpleNamespace(
+        rule_id="a2_direct_01",
+        source_row_no=None,
+        business_rule=None,
+        content_direction_text="写看到供货恢复消息后的即时反应。",
+        activity_material_json=json.dumps(["a2已到货或来货", "用户可以买到新货"], ensure_ascii=False),
+        examples_json=json.dumps(["a2终于到货了", "我也买到了新货了"], ensure_ascii=False),
+    )
+
+    updated, summary = _content_with_updated_corpus(content, args, new_corpus="")
+
+    item = updated["items"][0]
+    assert item["corpus"] == "保留旧语料"
+    assert item["content_direction"] == "写看到供货恢复消息后的即时反应。"
+    assert item["activity_material"] == ["a2已到货或来货", "用户可以买到新货"]
+    assert item["examples"] == ["a2终于到货了", "我也买到了新货了"]
+    assert summary["changed"] is True
+
+
 def test_load_new_corpus_allows_variation_slot_only_update():
     args = SimpleNamespace(
         corpus_file=None,

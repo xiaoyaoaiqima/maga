@@ -31,6 +31,7 @@ ARTICLE_RULE_EXAMPLE_SAMPLE_COUNT = 3
 ARTICLE_RULE_MAX_EXAMPLE_SAMPLE_COUNT = 8
 MOUTH_PHRASE_BUDGET_DEFAULT_BASE = 20
 AUDIT_ONLY_DEFAULT_ASSET_KEYS = {"a2_momclass_month_center"}
+CURRENT_WANGYUE_ARTICLE_ASSET_KEY = "wangyue_v3_core_storyline_article_rules"
 SOURCE_ROW_RULE_OVERRIDE_FIELDS = {
     "story_spine",
     "scene_motive_bucket",
@@ -62,6 +63,7 @@ class ContentBatchPlanner:
         keyword_asset_key: str | None = None,
         prompt_mode: str | None = None,
         draft_corpus: str | None = None,
+        draft_selling_painpoint_group: str | None = None,
         draft_rule_id: str | None = None,
         draft_source_row_no: int | None = None,
         model_config: dict[str, Any] | None = None,
@@ -84,6 +86,7 @@ class ContentBatchPlanner:
                 articles_per_prompt=articles_per_prompt,
                 postprocess_mode=normalized_postprocess_mode,
                 draft_corpus=draft_corpus,
+                draft_selling_painpoint_group=draft_selling_painpoint_group,
                 draft_rule_id=draft_rule_id or rule_id,
                 draft_source_row_no=(
                     draft_source_row_no
@@ -188,6 +191,7 @@ class ContentBatchPlanner:
         articles_per_prompt: int,
         postprocess_mode: str | None,
         draft_corpus: str | None,
+        draft_selling_painpoint_group: str | None,
         draft_rule_id: str | None,
         draft_source_row_no: int | None,
         model_config: dict[str, Any] | None,
@@ -197,6 +201,7 @@ class ContentBatchPlanner:
         rules = self._article_business_rule_items(asset)
         draft_override = _normalize_article_draft_rule_override(
             draft_corpus=draft_corpus,
+            draft_selling_painpoint_group=draft_selling_painpoint_group,
             draft_rule_id=draft_rule_id,
             draft_source_row_no=draft_source_row_no,
         )
@@ -220,8 +225,12 @@ class ContentBatchPlanner:
             or asset.display_name
             or DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME
         )
-        resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, asset)
         resolved_prompt_mode = _resolve_prompt_mode(prompt_mode, asset)
+        resolved_keyword_asset_key = (
+            None
+            if resolved_prompt_mode == "rule_corpus_as_prompt"
+            else _resolve_keyword_asset_key(keyword_asset_key, asset)
+        )
         quality_guard_profile_key = _resolve_quality_guard_profile_key(asset)
         real_user_pool_asset = await self._latest_real_user_pool_asset(asset)
         real_user_pool_items = _real_user_pool_items(real_user_pool_asset)
@@ -482,7 +491,7 @@ class ContentBatchPlanner:
         *,
         asset: AssetRegistry,
         item_no: int,
-        keyword_asset_key: str,
+        keyword_asset_key: str | None,
         prompt_mode: str | None = None,
         quality_guard_profile_key: str | None,
         model_config: dict[str, Any] | None,
@@ -577,12 +586,23 @@ class ContentBatchPlanner:
             }
         field_owner_clean = _is_field_owner_clean_rule(asset, rule)
         ugc_post_type = (
-            _resolve_string_field("ugc_post_type", asset, rule)
-            if field_owner_clean
-            else _resolve_ugc_post_type(asset, rule, item_no=item_no)
+            None
+            if asset.asset_key == CURRENT_WANGYUE_ARTICLE_ASSET_KEY
+            and resolved_rule_prompt_mode == "rule_corpus_as_prompt"
+            else (
+                _resolve_string_field("ugc_post_type", asset, rule)
+                if field_owner_clean
+                else _resolve_ugc_post_type(asset, rule, item_no=item_no)
+            )
         )
-        painpoint = _resolve_painpoint(asset, rule, item_no=item_no)
-        selling_point = _resolve_selling_point(asset, rule, item_no=item_no)
+        selling_painpoint_group = _resolve_string_field("selling_painpoint_group", asset, rule)
+        selling_painpoint_expression = _resolve_selling_painpoint_expression(
+            asset,
+            selling_painpoint_group,
+            item_no=item_no,
+        )
+        painpoint = None if selling_painpoint_group else _resolve_painpoint(asset, rule, item_no=item_no)
+        selling_point = None if selling_painpoint_group else _resolve_selling_point(asset, rule, item_no=item_no)
         positive_evidence = _resolve_positive_evidence(asset, rule)
         selling_description = _resolve_selling_description(asset, rule)
         selling_point_surface = _resolve_selling_point_surface(asset, rule)
@@ -636,10 +656,20 @@ class ContentBatchPlanner:
             if field_owner_clean
             else _resolve_imperfection(asset, rule, item_no=item_no)
         )
-        product_action_surface = _resolve_product_action_surface(asset, rule, item_no=item_no)
+        product_action_surface = (
+            None
+            if asset.asset_key == CURRENT_WANGYUE_ARTICLE_ASSET_KEY
+            and resolved_rule_prompt_mode == "rule_corpus_as_prompt"
+            else _resolve_product_action_surface(asset, rule, item_no=item_no)
+        )
         title_shape_mode = _resolve_title_shape_mode(asset, rule, item_no=item_no)
         title_emoji_mode = _resolve_title_emoji_mode(asset, rule)
-        scene_motive_bucket = _resolve_scene_motive_bucket(asset, rule, item_no=item_no)
+        scene_motive_bucket = (
+            None
+            if asset.asset_key == CURRENT_WANGYUE_ARTICLE_ASSET_KEY
+            and resolved_rule_prompt_mode == "rule_corpus_as_prompt"
+            else _resolve_scene_motive_bucket(asset, rule, item_no=item_no)
+        )
         structure_slot = _resolve_structure_slot(asset, rule)
         story_spine = _resolve_story_spine(asset, rule)
         scene_constraint = _resolve_scene_constraint(asset, rule)
@@ -667,7 +697,7 @@ class ContentBatchPlanner:
             include_product_position_guard=resolved_rule_prompt_mode != "rule_corpus_as_prompt",
         )
         variation_slots = _resolve_rule_variation_slots(rule, item_no=item_no)
-        return {
+        plan = {
             "rule_type": rule_type,
             "item_no": item_no,
             "asset_key": asset.asset_key,
@@ -675,7 +705,10 @@ class ContentBatchPlanner:
             "prompt_mode": resolved_rule_prompt_mode,
             "quality_guard_profile_key": quality_guard_profile_key,
             "keyword_selection": _resolve_keyword_selection(asset),
-            "generation_requirements": _resolve_generation_requirements(asset),
+            "generation_requirements": (
+                rule.get("generation_requirements")
+                or _resolve_generation_requirements(asset)
+            ),
             "content_path_control": content_path_control,
             "rule_asset_id": asset.id,
             "rule_asset_version": asset.version_no,
@@ -688,6 +721,22 @@ class ContentBatchPlanner:
             "ugc_post_type": ugc_post_type,
             "painpoint": painpoint,
             "selling_point": selling_point,
+            "selling_painpoint_group": selling_painpoint_group,
+            "selling_painpoint_expression": (
+                selling_painpoint_expression.get("expression")
+                if selling_painpoint_expression
+                else None
+            ),
+            "selling_painpoint_expression_source_row_no": (
+                selling_painpoint_expression.get("source_row_no")
+                if selling_painpoint_expression
+                else None
+            ),
+            "selling_painpoint_expression_group": (
+                selling_painpoint_expression.get("selling_painpoint_group")
+                if selling_painpoint_expression
+                else None
+            ),
             "positive_evidence": positive_evidence,
             "selling_description": selling_description,
             "selling_point_surface": selling_point_surface,
@@ -745,6 +794,10 @@ class ContentBatchPlanner:
             },
             "model_config": resolved_model_config,
         }
+        if selling_painpoint_group:
+            plan.pop("painpoint", None)
+            plan.pop("selling_point", None)
+        return plan
 
     def _selected_real_user_examples(
         self,
@@ -1051,17 +1104,26 @@ def _filter_rules(
 def _normalize_article_draft_rule_override(
     *,
     draft_corpus: str | None,
+    draft_selling_painpoint_group: str | None = None,
     draft_rule_id: str | None,
     draft_source_row_no: int | None,
 ) -> dict[str, Any] | None:
     corpus = str(draft_corpus or "").strip()
-    if not corpus:
+    selling_painpoint_group = str(draft_selling_painpoint_group or "").strip()
+    if not corpus and not selling_painpoint_group:
         return None
     rule_id = str(draft_rule_id or "").strip() or None
     source_row_no = _int_or_none(draft_source_row_no)
     if not rule_id and source_row_no is None:
-        raise ValueError("draft_corpus requires draft_rule_id, draft_source_row_no, rule_id, or source_row_no")
-    return {"corpus": corpus, "rule_id": rule_id, "source_row_no": source_row_no}
+        raise ValueError(
+            "draft rule override requires draft_rule_id, draft_source_row_no, rule_id, or source_row_no"
+        )
+    override = {"rule_id": rule_id, "source_row_no": source_row_no}
+    if corpus:
+        override["corpus"] = corpus
+    if selling_painpoint_group:
+        override["selling_painpoint_group"] = selling_painpoint_group
+    return override
 
 
 def _article_rules_with_draft_override(
@@ -1075,7 +1137,12 @@ def _article_rules_with_draft_override(
             updated.append(rule)
             continue
         next_rule = dict(rule)
-        next_rule["corpus"] = str(draft_override.get("corpus") or "").strip()
+        if "corpus" in draft_override:
+            next_rule["corpus"] = str(draft_override.get("corpus") or "").strip()
+        if "selling_painpoint_group" in draft_override:
+            next_rule["selling_painpoint_group"] = str(
+                draft_override.get("selling_painpoint_group") or ""
+            ).strip()
         next_rule["draft_rule_override"] = _article_draft_override_summary(draft_override)
         updated.append(next_rule)
         matched = True
@@ -1096,11 +1163,14 @@ def _article_rule_matches_draft_override(rule: dict[str, Any], draft_override: d
 
 
 def _article_draft_override_summary(draft_override: dict[str, Any]) -> dict[str, Any]:
-    return {
+    summary = {
         "enabled": True,
         "rule_id": draft_override.get("rule_id"),
         "source_row_no": draft_override.get("source_row_no"),
     }
+    if "selling_painpoint_group" in draft_override:
+        summary["selling_painpoint_group"] = draft_override.get("selling_painpoint_group")
+    return summary
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -2030,6 +2100,31 @@ def _resolve_painpoint(asset: AssetRegistry | None, rule: dict[str, Any] | None,
     if painpoints:
         return painpoints[(max(1, item_no) - 1) % len(painpoints)]
     return None
+
+
+def _resolve_selling_painpoint_expression(
+    asset: AssetRegistry | None,
+    group: str | None,
+    *,
+    item_no: int,
+) -> dict[str, Any] | None:
+    normalized_group = str(group or "").strip()
+    if asset is None or not normalized_group:
+        return None
+    candidate_groups = {normalized_group}
+    if not normalized_group.endswith("-ugc"):
+        candidate_groups.add(f"{normalized_group}-ugc")
+    raw_items = (asset.content_json or {}).get("selling_painpoint_expressions")
+    candidates = [
+        item
+        for item in raw_items or []
+        if isinstance(item, dict)
+        and str(item.get("selling_painpoint_group") or "").strip() in candidate_groups
+        and str(item.get("expression") or "").strip()
+    ]
+    if not candidates:
+        return None
+    return candidates[(max(1, item_no) - 1) % len(candidates)]
 
 
 def _resolve_selling_point(asset: AssetRegistry | None, rule: dict[str, Any] | None, *, item_no: int) -> str | None:

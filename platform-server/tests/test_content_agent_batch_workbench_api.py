@@ -43,15 +43,12 @@ from app.services.activity_quality_guard_service import (
     resolve_quality_guard_profile,
 )
 from app.services.comment_batch_variation_review_service import CommentBatchVariationReviewService
+from app.services.comment_batch_delivery_selection_service import CommentBatchDeliverySelectionService
 from app.services.content_comment_batch_service import (
-    COMMENT_MICRO_REPLY_AWKWARD_STOCK_PHRASES,
-    COMMENT_MICRO_BATCH_CHECK_EMPTY_FALLBACKS,
-    COMMENT_MICRO_REPLY_EMPTY_FALLBACKS,
-    COMMENT_MICRO_REPLY_EMOTIVE_OPENERS,
-    COMMENT_MICRO_REPLY_OVERUSED_TERMS,
     ContentCommentBatchService,
 )
 from app.services.content_batch_report_service import (
+    ContentBatchReportService,
     _article_pool_csv_filename,
     _article_pool_export_items,
     _build_article_pool_csv,
@@ -118,21 +115,29 @@ def test_article_batch_start_request_allows_one_thousand_items():
         ContentBatchStartRequest(count=1001)
 
 
-def test_comment_batch_start_request_allows_one_hundred_items():
-    assert ContentCommentBatchStartRequest(count=100).count == 100
+def test_comment_batch_start_request_allows_three_hundred_items():
+    assert ContentCommentBatchStartRequest(count=300).count == 300
+    assert ContentCommentBatchStartRequest().concurrency == 5
+    assert ContentCommentBatchStartRequest(concurrency=10).concurrency == 10
     with pytest.raises(ValidationError):
-        ContentCommentBatchStartRequest(count=101)
+        ContentCommentBatchStartRequest(count=301)
+    with pytest.raises(ValidationError):
+        ContentCommentBatchStartRequest(concurrency=51)
 
 
 def test_comment_batch_start_request_accepts_multi_rule_prompt_slot_probe():
     request = ContentCommentBatchStartRequest(
         rule_ids=["a2_direct_28", "a2_direct_29"],
         comment_prompt_slots={"开头方式": ["不要用固定开头，直接接话。"]},
+        comment_batch_variation_review={"enabled": True, "affects_hard_pass": False},
+        comment_delivery_selection={"enabled": True, "target_count": 105},
         comment_post_context="你正在回复一篇消费者吐槽价格的帖子。",
     )
 
     assert request.rule_ids == ["a2_direct_28", "a2_direct_29"]
     assert request.comment_prompt_slots == {"开头方式": ["不要用固定开头，直接接话。"]}
+    assert request.comment_batch_variation_review == {"enabled": True, "affects_hard_pass": False}
+    assert request.comment_delivery_selection == {"enabled": True, "target_count": 105}
     assert request.comment_post_context == "你正在回复一篇消费者吐槽价格的帖子。"
 
 
@@ -159,7 +164,7 @@ async def test_ppl_profile_list_exposes_brand_generation_profiles(content_agent_
     assert royal["prompt_mode"] == "royal_compact"
     wangyue_v3 = next(profile for profile in profiles if profile["profile_code"] == "wangyue_v3_0705_article")
     assert wangyue_v3["asset_key"] == "wangyue_v3_core_storyline_article_rules"
-    assert wangyue_v3["keyword_asset_key"] == "wangyue_v2_minimal_generation_keywords"
+    assert wangyue_v3["keyword_asset_key"] is None
     assert wangyue_v3["prompt_mode"] == "rule_corpus_as_prompt"
     assert wangyue_v3["default_count"] == 20
     assert wangyue_v3["default_articles_per_prompt"] == 1
@@ -364,7 +369,7 @@ def test_member_rule_prompt_examples_do_not_mix_other_member_benefits():
     assert meta["selected_example_source"] == "examples"
 
 
-def test_a2_supply_transfer_short_reply_rule_overrides_half_item_keyword_selection():
+def test_a2_route_keeps_asset_format_selection_without_business_specific_override():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
     rule = {
         "business_rule": "A2舆情改善评论",
@@ -387,11 +392,12 @@ def test_a2_supply_transfer_short_reply_rule_overrides_half_item_keyword_selecti
 
     plans = [service._plan_from_rule(rule, asset=asset, item_no=item_no) for item_no in range(1, 7)]
 
-    short_plans = [plan for plan in plans if plan["keyword_selection"]["comment_format_control"] == ["comment_thread_short_reply"]]
-    assert [plan["item_no"] for plan in short_plans] == [2, 4, 6]
-    assert all("half_sentence_reply" in plan["keyword_selection"]["comment_speaking_style"] for plan in short_plans)
-    assert all(plan["keyword_selection_override"]["reason"] == "supply_transfer_thread_short_reply" for plan in short_plans)
-    assert plans[0]["keyword_selection"]["comment_format_control"] == ["comment_short_clean", "comment_21_35"]
+    assert all(
+        plan["keyword_selection"]["comment_format_control"] == ["comment_short_clean", "comment_21_35"]
+        for plan in plans
+    )
+    assert all(plan["keyword_selection"]["comment_speaking_style"] == ["pass_info"] for plan in plans)
+    assert all("keyword_selection_override" not in plan for plan in plans)
     assert asset.content_json["keyword_selection"]["comment_format_control"] == ["comment_short_clean", "comment_21_35"]
 
 
@@ -444,6 +450,48 @@ def test_comment_draft_rule_override_keeps_active_rule_unchanged():
     assert updated[0]["draft_rule_override"]["enabled"] is True
 
 
+def test_comment_prompt_bundle_draft_override_updates_rendered_bundle_only_for_test():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    original_bundle = {
+        "generation_instruction": "生成一条真实用户评论。",
+        "content_direction": "旧内容方向。",
+        "activity_material": ["旧活动素材。"],
+        "writing_requirements": ["旧写法。"],
+        "notes": ["旧注意。"],
+    }
+    draft_bundle = {
+        "generation_instruction": "生成一条小红书母婴社区真实用户评论。",
+        "content_direction": "写看到有货后的即时反应。",
+        "activity_material": ["a2已经到货。"],
+        "writing_requirements": ["字数在20字以内"],
+        "notes": ["不要说消极词。"],
+    }
+    rules = [
+        {
+            "rule_id": "a2_direct_01",
+            "source_row_no": 1,
+            "business_rule": "有货-直给简单报喜",
+            "prompt_mode": "comment_prompt_bundle",
+            "comment_prompt_bundle": original_bundle,
+            "corpus": original_bundle["content_direction"],
+            "examples": ["a2终于到货了"],
+        }
+    ]
+    draft = {
+        "rule_id": "a2_direct_01",
+        "source_row_no": 1,
+        "corpus": draft_bundle["content_direction"],
+        "comment_prompt_bundle": draft_bundle,
+    }
+
+    updated = service._rules_with_draft_override(rules, draft)
+
+    assert rules[0]["comment_prompt_bundle"] == original_bundle
+    assert updated[0]["comment_prompt_bundle"] == draft_bundle
+    assert updated[0]["corpus"] == draft_bundle["content_direction"]
+    assert updated[0]["examples"] == ["a2终于到货了"]
+
+
 def test_comment_plan_injects_three_reference_examples_from_pool():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
     rule = {
@@ -489,6 +537,126 @@ def test_comment_plan_preserves_prompt_slots_from_rule():
     plan = service._plan_from_rule(rule, asset=asset, item_no=1)
 
     assert plan["prompt_slots"] == rule["prompt_slots"]
+
+
+def test_layered_comment_plan_keeps_activity_material_out_of_scenario_requirement():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    rule = {
+        "rule_id": "a2_direct_01",
+        "business_rule": "有货-直给到货情绪",
+        "corpus": "旧规则语料",
+        "content_direction": "写看到供货恢复消息后的即时反应。",
+        "activity_material": ["a2已经到货或来货", "可以写自己也买到了新货"],
+        "scenario_generation_requirements": "直接说线上线下看到货或刚买到。",
+        "examples": ["a2终于到货了"],
+        "source_row_no": 1,
+    }
+    asset = SimpleNamespace(asset_key="a2_sentiment_comment_activity", id=7, version_no=65)
+
+    plan = service._plan_from_rule(rule, asset=asset, item_no=1)
+
+    assert plan["content_direction"] == rule["content_direction"]
+    assert plan["activity_material"] == rule["activity_material"]
+    assert plan["generation_requirements"] is None
+
+
+def test_comment_prompt_bundle_plan_does_not_mix_examples_tones_or_slots():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    bundle = {
+        "generation_instruction": "生成一条小红书母婴社区真实用户评论。",
+        "content_direction": "写看到有货后的简单报喜。",
+        "activity_material": ["a2已经到货。"],
+        "writing_requirements": ["字数在20字以内"],
+        "notes": ["不要说消极词。"],
+    }
+    rule = {
+        "rule_id": "a2_direct_01",
+        "business_rule": "有货-直给简单报喜",
+        "prompt_mode": "comment_prompt_bundle",
+        "comment_prompt_bundle": bundle,
+        "corpus": bundle["content_direction"],
+        "examples": ["不应该进入Prompt"],
+        "variation_slots": [
+            {"slot_code": "entry", "slot_name": "接法", "options": ["不应该进入Prompt"]}
+        ],
+        "source_row_no": 1,
+    }
+    asset = SimpleNamespace(
+        asset_key="a2_sentiment_comment_activity",
+        id=7,
+        version_no=67,
+        content_json={
+            "comment_tone_options": {
+                "stock": [
+                    {"tone_code": "confirm", "tone_label": "确认", "prompt": "不应该进入Prompt"}
+                ]
+            }
+        },
+        metadata_json={},
+    )
+
+    plan = service._plan_from_rule(rule, asset=asset, item_no=1)
+
+    assert plan["prompt_mode"] == "comment_prompt_bundle"
+    assert plan["comment_prompt_bundle"] == bundle
+    assert plan["render_reference_examples"] is False
+    assert plan["examples"] == []
+    assert plan["example_sample_count"] == 0
+    assert "comment_tone_options" not in plan
+    assert "variation_slots" not in plan
+
+
+def test_comment_prompt_bundle_rotates_only_explicit_batch_prompt_slots():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    bundle = {
+        "generation_instruction": "生成一条真实用户评论。",
+        "content_direction": "写看到有货后的自然反应。",
+        "activity_material": ["a2已经到货。"],
+        "writing_requirements": ["字数在30字以内"],
+        "notes": ["不要说消极词。"],
+    }
+    rules = service._rules_with_prompt_slots_override(
+        [
+            {
+                "rule_id": "a2_direct_43",
+                "business_rule": "有货-渠道-不提产品",
+                "prompt_mode": "comment_prompt_bundle",
+                "comment_prompt_bundle": bundle,
+                "corpus": bundle["content_direction"],
+                "examples": ["不应该进入Prompt"],
+                "variation_slots": [
+                    {"slot_code": "old", "slot_name": "旧槽", "options": ["不应该进入Prompt"]}
+                ],
+                "source_row_no": 2,
+            }
+        ],
+        {
+            "本条表达路径": [
+                "不用时间词，从常买渠道切入，用询问句收尾。",
+                "从生活动作切入，不以刚或终于开头。",
+            ]
+        },
+    )
+    asset = SimpleNamespace(
+        asset_key="a2_sentiment_comment_activity",
+        id=7,
+        version_no=76,
+        content_json={},
+        metadata_json={},
+    )
+
+    first = service._plan_from_rule(rules[0], asset=asset, item_no=1, rule_occurrence_no=0)
+    second = service._plan_from_rule(rules[0], asset=asset, item_no=2, rule_occurrence_no=1)
+
+    assert first["prompt_slots"] == {
+        "本条表达路径": ["不用时间词，从常买渠道切入，用询问句收尾。"]
+    }
+    assert second["prompt_slots"] == {
+        "本条表达路径": ["从生活动作切入，不以刚或终于开头。"]
+    }
+    assert first["bundle_prompt_slots_source"] == "batch_override"
+    assert first["examples"] == []
+    assert "variation_slots" not in first
 
 
 def test_comment_plan_preserves_variation_slots_from_rule():
@@ -594,6 +762,82 @@ def test_comment_plan_copies_batch_variation_review_from_rule_asset():
     assert plan["batch_variation_review"] == config
 
 
+def test_comment_plan_prefers_explicit_batch_variation_review_override():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    asset_config = {"enabled": True, "expression_frequency": []}
+    override = {
+        "enabled": True,
+        "expression_frequency": [
+            {
+                "group_key": "opener_just",
+                "terms": ["刚"],
+                "match_mode": "prefix",
+                "max_ratio": 0.2,
+            }
+        ],
+    }
+    rule = service._rules_with_batch_variation_review_override(
+        [{"business_rule": "有货-渠道", "corpus": "写自然反应。"}],
+        override,
+    )[0]
+    asset = SimpleNamespace(
+        asset_key="a2_sentiment_comment_activity",
+        id=7,
+        version_no=76,
+        content_json={"batch_variation_review": asset_config},
+        metadata_json={},
+    )
+
+    plan = service._plan_from_rule(rule, asset=asset, item_no=1)
+
+    assert plan["batch_variation_review"] == override
+
+
+def test_comment_plan_copies_delivery_selection_from_rule_asset():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    config = {
+        "enabled": True,
+        "target_count": 105,
+        "max_similarity": 0.45,
+    }
+    asset = SimpleNamespace(
+        asset_key="a2_sentiment_comment_activity",
+        id=7,
+        version_no=76,
+        content_json={"delivery_selection": config},
+        metadata_json={},
+    )
+
+    plan = service._plan_from_rule(
+        {"business_rule": "有货-直给", "corpus": "写自然反应。"},
+        asset=asset,
+        item_no=1,
+    )
+
+    assert plan["delivery_selection"] == config
+
+
+def test_comment_plan_prefers_explicit_delivery_selection_override():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    asset_config = {"enabled": True, "target_count": 100}
+    override = {"enabled": True, "target_count": 105, "max_similarity": 0.45}
+    rule = service._rules_with_delivery_selection_override(
+        [{"business_rule": "有货-直给", "corpus": "写自然反应。"}],
+        override,
+    )[0]
+    asset = SimpleNamespace(
+        asset_key="a2_sentiment_comment_activity",
+        id=7,
+        version_no=76,
+        content_json={"delivery_selection": asset_config},
+        metadata_json={},
+    )
+
+    plan = service._plan_from_rule(rule, asset=asset, item_no=1)
+
+    assert plan["delivery_selection"] == override
+
+
 def test_comment_length_fallback_keeps_short_natural_clause():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
 
@@ -683,7 +927,7 @@ def test_comment_micro_reply_caps_from_selected_keyword_snapshot():
     assert service._comment_max_chars(item) == 10
 
 
-def test_comment_micro_reply_has_empty_generation_fallback():
+def test_comment_micro_reply_does_not_inject_business_fallback_for_short_output():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
     item = ContentBatchItem(
         item_no=3,
@@ -692,59 +936,10 @@ def test_comment_micro_reply_has_empty_generation_fallback():
         },
     )
 
-    fallback = service._fallback_empty_micro_reply(item)
-
-    assert fallback == "店里说到了"
-    assert 5 <= len(fallback) <= 8
+    assert service._normalize_comment_length(item, "嗯") == "嗯"
 
 
-def test_comment_micro_reply_replaces_too_short_comment():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(
-        item_no=3,
-        plan_json={
-            "keyword_selection": {"comment_format_control": ["comment_micro_reply"]},
-        },
-    )
-
-    normalized = service._normalize_comment_length(item, "门店")
-
-    assert normalized == "店里说到了"
-    assert 5 <= len(normalized) <= 8
-
-
-def test_comment_micro_batch_check_reply_has_empty_generation_fallback():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(
-        item_no=2,
-        plan_json={
-            "keyword_selection": {"comment_format_control": ["comment_micro_batch_check_reply"]},
-        },
-    )
-
-    fallback = service._fallback_empty_micro_batch_check_reply(item)
-
-    assert fallback == "准备转回来先看罐底报告"
-    assert 8 <= len(fallback) <= 32
-
-
-def test_comment_thread_short_reply_caps_generated_comment_at_twelve_chars():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(
-        item_no=4,
-        plan_json={
-            "keyword_selection": {"comment_format_control": ["comment_thread_short_reply"]},
-        },
-    )
-
-    normalized = service._normalize_comment_length(item, "导购刚说我的a2到了，先继续喝着，换奶啥的晚点再想吧。")
-
-    assert normalized == "导购刚说我的a2到了"
-    assert len(normalized) <= 12
-    assert service._comment_max_chars(item) == 12
-
-
-def test_comment_thread_short_reply_replaces_dangling_overlong_clause():
+def test_comment_thread_short_reply_only_controls_length():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
     item = ContentBatchItem(
         item_no=8,
@@ -755,312 +950,8 @@ def test_comment_thread_short_reply_replaces_dangling_overlong_clause():
 
     normalized = service._normalize_comment_length(item, "问了几家店，先继续喝这个吧，转奶的事后面再说。")
 
-    assert normalized == "不折腾了"
-    assert 3 <= len(normalized) <= 12
-
-
-def test_comment_thread_short_reply_has_empty_generation_fallback():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(
-        item_no=5,
-        plan_json={
-            "keyword_selection": {"comment_format_control": ["comment_thread_short_reply"]},
-        },
-    )
-
-    fallback = service._fallback_empty_thread_short_reply(item)
-
-    assert fallback == "等发货中"
-    assert 3 <= len(fallback) <= 12
-
-
-def test_comment_micro_batch_check_reply_keeps_too_short_comment_for_guard_or_rewrite():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(
-        item_no=2,
-        plan_json={
-            "keyword_selection": {"comment_format_control": ["comment_micro_batch_check_reply"]},
-        },
-    )
-
-    normalized = service._normalize_comment_length(item, "报告")
-
-    assert normalized == "报告"
-    assert service._comment_max_chars(item) == 32
-
-
-def test_comment_micro_batch_check_reply_keeps_missing_context_marker_for_guard_or_rewrite():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(
-        item_no=2,
-        plan_json={
-            "keyword_selection": {"comment_format_control": ["comment_micro_batch_check_reply"]},
-        },
-    )
-
-    normalized = service._normalize_comment_length(item, "批批检有底点")
-
-    assert normalized == "批批检有底点"
-
-
-def test_comment_micro_batch_check_reply_keeps_natural_longer_comment():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(
-        item_no=1,
-        plan_json={
-            "keyword_selection": {"comment_format_control": ["comment_micro_batch_check_reply"]},
-        },
-    )
-    comment = "拿一罐先扫罐底码，报告能出来"
-
-    normalized = service._normalize_comment_length(item, comment)
-
-    assert normalized == comment
-    assert len(normalized) <= 32
-
-
-def test_comment_micro_batch_check_reply_keeps_scan_report_comment_with_transfer_marker():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(
-        item_no=1,
-        plan_json={
-            "keyword_selection": {"comment_format_control": ["comment_micro_batch_check_reply"]},
-        },
-    )
-    comment = "先试前看到未检出，心里有底"
-
-    normalized = service._normalize_comment_length(item, comment)
-
-    assert normalized == comment
-
-
-def test_comment_micro_batch_check_reply_keeps_nonempty_invalid_comment_without_fixed_fallback():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(
-        item_no=6,
-        plan_json={
-            "keyword_selection": {"comment_format_control": ["comment_micro_batch_check_reply"]},
-        },
-    )
-
-    normalized = service._normalize_comment_length(item, "家里快喝完了 批批检敢先")
-
-    assert normalized == "家里快喝完了 批批检敢先"
-    assert " " in normalized
-
-
-def test_comment_micro_batch_check_reply_keeps_awkward_phrase_without_fixed_fallback():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(
-        item_no=7,
-        plan_json={
-            "keyword_selection": {"comment_format_control": ["comment_micro_batch_check_reply"]},
-        },
-    )
-
-    normalized = service._normalize_comment_length(item, "刚转门店，新批次到货每批检")
-
-    assert normalized == "刚转门店，新批次到货每批检"
-
-
-def test_comment_micro_batch_check_reply_truncates_overstuffed_details_without_fixed_fallback():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(
-        item_no=1,
-        plan_json={
-            "keyword_selection": {"comment_format_control": ["comment_micro_batch_check_reply"]},
-        },
-    )
-    comment = "刚转奶先拿一罐扫罐底码，报告能点开，每批看到未检出，心里有点底"
-
-    normalized = service._normalize_comment_length(item, comment)
-
-    assert normalized.startswith("刚转奶先拿一罐扫罐底码")
-    assert len(normalized) <= 32
-
-
-def test_comment_micro_batch_check_empty_fallback_pool_stays_short_and_batch_marked():
-    context_markers = ("有货", "到货", "门店", "店里", "新批次", "到了", "补到货", "快喝完", "拿一罐", "先试", "母婴店", "转回来")
-    batch_markers = ("批批检", "每批", "报告", "检测", "扫码", "扫", "罐底码", "罐底有", "检过", "未检出")
-
-    for fallback in COMMENT_MICRO_BATCH_CHECK_EMPTY_FALLBACKS:
-        assert 8 <= len(fallback) <= 32
-        assert any(marker in fallback for marker in context_markers)
-        assert any(marker in fallback for marker in batch_markers)
-        assert "保证没问题" not in fallback
-        assert "绝对安全" not in fallback
-
-
-def test_comment_micro_reply_fallback_pool_stays_short_and_arrival_marked():
-    arrival_markers = ("有货", "到货", "门店", "店里", "导购", "刚到", "到了", "到店", "上架")
-
-    for fallback in COMMENT_MICRO_REPLY_EMPTY_FALLBACKS:
-        assert 5 <= len(fallback) <= 8
-        assert any(marker in fallback for marker in arrival_markers)
-        assert not any(term in fallback for term in COMMENT_MICRO_REPLY_OVERUSED_TERMS)
-        assert not any(phrase in fallback for phrase in COMMENT_MICRO_REPLY_AWKWARD_STOCK_PHRASES)
-
-
-@pytest.mark.asyncio
-async def test_comment_micro_reply_batch_variation_replaces_duplicates_and_summary_terms(
-    content_agent_workbench_client,
-):
-    _, session_factory = content_agent_workbench_client
-    plan = {
-        "quality_guard_profile_key": "a2_negative_post_comment_202606",
-        "keyword_selection": {"comment_format_control": ["comment_micro_reply"]},
-    }
-    async with session_factory() as session:
-        job = ContentBatchJob(
-            asset_key="a2_negative_post_comment_activity",
-            product_topic="A2既存负面帖铺评论",
-            count=5,
-            status="generated",
-        )
-        session.add(job)
-        await session.flush()
-        session.add_all(
-            [
-                ContentBatchItem(batch_id=job.id, item_no=1, status="generated", plan_json=plan, body="妈呀门店到了", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=2, status="generated", plan_json=plan, body="妈呀门店到了", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=3, status="generated", plan_json=plan, body="妈呀刚到店", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=4, status="generated", plan_json=plan, body="妈呀有货了", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=5, status="generated", plan_json=plan, body="家里能续上", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=6, status="generated", plan_json=plan, body="刚转奶瓶快空导购说到", quality_json={}),
-            ]
-        )
-        await session.commit()
-        batch_id = job.id
-
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    service.session_factory = session_factory
-    await service._rebalance_micro_reply_batch_variation(batch_id)
-
-    async with session_factory() as session:
-        result = await session.execute(
-            select(ContentBatchItem)
-            .where(ContentBatchItem.batch_id == batch_id)
-            .order_by(ContentBatchItem.item_no)
-        )
-        items = list(result.scalars().all())
-
-    bodies = [item.body for item in items]
-    assert len(bodies) == len(set(bodies))
-    assert all(len(body or "") <= 10 for body in bodies)
-    assert not any(any(term in (body or "") for term in COMMENT_MICRO_REPLY_OVERUSED_TERMS) for body in bodies)
-    assert not any(any(phrase in (body or "") for phrase in COMMENT_MICRO_REPLY_AWKWARD_STOCK_PHRASES) for body in bodies)
-    assert items[1].quality_json["micro_reply_variation_guard"]["reason"] == "duplicate_body"
-    assert items[3].quality_json["micro_reply_variation_guard"]["reason"] == "opener_overused"
-    assert items[4].quality_json["micro_reply_variation_guard"]["reason"] == "overused_summary_term"
-    assert items[5].quality_json["micro_reply_variation_guard"]["reason"] == "awkward_stock_phrase"
-
-
-@pytest.mark.asyncio
-async def test_comment_micro_batch_check_reply_batch_variation_flags_without_fixed_replacement(
-    content_agent_workbench_client,
-):
-    _, session_factory = content_agent_workbench_client
-    plan = {
-        "quality_guard_profile_key": "a2_negative_post_comment_202606",
-        "keyword_selection": {"comment_format_control": ["comment_micro_batch_check_reply"]},
-    }
-    async with session_factory() as session:
-        job = ContentBatchJob(
-            asset_key="a2_negative_post_comment_activity",
-            product_topic="A2既存负面帖铺评论",
-            count=5,
-            status="generated",
-        )
-        session.add(job)
-        await session.flush()
-        session.add_all(
-            [
-                ContentBatchItem(batch_id=job.id, item_no=1, status="generated", plan_json=plan, body="店里有货还批批检", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=2, status="generated", plan_json=plan, body="批批检有底点", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=3, status="generated", plan_json=plan, body="家里快喝完了 批批检敢先", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=4, status="generated", plan_json=plan, body="附近店到货了，店员说这批也检过", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=5, status="generated", plan_json=plan, body="刚看到附近门店到货了，店员说这批也检过", quality_json={}),
-            ]
-        )
-        await session.commit()
-        batch_id = job.id
-
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    service.session_factory = session_factory
-    await service._rebalance_micro_reply_batch_variation(batch_id)
-
-    async with session_factory() as session:
-        result = await session.execute(
-            select(ContentBatchItem)
-            .where(ContentBatchItem.batch_id == batch_id)
-            .order_by(ContentBatchItem.item_no)
-        )
-        items = list(result.scalars().all())
-
-    bodies = [item.body for item in items]
-    assert "批批检有底点" in bodies
-    assert "家里快喝完了 批批检敢先" in bodies
-    assert any(body.startswith("刚看到附近门店到货了") for body in bodies)
-    assert all(len(body or "") <= 32 for body in bodies)
-    assert items[1].quality_json["micro_batch_check_variation_guard"]["reason"] == "missing_context_marker"
-    assert items[2].quality_json["micro_batch_check_variation_guard"]["reason"] == "awkward_whitespace"
-    assert "micro_batch_check_variation_guard" not in items[3].quality_json
-    assert items[4].quality_json["micro_batch_check_variation_guard"]["reason"] == "batch_check_phrase_overused"
-    assert items[4].quality_json["micro_batch_check_variation_guard"]["action"] == "flag_only"
-
-
-@pytest.mark.asyncio
-async def test_comment_micro_reply_limits_emotive_openers(content_agent_workbench_client):
-    _, session_factory = content_agent_workbench_client
-    plan = {
-        "quality_guard_profile_key": "a2_negative_post_comment_202606",
-        "keyword_selection": {"comment_format_control": ["comment_micro_reply"]},
-    }
-    async with session_factory() as session:
-        job = ContentBatchJob(
-            asset_key="a2_negative_post_comment_activity",
-            product_topic="A2既存负面帖铺评论",
-            count=5,
-            status="generated",
-        )
-        session.add(job)
-        await session.flush()
-        session.add_all(
-            [
-                ContentBatchItem(batch_id=job.id, item_no=1, status="generated", plan_json=plan, body="妈呀门店到了", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=2, status="generated", plan_json=plan, body="我天到店了", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=3, status="generated", plan_json=plan, body="还好店里有货", quality_json={}),
-                ContentBatchItem(batch_id=job.id, item_no=4, status="generated", plan_json=plan, body="可算上架了", quality_json={}),
-            ]
-        )
-        await session.commit()
-        batch_id = job.id
-
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    service.session_factory = session_factory
-    await service._rebalance_micro_reply_batch_variation(batch_id)
-
-    async with session_factory() as session:
-        result = await session.execute(
-            select(ContentBatchItem)
-            .where(ContentBatchItem.batch_id == batch_id)
-            .order_by(ContentBatchItem.item_no)
-        )
-        items = list(result.scalars().all())
-
-    emotive_count = sum(
-        any((item.body or "").startswith(opener) for opener in COMMENT_MICRO_REPLY_EMOTIVE_OPENERS)
-        for item in items
-    )
-    assert emotive_count == 3
-    assert items[3].quality_json["micro_reply_variation_guard"]["reason"] == "emotive_opener_overused"
-
-
-def test_non_micro_reply_keeps_empty_generation_failure():
-    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
-    item = ContentBatchItem(item_no=3, plan_json={})
-
-    assert service._fallback_empty_micro_reply(item) == ""
+    assert normalized == "问了几家店"
+    assert len(normalized) <= 12
 
 
 def test_a2_plot_discussion_length_is_not_trimmed_before_guard():
@@ -1450,6 +1341,128 @@ def _a2_guard_plan(corpus: str) -> dict:
             ]
         },
     }
+
+
+def _a2_stock_direct_guard_plan(rule_id: str, business_rule: str) -> dict:
+    plan = _a2_guard_plan("有货直给")
+    plan["rule_id"] = rule_id
+    plan["business_rule"] = business_rule
+    return plan
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "business_rule", "body"),
+    [
+        ("a2_direct_01", "有货-直给-提产品", "a2到货了，我先冲一波"),
+        ("a2_direct_43", "有货-直给-不提产品", "终于补货了，我直接冲去下单"),
+    ],
+)
+def test_a2_stock_direct_rules_allow_natural_purchase_wording(rule_id, business_rule, body):
+    item = ContentBatchItem(
+        body=body,
+        plan_json=_a2_stock_direct_guard_plan(rule_id, business_rule),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert not any(issue["code"] == "activity_body_brand_bad_stock_wording" for issue in payload["issues"])
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "business_rule", "body"),
+    [
+        ("a2_direct_01", "有货-直给-提产品", "a2到货了，顺手拿了两袋"),
+        ("a2_direct_43", "有货-直给-不提产品", "刚补货了，先冲一包"),
+        ("a2_direct_01", "有货-直给-提产品", "a2来货了，我先拿三盒"),
+        ("a2_direct_43", "有货-直给-不提产品", "门店到了，直接补一件"),
+        ("a2_direct_01", "有货-直给-提产品", "a2能买到了，先搬一桶"),
+        ("a2_direct_43", "有货-直给-不提产品", "刚发现能买了，先下单两瓶"),
+    ],
+)
+def test_a2_stock_direct_rules_reject_invalid_formula_quantity_units(rule_id, business_rule, body):
+    item = ContentBatchItem(
+        body=body,
+        plan_json=_a2_stock_direct_guard_plan(rule_id, business_rule),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is False
+    assert any(
+        issue["code"] == "activity_body_stock_direct_invalid_quantity_unit"
+        for issue in payload["issues"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "business_rule", "body"),
+    [
+        ("a2_direct_01", "有货-直给-提产品", "a2到货了，我先拿两罐"),
+        ("a2_direct_43", "有货-直给-不提产品", "刚看到有货，先带一箱"),
+        ("a2_direct_01", "有货-直给-提产品", "a2来货了，家里放两箱子"),
+    ],
+)
+def test_a2_stock_direct_rules_allow_valid_formula_quantity_units(rule_id, business_rule, body):
+    item = ContentBatchItem(
+        body=body,
+        plan_json=_a2_stock_direct_guard_plan(rule_id, business_rule),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert not any(
+        issue["code"] == "activity_body_stock_direct_invalid_quantity_unit"
+        for issue in payload["issues"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "business_rule", "body", "expected_code"),
+    [
+        (
+            "a2_direct_01",
+            "有货-直给-提产品",
+            "终于补货了，先囤两罐",
+            "activity_body_stock_direct_missing_product_name",
+        ),
+        (
+            "a2_direct_43",
+            "有货-直给-不提产品",
+            "a2到货了，先囤两罐",
+            "activity_body_stock_direct_unexpected_product_name",
+        ),
+        (
+            "a2_direct_01",
+            "有货-直给-提产品",
+            "这边能调货，我先补两罐a2",
+            "activity_body_brand_bad_stock_wording",
+        ),
+    ],
+)
+def test_a2_stock_direct_rules_keep_product_split_and_channel_risk_boundaries(
+    rule_id,
+    business_rule,
+    body,
+    expected_code,
+):
+    item = ContentBatchItem(
+        body=body,
+        plan_json=_a2_stock_direct_guard_plan(rule_id, business_rule),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is False
+    assert any(issue["code"] == expected_code for issue in payload["issues"])
 
 
 def _a2_plot_guard_plan(corpus: str = "剧情讨论业务规则") -> dict:
@@ -2631,6 +2644,190 @@ def test_comment_batch_variation_review_flags_only_overflow_items():
     assert items[4].quality_json["batch_variation_review"]["expression_frequency"]["metrics"][0]["max_allowed_count"] == 2
 
 
+def test_comment_batch_variation_review_can_warn_without_changing_business_hard_pass():
+    config = {
+        "enabled": True,
+        "affects_hard_pass": False,
+        "expression_frequency": [
+            {
+                "group_key": "opener_just",
+                "label": "刚字开头",
+                "terms": ["刚"],
+                "match_mode": "prefix",
+                "max_ratio": 0.5,
+            }
+        ],
+    }
+    items = [
+        ContentBatchItem(item_no=1, status="generated", body="刚看到补货了", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=2, status="generated", body="刚发现常买店有货", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=3, status="generated", body="刚刷到群里消息", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=4, status="generated", body="楼下店里来货了", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+    ]
+
+    result = CommentBatchVariationReviewService().review_batch(items)
+
+    assert result is not None
+    assert result["pass"] is False
+    assert result["affects_hard_pass"] is False
+    assert items[2].quality_json["hard_pass"] is True
+    assert items[2].quality_json["review_report"].get("rewrite_required") is not True
+    advisory = items[2].quality_json["review_report"]["advisory_results"]
+    assert advisory[0]["ae_code"] == "batch_variation.batch_expression_frequency_cap_exceeded"
+    assert advisory[0]["affects_hard_pass"] is False
+
+
+def test_comment_batch_delivery_selection_keeps_business_pass_separate_from_delivery_choice():
+    config = {
+        "enabled": True,
+        "target_count": 3,
+        "max_similarity": 0.7,
+        "opening_first_char_frequency": {"max_count": 1},
+    }
+    items = [
+        ContentBatchItem(item_no=1, status="generated", body="刚看到补货了", plan_json={"delivery_selection": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=2, status="generated", body="刚发现常买店有货", plan_json={"delivery_selection": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=3, status="generated", body="楼下店里来货了", plan_json={"delivery_selection": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=4, status="generated", body="群里说现在能买到了", plan_json={"delivery_selection": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=5, status="generated", body="页面显示已经到货", plan_json={"delivery_selection": config}, quality_json={"hard_pass": True}),
+    ]
+
+    result = CommentBatchDeliverySelectionService().select_batch(items)
+
+    assert result is not None
+    assert result["selected_count"] == 3
+    assert result["shortfall_count"] == 0
+    selected = [item for item in items if item.quality_json["delivery_selection"]["selected"]]
+    assert len(selected) == 3
+    assert sum(item.body.startswith("刚") for item in selected) == 1
+    assert all(item.quality_json["hard_pass"] is True for item in items)
+
+
+def test_comment_batch_delivery_selection_reports_bulk_refill_without_selecting_hard_failures_or_duplicates():
+    config = {
+        "enabled": True,
+        "target_count": 4,
+        "max_similarity": 0.7,
+        "min_bulk_refill_count": 30,
+        "bulk_refill_multiplier": 3,
+    }
+    items = [
+        ContentBatchItem(item_no=1, status="generated", body="到货了，可以买了", plan_json={"delivery_selection": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=2, status="generated", body="到货了，可以买了", plan_json={"delivery_selection": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=3, status="generated", body="楼下店里来货了", plan_json={"delivery_selection": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=4, status="generated", body="正文业务错误", plan_json={"delivery_selection": config}, quality_json={"hard_pass": False}),
+    ]
+
+    result = CommentBatchDeliverySelectionService().select_batch(items)
+
+    assert result is not None
+    assert result["eligible_count"] == 2
+    assert result["exact_duplicate_count"] == 1
+    assert result["business_ineligible_count"] == 1
+    assert result["selected_count"] == 2
+    assert result["shortfall_count"] == 2
+    assert result["suggested_bulk_refill_count"] == 30
+    assert items[1].quality_json["delivery_selection"]["non_selection_reason"] == "exact_duplicate"
+    assert items[3].quality_json["delivery_selection"]["non_selection_reason"] == "business_hard_pass_required"
+
+
+def test_comment_batch_report_summary_exposes_delivery_selection_and_variation_counts():
+    delivery_summary = {
+        "eligible_count": 4,
+        "selected_count": 3,
+        "shortfall_count": 2,
+        "suggested_bulk_refill_count": 30,
+    }
+    items = [
+        ContentBatchReportItem(
+            item_id=1,
+            item_no=1,
+            status="generated",
+            body="到货了",
+            body_chars=4,
+            hard_pass=True,
+            batch_variation_pass=False,
+            delivery_selected=True,
+            quality={"delivery_selection": delivery_summary},
+        ),
+        ContentBatchReportItem(
+            item_id=2,
+            item_no=2,
+            status="generated",
+            body="现在有货了",
+            body_chars=6,
+            hard_pass=True,
+            batch_variation_pass=True,
+            delivery_selected=True,
+            quality={"delivery_selection": delivery_summary},
+        ),
+    ]
+
+    summary = ContentBatchReportService.__new__(ContentBatchReportService)._summary(items)
+
+    assert summary.batch_variation_warning_count == 1
+    assert summary.delivery_candidate_count == 4
+    assert summary.delivery_selected_count == 3
+    assert summary.delivery_shortfall_count == 2
+    assert summary.suggested_bulk_refill_count == 30
+
+
+def test_comment_batch_variation_review_prefix_match_ignores_term_in_middle():
+    config = {
+        "enabled": True,
+        "expression_frequency": [
+            {
+                "group_key": "opener_just",
+                "label": "刚字开头",
+                "terms": ["刚"],
+                "match_mode": "prefix",
+                "max_ratio": 0.4,
+            }
+        ],
+    }
+    items = [
+        ContentBatchItem(item_no=1, status="generated", body="刚看到补货了", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=2, status="generated", body="今天刚看到补货了", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=3, status="generated", body="刚发现常买店有货", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=4, status="generated", body="刚刷到群里消息", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=5, status="generated", body="楼下店里来货了", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+    ]
+
+    result = CommentBatchVariationReviewService().review_batch(items)
+
+    assert result is not None
+    metric = result["expression_frequency"]["metrics"][0]
+    assert metric["match_mode"] == "prefix"
+    assert metric["hit_item_nos"] == [1, 3, 4]
+    assert metric["overflow_item_nos"] == [4]
+    assert items[1].quality_json["hard_pass"] is True
+    assert items[3].quality_json["hard_pass"] is False
+
+
+def test_comment_batch_variation_review_flags_repeated_opening_prefix_and_clause():
+    config = {
+        "enabled": True,
+        "opening_prefix_frequency": {"prefix_chars": 3, "max_count": 2},
+        "opening_clause_frequency": {"max_count": 2},
+    }
+    items = [
+        ContentBatchItem(item_no=1, status="generated", body="刚看到补货了，我去看看", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=2, status="generated", body="刚看到补货了，先问问", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=3, status="generated", body="刚看到补货了，顺路看看", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+        ContentBatchItem(item_no=4, status="generated", body="楼下店里来货了", plan_json={"batch_variation_review": config}, quality_json={"hard_pass": True}),
+    ]
+
+    result = CommentBatchVariationReviewService().review_batch(items)
+
+    assert result is not None
+    assert result["pass"] is False
+    assert len(result["opening_frequency"]["metrics"]) == 2
+    opening_issues = items[2].quality_json["batch_variation_review"]["opening_frequency"]["issues"]
+    assert len(opening_issues) == 2
+    assert all(issue["code"] == "batch_opening_frequency_cap_exceeded" for issue in opening_issues)
+    assert items[2].quality_json["hard_pass"] is False
+
+
 def test_a2_activity_guard_repairs_marker_and_entry_terms():
     item = ContentBatchItem(
         body="爱他美0.03有货，今天扫罐底批次物流码那个物流码的码查报告，截图保存了，新的一罐先看报告，纸尿裤和擦屁屁总有点红先不聊，我没慌",
@@ -2848,6 +3045,74 @@ def test_a2_activity_guard_accepts_stock_only_comment_without_batch_report():
     assert not payload["issues"]
 
 
+def test_a2_stock_rule_is_not_misrouted_by_negative_member_benefit_boundary():
+    item = ContentBatchItem(
+        title="有货-直给到货情绪",
+        body="a2到货了，我也终于买到了！",
+        plan_json={
+            "quality_guard_profile_key": "a2_sentiment_comment_202606",
+            "business_rule": "有货-直给到货情绪",
+            "corpus": "只写到货反应，不混入报告、转奶、会员权益等别的内容。",
+        },
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert payload["context_list"]["关键词"] == "有货"
+    assert not payload["issues"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "a2到货了，太好了！",
+        "a2到货了！",
+        "a2至初来货了！",
+        "a2到了！终于等到了！",
+        "终于等到了！",
+    ],
+)
+def test_a2_stock_guard_accepts_complete_short_arrival_comments(body):
+    item = ContentBatchItem(
+        title="有货-直给到货情绪",
+        body=body,
+        plan_json={
+            "quality_guard_profile_key": "a2_sentiment_comment_202606",
+            "business_rule": "有货-直给到货情绪",
+        },
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert payload["context_list"]["关键词"] == "有货"
+    assert not any(issue["code"] == "activity_body_incomplete_comment" for issue in payload["issues"])
+
+
+@pytest.mark.parametrize("body", ["到了！", "太好了！"])
+def test_a2_stock_guard_rejects_short_comment_below_five_chars_or_without_supply_word(body):
+    item = ContentBatchItem(
+        title="有货-直给到货情绪",
+        body=body,
+        plan_json={
+            "quality_guard_profile_key": "a2_sentiment_comment_202606",
+            "business_rule": "有货-直给到货情绪",
+        },
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is False
+    assert any(issue["code"] == "activity_body_incomplete_comment" for issue in payload["issues"])
+
+
 def test_a2_activity_guard_still_requires_batch_report_for_stock_batch_combo():
     item = ContentBatchItem(
         body="刚看到a2能买了，我去瞅瞅。",
@@ -2891,6 +3156,36 @@ def test_a2_activity_guard_requires_brand_anchor_for_member_benefit_comment():
 
     assert payload is not None
     assert payload["pass"] is False
+    assert any(issue["code"] == "activity_body_missing_a2_member_brand_anchor" for issue in payload["issues"])
+
+
+def test_a2_activity_guard_normalizes_uppercase_brand_but_preserves_a2_protein():
+    item = ContentBatchItem(
+        body="长期喝A2的，会员活动里也提到A2蛋白，空罐攒起来换奶粉挺实在。",
+        plan_json=_a2_guard_plan("会员权益-集罐换礼：\n写妈妈看到 a2 会员活动里可以集罐换奶粉后的评论。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert item.body == "长期喝a2的，会员活动里也提到A2蛋白，空罐攒起来换奶粉挺实在。"
+    assert any(repair["code"] == "activity_body_a2_brand_case_normalized" for repair in payload["repairs"])
+
+
+def test_a2_activity_guard_does_not_treat_a2_protein_as_member_brand_anchor():
+    item = ContentBatchItem(
+        body="看到A2蛋白这个说法了，空罐攒起来换奶粉挺实在。",
+        plan_json=_a2_guard_plan("会员权益-集罐换礼：\n写妈妈看到 a2 会员活动里可以集罐换奶粉后的评论。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is False
+    assert item.body == "看到A2蛋白这个说法了，空罐攒起来换奶粉挺实在。"
     assert any(issue["code"] == "activity_body_missing_a2_member_brand_anchor" for issue in payload["issues"])
 
 
@@ -4816,6 +5111,426 @@ async def test_batch_workbench_exposes_business_usability_review_endpoint(
 
 
 @pytest.mark.asyncio
+async def test_batch_workbench_exposes_temporal_logic_shadow_review_endpoint(
+    content_agent_workbench_client,
+    monkeypatch,
+):
+    client, session_factory = content_agent_workbench_client
+
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="batch_temporal_shadow_api",
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            product_topic="0705旺玥活动",
+            count=1,
+            status="generated",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(
+            ContentBatchItem(
+                batch_id=job.id,
+                item_no=1,
+                status="generated",
+                title="出门前找袜子想起这段",
+                body="这段时间他三天两头不舒服，回看这段时间状态倒是挺稳。",
+                plan_json={"asset_key": "wangyue_v3_core_storyline_article_rules"},
+                quality_json={
+                    "hard_pass": True,
+                    "review_report": {"rewrite_required": False},
+                },
+            )
+        )
+        batch_id = job.id
+        await session.commit()
+
+    class FakeExecutionService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def review_temporal_logic_shadow_items(self, batch_id, *, force=False, limit=None, concurrency=10):
+            assert force is True
+            assert limit == 1
+            assert concurrency == 4
+            return SimpleNamespace(
+                batch_id=batch_id,
+                reviewed_count=1,
+                skipped_count=0,
+                failed_count=0,
+                reviewed_item_nos=[1],
+                skipped_item_nos=[],
+                failed_items=[],
+                label_counts={"block": 1},
+                usage_totals={"input_tokens": 20, "output_tokens": 10, "total_tokens": 30},
+                latency_totals={
+                    "total_latency_ms": 120,
+                    "average_latency_ms": 120,
+                    "max_latency_ms": 120,
+                },
+            )
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.content_agent.ContentBatchExecutionService",
+        FakeExecutionService,
+    )
+
+    response = await client.post(
+        f"/api/v1/content-agent/batches/{batch_id}/temporal-logic-shadow-review",
+        json={"force": True, "limit": 1, "concurrency": 4},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["reviewed_count"] == 1
+    assert data["label_counts"] == {"block": 1}
+    assert data["usage_totals"]["total_tokens"] == 30
+    assert data["latency_totals"]["total_latency_ms"] == 120
+    assert data["report"]["items"][0]["hard_pass"] is True
+
+
+@pytest.mark.asyncio
+async def test_batch_workbench_exposes_claim_public_disease_shadow_review_endpoint(
+    content_agent_workbench_client,
+    monkeypatch,
+):
+    client, session_factory = content_agent_workbench_client
+
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="batch_claim_public_disease_shadow_api",
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            product_topic="0705旺玥活动",
+            count=1,
+            status="generated",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(
+            ContentBatchItem(
+                batch_id=job.id,
+                item_no=1,
+                status="generated",
+                title="喝了就不会生病",
+                body="孩子喝了旺玥就不会生病。",
+                plan_json={"asset_key": "wangyue_v3_core_storyline_article_rules"},
+                quality_json={"hard_pass": True, "review_report": {"rewrite_required": False}},
+            )
+        )
+        batch_id = job.id
+        await session.commit()
+
+    class FakeExecutionService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def review_claim_public_disease_shadow_items(
+            self,
+            batch_id,
+            *,
+            force=False,
+            limit=None,
+            concurrency=10,
+        ):
+            assert force is True
+            assert limit == 1
+            assert concurrency == 5
+            return SimpleNamespace(
+                batch_id=batch_id,
+                reviewed_count=1,
+                skipped_count=0,
+                failed_count=0,
+                reviewed_item_nos=[1],
+                skipped_item_nos=[],
+                failed_items=[],
+                label_counts={"block": 1},
+                usage_totals={"input_tokens": 18, "output_tokens": 9, "total_tokens": 27},
+                latency_totals={
+                    "total_latency_ms": 110,
+                    "average_latency_ms": 110,
+                    "max_latency_ms": 110,
+                },
+            )
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.content_agent.ContentBatchExecutionService",
+        FakeExecutionService,
+    )
+
+    response = await client.post(
+        f"/api/v1/content-agent/batches/{batch_id}/claim-public-disease-shadow-review",
+        json={"force": True, "limit": 1, "concurrency": 5},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["reviewed_count"] == 1
+    assert data["label_counts"] == {"block": 1}
+    assert data["usage_totals"]["total_tokens"] == 27
+    assert data["report"]["items"][0]["hard_pass"] is True
+
+
+@pytest.mark.asyncio
+async def test_batch_workbench_exposes_content_fit_shadow_review_endpoint(
+    content_agent_workbench_client,
+    monkeypatch,
+):
+    client, session_factory = content_agent_workbench_client
+
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="batch_content_fit_shadow_api",
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            product_topic="0705旺玥活动",
+            count=1,
+            status="generated",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(
+            ContentBatchItem(
+                batch_id=job.id,
+                item_no=1,
+                status="generated",
+                title="安排进日常奶粉里",
+                body="后来把旺玥安排进日常奶粉里。",
+                plan_json={
+                    "asset_key": "wangyue_v3_core_storyline_article_rules",
+                    "post_type": "使用反馈",
+                },
+                quality_json={"hard_pass": True, "review_report": {"rewrite_required": False}},
+            )
+        )
+        batch_id = job.id
+        await session.commit()
+
+    class FakeExecutionService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def review_content_fit_shadow_items(
+            self,
+            batch_id,
+            *,
+            force=False,
+            limit=None,
+            concurrency=10,
+        ):
+            assert force is True
+            assert limit == 1
+            assert concurrency == 6
+            return SimpleNamespace(
+                batch_id=batch_id,
+                reviewed_count=1,
+                skipped_count=0,
+                failed_count=0,
+                reviewed_item_nos=[1],
+                skipped_item_nos=[],
+                failed_items=[],
+                label_counts={"block": 1},
+                usage_totals={"input_tokens": 17, "output_tokens": 8, "total_tokens": 25},
+                latency_totals={
+                    "total_latency_ms": 105,
+                    "average_latency_ms": 105,
+                    "max_latency_ms": 105,
+                },
+            )
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.content_agent.ContentBatchExecutionService",
+        FakeExecutionService,
+    )
+
+    response = await client.post(
+        f"/api/v1/content-agent/batches/{batch_id}/content-fit-shadow-review",
+        json={"force": True, "limit": 1, "concurrency": 6},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["reviewed_count"] == 1
+    assert data["label_counts"] == {"block": 1}
+    assert data["usage_totals"]["total_tokens"] == 25
+    assert data["report"]["items"][0]["hard_pass"] is True
+
+
+@pytest.mark.asyncio
+async def test_batch_workbench_exposes_fluency_shadow_review_endpoint(
+    content_agent_workbench_client,
+    monkeypatch,
+):
+    client, session_factory = content_agent_workbench_client
+
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="batch_fluency_shadow_api",
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            product_topic="0705旺玥活动",
+            count=1,
+            status="generated",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(
+            ContentBatchItem(
+                batch_id=job.id,
+                item_no=1,
+                status="generated",
+                title="饭菜经常不稳定",
+                body="孩子最近饭菜经常不稳定。",
+                plan_json={"asset_key": "wangyue_v3_core_storyline_article_rules"},
+                quality_json={"hard_pass": True, "review_report": {"rewrite_required": False}},
+            )
+        )
+        batch_id = job.id
+        await session.commit()
+
+    class FakeExecutionService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def review_fluency_shadow_items(
+            self,
+            batch_id,
+            *,
+            force=False,
+            limit=None,
+            concurrency=10,
+        ):
+            assert force is True
+            assert limit == 1
+            assert concurrency == 7
+            return SimpleNamespace(
+                batch_id=batch_id,
+                reviewed_count=1,
+                skipped_count=0,
+                failed_count=0,
+                reviewed_item_nos=[1],
+                skipped_item_nos=[],
+                failed_items=[],
+                label_counts={"block": 1},
+                usage_totals={"input_tokens": 16, "output_tokens": 7, "total_tokens": 23},
+                latency_totals={
+                    "total_latency_ms": 101,
+                    "average_latency_ms": 101,
+                    "max_latency_ms": 101,
+                },
+            )
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.content_agent.ContentBatchExecutionService",
+        FakeExecutionService,
+    )
+
+    response = await client.post(
+        f"/api/v1/content-agent/batches/{batch_id}/fluency-shadow-review",
+        json={"force": True, "limit": 1, "concurrency": 7},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["reviewed_count"] == 1
+    assert data["label_counts"] == {"block": 1}
+    assert data["usage_totals"]["total_tokens"] == 23
+    assert data["report"]["items"][0]["hard_pass"] is True
+
+
+@pytest.mark.asyncio
+async def test_batch_workbench_exposes_focused_pipeline_shadow_validation_endpoint(
+    content_agent_workbench_client,
+    monkeypatch,
+):
+    client, session_factory = content_agent_workbench_client
+
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="batch_focused_pipeline_shadow_api",
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            product_topic="0705旺玥活动",
+            count=1,
+            status="generated",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(
+            ContentBatchItem(
+                batch_id=job.id,
+                item_no=1,
+                status="generated",
+                title="饭菜经常不稳定",
+                body="孩子最近饭菜经常不稳定。",
+                plan_json={"asset_key": "wangyue_v3_core_storyline_article_rules"},
+                quality_json={"hard_pass": True, "review_report": {"rewrite_required": False}},
+            )
+        )
+        batch_id = job.id
+        await session.commit()
+
+    class FakeExecutionService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def review_focused_pipeline_shadow_items(
+            self,
+            batch_id,
+            *,
+            force=False,
+            limit=None,
+            concurrency=10,
+            rehearse_rewrites=False,
+        ):
+            assert force is True
+            assert limit == 1
+            assert concurrency == 5
+            assert rehearse_rewrites is True
+            return SimpleNamespace(
+                batch_id=batch_id,
+                reviewed_count=1,
+                skipped_count=0,
+                failed_count=0,
+                reviewed_item_nos=[1],
+                skipped_item_nos=[],
+                failed_items=[],
+                decision_counts={"block": 1},
+                rewrite_mode_counts={"fluency_humanize": 1},
+                comparison_counts={"mismatch": 1},
+                mismatch_item_nos=[1],
+                action_comparison_counts={"mismatch": 1},
+                action_mismatch_item_nos=[1],
+                rewrite_rehearsal_counts={"accepted": 1},
+                accepted_rewrite_item_nos=[1],
+                manual_review_item_nos=[],
+                usage_totals={"input_tokens": 60, "output_tokens": 20, "total_tokens": 80},
+                latency_totals={
+                    "total_latency_ms": 400,
+                    "average_latency_ms": 100,
+                    "max_latency_ms": 130,
+                },
+            )
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.content_agent.ContentBatchExecutionService",
+        FakeExecutionService,
+    )
+
+    response = await client.post(
+        f"/api/v1/content-agent/batches/{batch_id}/focused-pipeline-shadow-review",
+        json={"force": True, "limit": 1, "concurrency": 5, "rehearse_rewrites": True},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["decision_counts"] == {"block": 1}
+    assert data["rewrite_mode_counts"] == {"fluency_humanize": 1}
+    assert data["comparison_counts"] == {"mismatch": 1}
+    assert data["mismatch_item_nos"] == [1]
+    assert data["action_comparison_counts"] == {"mismatch": 1}
+    assert data["action_mismatch_item_nos"] == [1]
+    assert data["rewrite_rehearsal_counts"] == {"accepted": 1}
+    assert data["accepted_rewrite_item_nos"] == [1]
+    assert data["report"]["items"][0]["hard_pass"] is True
+
+
+@pytest.mark.asyncio
 async def test_batch_workbench_uses_default_executor_when_form_sends_blank_code(content_agent_workbench_client):
     client, _session_factory = content_agent_workbench_client
     response = await client.post(
@@ -4842,7 +5557,7 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
     client, session_factory = content_agent_workbench_client
     response = await client.post(
         "/api/v1/content-agent/comment-batches/start",
-        json={"asset_key": "yuanyue_comment_activity", "created_by": "ops"},
+        json={"asset_key": "yuanyue_comment_activity", "concurrency": 10, "created_by": "ops"},
     )
 
     assert response.status_code == 200
@@ -4854,8 +5569,12 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
     assert report["asset_key"] == "yuanyue_comment_activity"
     assert report["product_topic"] == "美素佳儿源悦活动评论"
     assert report["items"][0]["title"] == "整体适应"
-    assert report["items"][0]["body"] == "我家刚开始也在看源悦，想蹲蹲真实反馈"
+    assert report["items"][0]["body"].startswith("我家刚开始也在看源悦")
     assert report["items"][0]["generation_snapshot"] is None
+
+    async with session_factory() as session:
+        job = await session.get(ContentBatchJob, data["batch_id"])
+        assert job.strategy_json["execution_concurrency"] == 10
 
     full_response = await client.get(f"/api/v1/content-agent/batches/{data['batch_id']}/report?full=true")
     full_first = full_response.json()["data"]["items"][0]
@@ -4883,7 +5602,6 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
     assert "我家刚开始也在看源悦，想蹲蹲真实反馈" in item.plan_json["unified_generation"]["rendered_prompt"]
     assert item.plan_json["unified_generation"]["capability"] == "content.generate"
     assert [kw["category_code"] for kw in item.plan_json["unified_generation"]["selected_keywords"]] == [
-        "comment_generation_requirement",
         "persona",
         "comment_writing_instruction",
         "perturbation_rule",
@@ -4891,6 +5609,51 @@ async def test_comment_batch_can_start_from_rule_asset_key_only(content_agent_wo
         "writing_method",
         "comment_format_control",
     ]
+
+
+@pytest.mark.asyncio
+async def test_comment_batch_can_oversample_then_select_delivery_without_changing_business_pass(
+    content_agent_workbench_client,
+):
+    client, session_factory = content_agent_workbench_client
+    response = await client.post(
+        "/api/v1/content-agent/comment-batches/start",
+        json={
+            "asset_key": "yuanyue_comment_activity",
+            "count": 3,
+            "comment_batch_variation_review": {
+                "enabled": True,
+                "affects_hard_pass": False,
+                "expression_frequency": [
+                    {
+                        "group_key": "opener_me",
+                        "label": "我字开头",
+                        "terms": ["我"],
+                        "match_mode": "prefix",
+                        "max_ratio": 0.2,
+                    }
+                ],
+            },
+            "comment_delivery_selection": {
+                "enabled": True,
+                "target_count": 2,
+                "max_similarity": 1.0,
+            },
+            "created_by": "ops",
+        },
+    )
+
+    assert response.status_code == 200
+    report = response.json()["data"]["report"]
+    assert report["summary"]["delivery_candidate_count"] == 3
+    assert report["summary"]["delivery_selected_count"] == 2
+    assert report["summary"]["delivery_shortfall_count"] == 0
+    assert sum(item["delivery_selected"] is True for item in report["items"]) == 2
+    assert all(item["hard_pass"] is True for item in report["items"])
+
+    async with session_factory() as session:
+        job = await session.get(ContentBatchJob, response.json()["data"]["batch_id"])
+        assert job.strategy_json["comment_delivery_selection_override"]["target_count"] == 2
 
 
 @pytest.mark.asyncio
@@ -5011,7 +5774,7 @@ async def test_batch_report_can_export_generated_results_excel(content_agent_wor
     assert result["A1"].value == "标题"
     assert result["B1"].value == "正文"
     assert result["C1"].value == "业务规则"
-    assert result["B2"].value == "我家刚开始也在看源悦，想蹲蹲真实反馈"
+    assert result["B2"].value.startswith("我家刚开始也在看源悦")
     headers = [cell.value for cell in result[1]]
     assert "Run ID" in headers
     assert "Task ID" in headers
@@ -5273,6 +6036,7 @@ async def test_article_batch_start_applies_draft_rule_corpus(content_agent_workb
             "rule_id": "business_rule_001",
             "source_row_no": 1,
             "draft_corpus": "草稿里的奶量补充语料，只用于本次测试。",
+            "draft_selling_painpoint_group": "营养丰富+营养不足-ugc",
             "draft_rule_id": "business_rule_001",
             "draft_source_row_no": 1,
             "count": 1,
@@ -5290,10 +6054,12 @@ async def test_article_batch_start_applies_draft_rule_corpus(content_agent_workb
         ).scalar_one()
 
     assert item.plan_json["corpus"] == "草稿里的奶量补充语料，只用于本次测试。"
+    assert item.plan_json["selling_painpoint_group"] == "营养丰富+营养不足-ugc"
     assert item.plan_json["draft_rule_override"] == {
         "enabled": True,
         "rule_id": "business_rule_001",
         "source_row_no": 1,
+        "selling_painpoint_group": "营养丰富+营养不足-ugc",
     }
 
 
@@ -5413,11 +6179,12 @@ async def test_comment_batch_runs_realness_review_and_rewrite(content_agent_work
                 version_no=2,
                 status="active",
                 asset_stage="production",
-                content_json={
-                    "rule_type": "business_rule",
-                    "activity_name": "美素佳儿源悦活动评论",
-                    "default_generation_count": 1,
-                    "items": [
+                    content_json={
+                        "rule_type": "business_rule",
+                        "activity_name": "美素佳儿源悦活动评论",
+                        "default_generation_count": 1,
+                        "keyword_selection": {"comment_format_control": ["comment_short_clean"]},
+                        "items": [
                         {
                             "rule_id": "business_rule_realness_001",
                             "business_rule": "便便问题",
@@ -5766,7 +6533,7 @@ async def test_batch_feedback_insights_summarize_operator_feedback(content_agent
     assert insights["samples"][0]["quoted_text"] == "想蹲蹲真实反馈"
     assert insights["samples"][0]["feedback_categories"] == ["too_ad_like", "unnatural"]
     assert insights["suggestions"][0]["suggestion_type"] == "system_keyword"
-    assert insights["suggestions"][0]["target"] == "表达扩散语料 / 生评论指令"
+    assert insights["suggestions"][0]["target"] == "表达扩散语料 / 生文指令"
     assert "广告口吻" in insights["suggestions"][0]["evidence"][0]
 
 
@@ -6132,6 +6899,65 @@ async def test_comment_review_replay_reuses_generated_body_and_updates_guard_res
     assert len(versions) == 1
     assert versions[0].source_action == "comment_review_replay"
     assert versions[0].body == body
+
+
+@pytest.mark.asyncio
+async def test_comment_review_replay_persists_a2_brand_case_repair(
+    content_agent_workbench_client,
+):
+    client, session_factory = content_agent_workbench_client
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="comment_review_replay_a2_case_test",
+            asset_key="a2_sentiment_comment_activity",
+            product_topic="A2舆情改善评论",
+            count=1,
+            status="generated",
+            strategy_json={"quality_guard_profile_key": "a2_sentiment_comment_202606"},
+        )
+        session.add(job)
+        await session.flush()
+        plan = _a2_guard_plan(
+            "会员权益-集罐换礼：\n写妈妈看到 a2 会员活动里可以集罐换奶粉后的评论。"
+        )
+        plan["output_fields"] = ["comment"]
+        item = ContentBatchItem(
+            batch_id=job.id,
+            item_no=1,
+            status="generated",
+            plan_json=plan,
+            title="会员权益-集罐换礼",
+            body="长期喝A2的，空罐攒起来换奶粉挺实在。",
+            quality_json={"hard_pass": True, "review_report": {"rewrite_required": False}},
+        )
+        session.add(item)
+        await session.commit()
+        batch_id = job.id
+        item_id = item.id
+
+    response = await client.post(
+        f"/api/v1/content-agent/comment-batches/{batch_id}/review-replay",
+        json={"item_nos": [1], "created_by": "reviewer-a"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["body_changed_item_nos"] == [1]
+    assert data["report"]["items"][0]["body"] == "长期喝a2的，空罐攒起来换奶粉挺实在。"
+
+    async with session_factory() as session:
+        persisted = await session.get(ContentBatchItem, item_id)
+        versions = list(
+            (
+                await session.execute(
+                    select(ContentBatchItemVersion).where(ContentBatchItemVersion.item_id == item_id)
+                )
+            ).scalars().all()
+        )
+    assert persisted is not None
+    assert persisted.body == "长期喝a2的，空罐攒起来换奶粉挺实在。"
+    assert len(versions) == 1
+    assert versions[0].body == persisted.body
 
 
 def _yuanyue_assets() -> list[AssetRegistry]:

@@ -41,6 +41,7 @@ class DirectLLMCallResult:
     provider_model: str
     usage: dict[str, int]
     latency_ms: int
+    finish_reason: str | None = None
 
 
 def _iso_or_none(value: datetime | None) -> str | None:
@@ -603,21 +604,32 @@ async def _direct_generate_with_empty_retry(
     ]
     last_raw = ""
     last_error: ValueError | None = None
+    last_call_meta: dict[str, Any] = {}
     for attempt_no, attempt_prompt in enumerate(attempts, start=1):
-        raw = await _call_openai_compatible_model(
+        call_result = await _call_openai_compatible_model(
             model=model,
             system=system,
             user=attempt_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
             model_config=model_config,
+            return_result=True,
         )
+        if isinstance(call_result, DirectLLMCallResult):
+            raw = call_result.content
+            last_call_meta = {
+                "finish_reason": call_result.finish_reason,
+                "usage": call_result.usage,
+            }
+        else:
+            raw = str(call_result or "")
+            last_call_meta = {}
         last_raw = str(raw or "")
         try:
             output = normalizer(last_raw, input_payload)
         except ValueError as exc:
             last_error = exc
-            if "empty" in str(exc):
+            if _retryable_generation_output_error(exc):
                 continue
             raise
         return output, {
@@ -625,7 +637,11 @@ async def _direct_generate_with_empty_retry(
             "model_attempts": attempt_no,
             "raw_output_length": len(last_raw),
             "empty_output": False,
+            **last_call_meta,
         }
+
+    if last_error is not None and "empty" not in str(last_error):
+        raise last_error
 
     # Preserve the old worker contract: empty generation is explicit output,
     # so upstream quality gates can mark/retry the item instead of duplicating examples.
@@ -646,7 +662,8 @@ async def _call_openai_compatible_model(
     temperature: float,
     max_tokens: int | None,
     model_config: dict[str, Any],
-) -> str:
+    return_result: bool = False,
+) -> str | DirectLLMCallResult:
     result = await _call_openai_compatible_model_result(
         model=model,
         system=system,
@@ -655,7 +672,7 @@ async def _call_openai_compatible_model(
         max_tokens=max_tokens,
         model_config=model_config,
     )
-    return result.content
+    return result if return_result else result.content
 
 
 async def _call_openai_compatible_model_result(
@@ -711,6 +728,7 @@ async def _call_openai_compatible_model_result(
                 provider_model=str(model_config.get("provider_model") or model),
                 usage=_normalize_openai_usage(data.get("usage")),
                 latency_ms=int((time.perf_counter() - started) * 1000),
+                finish_reason=_extract_openai_finish_reason(data),
             )
         except httpx.TimeoutException:
             last_error = f"直连大模型调用超时(timeout={timeout_s}s)"
@@ -785,6 +803,14 @@ def _extract_openai_choice_content(data: dict[str, Any]) -> str:
     if content is None:
         content = first.get("text")
     return str(content or "")
+
+
+def _extract_openai_finish_reason(data: dict[str, Any]) -> str | None:
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return None
+    value = choices[0].get("finish_reason")
+    return str(value).strip() if value is not None and str(value).strip() else None
 
 
 def _direct_model_code(model_config: dict[str, Any], *, fallback_key: str) -> str:
@@ -927,7 +953,12 @@ def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -
             raise ValueError("content.generate produced empty comment")
         return {"comment": comment}
 
-    parsed_value = _parse_json_value(raw)
+    raw_text = str(raw or "").strip()
+    if "\ufffd" in raw_text:
+        raise ValueError("content.generate produced malformed JSON with replacement character")
+    parsed_value = _parse_json_value(raw_text)
+    if raw_text.startswith(("{", "[")) and parsed_value is None:
+        raise ValueError("content.generate produced malformed JSON")
     multi_items = _article_items_from_parsed_json(parsed_value)
     if multi_items:
         first = multi_items[0]
@@ -944,6 +975,11 @@ def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -
     if not body:
         raise ValueError("content.generate produced empty body")
     return {"title": title or "今天这点变化", "body": body}
+
+
+def _retryable_generation_output_error(exc: ValueError) -> bool:
+    message = str(exc)
+    return any(marker in message for marker in ("empty", "malformed JSON"))
 
 
 def _rewrite_previous_content(input_payload: dict[str, Any]) -> dict[str, str]:

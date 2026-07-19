@@ -24,6 +24,11 @@ DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY = "yuanyue_product_experience"
 DEFAULT_PRODUCT_EXPERIENCE_ACTIVITY_NAME = "文章业务规则生文"
 DEFAULT_PRODUCT_EXPERIENCE_BATCH_LIMIT = 10
 
+_INFO_SOURCE_MATERIAL_BLOCK = re.compile(
+    r"(?ms)^[ \t]*【(?:信息来源|信息渠道|渠道来源)(?:素材|线索)?】[ \t]*\r?\n"
+    r"(?P<options>(?:[ \t]*[-*•][ \t]*[^\r\n]+(?:\r?\n|$))+)",
+)
+
 
 @dataclass(slots=True)
 class ProductExperienceRuleSetImportResult:
@@ -338,7 +343,13 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         or row.get("generation_prompt_mode")
         or ""
     ).strip()
-    activity_material = _cell_lines(row.get("活动素材") or row.get("activity_material"))
+    activity_material, content_material_variation_slots = _content_material_fields(
+        row.get("生文素材")
+        or row.get("本篇素材")
+        or row.get("活动素材")
+        or row.get("content_material")
+        or row.get("activity_material")
+    )
     prize_material = _cell_lines(
         row.get("奖品素材")
         or row.get("活动奖品素材")
@@ -360,6 +371,12 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         or row.get("selling_expression_note")
         or ""
     ).strip()
+    selling_painpoint_group = (
+        row.get("卖点痛点组合")
+        or row.get("卖点痛点表达组")
+        or row.get("selling_painpoint_group")
+        or ""
+    ).strip()
     hard_boundaries = _cell_lines(
         row.get("事实与合规边界")
         or row.get("硬边界")
@@ -370,6 +387,10 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         or row.get("写法")
         or row.get("writing_requirements")
     )
+    generation_requirements = _cell_lines(
+        row.get("生成要求")
+        or row.get("generation_requirements")
+    )
     layered_fields_present = any(
         (
             generation_instruction,
@@ -379,13 +400,15 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
             prize_material,
             batch_detection_material,
             selling_expression,
+            selling_painpoint_group,
             hard_boundaries,
             writing_requirements,
+            generation_requirements,
         )
     )
     if layered_fields_present and not prompt_mode:
         prompt_mode = "layered_article"
-    variation_slots: list[dict[str, Any]] = []
+    variation_slots: list[dict[str, Any]] = list(content_material_variation_slots)
     if prize_material:
         variation_slots.append(
             {
@@ -601,8 +624,10 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         **({"activity_material": activity_material} if activity_material else {}),
         **({"selling_expression": selling_expression} if selling_expression else {}),
         **({"selling_expression_note": selling_expression_note} if selling_expression_note else {}),
+        **({"selling_painpoint_group": selling_painpoint_group} if selling_painpoint_group else {}),
         **({"hard_boundaries": hard_boundaries} if hard_boundaries else {}),
         **({"writing_requirements": writing_requirements} if writing_requirements else {}),
+        **({"generation_requirements": generation_requirements} if generation_requirements else {}),
         **({"variation_slots": variation_slots} if variation_slots else {}),
         **({"post_type": post_type} if post_type else {}),
         **({"product_appearance_mode": product_appearance_mode} if product_appearance_mode else {}),
@@ -640,6 +665,26 @@ def _cell_lines(value: str | None) -> list[str]:
         if line and line not in lines:
             lines.append(line)
     return lines
+
+
+def _content_material_fields(value: str | None) -> tuple[list[str], list[dict[str, Any]]]:
+    raw = str(value or "")
+    variation_slots: list[dict[str, Any]] = []
+
+    def replace_info_source_block(match: re.Match[str]) -> str:
+        options = _cell_lines(match.group("options"))
+        if options:
+            variation_slots.append(
+                {
+                    "slot_code": "info_source",
+                    "slot_name": "信息来源线索",
+                    "options": options,
+                }
+            )
+        return ""
+
+    static_material = _INFO_SOURCE_MATERIAL_BLOCK.sub(replace_info_source_block, raw)
+    return _cell_lines(static_material), variation_slots
 
 
 def _build_selling_kernel(

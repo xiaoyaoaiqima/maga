@@ -28,12 +28,11 @@ from app.services.comment_business_rule_service import (
     DEFAULT_COMMENT_BATCH_TOPIC,
     _clean_corpus_for_prompt,
     _split_examples_from_corpus,
+    normalize_comment_prompt_bundle,
 )
 from app.services.comment_delivery_ledger_service import CommentDeliveryLedgerService, ledger_entry_to_dict
 from app.services.activity_quality_guard_service import (
-    A2_NEGATIVE_POST_ARRIVAL_MARKERS,
     A2_NEGATIVE_POST_COMMENT_PROFILE_KEY,
-    A2_NEGATIVE_POST_TRANSFER_MARKERS,
     A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY,
     A2_SENTIMENT_COMMENT_PROFILE_KEY,
     A2_SENTIMENT_POST_PROFILE_KEY,
@@ -46,6 +45,7 @@ from app.services.activity_quality_guard_service import (
 from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.comment_realness_review_service import CommentRealnessReviewService
 from app.services.comment_batch_variation_review_service import CommentBatchVariationReviewService
+from app.services.comment_batch_delivery_selection_service import CommentBatchDeliverySelectionService
 from app.services.executor_invocation_service import ExecutorInvocationClient
 from app.services.forbidden_term_review_service import ForbiddenTermReviewService
 from app.services.system_prompt_keyword_service import DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
@@ -59,21 +59,12 @@ MAX_COMMENT_SIMILARITY_REWRITE_ROUNDS = 2
 MAX_COMMENT_DELIVERY_DUPLICATE_REWRITE_ROUNDS = 1
 COMMENT_HISTORY_SIMILARITY_LOOKBACK_LIMIT = 80
 COMMENT_BATCH_EXECUTION_CONCURRENCY = 5
-COMMENT_BATCH_MAX_COUNT = 100
+COMMENT_BATCH_MAX_COUNT = 300
 COMMENT_RULE_EXAMPLE_SAMPLE_COUNT = 3
 COMMENT_GENERATION_MODEL_TIMEOUT_SECONDS = 18
 COMMENT_GENERATION_MODEL_MAX_RETRIES = 2
 COMMENT_GENERATION_MAX_TOKENS = 256
 COMMENT_THREAD_SHORT_REPLY_FORMAT_CODE = "comment_thread_short_reply"
-COMMENT_THREAD_SHORT_REPLY_STYLE_CODES = [
-    "reply_to_sister_comment",
-    "short_agree",
-    "half_sentence_reply",
-    "comment_thread_followup",
-    "relieved_reaction",
-]
-COMMENT_THREAD_SHORT_REPLY_SUPPLY_MARKERS = ("有货", "到货", "到了", "能拍", "发货", "买到", "下单")
-COMMENT_THREAD_SHORT_REPLY_TRANSFER_MARKERS = ("转奶", "换奶", "不转", "不换")
 YUANYUE_COMMENT_ASSET_KEY = "yuanyue_comment_activity"
 YUANYUE_COMPETITOR_BRAND_TERMS = [
     "星飞帆",
@@ -101,110 +92,6 @@ YUANYUE_COMPETITOR_BRAND_TERMS = [
     "圣元",
 ]
 YUANYUE_COMPETITOR_BRAND_REPLACEMENT = "源悦"
-COMMENT_MICRO_REPLY_EMPTY_FALLBACKS = [
-    "附近店有货",
-    "我去门店拿",
-    "店里说到了",
-    "刚问还有货",
-    "导购说到了",
-    "下班门店拿",
-    "已经拿到了",
-    "门店刚到货",
-    "店里还有货",
-    "可算上架了",
-    "明天去门店",
-    "附近店到了",
-]
-COMMENT_MICRO_BATCH_CHECK_EMPTY_FALLBACKS = [
-    "先拿一罐扫了下报告能出来",
-    "准备转回来先看罐底报告",
-    "先试这罐报告能点开",
-    "母婴店说罐底码有报告我拿一罐",
-    "刚拿一罐报告能点开",
-    "先试前扫了报告能看",
-    "拿一罐先看未检出",
-    "转回来前先扫罐底码",
-    "门店有货报告能出来",
-    "快喝完先扫报告再拿",
-]
-COMMENT_THREAD_SHORT_REPLY_EMPTY_FALLBACKS = [
-    "终于到了",
-    "我的也快到了",
-    "先不转了",
-    "有底了",
-    "等发货中",
-    "能不换就不换",
-    "转奶先放放",
-    "不折腾了",
-    "我的发货了",
-    "我也买到了",
-]
-COMMENT_THREAD_SHORT_REPLY_REQUIRED_MARKERS = (
-    "到了",
-    "到货",
-    "有货",
-    "能拍",
-    "发货",
-    "买到",
-    "不转",
-    "不换",
-    "有底",
-    "等发货",
-    "不折腾",
-    "转奶",
-    "换奶",
-)
-COMMENT_MICRO_REPLY_OVERUSED_TERMS = ("踏实", "续上", "补上")
-COMMENT_MICRO_REPLY_AWKWARD_STOCK_PHRASES = ("店里新到", "门店新到", "新到", "奶瓶快空", "刚转奶瓶")
-COMMENT_MICRO_REPLY_EMOTIVE_OPENER_LIMIT = 3
-COMMENT_MICRO_REPLY_OPENER_LIMIT = 2
-COMMENT_MICRO_REPLY_EMOTIVE_OPENERS = ("妈呀", "我天", "救命", "可算", "还好", "吓我")
-COMMENT_MICRO_REPLY_OPENERS = (
-    "妈呀",
-    "我天",
-    "救命",
-    "可算",
-    "还好",
-    "吓我",
-    "快喊",
-    "赶紧",
-    "马上",
-    "导购",
-    "刚到",
-    "店里",
-    "有货",
-    "门店",
-)
-COMMENT_MICRO_BATCH_CHECK_REPLY_MARKERS = (
-    "批批检",
-    "每批",
-    "每批检测",
-    "报告",
-    "这批",
-    "检过",
-    "检测",
-    "扫",
-    "扫码",
-    "扫罐底",
-    "罐底码",
-    "罐底有",
-    "二维码",
-    "未检出",
-    "Not Detected",
-)
-COMMENT_MICRO_BATCH_CHECK_FORBIDDEN_CERTAINTY_TERMS = ("保证没问题", "绝对安全", "无风险")
-COMMENT_MICRO_BATCH_CHECK_PROFESSIONAL_TERMS = ("60+", "60多项", "0.03", "三方数据")
-COMMENT_MICRO_BATCH_CHECK_AWKWARD_PHRASES = ("刚转门店", "转门店")
-COMMENT_MICRO_BATCH_CHECK_REPEAT_LIMITED_PHRASES = ("店员说这批也检过", "报告能点开")
-COMMENT_MICRO_BATCH_CHECK_DANGLING_SUFFIXES = ("批", "批批", "报告能", "每批", "这批")
-COMMENT_MICRO_BATCH_CHECK_CONTEXT_MARKERS = A2_NEGATIVE_POST_ARRIVAL_MARKERS + A2_NEGATIVE_POST_TRANSFER_MARKERS
-COMMENT_MICRO_BATCH_CHECK_DETAIL_GROUPS = (
-    ("扫码", "扫罐底", "扫了", "一扫", "二维码", "码"),
-    ("报告",),
-    ("每批", "批批检", "检测"),
-    ("未检出", "Not Detected"),
-    ("有底", "放心", "保障"),
-)
 LOW_INFORMATION_COMMENT_REWRITE_INSTRUCTIONS = [
     "上一轮评论只有空泛开头，信息量太低",
     "保留当前业务规则，从业务规则或参考示例里借一个具体观察点",
@@ -315,6 +202,7 @@ class ContentCommentBatchService:
                 quality_json=_quality_without_replayable_comment_reviews(before_quality),
             )
             guard.review_item(candidate)
+            item.body = candidate.body
             item.quality_json = candidate.quality_json
             flag_modified(item, "quality_json")
 
@@ -399,9 +287,13 @@ class ContentCommentBatchService:
         draft_corpus: str | None = None,
         draft_rule_id: str | None = None,
         draft_source_row_no: int | None = None,
+        draft_comment_prompt_bundle: dict[str, Any] | None = None,
         comment_prompt_slots: dict[str, list[str]] | None = None,
+        comment_batch_variation_review: dict[str, Any] | None = None,
+        comment_delivery_selection: dict[str, Any] | None = None,
         comment_post_context: str | None = None,
         count: int | None = None,
+        concurrency: int = COMMENT_BATCH_EXECUTION_CONCURRENCY,
         created_by: str | None = None,
     ) -> CommentBatchExecutionResult:
         asset = await self._require_rule_asset(asset_key)
@@ -427,12 +319,29 @@ class ContentCommentBatchService:
             draft_corpus=draft_corpus,
             draft_rule_id=draft_rule_id or focus_rule_id,
             draft_source_row_no=draft_source_row_no if draft_source_row_no is not None else focus_source_row_no,
+            draft_comment_prompt_bundle=draft_comment_prompt_bundle,
         )
         if draft_override:
             rules = self._rules_with_draft_override(rules, draft_override)
         prompt_slots_override = _normalize_comment_prompt_slots_override(comment_prompt_slots)
         if prompt_slots_override:
             rules = self._rules_with_prompt_slots_override(rules, prompt_slots_override)
+        batch_variation_review_override = _normalize_comment_batch_variation_review_override(
+            comment_batch_variation_review
+        )
+        if batch_variation_review_override:
+            rules = self._rules_with_batch_variation_review_override(
+                rules,
+                batch_variation_review_override,
+            )
+        delivery_selection_override = _normalize_comment_delivery_selection_override(
+            comment_delivery_selection
+        )
+        if delivery_selection_override:
+            rules = self._rules_with_delivery_selection_override(
+                rules,
+                delivery_selection_override,
+            )
         post_context_override = _normalize_comment_post_context_override(comment_post_context)
         if post_context_override:
             rules = self._rules_with_post_context_override(rules, post_context_override)
@@ -444,6 +353,12 @@ class ContentCommentBatchService:
             requested_count=count,
             allow_repeat=bool(focus_business_rule) or focus_single_rule or focus_multiple_rules or bool(scenario),
         )
+        if delivery_selection_override:
+            target_count = int(delivery_selection_override["target_count"])
+            if target_count > limit:
+                raise ValueError(
+                    "comment_delivery_selection.target_count cannot exceed generated candidate count"
+                )
         resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, asset)
         resolved_quality_guard_profile_key = quality_guard_profile_key or quality_guard_profile_key_from_asset(asset)
         quality_guard_profile = resolve_quality_guard_profile(resolved_quality_guard_profile_key)
@@ -489,7 +404,10 @@ class ContentCommentBatchService:
                 "source_row_no_filter": focus_source_row_no,
                 "draft_rule_override": _draft_override_summary(draft_override),
                 "comment_prompt_slots_override": prompt_slots_override,
+                "comment_batch_variation_review_override": batch_variation_review_override,
+                "comment_delivery_selection_override": delivery_selection_override,
                 "comment_post_context_override": post_context_override,
+                "execution_concurrency": concurrency,
                 "executor": self.executor_code,
             },
             diversity_plan_json={
@@ -509,6 +427,8 @@ class ContentCommentBatchService:
                 "source_row_no_filter": focus_source_row_no,
                 "draft_rule_override": _draft_override_summary(draft_override),
                 "comment_prompt_slots_override": prompt_slots_override,
+                "comment_batch_variation_review_override": batch_variation_review_override,
+                "comment_delivery_selection_override": delivery_selection_override,
                 "comment_post_context_override": post_context_override,
                 "selected_source_row_nos": [rule.get("source_row_no") for rule in selected_rules],
             },
@@ -542,7 +462,7 @@ class ContentCommentBatchService:
         item_ids = [item.id for item in await self._planned_items(job_id)]
         await self.db.commit()
 
-        semaphore = asyncio.Semaphore(COMMENT_BATCH_EXECUTION_CONCURRENCY)
+        semaphore = asyncio.Semaphore(concurrency)
 
         async def run_item(item_id: int) -> bool:
             # 每条评论用独立 DB session；AsyncSession 不能在并发任务之间共享 flush/commit。
@@ -567,14 +487,20 @@ class ContentCommentBatchService:
         if generated_seed_count:
             await self._review_generated_batch_similarity(job_id)
             await self._review_generated_batch_delivery_duplicates(job_id)
-            await self._rebalance_micro_reply_batch_variation(job_id)
-        self.db.expire_all()
-        job = await self._require_job(job_id)
-        items = await self._planned_items(job_id)
-        ActivityQualityGuardService().review_batch(job, items)
-        CommentBatchVariationReviewService().review_batch(items)
-        await self.db.flush()
         await self.db.commit()
+        async with self.session_factory() as review_db:
+            review_job_result = await review_db.execute(
+                select(ContentBatchJob).where(ContentBatchJob.id == job_id)
+            )
+            review_job = review_job_result.scalar_one()
+            review_items = await self._planned_items(job_id, db=review_db)
+            ActivityQualityGuardService().review_batch(review_job, review_items)
+            batch_variation_review = CommentBatchVariationReviewService().review_batch(review_items)
+            delivery_selection = CommentBatchDeliverySelectionService().select_batch(review_items)
+            if batch_variation_review or delivery_selection:
+                for item in review_items:
+                    flag_modified(item, "quality_json")
+            await review_db.commit()
         # 并发 item 使用独立 session 写回；最终计数也用新 session 读取，避免主 session
         # 在 MySQL repeatable-read 事务里继续看到 planned 快照，出现正文已生成但计数为 0。
         async with self.session_factory() as result_db:
@@ -620,8 +546,14 @@ class ContentCommentBatchService:
             raise ValueError("batch job not found")
         return job
 
-    async def _planned_items(self, batch_id: int) -> list[ContentBatchItem]:
-        result = await self.db.execute(
+    async def _planned_items(
+        self,
+        batch_id: int,
+        *,
+        db: AsyncSession | None = None,
+    ) -> list[ContentBatchItem]:
+        session = db or self.db
+        result = await session.execute(
             select(ContentBatchItem)
             .where(ContentBatchItem.batch_id == batch_id)
             .order_by(ContentBatchItem.item_no)
@@ -713,12 +645,20 @@ class ContentCommentBatchService:
                 updated.append(rule)
                 continue
             next_rule = dict(rule)
-            draft_corpus, draft_examples = _split_examples_from_corpus(draft_override["corpus"])
-            next_rule["corpus"] = _clean_corpus_for_prompt(
-                draft_corpus,
-                business_rule=_business_rule_name(next_rule),
-            )
-            next_rule["examples"] = draft_examples
+            draft_comment_prompt_bundle = draft_override.get("comment_prompt_bundle")
+            if draft_comment_prompt_bundle:
+                next_rule["prompt_mode"] = "comment_prompt_bundle"
+                next_rule["comment_prompt_bundle"] = copy.deepcopy(draft_comment_prompt_bundle)
+                next_rule["content_direction"] = draft_comment_prompt_bundle["content_direction"]
+                next_rule["activity_material"] = list(draft_comment_prompt_bundle["activity_material"])
+                next_rule["corpus"] = draft_comment_prompt_bundle["content_direction"]
+            else:
+                draft_corpus, draft_examples = _split_examples_from_corpus(draft_override["corpus"])
+                next_rule["corpus"] = _clean_corpus_for_prompt(
+                    draft_corpus,
+                    business_rule=_business_rule_name(next_rule),
+                )
+                next_rule["examples"] = draft_examples
             next_rule["draft_rule_override"] = _draft_override_summary(draft_override)
             updated.append(next_rule)
             matched = True
@@ -731,7 +671,29 @@ class ContentCommentBatchService:
         rules: list[dict[str, Any]],
         prompt_slots: dict[str, list[str]],
     ) -> list[dict[str, Any]]:
-        return [{**rule, "prompt_slots": prompt_slots} for rule in rules]
+        return [
+            {
+                **rule,
+                "prompt_slots": copy.deepcopy(prompt_slots),
+                "prompt_slot_selection_mode": "round_robin",
+                "bundle_prompt_slots_source": "batch_override",
+            }
+            for rule in rules
+        ]
+
+    @staticmethod
+    def _rules_with_batch_variation_review_override(
+        rules: list[dict[str, Any]],
+        config: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        return [{**rule, "batch_variation_review": copy.deepcopy(config)} for rule in rules]
+
+    @staticmethod
+    def _rules_with_delivery_selection_override(
+        rules: list[dict[str, Any]],
+        config: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        return [{**rule, "delivery_selection": copy.deepcopy(config)} for rule in rules]
 
     @staticmethod
     def _rules_with_post_context_override(
@@ -930,39 +892,71 @@ class ContentCommentBatchService:
         keyword_asset_key: str = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
         quality_guard_profile_key: str | None = None,
     ) -> dict[str, Any]:
-        rule = _rule_with_rotated_prompt_slots(rule, rule_occurrence_no=rule_occurrence_no)
-        rule = _rule_with_rotated_variation_slots(rule, rule_occurrence_no=rule_occurrence_no)
-        selected_examples, example_meta = self._selected_prompt_examples(rule)
+        uses_prompt_bundle = _uses_comment_prompt_bundle_rule(rule)
+        uses_explicit_batch_prompt_slots = _uses_explicit_batch_prompt_slots(rule)
+        if not uses_prompt_bundle or uses_explicit_batch_prompt_slots:
+            rule = _rule_with_rotated_prompt_slots(rule, rule_occurrence_no=rule_occurrence_no)
+        if not uses_prompt_bundle:
+            rule = _rule_with_rotated_variation_slots(rule, rule_occurrence_no=rule_occurrence_no)
+        if uses_prompt_bundle:
+            selected_examples = []
+            example_meta = {
+                "example_pool_count": len(rule.get("examples") or []),
+                "supplement_pool_count": len(rule.get("supplements") or []),
+                "example_sample_count": 0,
+                "selected_example_source": "none",
+                "selected_example_indices": [],
+            }
+        else:
+            selected_examples, example_meta = self._selected_prompt_examples(rule)
         keyword_rule = {
             **rule,
             "asset_key": asset.asset_key,
             "quality_guard_profile_key": quality_guard_profile_key,
         }
-        keyword_selection, keyword_selection_meta = _keyword_selection_with_rule_overrides(
-            _keyword_selection_from_asset(asset),
-            keyword_rule,
-            item_no=item_no,
+        if uses_prompt_bundle:
+            keyword_selection, keyword_selection_meta = {}, {}
+            comment_tone_options = []
+        else:
+            keyword_selection, keyword_selection_meta = _keyword_selection_with_rule_overrides(
+                _keyword_selection_from_asset(asset),
+                keyword_rule,
+            )
+            comment_tone_options = _comment_tone_options_from_asset(asset, keyword_rule)
+        scenario_generation_requirements = (
+            None
+            if rule.get("activity_material")
+            else rule.get("scenario_generation_requirements")
         )
-        comment_tone_options = _comment_tone_options_from_asset(asset, keyword_rule)
         generation_requirements = _merge_comment_generation_requirements(
             _generation_requirements_from_asset(asset),
-            rule.get("scenario_generation_requirements"),
+            rule.get("generation_requirements"),
+            scenario_generation_requirements,
         )
         plan = {
             "rule_type": "business_rule",
-            "render_reference_examples": True,
+            "render_reference_examples": not uses_prompt_bundle,
             "item_no": item_no,
             "asset_key": asset.asset_key,
             "keyword_asset_key": keyword_asset_key,
             "keyword_selection": keyword_selection,
             "generation_requirements": generation_requirements,
-            "batch_variation_review": _batch_variation_review_from_asset(asset),
+            "batch_variation_review": copy.deepcopy(
+                rule.get("batch_variation_review") or _batch_variation_review_from_asset(asset)
+            ),
+            "delivery_selection": copy.deepcopy(
+                rule.get("delivery_selection") or _delivery_selection_from_asset(asset)
+            ),
             "quality_guard_profile_key": quality_guard_profile_key,
             "rule_asset_id": asset.id,
             "rule_asset_version": asset.version_no,
             "rule_id": rule.get("rule_id"),
             "business_rule": _business_rule_name(rule),
             "corpus": rule.get("corpus"),
+            "content_direction": rule.get("content_direction"),
+            "activity_material": rule.get("activity_material"),
+            "prompt_mode": rule.get("prompt_mode"),
+            "comment_prompt_bundle": copy.deepcopy(rule.get("comment_prompt_bundle")),
             "examples": selected_examples,
             "supplements": [],
             "draft_rule_override": rule.get("draft_rule_override"),
@@ -988,14 +982,14 @@ class ContentCommentBatchService:
             plan["output_format"] = output_config
             plan["output_format_mode"] = output_config["mode"]
             plan["expansion_count"] = output_config["count"]
-        for key in (
-            "prompt_slots",
-            "comment_prompt_slots",
-            "variation_slots",
-            "preselected_variation_slots",
-        ):
-            if rule.get(key):
+        for key in ("prompt_slots", "comment_prompt_slots", "preselected_prompt_slots"):
+            if (not uses_prompt_bundle or uses_explicit_batch_prompt_slots) and rule.get(key):
                 plan[key] = rule.get(key)
+        for key in ("variation_slots", "preselected_variation_slots"):
+            if not uses_prompt_bundle and rule.get(key):
+                plan[key] = rule.get(key)
+        if uses_explicit_batch_prompt_slots:
+            plan["bundle_prompt_slots_source"] = "batch_override"
         return plan
 
     def _selected_prompt_examples(self, rule: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
@@ -1090,17 +1084,9 @@ class ContentCommentBatchService:
             try:
                 result = await orchestrator.run_single_capability(task_request, capability=CONTENT_GENERATE_CAPABILITY)
                 comments = self._generated_comments_from_output(result.output or {})
-                used_empty_fallback = False
-                if not comments:
-                    fallback_comment = (
-                        self._fallback_empty_micro_reply(item)
-                        or self._fallback_empty_thread_short_reply(item)
-                        or self._fallback_empty_micro_batch_check_reply(item)
-                    )
-                    comments = [fallback_comment] if fallback_comment else []
-                    used_empty_fallback = bool(fallback_comment)
                 if not comments:
                     raise ValueError("content.generate returned empty comment")
+                used_empty_fallback = False
                 generated_items = [item]
                 if len(comments) > 1:
                     expanded_items = await self._create_expanded_comment_items(
@@ -1247,7 +1233,7 @@ class ContentCommentBatchService:
 
     async def _review_generated_batch_similarity(self, batch_id: int) -> None:
         async with self.session_factory() as db:
-            items = await self._planned_items(batch_id)
+            items = await self._planned_items(batch_id, db=db)
             orchestrator = ContentAgentOrchestrator(
                 db,
                 invocation_client=self.invocation_client,
@@ -1278,7 +1264,7 @@ class ContentCommentBatchService:
 
     async def _review_generated_batch_delivery_duplicates(self, batch_id: int) -> None:
         async with self.session_factory() as db:
-            items = await self._planned_items(batch_id)
+            items = await self._planned_items(batch_id, db=db)
             orchestrator = ContentAgentOrchestrator(
                 db,
                 invocation_client=self.invocation_client,
@@ -1305,121 +1291,6 @@ class ContentCommentBatchService:
                     item.body = self._normalize_comment_length(item, item.body or "")
                     ActivityQualityGuardService().review_item(item)
                 await db.commit()
-
-    async def _rebalance_micro_reply_batch_variation(self, batch_id: int) -> None:
-        async with self.session_factory() as db:
-            result = await db.execute(
-                select(ContentBatchItem)
-                .where(ContentBatchItem.batch_id == batch_id)
-                .order_by(ContentBatchItem.item_no)
-            )
-            items = list(result.scalars().all())
-            generated_items = [item for item in items if item.status == "generated" and item.body]
-            if not generated_items or not any(
-                _uses_comment_micro_reply_format(item.plan_json or {})
-                or _uses_comment_micro_batch_check_reply_format(item.plan_json or {})
-                or _uses_comment_thread_short_reply_format(item.plan_json or {})
-                for item in generated_items
-            ):
-                return
-
-            used_bodies: set[str] = set()
-            opener_counts: dict[str, int] = {}
-            batch_check_phrase_counts: dict[str, int] = {}
-            emotive_opener_count = 0
-            for item in generated_items:
-                if _uses_comment_micro_batch_check_reply_format(item.plan_json or {}):
-                    previous_body = (item.body or "").strip()
-                    body = self._normalize_comment_length(item, item.body or "")
-                    reason = self._micro_batch_check_reply_variation_reason(
-                        body,
-                        used_bodies,
-                        item.plan_json or {},
-                    )
-                    if not reason:
-                        phrase = self._micro_batch_check_repeat_limited_phrase(body)
-                    else:
-                        phrase = ""
-                    if phrase and batch_check_phrase_counts.get(phrase, 0) >= 1:
-                        reason = "batch_check_phrase_overused"
-                    if reason:
-                        quality = dict(item.quality_json or {})
-                        quality["micro_batch_check_variation_guard"] = {
-                            "reason": reason,
-                            "previous_body": previous_body,
-                            "final_body": body,
-                            "action": "flag_only",
-                        }
-                        item.quality_json = quality
-
-                    item.body = body
-                    used_bodies.add(body)
-                    phrase = self._micro_batch_check_repeat_limited_phrase(body)
-                    if phrase:
-                        batch_check_phrase_counts[phrase] = batch_check_phrase_counts.get(phrase, 0) + 1
-                    ActivityQualityGuardService().review_item(item)
-                    continue
-
-                if _uses_comment_thread_short_reply_format(item.plan_json or {}):
-                    previous_body = (item.body or "").strip()
-                    body = self._normalize_comment_length(item, item.body or "")
-                    reason = self._thread_short_reply_variation_reason(body, used_bodies)
-                    if reason:
-                        replacement = self._thread_short_reply_variation_fallback(item=item, used_bodies=used_bodies)
-                        if replacement:
-                            body = replacement
-                            quality = dict(item.quality_json or {})
-                            quality["thread_short_reply_variation_guard"] = {
-                                "reason": reason,
-                                "previous_body": previous_body,
-                                "final_body": body,
-                            }
-                            item.quality_json = quality
-                    item.body = body
-                    used_bodies.add(body)
-                    ActivityQualityGuardService().review_item(item)
-                    continue
-
-                if not _uses_comment_micro_reply_format(item.plan_json or {}):
-                    body = (item.body or "").strip()
-                    if body:
-                        used_bodies.add(body)
-                    continue
-
-                body = self._normalize_comment_length(item, item.body or "")
-                reason = self._micro_reply_variation_reason(
-                    body,
-                    used_bodies,
-                    opener_counts,
-                    emotive_opener_count,
-                )
-                if reason:
-                    replacement = self._micro_reply_variation_fallback(
-                        item=item,
-                        used_bodies=used_bodies,
-                        opener_counts=opener_counts,
-                        emotive_opener_count=emotive_opener_count,
-                    )
-                    if replacement:
-                        previous_body = body
-                        body = replacement
-                        quality = dict(item.quality_json or {})
-                        quality["micro_reply_variation_guard"] = {
-                            "reason": reason,
-                            "previous_body": previous_body,
-                            "final_body": body,
-                        }
-                        item.quality_json = quality
-
-                item.body = body
-                used_bodies.add(body)
-                opener = self._micro_reply_opener(body)
-                if opener:
-                    opener_counts[opener] = opener_counts.get(opener, 0) + 1
-                if self._micro_reply_has_emotive_opener(body):
-                    emotive_opener_count += 1
-                ActivityQualityGuardService().review_item(item)
-            await db.commit()
 
     async def _review_and_rewrite_low_information(
         self,
@@ -1891,8 +1762,6 @@ class ContentCommentBatchService:
             return 10
         if _uses_comment_thread_short_reply_format(plan):
             return 12
-        if _uses_comment_micro_batch_check_reply_format(plan):
-            return 32
         if str(plan.get("quality_guard_profile_key") or "").strip() == A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY:
             return 50
         if str(plan.get("quality_guard_profile_key") or "").strip() == A2_NEGATIVE_POST_COMMENT_PROFILE_KEY:
@@ -1907,205 +1776,7 @@ class ContentCommentBatchService:
         normalized = comment.strip()
         if self._preserve_overlong_comment_for_guard(item):
             return normalized
-        if _uses_comment_micro_reply_format(item.plan_json or {}) and len(normalized) < 5:
-            normalized = self._fallback_empty_micro_reply(item) or normalized
-        if _uses_comment_thread_short_reply_format(item.plan_json or {}):
-            if len(normalized) < 3:
-                return self._fallback_empty_thread_short_reply(item) or normalized
-            fitted = self._fit_comment_length(normalized, max_chars=self._comment_max_chars(item))
-            if self._thread_short_reply_guard_reason(fitted):
-                return self._fallback_empty_thread_short_reply(item) or fitted
-            return fitted
-        if _uses_comment_micro_batch_check_reply_format(item.plan_json or {}):
-            fitted = self._fit_comment_length(normalized, max_chars=self._comment_max_chars(item))
-            return fitted
         return self._fit_comment_length(normalized, max_chars=self._comment_max_chars(item))
-
-    def _micro_reply_variation_reason(
-        self,
-        comment: str,
-        used_bodies: set[str],
-        opener_counts: dict[str, int],
-        emotive_opener_count: int = 0,
-    ) -> str:
-        if comment in used_bodies:
-            return "duplicate_body"
-        if self._micro_reply_has_awkward_stock_phrase(comment):
-            return "awkward_stock_phrase"
-        if any(term in comment for term in COMMENT_MICRO_REPLY_OVERUSED_TERMS):
-            return "overused_summary_term"
-        if self._micro_reply_has_emotive_opener(comment) and emotive_opener_count >= COMMENT_MICRO_REPLY_EMOTIVE_OPENER_LIMIT:
-            return "emotive_opener_overused"
-        opener = self._micro_reply_opener(comment)
-        if opener and opener_counts.get(opener, 0) >= COMMENT_MICRO_REPLY_OPENER_LIMIT:
-            return "opener_overused"
-        return ""
-
-    def _micro_reply_variation_fallback(
-        self,
-        *,
-        item: ContentBatchItem,
-        used_bodies: set[str],
-        opener_counts: dict[str, int],
-        emotive_opener_count: int = 0,
-    ) -> str:
-        if not _uses_comment_micro_reply_format(item.plan_json or {}):
-            return ""
-        start = max(int(getattr(item, "item_no", 1) or 1) - 1, 0)
-        for offset in range(len(COMMENT_MICRO_REPLY_EMPTY_FALLBACKS)):
-            candidate = COMMENT_MICRO_REPLY_EMPTY_FALLBACKS[(start + offset) % len(COMMENT_MICRO_REPLY_EMPTY_FALLBACKS)]
-            if candidate in used_bodies:
-                continue
-            if any(term in candidate for term in COMMENT_MICRO_REPLY_OVERUSED_TERMS):
-                continue
-            if self._micro_reply_has_awkward_stock_phrase(candidate):
-                continue
-            if self._micro_reply_has_emotive_opener(candidate) and emotive_opener_count >= COMMENT_MICRO_REPLY_EMOTIVE_OPENER_LIMIT:
-                continue
-            opener = self._micro_reply_opener(candidate)
-            if opener and opener_counts.get(opener, 0) >= COMMENT_MICRO_REPLY_OPENER_LIMIT:
-                continue
-            return candidate
-        return ""
-
-    def _thread_short_reply_variation_reason(self, comment: str, used_bodies: set[str]) -> str:
-        if comment in used_bodies:
-            return "duplicate_body"
-        return self._thread_short_reply_guard_reason(comment)
-
-    @staticmethod
-    def _thread_short_reply_guard_reason(comment: str) -> str:
-        normalized = re.sub(r"[，。！？、,.!?\s]+", "", comment or "")
-        if not normalized:
-            return "empty"
-        if len(normalized) < 3:
-            return "too_short"
-        if normalized in {"这个挺好", "先喝着", "再等等", "问了几家店", "问了几家", "我也", "这个", "这罐"}:
-            return "low_information"
-        if not any(marker in normalized for marker in COMMENT_THREAD_SHORT_REPLY_REQUIRED_MARKERS):
-            return "missing_context_marker"
-        return ""
-
-    @staticmethod
-    def _thread_short_reply_variation_fallback(*, item: ContentBatchItem, used_bodies: set[str]) -> str:
-        start = max(int(getattr(item, "item_no", 1) or 1) - 1, 0)
-        for offset in range(len(COMMENT_THREAD_SHORT_REPLY_EMPTY_FALLBACKS)):
-            candidate = COMMENT_THREAD_SHORT_REPLY_EMPTY_FALLBACKS[(start + offset) % len(COMMENT_THREAD_SHORT_REPLY_EMPTY_FALLBACKS)]
-            if candidate not in used_bodies:
-                return candidate
-        return ""
-
-    def _micro_batch_check_reply_variation_reason(
-        self,
-        comment: str,
-        used_bodies: set[str],
-        plan: dict[str, Any] | None = None,
-    ) -> str:
-        if comment in used_bodies:
-            return "duplicate_body"
-        return self._micro_batch_check_reply_guard_reason(comment, plan)
-
-    @staticmethod
-    def _micro_batch_check_repeat_limited_phrase(comment: str) -> str:
-        normalized = comment.strip()
-        for phrase in COMMENT_MICRO_BATCH_CHECK_REPEAT_LIMITED_PHRASES:
-            if phrase in normalized:
-                return phrase
-        return ""
-
-    @staticmethod
-    def _micro_batch_check_detail_group_count(comment: str) -> int:
-        normalized = comment.strip()
-        return sum(1 for group in COMMENT_MICRO_BATCH_CHECK_DETAIL_GROUPS if any(marker in normalized for marker in group))
-
-    def _micro_batch_check_reply_guard_reason(self, comment: str, plan: dict[str, Any] | None = None) -> str:
-        normalized = comment.strip()
-        if any(term in normalized for term in COMMENT_MICRO_BATCH_CHECK_FORBIDDEN_CERTAINTY_TERMS):
-            return "absolute_guarantee"
-        if any(term in normalized for term in COMMENT_MICRO_BATCH_CHECK_PROFESSIONAL_TERMS):
-            return "too_professional"
-        if any(phrase in normalized for phrase in COMMENT_MICRO_BATCH_CHECK_AWKWARD_PHRASES):
-            return "awkward_batch_check_phrase"
-        if self._micro_batch_check_detail_group_count(normalized) >= 4:
-            return "overstuffed_batch_check_details"
-        if re.search(r"\s", normalized):
-            return "awkward_whitespace"
-        if normalized.endswith(COMMENT_MICRO_BATCH_CHECK_DANGLING_SUFFIXES):
-            return "incomplete_batch_check_phrase"
-        required_markers = self._micro_batch_check_required_context_markers(plan)
-        if not any(marker in normalized for marker in required_markers):
-            return "missing_context_marker"
-        if not any(marker in normalized for marker in COMMENT_MICRO_BATCH_CHECK_REPLY_MARKERS):
-            return "missing_batch_check_marker"
-        if len(normalized) < 8:
-            return "too_short"
-        return ""
-
-    @staticmethod
-    def _micro_batch_check_required_context_markers(plan: dict[str, Any] | None) -> tuple[str, ...]:
-        if not isinstance(plan, dict):
-            return COMMENT_MICRO_BATCH_CHECK_CONTEXT_MARKERS
-        profile_key = str(plan.get("quality_guard_profile_key") or "").strip()
-        profile = resolve_quality_guard_profile(profile_key)
-        if not profile or profile.profile_key != A2_NEGATIVE_POST_COMMENT_PROFILE_KEY:
-            return COMMENT_MICRO_BATCH_CHECK_CONTEXT_MARKERS
-        source = "\n".join(
-            str(value or "")
-            for value in (
-                plan.get("business_rule"),
-                plan.get("corpus"),
-                " ".join(str(example) for example in plan.get("examples") or []),
-            )
-        )
-        keyword = derive_profile_keyword_from_text(source, profile)
-        if keyword == "转奶安抚":
-            return A2_NEGATIVE_POST_TRANSFER_MARKERS
-        if keyword == "到货安抚":
-            return A2_NEGATIVE_POST_ARRIVAL_MARKERS
-        return COMMENT_MICRO_BATCH_CHECK_CONTEXT_MARKERS
-
-    @staticmethod
-    def _micro_reply_opener(comment: str) -> str:
-        normalized = comment.strip()
-        for opener in COMMENT_MICRO_REPLY_OPENERS:
-            if normalized.startswith(opener):
-                return opener
-        return normalized[:2]
-
-    @staticmethod
-    def _micro_reply_has_emotive_opener(comment: str) -> bool:
-        normalized = comment.strip()
-        return any(normalized.startswith(opener) for opener in COMMENT_MICRO_REPLY_EMOTIVE_OPENERS)
-
-    @staticmethod
-    def _micro_reply_has_awkward_stock_phrase(comment: str) -> bool:
-        normalized = comment.strip()
-        return any(phrase in normalized for phrase in COMMENT_MICRO_REPLY_AWKWARD_STOCK_PHRASES) or normalized.endswith("导购说到")
-
-    @staticmethod
-    def _fallback_empty_micro_reply(item: ContentBatchItem) -> str:
-        plan = item.plan_json or {}
-        if not _uses_comment_micro_reply_format(plan):
-            return ""
-        # 只给运营明确选择的微评论格式兜底，避免短输出解析为空时整批掉量。
-        index = max(int(getattr(item, "item_no", 1) or 1) - 1, 0) % len(COMMENT_MICRO_REPLY_EMPTY_FALLBACKS)
-        return COMMENT_MICRO_REPLY_EMPTY_FALLBACKS[index]
-
-    @staticmethod
-    def _fallback_empty_thread_short_reply(item: ContentBatchItem) -> str:
-        plan = item.plan_json or {}
-        if not _uses_comment_thread_short_reply_format(plan):
-            return ""
-        index = max(int(getattr(item, "item_no", 1) or 1) - 1, 0) % len(COMMENT_THREAD_SHORT_REPLY_EMPTY_FALLBACKS)
-        return COMMENT_THREAD_SHORT_REPLY_EMPTY_FALLBACKS[index]
-
-    @staticmethod
-    def _fallback_empty_micro_batch_check_reply(item: ContentBatchItem) -> str:
-        plan = item.plan_json or {}
-        if not _uses_comment_micro_batch_check_reply_format(plan):
-            return ""
-        index = max(int(getattr(item, "item_no", 1) or 1) - 1, 0) % len(COMMENT_MICRO_BATCH_CHECK_EMPTY_FALLBACKS)
-        return COMMENT_MICRO_BATCH_CHECK_EMPTY_FALLBACKS[index]
 
     @staticmethod
     def _preserve_overlong_comment_for_guard(item: ContentBatchItem) -> bool:
@@ -2180,8 +1851,6 @@ def _keyword_selection_from_asset(asset: AssetRegistry | None) -> dict[str, Any]
 def _keyword_selection_with_rule_overrides(
     keyword_selection: dict[str, Any] | None,
     rule: dict[str, Any],
-    *,
-    item_no: int,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     normalized = _copy_keyword_selection(keyword_selection)
     route_family = _a2_comment_route_family(rule)
@@ -2191,30 +1860,13 @@ def _keyword_selection_with_rule_overrides(
         if normalized is None:
             normalized = {}
         normalized.update(route_override)
-        normalized.pop("comment_format_control", None)
         route_meta = {
             "keyword_selection_override": {
                 "reason": f"a2_{route_family}_route_only",
                 **route_override,
             }
         }
-    if not _should_force_thread_short_reply(rule, item_no=item_no):
-        return normalized, route_meta
-
-    if normalized is None:
-        normalized = {}
-
-    # 重要逻辑：短接楼比例属于单条业务规则的计划层控制，不能写进全局评论格式池；
-    # 否则其它活动会被 5-12 字短句误伤。
-    normalized["comment_format_control"] = [COMMENT_THREAD_SHORT_REPLY_FORMAT_CODE]
-    normalized["comment_speaking_style"] = list(COMMENT_THREAD_SHORT_REPLY_STYLE_CODES)
-    return normalized, {
-        "keyword_selection_override": {
-            "reason": "supply_transfer_thread_short_reply",
-            "comment_format_control": [COMMENT_THREAD_SHORT_REPLY_FORMAT_CODE],
-            "comment_speaking_style": list(COMMENT_THREAD_SHORT_REPLY_STYLE_CODES),
-        }
-    }
+    return normalized, route_meta
 
 
 def _a2_comment_route_family(rule: dict[str, Any]) -> str | None:
@@ -2340,39 +1992,6 @@ def _copy_keyword_selection(keyword_selection: dict[str, Any] | None) -> dict[st
     return copied
 
 
-def _should_force_thread_short_reply(rule: dict[str, Any], *, item_no: int) -> bool:
-    if item_no % 2 != 0:
-        return False
-    source = "\n".join(
-        str(value or "")
-        for value in (
-            _business_rule_name(rule),
-            rule.get("corpus"),
-            " ".join(str(example) for example in rule.get("examples") or []),
-            " ".join(str(supplement) for supplement in rule.get("supplements") or []),
-        )
-    )
-    normalized = re.sub(r"\s+", "", source)
-    has_short_reply_marker = any(
-        marker in normalized
-        for marker in (
-            "短接楼",
-            "短句可以占一半",
-            "短句也要",
-            "评论区接一句",
-            "接一句",
-            "接楼感",
-            "顺手报个信",
-            "可以很短",
-        )
-    )
-    has_supply_transfer_keyword = "有货+转奶" in source
-    has_supply_transfer_semantics = any(marker in source for marker in COMMENT_THREAD_SHORT_REPLY_SUPPLY_MARKERS) and any(
-        marker in source for marker in COMMENT_THREAD_SHORT_REPLY_TRANSFER_MARKERS
-    )
-    return has_short_reply_marker and (has_supply_transfer_keyword or has_supply_transfer_semantics)
-
-
 def _generation_requirements_from_asset(asset: AssetRegistry | None) -> str | None:
     for source in _asset_json_sources(asset):
         value = source.get("generation_requirements")
@@ -2496,6 +2115,14 @@ def _batch_variation_review_from_asset(asset: AssetRegistry | None) -> dict[str,
     return None
 
 
+def _delivery_selection_from_asset(asset: AssetRegistry | None) -> dict[str, Any] | None:
+    for source in _asset_json_sources(asset):
+        value = source.get("delivery_selection")
+        if isinstance(value, dict):
+            return value
+    return None
+
+
 def _comment_generation_output_config(rule: dict[str, Any], asset: AssetRegistry | None) -> dict[str, Any] | None:
     sources = [rule, *_asset_json_sources(asset)]
     raw_mode: Any = None
@@ -2570,6 +2197,21 @@ def _normalized_rule_ids(values: list[str] | None) -> list[str]:
     return normalized
 
 
+def _uses_comment_prompt_bundle_rule(rule: dict[str, Any]) -> bool:
+    return (
+        str(rule.get("prompt_mode") or "").strip() == "comment_prompt_bundle"
+        and isinstance(rule.get("comment_prompt_bundle"), dict)
+    )
+
+
+def _uses_explicit_batch_prompt_slots(rule: dict[str, Any]) -> bool:
+    return (
+        _uses_comment_prompt_bundle_rule(rule)
+        and str(rule.get("bundle_prompt_slots_source") or "").strip() == "batch_override"
+        and isinstance(rule.get("prompt_slots"), dict)
+    )
+
+
 def _normalize_comment_prompt_slots_override(
     value: dict[str, list[str]] | None,
 ) -> dict[str, list[str]] | None:
@@ -2583,6 +2225,45 @@ def _normalize_comment_prompt_slots_override(
             normalized[name] = entries
     if not normalized:
         raise ValueError("comment_prompt_slots must contain at least one non-empty slot")
+    return normalized
+
+
+def _normalize_comment_batch_variation_review_override(
+    value: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not value:
+        return None
+    normalized = copy.deepcopy(value)
+    normalized["enabled"] = normalized.get("enabled") is not False
+    return normalized
+
+
+def _normalize_comment_delivery_selection_override(
+    value: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not value:
+        return None
+    normalized = copy.deepcopy(value)
+    normalized["enabled"] = normalized.get("enabled") is not False
+    if not normalized["enabled"]:
+        return normalized
+    try:
+        target_count = int(normalized.get("target_count"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("comment_delivery_selection.target_count must be an integer") from exc
+    if target_count < 1 or target_count > COMMENT_BATCH_MAX_COUNT:
+        raise ValueError(
+            f"comment_delivery_selection.target_count must be between 1 and {COMMENT_BATCH_MAX_COUNT}"
+        )
+    normalized["target_count"] = target_count
+    if normalized.get("max_similarity") is not None:
+        try:
+            max_similarity = float(normalized["max_similarity"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("comment_delivery_selection.max_similarity must be a number") from exc
+        if max_similarity < 0 or max_similarity > 1:
+            raise ValueError("comment_delivery_selection.max_similarity must be between 0 and 1")
+        normalized["max_similarity"] = max_similarity
     return normalized
 
 
@@ -2780,15 +2461,24 @@ def _normalize_draft_rule_override(
     draft_corpus: str | None,
     draft_rule_id: str | None,
     draft_source_row_no: int | None,
+    draft_comment_prompt_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     corpus = str(draft_corpus or "").strip()
-    if not corpus:
+    comment_prompt_bundle = normalize_comment_prompt_bundle(draft_comment_prompt_bundle)
+    if not corpus and not comment_prompt_bundle:
         return None
+    if comment_prompt_bundle:
+        corpus = comment_prompt_bundle["content_direction"]
     rule_id = str(draft_rule_id or "").strip() or None
     source_row_no = _int_or_none(draft_source_row_no)
     if not rule_id and source_row_no is None:
         raise ValueError("draft_corpus requires draft_rule_id, draft_source_row_no, rule_id, or source_row_no")
-    return {"corpus": corpus, "rule_id": rule_id, "source_row_no": source_row_no}
+    return {
+        "corpus": corpus,
+        "rule_id": rule_id,
+        "source_row_no": source_row_no,
+        "comment_prompt_bundle": comment_prompt_bundle,
+    }
 
 
 def _rule_matches_draft_override(rule: dict[str, Any], draft_override: dict[str, Any]) -> bool:
@@ -2884,10 +2574,6 @@ def _comment_item_soft_timeout_seconds() -> float:
 
 def _uses_comment_micro_reply_format(plan: dict[str, Any]) -> bool:
     return _uses_comment_format_control(plan, "comment_micro_reply")
-
-
-def _uses_comment_micro_batch_check_reply_format(plan: dict[str, Any]) -> bool:
-    return _uses_comment_format_control(plan, "comment_micro_batch_check_reply")
 
 
 def _uses_comment_thread_short_reply_format(plan: dict[str, Any]) -> bool:

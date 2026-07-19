@@ -71,6 +71,11 @@ class ContentBatchReportSummary(BaseSchema):
     generated_count: int = 0
     failed_count: int = 0
     hard_pass_count: int = 0
+    batch_variation_warning_count: int = 0
+    delivery_candidate_count: int = 0
+    delivery_selected_count: int = 0
+    delivery_shortfall_count: int = 0
+    suggested_bulk_refill_count: int = 0
     audit_skipped_count: int = 0
     rewrite_item_count: int = 0
     remaining_rewrite_required_count: int = 0
@@ -97,6 +102,10 @@ class ContentBatchReportItem(BaseSchema):
     body_preview: str | None = None
     body_chars: int = 0
     hard_pass: bool | None = None
+    batch_variation_pass: bool | None = None
+    delivery_selected: bool | None = None
+    delivery_rank: int | None = None
+    delivery_non_selection_reason: str | None = None
     audit_skipped: bool = False
     rewrite_required: bool | None = None
     rewrite_reason: str | None = None
@@ -279,6 +288,7 @@ class ContentBatchStartRequest(BaseSchema):
     rule_id: str | None = Field(default=None, max_length=128)
     source_row_no: int | None = Field(default=None, ge=1)
     draft_corpus: str | None = None
+    draft_selling_painpoint_group: str | None = Field(default=None, max_length=255)
     draft_rule_id: str | None = Field(default=None, max_length=128)
     draft_source_row_no: int | None = Field(default=None, ge=1)
     product_topic: str | None = Field(default=None, max_length=255)
@@ -317,9 +327,13 @@ class ContentCommentBatchStartRequest(BaseSchema):
     draft_corpus: str | None = None
     draft_rule_id: str | None = Field(default=None, max_length=128)
     draft_source_row_no: int | None = Field(default=None, ge=1)
+    draft_comment_prompt_bundle: dict[str, Any] | None = None
     comment_prompt_slots: dict[str, list[str]] | None = None
+    comment_batch_variation_review: dict[str, Any] | None = None
+    comment_delivery_selection: dict[str, Any] | None = None
     comment_post_context: str | None = Field(default=None, max_length=500)
-    count: int | None = Field(default=None, ge=1, le=100)
+    count: int | None = Field(default=None, ge=1, le=300)
+    concurrency: int = Field(default=5, ge=1, le=50)
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
     created_by: str | None = Field(default=None, max_length=100)
 

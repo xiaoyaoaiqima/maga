@@ -28,6 +28,7 @@ try:
         _db_config_from_args,
         _insert_new_version,
         _load_active_asset,
+        _next_asset_version,
         _update_in_place,
         _write_backup,
     )
@@ -39,6 +40,7 @@ except ModuleNotFoundError:
         _db_config_from_args,
         _insert_new_version,
         _load_active_asset,
+        _next_asset_version,
         _update_in_place,
         _write_backup,
     )
@@ -63,6 +65,13 @@ def build_parser() -> argparse.ArgumentParser:
     corpus.add_argument("--corpus-file", default=None, help="Plain text file containing the new corpus block")
     corpus.add_argument("--corpus-text", default=None, help="Inline corpus text")
     parser.add_argument("--new-business-rule", default=None, help="Optional replacement for item.business_rule")
+    parser.add_argument("--content-direction-text", default=None, help="Optional replacement for item.content_direction")
+    parser.add_argument(
+        "--activity-material-json",
+        default=None,
+        help="Optional JSON array written to item.activity_material.",
+    )
+    parser.add_argument("--examples-json", default=None, help="Optional JSON array written to item.examples.")
     parser.add_argument(
         "--variation-slots-json",
         default=None,
@@ -141,9 +150,11 @@ def run(args: argparse.Namespace) -> None:
 
             backup_path = _write_backup(row, Path(args.backup_dir))
             if args.mode == "new-version":
+                next_version = _next_asset_version(cursor, row)
                 new_id = _insert_new_version(
                     cursor,
                     row,
+                    next_version=next_version,
                     content_json=updated_content,
                     metadata_json=copy.deepcopy(row.metadata_json),
                     created_by=args.created_by,
@@ -185,6 +196,9 @@ def _load_new_corpus(args: argparse.Namespace) -> str:
         and not args.corpus_text
         and (
             args.new_business_rule is not None
+            or getattr(args, "content_direction_text", None) is not None
+            or getattr(args, "activity_material_json", None) is not None
+            or getattr(args, "examples_json", None) is not None
             or getattr(args, "variation_slots_json", None) is not None
             or getattr(args, "ugc_post_type", None) is not None
         )
@@ -202,6 +216,9 @@ def _validate_delete_args(args: argparse.Namespace) -> None:
         args.corpus_file,
         args.corpus_text,
         args.new_business_rule,
+        getattr(args, "content_direction_text", None),
+        getattr(args, "activity_material_json", None),
+        getattr(args, "examples_json", None),
         args.variation_slots_json,
         args.ugc_post_type,
         args.sync_examples_from_corpus,
@@ -247,6 +264,8 @@ def _content_with_updated_corpus(
     old_corpus = str(item.get("corpus") or "")
     old_business_rule = str(_business_rule_name(item) or "")
     old_examples = list(item.get("examples") or []) if isinstance(item.get("examples"), list) else []
+    old_content_direction = str(item.get("content_direction") or "")
+    old_activity_material = copy.deepcopy(item.get("activity_material") or [])
     old_variation_slots = copy.deepcopy(item.get("variation_slots") or [])
     old_ugc_post_type = str(item.get("ugc_post_type") or "")
     if new_corpus is not None:
@@ -258,6 +277,21 @@ def _content_with_updated_corpus(
         new_business_rule = getattr(args, "new_business_rule", None)
         if new_business_rule is not None:
             item["business_rule"] = new_business_rule.strip()
+        content_direction = getattr(args, "content_direction_text", None)
+        if content_direction is not None:
+            item["content_direction"] = content_direction.strip()
+        raw_activity_material = getattr(args, "activity_material_json", None)
+        if raw_activity_material is not None:
+            activity_material = json.loads(raw_activity_material)
+            if not isinstance(activity_material, list):
+                raise ValueError("--activity-material-json must be a JSON array")
+            item["activity_material"] = [str(value).strip() for value in activity_material if str(value).strip()]
+        raw_examples = getattr(args, "examples_json", None)
+        if raw_examples is not None:
+            examples = json.loads(raw_examples)
+            if not isinstance(examples, list):
+                raise ValueError("--examples-json must be a JSON array")
+            item["examples"] = [str(value).strip() for value in examples if str(value).strip()]
         raw_variation_slots = getattr(args, "variation_slots_json", None)
         if raw_variation_slots is not None:
             variation_slots = json.loads(raw_variation_slots)
@@ -277,6 +311,10 @@ def _content_with_updated_corpus(
         "new_corpus": item.get("corpus"),
         "old_example_count": len(old_examples),
         "new_example_count": len(item.get("examples") or []) if isinstance(item.get("examples"), list) else 0,
+        "old_content_direction": old_content_direction,
+        "new_content_direction": str(item.get("content_direction") or ""),
+        "old_activity_material": old_activity_material,
+        "new_activity_material": item.get("activity_material") or [],
         "old_variation_slots": old_variation_slots,
         "new_variation_slots": item.get("variation_slots") or [],
         "old_ugc_post_type": old_ugc_post_type,
@@ -285,6 +323,9 @@ def _content_with_updated_corpus(
         and (
             old_corpus != str(item.get("corpus") or "")
             or old_business_rule != str(_business_rule_name(item) or "")
+            or old_content_direction != str(item.get("content_direction") or "")
+            or old_activity_material != (item.get("activity_material") or [])
+            or old_examples != (item.get("examples") or [])
             or old_variation_slots != (item.get("variation_slots") or [])
             or old_ugc_post_type != str(item.get("ugc_post_type") or "")
         ),

@@ -700,6 +700,16 @@ class ContentBatchReportService:
         rewrite_required = final_state["rewrite_required"]
         hard_pass = final_state["hard_pass"]
         rewrite_reason = review.get("rewrite_reason") or final_state["rewrite_reason"]
+        batch_variation = (
+            quality.get("batch_variation_review")
+            if isinstance(quality.get("batch_variation_review"), dict)
+            else {}
+        )
+        delivery_selection = (
+            quality.get("delivery_selection")
+            if isinstance(quality.get("delivery_selection"), dict)
+            else {}
+        )
         business_usability = _business_usability_from_quality(quality)
         detail_value = include_details
         return ContentBatchReportItem(
@@ -713,6 +723,10 @@ class ContentBatchReportService:
             body_preview=(item.body or "")[:160] if detail_value and item.body else None,
             body_chars=len(item.body or "") if detail_value else 0,
             hard_pass=hard_pass,
+            batch_variation_pass=batch_variation.get("pass"),
+            delivery_selected=delivery_selection.get("selected"),
+            delivery_rank=delivery_selection.get("delivery_rank"),
+            delivery_non_selection_reason=delivery_selection.get("non_selection_reason"),
             audit_skipped=bool(quality.get("audit_skipped")),
             rewrite_required=rewrite_required,
             rewrite_reason=rewrite_reason,
@@ -789,6 +803,10 @@ class ContentBatchReportService:
             value = quality.get(key)
             if isinstance(value, dict):
                 summary[key] = self._review_summary(value)
+        for key in ("batch_variation_review", "delivery_selection"):
+            value = quality.get(key)
+            if isinstance(value, dict):
+                summary[key] = dict(value)
         for key in (
             "product_experience_phrase_rewrites",
             "product_experience_llm_quality_rewrites",
@@ -1244,11 +1262,29 @@ class ContentBatchReportService:
         generated = [item for item in items if item.status in generated_statuses]
         body_lengths = [item.body_chars for item in generated if item.body_chars]
         forbidden_hit_count = sum(len(item.forbidden_hits) for item in items)
+        delivery_summary = next(
+            (
+                item.quality.get("delivery_selection")
+                for item in generated
+                if isinstance(item.quality, dict)
+                and isinstance(item.quality.get("delivery_selection"), dict)
+            ),
+            {},
+        )
         return ContentBatchReportSummary(
             total_count=len(items),
             generated_count=len(generated),
             failed_count=sum(1 for item in items if item.status == "failed"),
             hard_pass_count=sum(1 for item in generated if item.hard_pass is True),
+            batch_variation_warning_count=sum(
+                1 for item in generated if item.batch_variation_pass is False
+            ),
+            delivery_candidate_count=int(delivery_summary.get("eligible_count") or 0),
+            delivery_selected_count=int(delivery_summary.get("selected_count") or 0),
+            delivery_shortfall_count=int(delivery_summary.get("shortfall_count") or 0),
+            suggested_bulk_refill_count=int(
+                delivery_summary.get("suggested_bulk_refill_count") or 0
+            ),
             audit_skipped_count=sum(1 for item in generated if item.audit_skipped),
             rewrite_item_count=sum(1 for item in items if item.rewrite_reason or item.rewrite_rounds),
             remaining_rewrite_required_count=sum(1 for item in items if item.rewrite_required is True),
@@ -1786,6 +1822,11 @@ def _write_overview_sheet(sheet: Any, report: ContentBatchReportResponse) -> Non
         ("已生成", summary.generated_count),
         ("失败", summary.failed_count),
         ("最终机器通过", summary.hard_pass_count),
+        ("批次同质化提醒", summary.batch_variation_warning_count),
+        ("交付候选", summary.delivery_candidate_count),
+        ("交付入选", summary.delivery_selected_count),
+        ("交付缺口", summary.delivery_shortfall_count),
+        ("建议整批补量", summary.suggested_bulk_refill_count),
         ("自动改写", summary.rewrite_item_count),
         ("仍需处理", summary.remaining_rewrite_required_count),
         (
@@ -1836,6 +1877,10 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
         "Expert",
         "模型",
         "错误信息",
+        "批次多样性通过",
+        "交付入选",
+        "交付序号",
+        "未入选原因",
     ]
     sheet.append(headers)
     for item in report.items:
@@ -1865,6 +1910,10 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
                 _expert_label(snapshot.get("expert")),
                 _model_label(snapshot),
                 item.error_message or "",
+                _bool_label(item.batch_variation_pass),
+                _bool_label(item.delivery_selected),
+                item.delivery_rank or "",
+                item.delivery_non_selection_reason or "",
             ]
         )
     _style_table_header(sheet, header_row=1, column_count=len(headers))
@@ -1894,6 +1943,10 @@ def _write_result_sheet(sheet: Any, report: ContentBatchReportResponse) -> None:
         "U": 36,
         "V": 26,
         "W": 24,
+        "X": 16,
+        "Y": 12,
+        "Z": 12,
+        "AA": 28,
     }
     for column, width in widths.items():
         sheet.column_dimensions[column].width = width

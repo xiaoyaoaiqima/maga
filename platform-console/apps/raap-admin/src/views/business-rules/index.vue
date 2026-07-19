@@ -60,6 +60,14 @@ import { useMagaChatStore } from '#/store';
 type RulePackageType = 'comment_business' | 'article_business';
 const ARTICLE_TEST_ARTICLES_PER_RUN = 2;
 
+interface CommentPromptBundleEditor {
+  generation_instruction: string;
+  content_direction: string;
+  activity_material: string;
+  writing_requirements: string;
+  notes: string;
+}
+
 interface RulePackageConfig {
   accept: string;
   assetType: string;
@@ -138,11 +146,30 @@ const draftSaving = ref(false);
 const draftTesting = ref(false);
 const selectedDraftRule = ref<Record<string, any> | null>(null);
 const draftCorpus = ref('');
+const draftCommentPromptBundle = ref<CommentPromptBundleEditor>({
+  generation_instruction: '',
+  content_direction: '',
+  activity_material: '',
+  writing_requirements: '',
+  notes: '',
+});
 const exampleSaving = ref(false);
 const examplesText = ref('');
+const isActiveCommentPromptBundle = computed(
+  () =>
+    isSelectedCommentRuleSet.value &&
+    selectedDraftRule.value?.prompt_mode === 'comment_prompt_bundle' &&
+    Boolean(selectedDraftRule.value?.comment_prompt_bundle),
+);
 const hasUnsavedRuleChanges = computed(() => {
   if (!activeRule.value || selectedDraftRuleKey.value !== ruleKey(activeRule.value)) {
     return false;
+  }
+  if (isActiveCommentPromptBundle.value) {
+    return (
+      JSON.stringify(buildCommentPromptBundlePayload()) !==
+      JSON.stringify(normalizeCommentPromptBundle(activeRule.value.comment_prompt_bundle))
+    );
   }
   return draftCorpus.value.trim() !== String(activeRule.value.corpus || '').trim();
 });
@@ -172,9 +199,17 @@ const filteredRuleItems = computed(() => {
   const keyword = ruleSearchText.value.trim().toLowerCase();
   if (!keyword) return selectedRuleItems.value;
   return selectedRuleItems.value.filter((item) => {
+    const bundle = normalizeCommentPromptBundle(item.comment_prompt_bundle);
     const haystack = [
       item.business_rule,
       item.corpus,
+      bundle.generation_instruction,
+      bundle.content_direction,
+      ...bundle.activity_material,
+      ...bundle.writing_requirements,
+      ...bundle.notes,
+      ...normalizeTextList(item.examples),
+      ...normalizeTextList(item.supplements),
       item.rule_id,
       item.source_row_no,
     ]
@@ -432,8 +467,78 @@ function normalizeTextList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => String(item || '').trim())
+    .filter(Boolean);
+}
+
+function normalizeBundleLines(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function normalizeCommentPromptBundle(value: unknown) {
+  const bundle = value && typeof value === 'object' ? (value as Record<string, any>) : {};
+  return {
+    generation_instruction: String(bundle.generation_instruction || '').trim(),
+    content_direction: String(bundle.content_direction || '').trim(),
+    activity_material: normalizeBundleLines(bundle.activity_material),
+    writing_requirements: normalizeBundleLines(bundle.writing_requirements),
+    notes: normalizeBundleLines(bundle.notes),
+  };
+}
+
+function articleContentMaterialLines(item: Record<string, any>): string[] {
+  const lines: string[] = [];
+  const inspiration = String(item.inspiration_material || '').trim();
+  if (inspiration) lines.push(`灵感线索：${inspiration}`);
+  for (const line of normalizeTextList(item.content_material || item.activity_material)) {
+    if (!lines.includes(line)) lines.push(line);
+  }
+  const sellingExpression = String(item.selling_expression || '').trim();
+  if (sellingExpression) lines.push(`卖点表达：${sellingExpression}`);
+  const sellingNote = String(item.selling_expression_note || '').trim();
+  if (sellingNote) lines.push(`卖点表达边界：${sellingNote}`);
+  return lines;
+}
+
+function articleGenerationRequirementLines(item: Record<string, any>): string[] {
+  return [
+    ...normalizeTextList(item.generation_requirements),
+    ...normalizeTextList(item.hard_boundaries),
+  ].filter((line, index, lines) => lines.indexOf(line) === index);
+}
+
+function buildCommentPromptBundlePayload() {
+  return {
+    generation_instruction: draftCommentPromptBundle.value.generation_instruction.trim(),
+    content_direction: draftCommentPromptBundle.value.content_direction.trim(),
+    activity_material: textToLines(draftCommentPromptBundle.value.activity_material),
+    writing_requirements: textToLines(draftCommentPromptBundle.value.writing_requirements),
+    notes: textToLines(draftCommentPromptBundle.value.notes),
+  };
+}
+
+function syncPromptBundleEditorFromRule(record: Record<string, any> | null) {
+  const bundle = normalizeCommentPromptBundle(record?.comment_prompt_bundle);
+  draftCommentPromptBundle.value = {
+    generation_instruction: bundle.generation_instruction,
+    content_direction: bundle.content_direction,
+    activity_material: bundle.activity_material.join('\n'),
+    writing_requirements: bundle.writing_requirements.join('\n'),
+    notes: bundle.notes.join('\n'),
+  };
+}
+
+function promptBundleChatText() {
+  const bundle = buildCommentPromptBundlePayload();
+  return [
+    `生文指令：\n${bundle.generation_instruction}`,
+    `内容方向：\n${bundle.content_direction}`,
+    bundle.activity_material.length ? `内容素材：\n${bundle.activity_material.map((item) => `- ${item}`).join('\n')}` : '',
+    bundle.writing_requirements.length ? `写法：\n${bundle.writing_requirements.map((item) => `- ${item}`).join('\n')}` : '',
+    bundle.notes.length ? `生成要求：\n${bundle.notes.map((item) => `- ${item}`).join('\n')}` : '',
+  ]
     .filter(Boolean)
-    .slice(0, 12);
+    .join('\n\n');
 }
 
 function buildChatReportSummary() {
@@ -473,7 +578,9 @@ function buildDraftChatContext(): ChatContext | null {
       Number(selectedDraftRule.value.source_row_no || 0) || null,
     business_rule: String(selectedDraftRule.value.business_rule || ''),
     corpus: String(selectedDraftRule.value.corpus || ''),
-    draft_corpus: draftCorpus.value,
+    draft_corpus: isActiveCommentPromptBundle.value
+      ? promptBundleChatText()
+      : draftCorpus.value,
     examples,
     supplements: [],
     test_report_summary: buildChatReportSummary(),
@@ -489,6 +596,7 @@ function syncDraftChatContext() {
 function setInlineDraftRule(record: Record<string, any>) {
   selectedDraftRule.value = record;
   draftCorpus.value = String(record.corpus || '');
+  syncPromptBundleEditorFromRule(record);
   syncExampleEditorFromRule(record);
   // 重要逻辑：编辑器内嵌到右侧 Inspector，保留这个状态只用于 Chat 上下文同步。
   draftEditorOpen.value = true;
@@ -509,9 +617,10 @@ function textToLines(value: string) {
 
 function focusInlineDraftEditor() {
   window.requestAnimationFrame(() => {
-    const textarea = document.querySelector<HTMLTextAreaElement>(
-      '.inline-draft-editor textarea',
-    );
+    const selector = isActiveCommentPromptBundle.value
+      ? '.bundle-content-direction textarea'
+      : '.inline-draft-editor textarea';
+    const textarea = document.querySelector<HTMLTextAreaElement>(selector);
     textarea?.focus();
   });
 }
@@ -725,7 +834,18 @@ async function saveRuleVersion() {
     message.warning('请先选择一条业务规则');
     return;
   }
-  if (!draftCorpus.value.trim()) {
+  const draftBundle = isActiveCommentPromptBundle.value
+    ? buildCommentPromptBundlePayload()
+    : null;
+  if (draftBundle && !draftBundle.generation_instruction) {
+    message.warning('生文指令不能为空');
+    return;
+  }
+  if (draftBundle && !draftBundle.content_direction) {
+    message.warning('内容方向不能为空');
+    return;
+  }
+  if (!draftBundle && !draftCorpus.value.trim()) {
     message.warning('规则语料不能为空');
     return;
   }
@@ -735,7 +855,8 @@ async function saveRuleVersion() {
     const savedDraft = await saveCommentBusinessRuleDraftApi({
       asset_key: selectedAsset.value.asset_key,
       created_by: currentOperator.value,
-      draft_corpus: draftCorpus.value,
+      draft_corpus: draftBundle?.content_direction || draftCorpus.value,
+      comment_prompt_bundle: draftBundle || undefined,
       rule_id: String(selectedDraftRule.value.rule_id || ''),
       source_row_no:
         Number(selectedDraftRule.value.source_row_no || 0) || undefined,
@@ -820,6 +941,7 @@ function buildRuleDraftTestPayload(
   count: number,
   draftText?: string,
   createdBySuffix?: string,
+  draftBundle?: ReturnType<typeof buildCommentPromptBundlePayload>,
 ) {
   if (!selectedAsset.value?.asset_key || !selectedDraftRule.value) {
     return null;
@@ -838,15 +960,16 @@ function buildRuleDraftTestPayload(
       Number(selectedDraftRule.value.source_row_no || 0) || undefined,
   };
   const normalizedDraftText = String(draftText || '').trim();
-  if (!normalizedDraftText) {
+  if (!normalizedDraftText && !draftBundle) {
     return payload;
   }
   return {
     ...payload,
-    draft_corpus: normalizedDraftText,
+    draft_corpus: draftBundle?.content_direction || normalizedDraftText,
     draft_rule_id: String(selectedDraftRule.value.rule_id || ''),
     draft_source_row_no:
       Number(selectedDraftRule.value.source_row_no || 0) || undefined,
+    draft_comment_prompt_bundle: draftBundle,
   };
 }
 
@@ -858,7 +981,14 @@ async function testRuleDraft(
     message.warning('请先选择一条业务规则');
     return;
   }
-  if (!draftCorpus.value.trim()) {
+  const draftBundle = isActiveCommentPromptBundle.value
+    ? buildCommentPromptBundlePayload()
+    : null;
+  if (draftBundle && (!draftBundle.generation_instruction || !draftBundle.content_direction)) {
+    message.warning('生文指令和内容方向不能为空');
+    return;
+  }
+  if (!draftBundle && !draftCorpus.value.trim()) {
     message.warning('规则语料不能为空');
     return;
   }
@@ -868,7 +998,12 @@ async function testRuleDraft(
     const isQuickTrial = options.postprocessMode === 'generate_only';
     const postprocessMode =
       options.postprocessMode || defaultArticlePostprocessMode();
-    const sharedPayload = buildRuleDraftTestPayload(count, draftCorpus.value);
+    const sharedPayload = buildRuleDraftTestPayload(
+      count,
+      draftBundle?.content_direction || draftCorpus.value,
+      undefined,
+      draftBundle || undefined,
+    );
     if (!sharedPayload) return;
     const result = isSelectedArticleBusinessRuleSet.value
       ? await startContentBatchApi({
@@ -998,15 +1133,25 @@ const beforeUpload: UploadProps['beforeUpload'] = async (file) => {
 };
 
 function downloadSimpleRuleTemplate() {
-  const csv = [
-    '业务规则名称,规则语料,示例',
-    '"有货后先不急着转奶","写什么：妈妈问到、买到、等到或收到 a2 了，所以先继续喝 a2，转奶这事先放一放。\n怎么说：像评论区接一句或顺手报个信，可以很短；别写成官方补货通知、催别人囤货、库存焦虑或转奶教程。","刚问柜姐说有货了，立马去下单。\n能买到的话我还是先不换了\n转奶太麻烦了，买到就继续喝a2"',
-  ].join('\n');
+  const isCommentTemplate = selectedAsset.value
+    ? isSelectedCommentRuleSet.value
+    : packageType.value === 'comment_business';
+  const csv = isCommentTemplate
+    ? [
+        '业务规则名称,生文指令,内容方向,内容素材,写法,生成要求,示例',
+        '"有货-直给简单报喜","生成一条小红书母婴社区真实用户评论，口语化，有活人感。","写看到有货了的即时反应，像在评论区简单报喜或小感叹。","a2已经到货、来货，或重新能买到。\n品牌或产品名可写a2或a2至初。","字数在20字以内","不要说缺货、断粮等消极词。","a2终于到货了\na2至初来货了！这下安心多了～"',
+      ].join('\n')
+    : [
+        '业务规则名称,卖点痛点组合,生文指令,内容方向,生文素材,写法,生成要求,示例',
+        '"奶量补充","口味接受+补充奶量不足","写一篇小红书妈妈UGC生活记录。","写妈妈在真实生活里记录孩子奶量补充。","品牌/产品事实：按本篇已确认事实使用。","从一个具体喝奶动作写起。\n只展开一个自家反馈。","标题不超过20字。\n正文80-160字。",""',
+      ].join('\n');
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = '业务规则_三列模板.csv';
+  link.download = isCommentTemplate
+    ? '评论业务规则_Bundle模板.csv'
+    : '帖子业务规则_五段框架模板.csv';
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -1032,14 +1177,35 @@ function downloadSelectedRulePackage() {
     message.warning('当前规则包暂无可导出的规则');
     return;
   }
-  const rows = [
-    ['业务规则名称', '规则语料', '示例'],
-    ...items.map((item) => [
-      ruleDisplayName(item),
-      item.corpus || '',
-      [...normalizeTextList(item.examples), ...normalizeTextList(item.supplements)].join('\n'),
-    ]),
-  ];
+  const rows = isSelectedCommentRuleSet.value
+    ? [
+        ['业务规则名称', '生文指令', '内容方向', '内容素材', '写法', '生成要求', '示例'],
+        ...items.map((item) => {
+          const bundle = normalizeCommentPromptBundle(item.comment_prompt_bundle);
+          return [
+            ruleDisplayName(item),
+            bundle.generation_instruction,
+            bundle.content_direction || item.corpus || '',
+            bundle.activity_material.join('\n'),
+            bundle.writing_requirements.join('\n'),
+            bundle.notes.join('\n'),
+            [...normalizeTextList(item.examples), ...normalizeTextList(item.supplements)].join('\n'),
+          ];
+        }),
+      ]
+    : [
+        ['业务规则名称', '卖点痛点组合', '生文指令', '内容方向', '生文素材', '写法', '生成要求', '示例'],
+        ...items.map((item) => [
+          ruleDisplayName(item),
+          item.selling_painpoint_group || '',
+          item.generation_instruction || '',
+          item.content_direction || item.corpus || '',
+          articleContentMaterialLines(item).join('\n'),
+          normalizeTextList(item.writing_requirements).join('\n'),
+          articleGenerationRequirementLines(item).join('\n'),
+          [...normalizeTextList(item.examples), ...normalizeTextList(item.supplements)].join('\n'),
+        ]),
+      ];
   const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -1123,8 +1289,8 @@ function fullExamplePoolCount(record: Record<string, any>) {
   return examplesCount(record);
 }
 
-function defaultExampleSampleCount(_record: Record<string, any>) {
-  return 3;
+function defaultExampleSampleCount(record: Record<string, any>) {
+  return record.prompt_mode === 'comment_prompt_bundle' ? 0 : 3;
 }
 
 function ruleKey(record: Record<string, any>) {
@@ -1330,6 +1496,11 @@ watch(
   () => [
     draftEditorOpen.value,
     draftCorpus.value,
+    draftCommentPromptBundle.value.generation_instruction,
+    draftCommentPromptBundle.value.content_direction,
+    draftCommentPromptBundle.value.activity_material,
+    draftCommentPromptBundle.value.writing_requirements,
+    draftCommentPromptBundle.value.notes,
     selectedDraftRule.value?.rule_id,
     selectedDraftRule.value?.source_row_no,
     selectedAsset.value?.id,
@@ -1355,7 +1526,11 @@ watch(
       chatStore.clearDraftFillPayload(payload.request_id);
       return;
     }
-    draftCorpus.value = payload.draft_corpus;
+    if (isActiveCommentPromptBundle.value) {
+      draftCommentPromptBundle.value.content_direction = payload.draft_corpus;
+    } else {
+      draftCorpus.value = payload.draft_corpus;
+    }
     syncDraftChatContext();
     focusInlineDraftEditor();
     message.success('已填入编辑框，请确认后再保存或测试');
@@ -1573,7 +1748,7 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
                 v-model:value="ruleSearchText"
                 allow-clear
                 class="rule-search"
-                placeholder="搜索业务规则、语料"
+                placeholder="搜索业务规则、Bundle字段或demo"
               />
                 <Button
                   v-if="isSelectedCommentRuleSet || isSelectedArticleBusinessRuleSet"
@@ -1655,18 +1830,71 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
                   <Tag>
                     示例 {{ fullExamplePoolCount(activeRule) }} 条
                   </Tag>
-                  <Tag>
-                    生成时抽 {{ defaultExampleSampleCount(activeRule) }} 条/次
+                  <Tag :color="activeRule.prompt_mode === 'comment_prompt_bundle' ? 'blue' : undefined">
+                    {{
+                      activeRule.prompt_mode === 'comment_prompt_bundle'
+                        ? 'Bundle 模式不注入 demo'
+                        : `生成时抽 ${defaultExampleSampleCount(activeRule)} 条/次`
+                    }}
                   </Tag>
                 </div>
               </div>
 
               <div v-if="isSelectedBusinessRuleSet" class="inspector-section">
                 <div class="draft-workspace-header">
-                  <div class="field-label">规则语料</div>
+                  <div class="field-label">
+                    {{ isActiveCommentPromptBundle ? '评论 Prompt Bundle' : '规则语料' }}
+                  </div>
                   <Tag>当前 v{{ selectedAsset?.version_no || '-' }}</Tag>
                 </div>
-                <div class="inline-draft-editor">
+                <div v-if="isActiveCommentPromptBundle" class="comment-prompt-bundle-editor">
+                  <div class="form-field">
+                    <div class="field-label">生文指令</div>
+                    <Textarea
+                      v-model:value="draftCommentPromptBundle.generation_instruction"
+                      :auto-size="{ minRows: 2, maxRows: 5 }"
+                      :disabled="draftSaving || draftTesting"
+                      placeholder="定义生成什么类型的评论。"
+                    />
+                  </div>
+                  <div class="form-field bundle-content-direction">
+                    <div class="field-label">内容方向</div>
+                    <Textarea
+                      v-model:value="draftCommentPromptBundle.content_direction"
+                      :auto-size="{ minRows: 4, maxRows: 8 }"
+                      :disabled="draftSaving || draftTesting"
+                      placeholder="只写这一方向具体要表达什么。"
+                    />
+                  </div>
+                  <div class="form-field">
+                    <div class="field-label">内容素材</div>
+                    <Textarea
+                      v-model:value="draftCommentPromptBundle.activity_material"
+                      :auto-size="{ minRows: 3, maxRows: 8 }"
+                      :disabled="draftSaving || draftTesting"
+                      placeholder="一行一条，可放灵感线索、用户痛点、产品卖点、品牌事实或活动信息。"
+                    />
+                  </div>
+                  <div class="form-field">
+                    <div class="field-label">写法</div>
+                    <Textarea
+                      v-model:value="draftCommentPromptBundle.writing_requirements"
+                      :auto-size="{ minRows: 2, maxRows: 6 }"
+                      :disabled="draftSaving || draftTesting"
+                      placeholder="一行一条，例如字数范围。"
+                    />
+                  </div>
+                  <div class="form-field">
+                    <div class="field-label">生成要求</div>
+                    <Textarea
+                      v-model:value="draftCommentPromptBundle.notes"
+                      :auto-size="{ minRows: 2, maxRows: 8 }"
+                      :disabled="draftSaving || draftTesting"
+                      placeholder="一行一条，只保留本篇必须做到的格式和必要边界。"
+                    />
+                  </div>
+                </div>
+                <div v-else class="inline-draft-editor">
                   <Textarea
                     v-model:value="draftCorpus"
                     :auto-size="{ minRows: 12, maxRows: 22 }"
@@ -1677,9 +1905,11 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 
                 <div class="draft-hint">
                   <template v-if="hasUnsavedRuleChanges">
-                    有未保存修改。测试会直接使用当前框里的内容；保存会生成规则包新版本。
+                    有未保存修改。测试会直接使用当前编辑内容；保存会生成规则包新版本。
                   </template>
-                  <template v-else>当前框内是规则包 v{{ selectedAsset?.version_no || '-' }} 的正式语料。</template>
+                  <template v-else>
+                    当前是规则包 v{{ selectedAsset?.version_no || '-' }} 的正式内容。
+                  </template>
                 </div>
 
                 <Space class="draft-actions inline-draft-actions" wrap>
@@ -1724,17 +1954,28 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 
               <div v-if="isSelectedBusinessRuleSet" class="inspector-section">
                 <div class="draft-workspace-header">
-                  <div class="field-label">示例</div>
+                  <div class="field-label">
+                    {{ isActiveCommentPromptBundle ? 'Demo（母池记录）' : '示例' }}
+                  </div>
                   <Tag>{{ fullExamplePoolCount(activeRule) }} 条</Tag>
                 </div>
                 <Textarea
                   v-model:value="examplesText"
                   :auto-size="{ minRows: 8, maxRows: 16 }"
                   :disabled="exampleSaving"
-                  placeholder="可为空，一行一条。生成时从这里随机抽 3 条作为 few-shot；示例只提供语气、场景颗粒和生活细节。"
+                  :placeholder="
+                    isActiveCommentPromptBundle
+                      ? '可为空，一行一条。当前 Bundle zero-shot，不会把这些 demo 放进生成 Prompt。'
+                      : '可为空，一行一条。生成时从这里随机抽 3 条作为 few-shot。'
+                  "
                 />
                 <div class="draft-hint">
-                  保存示例会生成规则包新版本；不会改动上方规则语料。
+                  <template v-if="isActiveCommentPromptBundle">
+                    demo 用于母池沉淀和运营查看；保存会生成规则包新版本，但当前不会进入生成 Prompt。
+                  </template>
+                  <template v-else>
+                    保存示例会生成规则包新版本；不会改动上方规则语料。
+                  </template>
                 </div>
                 <Space class="draft-actions inline-draft-actions" wrap>
                   <Button :icon="h(SaveOutlined)" :loading="exampleSaving" @click="saveRuleExamples">
@@ -1771,10 +2012,14 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
           <strong>{{ pendingFile?.name || '-' }}</strong>
         </div>
         <div class="upload-format-hint">
-          <strong>推荐格式：业务规则名称 / 规则语料 / 示例</strong>
-          <span>
-            示例可以为空；有示例时一行一条，生成时会从示例中抽 3 条作为 few-shot。
-          </span>
+          <template v-if="packageType === 'comment_business'">
+            <strong>推荐格式：业务规则名称 / 生文指令 / 内容方向 / 内容素材 / 写法 / 生成要求 / 示例</strong>
+            <span>示例可以为空；Bundle 模式下示例只作为母池记录，不进入生成 Prompt。</span>
+          </template>
+          <template v-else>
+            <strong>推荐格式：业务规则名称 / 卖点痛点组合 / 生文指令 / 内容方向 / 生文素材 / 写法 / 生成要求 / 示例</strong>
+            <span>卖点痛点组合只负责从独立表达池抽取原始多样表达；生文素材继续放灵感、产品事实或活动信息，示例可以为空。</span>
+          </template>
         </div>
         <div class="form-field">
           <div class="field-label">上传为</div>
@@ -2432,6 +2677,15 @@ async function ensureChatActionTargetRule(ruleId?: null | string, sourceRowNo?: 
 
 .inline-draft-editor :deep(textarea.ant-input) {
   line-height: 1.7;
+}
+
+.comment-prompt-bundle-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.comment-prompt-bundle-editor :deep(textarea.ant-input) {
+  line-height: 1.65;
 }
 
 .inline-draft-actions {

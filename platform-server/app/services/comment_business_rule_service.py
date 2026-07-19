@@ -282,6 +282,41 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
         "supplements": [],
         "source_row_no": index,
     }
+    generation_instruction = str(
+        row.get("生文指令") or row.get("generation_instruction") or ""
+    ).strip()
+    content_direction = str(row.get("内容方向") or row.get("content_direction") or "").strip()
+    if content_direction:
+        item["content_direction"] = _clean_corpus_for_prompt(
+            content_direction,
+            business_rule=business_rule,
+        )
+    activity_material = _bundle_lines(
+        row.get("内容素材")
+        or row.get("生文素材")
+        or row.get("本篇素材")
+        or row.get("活动素材")
+        or row.get("content_material")
+        or row.get("activity_material")
+    )
+    if activity_material:
+        item["activity_material"] = activity_material
+    writing_requirements = _bundle_lines(row.get("写法") or row.get("writing_requirements"))
+    notes = _bundle_lines(
+        row.get("生成要求")
+        or row.get("注意")
+        or row.get("generation_requirements")
+        or row.get("notes")
+    )
+    if generation_instruction:
+        item["prompt_mode"] = "comment_prompt_bundle"
+        item["comment_prompt_bundle"] = {
+            "generation_instruction": generation_instruction,
+            "content_direction": item.get("content_direction") or corpus,
+            "activity_material": activity_material,
+            "writing_requirements": writing_requirements,
+            "notes": notes,
+        }
     prompt_slots = _prompt_slots_from_row(row)
     if prompt_slots:
         item["prompt_slots"] = prompt_slots
@@ -303,7 +338,15 @@ def _business_rule_and_corpus(row: dict[str, str]) -> tuple[str, str]:
     simple_corpus = _simple_operator_corpus(row)
     if simple_corpus:
         return str(rule_value).strip(), simple_corpus
-    corpus_value = row.get("规则语料") or row.get("语料") or row.get("focus") or row.get("corpus") or ""
+    corpus_value = (
+        row.get("规则语料")
+        or row.get("语料")
+        or row.get("focus")
+        or row.get("corpus")
+        or row.get("内容方向")
+        or row.get("content_direction")
+        or ""
+    )
     if row.get("规则语料") or row.get("语料"):
         return str(rule_value).strip(), str(corpus_value).strip()
     if row.get("评论类型") and (row.get("业务规则") or row.get(LEGACY_RULE_HEADER)):
@@ -363,6 +406,46 @@ def _line_examples(value: str | None) -> list[str]:
         if line:
             examples.append(line)
     return examples
+
+
+def _bundle_lines(value: str | None) -> list[str]:
+    lines: list[str] = []
+    for raw in re.split(r"\|\||[\n\r]+", str(value or "")):
+        line = _clean_example_line(raw)
+        if line and line not in lines:
+            lines.append(line)
+    return lines
+
+
+def normalize_comment_prompt_bundle(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+
+    generation_instruction = str(value.get("generation_instruction") or "").strip()
+    content_direction = str(value.get("content_direction") or "").strip()
+    if not generation_instruction:
+        raise ValueError("comment_prompt_bundle.generation_instruction is required")
+    if not content_direction:
+        raise ValueError("comment_prompt_bundle.content_direction is required")
+
+    def normalized_lines(field: str) -> list[str]:
+        raw_value = value.get(field)
+        if isinstance(raw_value, list):
+            lines: list[str] = []
+            for raw in raw_value:
+                line = _clean_example_line(raw)
+                if line and line not in lines:
+                    lines.append(line)
+            return lines
+        return _bundle_lines(str(raw_value or ""))
+
+    return {
+        "generation_instruction": generation_instruction,
+        "content_direction": content_direction,
+        "activity_material": normalized_lines("activity_material"),
+        "writing_requirements": normalized_lines("writing_requirements"),
+        "notes": normalized_lines("notes"),
+    }
 
 
 def _examples_from_corpus(corpus: str) -> list[str]:

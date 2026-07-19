@@ -1,6 +1,9 @@
 """MAGA Asset Registry and Asset Steward proposal endpoints."""
 from __future__ import annotations
 
+import csv
+import io
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +11,7 @@ from app.core.database import get_db
 from app.schemas.base import ResponseData
 from app.schemas.assets import (
     AssetCandidateCreate,
+    ArticleBusinessRuleFieldsUpdate,
     AssetChangeProposalApplyResponse,
     AssetChangeProposalCreate,
     AssetChangeProposalResponse,
@@ -30,6 +34,7 @@ from app.schemas.assets import (
     SystemPromptKeywordPreviewResponse,
     SystemPromptKeywordRollback,
     SystemPromptKeywordUpdate,
+    SellingPainpointExpressionUpdate,
 )
 from app.services.asset_service import AssetService, comment_business_rule_draft_response, normalize_asset_content
 from app.services.activity_quality_guard_service import resolve_quality_guard_profile
@@ -671,6 +676,102 @@ async def update_business_rule_examples(
     )
 
 
+@router.patch(
+    "/article-business-rule-sets/{asset_key}/selling-painpoint-expressions/{source_row_no}",
+    response_model=ResponseData,
+)
+async def update_selling_painpoint_expression(
+    asset_key: str,
+    source_row_no: int,
+    payload: SellingPainpointExpressionUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        asset = await AssetService(db).update_selling_painpoint_expression(
+            asset_key,
+            source_row_no,
+            payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(asset)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetRegistryResponse.model_validate(asset).model_dump(mode="json"),
+    )
+
+
+@router.post("/imports/article-selling-painpoint-expressions", response_model=ResponseData)
+async def import_article_selling_painpoint_expressions(
+    file: UploadFile = File(...),
+    asset_key: str = Form(...),
+    created_by: str = Form(default="maga-operator"),
+    db: AsyncSession = Depends(get_db),
+):
+    filename = file.filename or "卖点表达_子关键词导出.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="only .csv files are supported")
+    text = (await file.read()).decode("utf-8-sig")
+    content = "".join(line for line in text.splitlines(keepends=True) if not line.startswith("#"))
+    rows = list(csv.DictReader(io.StringIO(content)))
+    expressions = []
+    for source_row_no, row in enumerate(rows, start=1):
+        group = str(row.get("卖点表达") or "").strip()
+        expression = str(row.get("语料") or "").strip()
+        if not group and not expression:
+            continue
+        if not group or not expression:
+            raise HTTPException(status_code=400, detail=f"invalid expression row: {source_row_no}")
+        expressions.append(
+            {
+                "selling_painpoint_group": group,
+                "expression": expression,
+                "source_row_no": source_row_no,
+            }
+        )
+    try:
+        asset = await AssetService(db).replace_selling_painpoint_expressions(
+            asset_key,
+            expressions,
+            source_name=filename,
+            created_by=created_by,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(asset)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetRegistryResponse.model_validate(asset).model_dump(mode="json"),
+    )
+
+
+@router.patch(
+    "/article-business-rule-sets/{asset_key}/rules/{rule_id}",
+    response_model=ResponseData,
+)
+async def update_article_business_rule_fields(
+    asset_key: str,
+    rule_id: str,
+    payload: ArticleBusinessRuleFieldsUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        asset = await AssetService(db).update_article_business_rule_fields(asset_key, rule_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(asset)
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetRegistryResponse.model_validate(asset).model_dump(mode="json"),
+    )
+
+
 @router.get("/{asset_type}/{asset_key}", response_model=ResponseData)
 async def get_latest_asset(
     asset_type: str,
@@ -729,6 +830,7 @@ async def create_change_request(payload: AssetChangeRequestCreate, db: AsyncSess
     service = AssetService(db)
     request = await service.create_change_request(payload)
     await db.commit()
+    await db.refresh(request)
     return ResponseData(
         code=200,
         message="success",
@@ -741,6 +843,7 @@ async def create_change_proposal(payload: AssetChangeProposalCreate, db: AsyncSe
     service = AssetService(db)
     proposal = await service.create_change_proposal(payload)
     await db.commit()
+    await db.refresh(proposal)
     return ResponseData(
         code=200,
         message="success",
@@ -755,6 +858,7 @@ async def apply_change_proposal(proposal_id: int, db: AsyncSession = Depends(get
     if proposal is None:
         raise HTTPException(status_code=404, detail="proposal not found")
     await db.commit()
+    await db.refresh(proposal)
     return ResponseData(
         code=200,
         message="success",

@@ -208,8 +208,10 @@ def test_same_a2_rule_can_render_different_source_post_contexts():
     news_prompt = _comment_prompt_text(news_rule)
     complaint_prompt = _comment_prompt_text(complaint_rule)
 
-    assert news_prompt.splitlines()[0] == news_rule["scenario_post_context"]
-    assert complaint_prompt.splitlines()[0] == complaint_rule["scenario_post_context"]
+    assert news_prompt.startswith("内容方向：")
+    assert complaint_prompt.startswith("内容方向：")
+    assert news_rule["scenario_post_context"] not in news_prompt
+    assert complaint_rule["scenario_post_context"] not in complaint_prompt
     assert "像刷到a2到货后的一句自然接话" in news_prompt
     assert "像刷到a2到货后的一句自然接话" in complaint_prompt
 
@@ -316,11 +318,11 @@ def test_member_benefit_rule_uses_activity_only_keyword_selection():
             "business_rule": "会员权益-抽奖活动",
             "scenario_guard_keyword": "会员权益",
         },
-        item_no=1,
     )
 
     assert selected == {
         "comment_writing_instruction": ["natural_comment"],
+        "comment_format_control": ["comment_two_sentence"],
     }
     assert meta["keyword_selection_override"]["reason"] == "a2_member_benefit_route_only"
     assert base["comment_writing_instruction"] == ["natural_comment", "light_comment_experience"]
@@ -344,7 +346,7 @@ def test_member_benefit_rule_uses_activity_only_keyword_selection():
     ],
 )
 def test_a2_routes_use_length_neutral_keyword_selection(rule, expected_reason):
-    selected, meta = _keyword_selection_with_rule_overrides(None, rule, item_no=1)
+    selected, meta = _keyword_selection_with_rule_overrides(None, rule)
 
     assert selected == {"comment_writing_instruction": ["natural_comment"]}
     assert meta["keyword_selection_override"]["reason"] == expected_reason
@@ -392,7 +394,10 @@ def test_a2_plan_applies_length_neutral_selection_to_generic_named_rules():
         quality_guard_profile_key="a2_sentiment_comment_202606",
     )
 
-    assert plan["keyword_selection"] == {"comment_writing_instruction": ["natural_comment"]}
+    assert plan["keyword_selection"] == {
+        "comment_writing_instruction": ["natural_comment"],
+        "comment_format_control": ["comment_21_35"],
+    }
     assert plan["keyword_selection_override"]["reason"] == "a2_transfer_route_only"
     assert plan["comment_tone_options"] == _comment_tone_options_from_asset(
         asset,

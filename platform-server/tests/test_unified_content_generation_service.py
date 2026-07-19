@@ -68,18 +68,62 @@ def test_rule_corpus_as_prompt_keeps_single_article_output_format():
     assert "不要输出 items 数组" in prompt
     assert "items 必须正好" not in prompt
     assert '"items"' not in prompt
+    assert "基于量子态叠加与多重可能性" in prompt
 
 
-def test_layered_article_prompt_renders_only_its_own_six_layers():
+@pytest.mark.asyncio
+async def test_rule_corpus_as_prompt_snapshot_does_not_load_expression_keywords(unified_session_factory):
+    async with unified_session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type=SYSTEM_KEYWORD_ASSET_TYPE,
+                asset_key="wangyue_v3_minimal_generation_keywords",
+                display_name="旺玥表达扩散语料",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "categories": [
+                        _category("perturbation_rule", "扰动规则", ["不应从资产进入 prompt。"]),
+                    ]
+                },
+            )
+        )
+        await session.commit()
+
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="article",
+            business_rule={
+                "asset_key": "wangyue_v3_core_storyline_article_rules",
+                "keyword_asset_key": "wangyue_v3_minimal_generation_keywords",
+                "prompt_mode": "rule_corpus_as_prompt",
+                "corpus": "生文指令：写一篇妈妈UGC。",
+            },
+            item_no=1,
+            output_fields=["title", "body"],
+        )
+
+    assert snapshot.input_snapshot["selected_keywords"] == []
+    assert snapshot.input_snapshot["keyword_asset"] is None
+    assert snapshot.asset_refs["keyword_asset"] is None
+    assert "不应从资产进入 prompt" not in snapshot.input_snapshot["rendered_prompt"]
+    assert "基于量子态叠加与多重可能性" in snapshot.input_snapshot["rendered_prompt"]
+    assert '格式必须是 {"title":"...","body":"..."}' in snapshot.input_snapshot["rendered_prompt"]
+
+
+def test_layered_article_prompt_renders_the_five_layer_framework():
     prompt = _layered_article_prompt(
         {
             "generation_instruction": "写一篇小红书妈妈 UGC 正向记录。",
             "content_direction": "写妈妈在常买门店看到a2至初到货，顺手补上熟悉口粮。",
-            "activity_material": ["门店已经到货。", "现场可以自行查看对应报告。"],
+            "activity_material": ["活动信息：门店已经到货。", "产品事实：现场可以自行查看对应报告。"],
             "selling_expression": "熟悉口粮能接上，家里不用临时换来换去。",
             "selling_expression_note": "只写家庭安排，不扩成产品效果。",
+            "selling_painpoint_group": "有货+补充奶量不足",
+            "selling_painpoint_expression": "家里口粮能接上，孩子愿意喝，补奶量时省事一些。",
             "hard_boundaries": ["不写成官方到货公告。"],
             "writing_requirements": ["标题从正文自然提炼。"],
+            "generation_requirements": ["不要写成官方公告。"],
             "variation_slots": [
                 {
                     "slot_code": "inspiration_material",
@@ -116,19 +160,65 @@ def test_layered_article_prompt_renders_only_its_own_six_layers():
         output_format="只输出 JSON 对象，字段只能包含 title 和 body。",
     )
 
-    assert prompt.startswith("任务：写一篇小红书妈妈 UGC 正向记录。")
+    assert prompt.startswith("生文指令：\n写一篇小红书妈妈 UGC 正向记录。")
     assert "像真实妈妈写一段完整分享。" not in prompt
-    assert "这篇要写的事：\n写妈妈在常买门店看到a2至初到货" in prompt
-    assert "本篇灵感线索：和下班顺路有关" in prompt
-    assert "活动素材：\n- 门店已经到货。" in prompt
-    assert "- 现场看到一份新客礼盒。" in prompt
-    assert "- 扫罐底码能看对应批次的检测报告。" in prompt
-    assert "卖点表达：熟悉口粮能接上" in prompt
-    assert "硬边界：\n- 不写成官方到货公告。" in prompt
+    assert "内容方向：\n写妈妈在常买门店看到a2至初到货" in prompt
+    assert "本篇素材：\n- 灵感线索：和下班顺路有关" in prompt
+    assert "- 活动信息：门店已经到货。" in prompt
+    assert "- 活动奖品素材：现场看到一份新客礼盒。" in prompt
+    assert "- 批批检素材：扫罐底码能看对应批次的检测报告。" in prompt
+    assert "- 卖点痛点表达：家里口粮能接上，孩子愿意喝，补奶量时省事一些。" in prompt
+    assert "有货+补充奶量不足" not in prompt
+    assert "- 卖点表达：熟悉口粮能接上" not in prompt
     assert "写法：\n- 标题从正文自然提炼。" in prompt
+    assert "生成要求：\n- 不要写成官方公告。\n- 不写成官方到货公告。" in prompt
     assert "像普通家庭妈妈自然表达。" not in prompt
     assert "正文保持紧凑。" not in prompt
-    assert "输出格式：\n只输出 JSON 对象" in prompt
+    assert "- 只输出 JSON 对象" in prompt
+
+
+def test_layered_article_prompt_renders_selected_info_source_as_generation_material():
+    prompt = _layered_article_prompt(
+        {
+            "generation_instruction": "写一篇小红书妈妈 UGC 正向记录。",
+            "content_direction": "写妈妈选奶时确认莼悦。",
+            "selling_painpoint_expression": "奶源更干净",
+            "variation_slots": [
+                {
+                    "slot_code": "info_source",
+                    "slot_name": "信息来源线索",
+                    "value": "朋友聊天",
+                }
+            ],
+        },
+        selected_keywords=[],
+        output_format="只输出 JSON 对象，字段只能包含 title 和 body。",
+    )
+
+    assert "本篇素材：\n- 信息来源线索：朋友聊天" in prompt
+    assert "- 卖点痛点表达：奶源更干净" in prompt
+
+
+def test_layered_article_prompt_renders_no_source_control_as_generation_material():
+    prompt = _layered_article_prompt(
+        {
+            "generation_instruction": "写一篇小红书妈妈 UGC 正向记录。",
+            "content_direction": "写妈妈选奶时确认莼悦。",
+            "selling_painpoint_expression": "奶源更干净",
+            "variation_slots": [
+                {
+                    "slot_code": "info_source",
+                    "slot_name": "信息来源线索",
+                    "value": "正文不写来源",
+                }
+            ],
+        },
+        selected_keywords=[],
+        output_format="只输出 JSON 对象，字段只能包含 title 和 body。",
+    )
+
+    assert "本篇素材：\n- 信息来源线索：正文不写来源" in prompt
+    assert "- 卖点痛点表达：奶源更干净" in prompt
 
 
 @pytest.mark.asyncio
@@ -172,7 +262,7 @@ async def test_layered_article_snapshot_does_not_load_default_expression_keyword
     assert snapshot.input_snapshot["keyword_asset"] is None
     assert snapshot.asset_refs["keyword_asset"] is None
     assert "又开一听记录" not in snapshot.input_snapshot["rendered_prompt"]
-    assert "本篇灵感线索：和课后记下的一句话有关。" in snapshot.input_snapshot["rendered_prompt"]
+    assert "本篇素材：\n- 灵感线索：和课后记下的一句话有关。" in snapshot.input_snapshot["rendered_prompt"]
 
 
 def test_comment_prompt_renders_selected_instruction_and_format_layers():
@@ -180,7 +270,9 @@ def test_comment_prompt_renders_selected_instruction_and_format_layers():
         {
             "asset_key": "a2_sentiment_comment_activity",
             "business_rule": "批批检-报告查询互动",
-            "corpus": "围绕检测报告顺手问一句。",
+            "corpus": "旧规则语料不应优先渲染。",
+            "content_direction": "围绕看到一项品牌信息后的自然反应接话。",
+            "activity_material": ["a2公开每批检测信息", "对应批次报告可以查询"],
         },
         selected_keywords=[
             {
@@ -198,10 +290,144 @@ def test_comment_prompt_renders_selected_instruction_and_format_layers():
         ],
     )
 
-    assert "任务：\n- 生成一条小红书母婴社区真实用户评论。" in prompt
-    assert "生评论指令：\n- 语言像妈妈在评论区顺手补一句。" in prompt
-    assert "本条要写的事：\n围绕检测报告顺手问一句。" in prompt
+    assert "任务：" not in prompt
+    assert "生评论指令：" not in prompt
+    assert (
+        "生文指令：\n- 生成一条小红书母婴社区真实用户评论。\n"
+        "- 语言像妈妈在评论区顺手补一句。"
+    ) in prompt
+    assert "内容方向：\n围绕看到一项品牌信息后的自然反应接话。" in prompt
+    assert "本篇素材：\n- a2公开每批检测信息\n- 对应批次报告可以查询" in prompt
+    assert "旧规则语料不应优先渲染" not in prompt
     assert "写法：\n- 评论控制在21到30字。" in prompt
+
+
+def test_comment_prompt_bundle_renders_only_its_own_five_layers():
+    prompt = _comment_prompt_text(
+        {
+            "asset_key": "a2_sentiment_comment_activity",
+            "business_rule": "有货-直给简单报喜",
+            "prompt_mode": "comment_prompt_bundle",
+            "comment_prompt_bundle": {
+                "generation_instruction": "生成一条小红书母婴社区真实用户评论，口语化，有活人感。",
+                "content_direction": "写看到有货了的即时反应，像在评论区简单报喜。",
+                "activity_material": ["a2已经到货、来货，或重新能买到。"],
+                "writing_requirements": ["字数在20字以内"],
+                "notes": ["不要说缺货、断粮等消极词。"],
+            },
+            "examples": ["不应该进入Prompt"],
+            "comment_tone_options": [
+                {"tone_code": "confirm", "tone_label": "确认", "prompt": "不应该进入Prompt"}
+            ],
+        },
+        selected_keywords=[
+            {
+                "category_code": "comment_writing_instruction",
+                "corpus": ["不应该进入Prompt"],
+            },
+            {
+                "category_code": "comment_format_control",
+                "corpus": ["不应该进入Prompt"],
+            },
+        ],
+        comment_tone={"tone_label": "确认", "prompt": "不应该进入Prompt"},
+    )
+
+    assert prompt == (
+        "生文指令：\n"
+        "- 生成一条小红书母婴社区真实用户评论，口语化，有活人感。\n\n"
+        "内容方向：\n"
+        "写看到有货了的即时反应，像在评论区简单报喜。\n\n"
+        "内容素材：\n"
+        "- a2已经到货、来货，或重新能买到。\n\n"
+        "写法：\n"
+        "- 字数在20字以内\n\n"
+        "生成要求：\n"
+        "- 不要说缺货、断粮等消极词。\n\n"
+        "只输出评论正文，不要标题、编号、解释。"
+    )
+
+
+def test_comment_prompt_bundle_renders_explicit_batch_expression_path():
+    prompt = _comment_prompt_text(
+        {
+            "asset_key": "a2_sentiment_comment_activity",
+            "business_rule": "有货-渠道-不提产品",
+            "prompt_mode": "comment_prompt_bundle",
+            "bundle_prompt_slots_source": "batch_override",
+            "prompt_slots": {
+                "本条表达路径": ["不用时间词，从常买渠道切入，用询问句收尾。"]
+            },
+            "comment_prompt_bundle": {
+                "generation_instruction": "生成一条真实用户评论。",
+                "content_direction": "写看到有货后的自然反应。",
+                "activity_material": ["a2奶粉已经到货，正文不提产品名。"],
+                "writing_requirements": ["字数在30字以内"],
+                "notes": ["不要说消极词。"],
+            },
+        },
+        selected_prompt_slots=[
+            {
+                "slot_name": "本条表达路径",
+                "text": "不用时间词，从常买渠道切入，用询问句收尾。",
+            }
+        ],
+    )
+
+    assert "本条表达路径：不用时间词，从常买渠道切入，用询问句收尾。" in prompt
+    assert "以下参考示例" not in prompt
+    assert "本条语气槽" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_comment_prompt_bundle_snapshot_skips_global_keywords_and_tone_slots(unified_session_factory):
+    async with unified_session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type=SYSTEM_KEYWORD_ASSET_TYPE,
+                asset_key=DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+                display_name="默认表达语料",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "categories": [
+                        _category("comment_writing_instruction", "生文指令", ["不应该进入Prompt"]),
+                        _category("comment_format_control", "评论格式", ["不应该进入Prompt"]),
+                    ]
+                },
+            )
+        )
+        await session.commit()
+
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="comment",
+            business_rule={
+                "asset_key": "a2_sentiment_comment_activity",
+                "business_rule": "有货-直给简单报喜",
+                "prompt_mode": "comment_prompt_bundle",
+                "comment_prompt_bundle": {
+                    "generation_instruction": "生成一条小红书母婴社区真实用户评论。",
+                    "content_direction": "写看到有货后的简单报喜。",
+                    "activity_material": ["a2已经到货。"],
+                    "writing_requirements": ["字数在20字以内"],
+                    "notes": ["不要说消极词。"],
+                },
+                "examples": ["不应该进入Prompt"],
+                "comment_tone_options": [
+                    {"tone_code": "confirm", "tone_label": "确认", "prompt": "不应该进入Prompt"}
+                ],
+            },
+            item_no=1,
+            output_fields=["comment"],
+        )
+
+    assert snapshot.input_snapshot["selected_keywords"] == []
+    assert snapshot.input_snapshot["selected_prompt_slots"] == []
+    assert snapshot.input_snapshot["comment_tone"] is None
+    assert snapshot.input_snapshot["keyword_asset"] is None
+    assert snapshot.asset_refs["keyword_asset"] is None
+    assert "不应该进入Prompt" not in snapshot.input_snapshot["rendered_prompt"]
 
 
 def test_rule_corpus_as_prompt_mode_skips_legacy_article_layers():
@@ -356,12 +582,12 @@ def test_rule_corpus_as_prompt_selects_one_life_entry_slot_by_item_no():
     assert "回家后继续做自己惦记的事" not in prompt
     assert "本篇抽中的保护力日常反馈" in prompt
     assert "【保护力日常反馈槽位】" not in prompt
-    assert "本篇灵感线索：和游戏相关" in prompt
+    assert "本篇素材：\n- 灵感线索：和游戏相关" in prompt
     assert "和动物相关" not in prompt
     assert "和一次出门的小插曲相关" not in prompt
     assert "【本篇灵感线索】" not in prompt
-    assert "卖点表达：添加了免疫球蛋白" in prompt
-    assert "注意：不要解释免疫机制" in prompt
+    assert "- 卖点表达：添加了免疫球蛋白" in prompt
+    assert "- 卖点表达边界：不要解释免疫机制" in prompt
     assert "乳铁蛋白含量优秀" not in prompt
     assert "不要讲得太专业" not in prompt
     assert "有5大HMO" not in prompt
@@ -370,10 +596,31 @@ def test_rule_corpus_as_prompt_selects_one_life_entry_slot_by_item_no():
     assert "产品出现位置" not in prompt
     assert "产品叙事推进" not in prompt
     assert "低权重表达扰动" not in prompt
-    assert "生成同质化的内容是原罪" in prompt
+    assert "生成同质化内容是原罪" in prompt
     assert "一次生成 2 篇" not in prompt
     assert '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。' in prompt
     assert "items 必须正好 2 个。" in prompt
+
+
+def test_rule_corpus_inspiration_slot_can_render_without_inspiration_material():
+    from app.services.unified_content_generation_service import _render_rule_corpus_inspiration_clue_slot
+
+    corpus = (
+        "生文指令：写妈妈UGC。\n\n"
+        "内容方向：记录一段普通日常，其余内容自行发挥。\n\n"
+        "【本篇灵感线索】\n"
+        "- 和朋友相关\n"
+        "- 不使用灵感线索\n\n"
+        "事实与合规边界：\n"
+        "- 不写保证有效。"
+    )
+
+    rendered = _render_rule_corpus_inspiration_clue_slot(corpus, item_no=2)
+
+    assert "【本篇灵感线索】" not in rendered
+    assert "不使用灵感线索" not in rendered
+    assert "本篇素材：" not in rendered
+    assert "事实与合规边界" in rendered
 
 
 def test_rule_corpus_selling_expression_note_is_optional():
@@ -404,6 +651,30 @@ def test_rule_corpus_selling_expression_note_is_optional():
     assert "营养比较丰富" not in prompt
     assert "【卖点表达】" not in prompt
     assert "事实与合规边界" in prompt
+
+
+def test_rule_corpus_as_prompt_injects_structured_selling_painpoint_expression():
+    from app.services.unified_content_generation_service import _rule_corpus_as_prompt_article_prompt
+
+    prompt = _rule_corpus_as_prompt_article_prompt(
+        {
+            "item_no": 1,
+            "business_rule": (
+                "生文指令：写妈妈UGC。\n\n"
+                "内容方向：\n记录一件日常。\n\n"
+                "事实与合规边界：\n- 不写保证有效。"
+            ),
+            "selling_painpoint_group": "进阶保护力+容易中招",
+            "selling_painpoint_expression": "选奶时我会比较关注乳铁蛋白和免疫球蛋白。",
+            "output_format_requirement": '只输出 {"title":"...","body":"..."}。',
+        },
+        selected_keywords=[],
+    )
+
+    assert "本篇素材：\n- 卖点痛点表达：选奶时我会比较关注乳铁蛋白和免疫球蛋白。" in prompt
+    assert "进阶保护力+容易中招" not in prompt
+    assert "痛点：容易中招" not in prompt
+    assert prompt.index("卖点痛点表达：") < prompt.index("事实与合规边界：")
 
 
 def test_template_variables_derives_slot_rotation_from_multi_output_group():
@@ -2177,7 +2448,8 @@ async def test_unified_comment_generation_does_not_add_a2_business_boundaries(un
     )
 
     prompt = snapshot.input_snapshot["rendered_prompt"]
-    assert prompt.startswith("你正在小红书母婴评论区，回复一篇聊a2奶粉的帖子。")
+    assert prompt.startswith("生文指令：")
+    assert "你正在小红书母婴评论区" not in prompt
     assert "评论内容不用很丰富，简单表达含义和情绪即可" not in prompt
     assert "【生成要求】" not in prompt
     assert "只输出评论正文，不要标题、编号、解释" in prompt
@@ -2237,7 +2509,7 @@ async def test_unified_a2_member_comment_keeps_full_rule_detail_and_fact_boundar
         )
 
     prompt = snapshot.input_snapshot["rendered_prompt"]
-    assert "本条要写的事：" in prompt
+    assert "内容方向：" in prompt
     assert corpus in prompt
     assert "可以围绕会员权益、集罐、积分、换礼或老客活动这些信息来写。" not in prompt
     assert "会员权益、集罐或积分活动" not in prompt
@@ -2249,17 +2521,44 @@ async def test_unified_a2_member_comment_keeps_full_rule_detail_and_fact_boundar
     assert "转奶对象" not in prompt
 
 
-def test_a2_stock_comment_uses_compact_context_without_shortage_backstory():
+def test_a2_comment_does_not_render_scenario_post_context():
+    task_keyword = {
+        "category_code": "comment_generation_requirement",
+        "corpus": ["生成一条小红书母婴社区真实用户评论，口语化，有活人感。"],
+    }
+    rule = {
+        "asset_key": "a2_sentiment_comment_activity",
+        "business_rule": "会员权益-集罐换礼",
+        "corpus": "像评论区顺手聊 a2 集罐换礼。",
+    }
+
+    generic_prompt = _comment_prompt_text(rule, selected_keywords=[task_keyword])
+    specific_context = "你正在小红书母婴评论区，回复一篇消费者吐槽会员活动的帖子。"
+    specific_prompt = _comment_prompt_text(
+        {**rule, "scenario_post_context": specific_context},
+        selected_keywords=[task_keyword],
+    )
+
+    assert generic_prompt.startswith("生文指令：")
+    assert "你正在小红书母婴评论区" not in generic_prompt
+    assert specific_prompt.startswith("生文指令：")
+    assert specific_context not in specific_prompt
+
+
+def test_a2_stock_comment_uses_task_instruction_without_scenario_context():
+    context = "你正在小红书母婴评论区，回复一篇聊a2奶粉到货或能否买到的帖子。"
     prompt = _comment_prompt_text(
         {
             "asset_key": "a2_sentiment_comment_activity",
             "business_rule": "有货-直给到货情绪",
             "corpus": "像刷到a2到货后的一句自然接话。",
             "examples": ["a2终于到货了，我去看看"],
+            "scenario_post_context": context,
         }
     )
 
-    assert prompt.startswith("你正在小红书母婴评论区，回复一篇聊a2奶粉到货或能否买到的帖子。")
+    assert prompt.startswith("内容方向：")
+    assert context not in prompt
     assert "前段时间a2奶粉没货" not in prompt
     assert "今天突然发现有货" not in prompt
     assert "字数不要超过80字" in prompt
@@ -2361,14 +2660,14 @@ def test_comment_variation_slots_are_selected_and_rendered():
 
 
 @pytest.mark.parametrize(
-    ("business_rule", "expected_context"),
+    "business_rule",
     [
-        ("批批检-自己这批报告可查", "回复一篇聊a2奶粉检测报告或扫码信息的帖子"),
-        ("转奶-按自家节奏慢慢试", "回复一篇讨论转奶或换奶选择的帖子"),
-        ("会员权益-集罐换礼", "回复一篇聊a2奶粉会员活动或权益的帖子"),
+        "批批检-自己这批报告可查",
+        "转奶-按自家节奏慢慢试",
+        "会员权益-集罐换礼",
     ],
 )
-def test_a2_comment_context_falls_back_to_business_category(business_rule, expected_context):
+def test_a2_comment_context_does_not_fall_back_to_business_category(business_rule):
     prompt = _comment_prompt_text(
         {
             "asset_key": "a2_sentiment_comment_activity",
@@ -2377,7 +2676,8 @@ def test_a2_comment_context_falls_back_to_business_category(business_rule, expec
         }
     )
 
-    assert expected_context in prompt.splitlines()[0]
+    assert prompt.startswith("内容方向：")
+    assert "你正在小红书母婴评论区" not in prompt
 
 
 @pytest.mark.asyncio
@@ -2409,7 +2709,7 @@ async def test_unified_generation_splits_article_and_comment_instructions(unifie
         for item in article_snapshot.input_snapshot["selected_keywords"]
     ]
     assert "comment_writing_instruction" in comment_codes
-    assert "comment_generation_requirement" in comment_codes
+    assert "comment_generation_requirement" not in comment_codes
     assert "comment_speaking_style" in comment_codes
     assert "writing_instruction" not in comment_codes
     assert "comment_format_control" in comment_codes

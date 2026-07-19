@@ -3,6 +3,7 @@
 import pytest
 
 from app.services.executor_invocation_service import (
+    DirectLLMCallResult,
     ExecutorInvocationClient,
     InvokeResult,
     MockExecutorInvocationClient,
@@ -117,6 +118,14 @@ def test_normalize_article_output_keeps_single_article_contract():
     )
 
     assert output == {"title": "标题", "body": "正文内容"}
+
+
+def test_normalize_article_output_rejects_truncated_json_with_replacement_character():
+    with pytest.raises(ValueError, match="malformed JSON"):
+        _normalize_unified_content_output(
+            '{"title":"妈妈群分享","body":"今天看到一条信息，说�',
+            {"content_type": "article", "output_fields": ["title", "body"]},
+        )
 
 
 def test_normalize_comment_output_accepts_json_string_array_mode():
@@ -386,6 +395,44 @@ async def test_direct_llm_generate_parses_article_json(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_direct_llm_generate_records_finish_reason_and_usage(monkeypatch):
+    async def fake_call(**kwargs):
+        return DirectLLMCallResult(
+            content='{"title":"真实标题","body":"真实正文。"}',
+            model_code="deepseek-v4-flash",
+            provider_code="aihubmix",
+            provider_model="deepseek-v4-flash",
+            usage={"input_tokens": 120, "output_tokens": 30, "total_tokens": 150},
+            latency_ms=100,
+            finish_reason="stop",
+        )
+
+    monkeypatch.setattr("app.services.executor_invocation_service._call_openai_compatible_model", fake_call)
+    client = ExecutorInvocationClient()
+
+    result = await client.invoke(
+        invoke_url="llm://direct/content",
+        envelope={
+            "stage_call_id": "stage-direct-metadata",
+            "capability": "content.generate",
+            "input": {
+                "content_type": "article",
+                "output_fields": ["title", "body"],
+                "rendered_prompt": "生成一篇文章",
+                "model_config": {"model_code": "deepseek-v4-flash"},
+            },
+        },
+    )
+
+    assert result.output["runtime_result"]["finish_reason"] == "stop"
+    assert result.output["runtime_result"]["usage"] == {
+        "input_tokens": 120,
+        "output_tokens": 30,
+        "total_tokens": 150,
+    }
+
+
+@pytest.mark.asyncio
 async def test_direct_llm_generate_flattens_nested_article_json_body(monkeypatch):
     async def fake_call(**kwargs):
         return '{"title":"外层标题","body":"{\\"title\\":\\"内层标题\\",\\"body\\":\\"内层正文。\\"}"}'
@@ -493,6 +540,40 @@ async def test_direct_llm_generate_retries_empty_normalized_output(monkeypatch):
 
     assert result.status == "succeeded"
     assert result.output["comment"] == "第二次有内容"
+    assert result.output["runtime_result"]["model_attempts"] == 2
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_direct_llm_generate_retries_malformed_article_json(monkeypatch):
+    calls = []
+
+    async def fake_call(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return '{"title":"半截标题","body":"半截正文�'
+        return '{"title":"完整标题","body":"完整正文。"}'
+
+    monkeypatch.setattr("app.services.executor_invocation_service._call_openai_compatible_model", fake_call)
+    client = ExecutorInvocationClient()
+
+    result = await client.invoke(
+        invoke_url="llm://direct/content",
+        envelope={
+            "stage_call_id": "stage-direct-malformed-retry",
+            "capability": "content.generate",
+            "input": {
+                "content_type": "article",
+                "output_fields": ["title", "body"],
+                "rendered_prompt": "生成一篇文章",
+                "model_config": {"model_code": "deepseek-v4-flash"},
+            },
+        },
+    )
+
+    assert result.status == "succeeded"
+    assert result.output["title"] == "完整标题"
+    assert result.output["body"] == "完整正文。"
     assert result.output["runtime_result"]["model_attempts"] == 2
     assert len(calls) == 2
 

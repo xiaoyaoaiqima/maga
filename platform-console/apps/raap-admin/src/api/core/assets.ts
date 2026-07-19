@@ -102,6 +102,8 @@ export namespace AssetsApi {
     business_rule?: null | string;
     original_corpus?: null | string;
     draft_corpus: string;
+    original_comment_prompt_bundle?: null | Record<string, any>;
+    draft_comment_prompt_bundle?: null | Record<string, any>;
     created_by?: null | string;
     applied_by?: null | string;
     create_time?: null | string;
@@ -308,6 +310,13 @@ export async function saveCommentBusinessRuleDraftApi(data: {
   asset_key: string;
   created_by?: string;
   draft_corpus: string;
+  comment_prompt_bundle?: {
+    generation_instruction: string;
+    content_direction: string;
+    activity_material: string[];
+    writing_requirements: string[];
+    notes: string[];
+  };
   rule_id?: string;
   source_row_no?: number;
 }) {

@@ -16,9 +16,45 @@ from app.services.content_batch_planner import (
     _resolve_prompt_mode,
     _resolve_postprocess_mode,
     _resolve_real_user_pool_config,
+    _resolve_selling_painpoint_expression,
     _rotated_model_config,
     _select_article_business_rules_for_generation,
 )
+
+
+def test_selling_painpoint_base_group_includes_ugc_suffix_but_ugc_group_stays_scoped():
+    asset = AssetRegistry(
+        content_json={
+            "selling_painpoint_expressions": [
+                {
+                    "selling_painpoint_group": "进阶保护力+容易中招",
+                    "expression": "常规表达",
+                    "source_row_no": 2,
+                },
+                {
+                    "selling_painpoint_group": "进阶保护力+容易中招-ugc",
+                    "expression": "UGC表达",
+                    "source_row_no": 3,
+                },
+            ]
+        }
+    )
+
+    assert _resolve_selling_painpoint_expression(
+        asset,
+        "进阶保护力+容易中招",
+        item_no=1,
+    )["expression"] == "常规表达"
+    assert _resolve_selling_painpoint_expression(
+        asset,
+        "进阶保护力+容易中招",
+        item_no=2,
+    )["expression"] == "UGC表达"
+    assert _resolve_selling_painpoint_expression(
+        asset,
+        "进阶保护力+容易中招-ugc",
+        item_no=1,
+    )["expression"] == "UGC表达"
 
 
 def test_postprocess_mode_accepts_audit_only_without_rewrite():
@@ -146,6 +182,35 @@ def test_article_business_rule_draft_override_replaces_only_target_corpus():
     }
     assert updated[1]["corpus"] == "原始营养语料"
     assert rules[0]["corpus"] == "原始保护力语料"
+
+
+def test_article_business_rule_draft_override_replaces_selling_painpoint_group():
+    rules = [
+        {
+            "rule_id": "V3M-14",
+            "source_row_no": 14,
+            "corpus": "正式语料",
+            "selling_painpoint_group": "进阶保护力+精力不足",
+        }
+    ]
+    override = _normalize_article_draft_rule_override(
+        draft_corpus="草稿语料",
+        draft_selling_painpoint_group="进阶保护力+精力不足-ugc",
+        draft_rule_id="V3M-14",
+        draft_source_row_no=14,
+    )
+
+    updated = _article_rules_with_draft_override(rules, override)
+
+    assert updated[0]["corpus"] == "草稿语料"
+    assert updated[0]["selling_painpoint_group"] == "进阶保护力+精力不足-ugc"
+    assert updated[0]["draft_rule_override"] == {
+        "enabled": True,
+        "rule_id": "V3M-14",
+        "source_row_no": 14,
+        "selling_painpoint_group": "进阶保护力+精力不足-ugc",
+    }
+    assert rules[0]["selling_painpoint_group"] == "进阶保护力+精力不足"
 
 
 def test_article_business_rule_plan_samples_three_examples_from_pool():
@@ -927,6 +992,43 @@ def test_article_business_rule_plan_uses_non_cabinet_restock_bucket():
     )
 
     assert plan["scene_motive_bucket"] == "常用位置顺手放好"
+
+
+def test_current_wangyue_rule_corpus_plan_drops_hidden_scene_motive_bucket():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_v3_core_storyline_article_rules",
+        content_json={
+            "rule_type": "business_rule",
+            "generation_prompt_mode": "rule_corpus_as_prompt",
+        },
+        metadata_json={},
+    )
+    rule = {
+        "rule_id": "business_rule_004",
+        "business_rule": "营养不足｜家庭清单",
+        "post_type": "家庭清单",
+        "ugc_post_type": "轻复盘型",
+        "product_action_surface": "物件在场",
+        "scene_motive_bucket": "快递到货拆箱",
+        "corpus": "内容方向：写家里日常吃喝清单里的一个固定选择。",
+        "source_row_no": 4,
+    }
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key=None,
+        prompt_mode="rule_corpus_as_prompt",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert plan["scene_motive_bucket"] is None
+    assert plan["ugc_post_type"] is None
+    assert plan["product_action_surface"] is None
 
 
 def test_article_business_rule_plan_merges_content_path_control_from_asset_and_rule():
@@ -2962,6 +3064,7 @@ async def test_content_batch_planner_accepts_article_business_rule_set_focus_rul
                             "selling_expression_note": "不扩成产品效果。",
                             "hard_boundaries": ["不写成促销公告。"],
                             "writing_requirements": ["标题从正文自然提炼。"],
+                            "generation_requirements": ["正文只使用本篇原文。"],
                             "source_row_no": 2,
                         },
                     ],
@@ -2997,8 +3100,83 @@ async def test_content_batch_planner_accepts_article_business_rule_set_focus_rul
     assert all(item.plan_json["content_direction"] == "写线上看到a2有货后先补一罐。" for item in items)
     assert all(item.plan_json["activity_material"] == ["官方渠道显示可以下单。"] for item in items)
     assert all(item.plan_json["hard_boundaries"] == ["不写成促销公告。"] for item in items)
+    assert all(item.plan_json["generation_requirements"] == ["正文只使用本篇原文。"] for item in items)
     assert job.diversity_plan_json == {}
     assert all("diversity_slot" not in item.plan_json for item in items)
+
+
+@pytest.mark.asyncio
+async def test_rule_corpus_batch_plan_does_not_reference_keyword_asset():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[AssetRegistry.__table__, ContentBatchJob.__table__, ContentBatchItem.__table__],
+        )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type="article_business_rule_set",
+                asset_key="wangyue_v3_core_storyline_article_rules",
+                display_name="旺玥六块业务规则",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "rule_type": "business_rule",
+                    "activity_name": "0705旺玥活动",
+                    "generation_prompt_mode": "rule_corpus_as_prompt",
+                    "keyword_asset_key": "wangyue_v3_minimal_generation_keywords",
+                    "selling_painpoint_expressions": [
+                        {
+                            "selling_painpoint_group": "进阶保护力+容易中招",
+                            "expression": "表达一",
+                            "source_row_no": 2,
+                        },
+                        {
+                            "selling_painpoint_group": "进阶保护力+容易中招",
+                            "expression": "表达二",
+                            "source_row_no": 3,
+                        },
+                    ],
+                    "items": [
+                        {
+                            "rule_id": "business_rule_001",
+                            "business_rule": "使用反馈",
+                            "selling_painpoint_group": "进阶保护力+容易中招",
+                            "corpus": "生文指令：写一篇妈妈UGC。",
+                            "source_row_no": 1,
+                        }
+                    ],
+                },
+            )
+        )
+        await session.commit()
+
+        job = await ContentBatchPlanner(session).create_batch_plan(
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            product_topic=None,
+            target_audience=None,
+            style=None,
+            count=1,
+            created_by="test",
+        )
+        await session.commit()
+        item = await session.scalar(select(ContentBatchItem).where(ContentBatchItem.batch_id == job.id))
+
+    await engine.dispose()
+
+    assert job.strategy_json["prompt_mode"] == "rule_corpus_as_prompt"
+    assert job.strategy_json["keyword_asset_key"] is None
+    assert item is not None
+    assert item.plan_json["keyword_asset_key"] is None
+    assert item.plan_json["selling_painpoint_group"] == "进阶保护力+容易中招"
+    assert item.plan_json["selling_painpoint_expression"] == "表达一"
+    assert item.plan_json["selling_painpoint_expression_source_row_no"] == 2
+    assert "painpoint" not in item.plan_json
+    assert "selling_point" not in item.plan_json
 
 
 @pytest.mark.asyncio

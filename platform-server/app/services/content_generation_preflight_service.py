@@ -37,6 +37,7 @@ from app.services.unified_content_generation_service import (
     CONTENT_GENERATE_CAPABILITY,
     DEFAULT_ARTICLE_EXPERT_CONFIG_CODE,
     DEFAULT_COMMENT_EXPERT_CONFIG_CODE,
+    _normalize_prompt_mode,
     _select_keyword_bundle,
 )
 
@@ -48,7 +49,8 @@ class _RuleAssetContext:
     asset_type: str | None
     content_type: str | None
     usable_rule_count: int = 0
-    keyword_asset_key: str = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
+    keyword_asset_key: str | None = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY
+    prompt_mode: str | None = None
 
 
 class ContentGenerationPreflightService:
@@ -72,11 +74,21 @@ class ContentGenerationPreflightService:
         )
         content_type = context.content_type or "article"
 
-        await self._check_system_keywords(
-            content_type=content_type,
-            keyword_asset_key=context.keyword_asset_key,
-            checks=checks,
-        )
+        if context.keyword_asset_key:
+            await self._check_system_keywords(
+                content_type=content_type,
+                keyword_asset_key=context.keyword_asset_key,
+                checks=checks,
+            )
+        else:
+            checks.append(
+                _pass(
+                    "system_keywords",
+                    "表达扩散语料",
+                    "当前提示词模式不引用表达扩散语料。",
+                    {"prompt_mode": context.prompt_mode},
+                )
+            )
         await self._check_experts_and_routes(content_type=content_type, checks=checks)
         await self._check_executor(executor_code=executor_code, checks=checks)
         await self._check_audit_flow(asset_key=asset_key, checks=checks)
@@ -128,7 +140,17 @@ class ContentGenerationPreflightService:
             return _RuleAssetContext(None, asset_key, resolved_type, content_type)
 
         usable_count = _usable_rule_count(asset)
-        keyword_asset_key = _resolve_keyword_asset_key(None, asset)
+        prompt_mode = _normalize_prompt_mode(
+            (asset.content_json or {}).get("prompt_mode")
+            or (asset.content_json or {}).get("generation_prompt_mode")
+            or (asset.metadata_json or {}).get("prompt_mode")
+            or (asset.metadata_json or {}).get("generation_prompt_mode")
+        )
+        keyword_asset_key = (
+            None
+            if prompt_mode in {"rule_corpus_as_prompt", "layered_article"}
+            else _resolve_keyword_asset_key(None, asset)
+        )
         if usable_count <= 0:
             checks.append(
                 _fail(
@@ -160,7 +182,15 @@ class ContentGenerationPreflightService:
                     },
                 )
             )
-        return _RuleAssetContext(asset, asset_key, resolved_type, content_type, usable_count, keyword_asset_key)
+        return _RuleAssetContext(
+            asset,
+            asset_key,
+            resolved_type,
+            content_type,
+            usable_count,
+            keyword_asset_key,
+            prompt_mode,
+        )
 
     async def _check_system_keywords(
         self,

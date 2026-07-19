@@ -101,8 +101,7 @@ ABLATIONS: dict[str, set[str]] = {
 
 SUBKEYWORD_ABLATIONS: dict[str, set[str]] = {
     "no_comment_micro_reply": {"comment_micro_reply"},
-    "no_comment_micro_batch_check_reply": {"comment_micro_batch_check_reply"},
-    "no_comment_micro_controls": {"comment_micro_reply", "comment_micro_batch_check_reply"},
+    "no_comment_micro_controls": {"comment_micro_reply"},
     "no_comment_short_clean": {"comment_short_clean"},
     "no_comment_light_emoji": {"comment_light_emoji"},
     "no_comment_two_sentence": {"comment_two_sentence"},

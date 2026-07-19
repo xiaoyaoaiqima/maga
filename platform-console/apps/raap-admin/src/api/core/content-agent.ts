@@ -12,6 +12,7 @@ export namespace ContentAgentApi {
     rule_id?: null | string;
     source_row_no?: null | number;
     draft_corpus?: null | string;
+    draft_selling_painpoint_group?: null | string;
     draft_rule_id?: null | string;
     draft_source_row_no?: null | number;
     product_topic?: null | string;
@@ -35,8 +36,18 @@ export namespace ContentAgentApi {
     count?: number;
     executor_code?: string;
     draft_corpus?: null | string;
+    draft_comment_prompt_bundle?: null | {
+      generation_instruction: string;
+      content_direction: string;
+      activity_material: string[];
+      writing_requirements: string[];
+      notes: string[];
+    };
     draft_rule_id?: null | string;
     draft_source_row_no?: null | number;
+    comment_prompt_slots?: null | Record<string, string[]>;
+    comment_batch_variation_review?: null | Record<string, any>;
+    comment_delivery_selection?: null | Record<string, any>;
     quality_guard_profile_key?: null | string;
     rule_id?: null | string;
     source_row_no?: null | number;
@@ -74,6 +85,11 @@ export namespace ContentAgentApi {
     generated_count: number;
     failed_count: number;
     hard_pass_count: number;
+    batch_variation_warning_count: number;
+    delivery_candidate_count: number;
+    delivery_selected_count: number;
+    delivery_shortfall_count: number;
+    suggested_bulk_refill_count: number;
     audit_skipped_count: number;
     rewrite_item_count: number;
     remaining_rewrite_required_count: number;
@@ -122,6 +138,10 @@ export namespace ContentAgentApi {
     body_preview?: null | string;
     body_chars: number;
     hard_pass?: boolean | null;
+    batch_variation_pass?: boolean | null;
+    delivery_selected?: boolean | null;
+    delivery_rank?: number | null;
+    delivery_non_selection_reason?: null | string;
     audit_skipped: boolean;
     rewrite_required?: boolean | null;
     rewrite_reason?: null | string;

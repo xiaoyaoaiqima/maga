@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from collections import Counter
 import re
 from typing import Any
 
@@ -19,13 +20,16 @@ from app.services.comment_business_rule_service import (
     COMMENT_BUSINESS_RULE_ASSET_TYPE,
     _clean_corpus_for_prompt,
     _split_examples_from_corpus,
+    normalize_comment_prompt_bundle,
 )
 from app.schemas.assets import (
     AssetCandidateCreate,
+    ArticleBusinessRuleFieldsUpdate,
     AssetChangeProposalCreate,
     AssetChangeRequestCreate,
     CommentBusinessRuleExamplesUpdate,
     CommentBusinessRuleDraftSave,
+    SellingPainpointExpressionUpdate,
     AssetGenerationOptionsResponse,
 )
 
@@ -349,6 +353,11 @@ class AssetService:
         draft_corpus = payload.draft_corpus.strip()
         if not draft_corpus:
             raise ValueError("draft_corpus is required")
+        draft_comment_prompt_bundle = normalize_comment_prompt_bundle(payload.comment_prompt_bundle)
+        if draft_comment_prompt_bundle:
+            if draft_type != "comment_business_rule_item":
+                raise ValueError("comment_prompt_bundle only supports comment business rules")
+            draft_corpus = draft_comment_prompt_bundle["content_direction"]
 
         request = AssetChangeRequest(
             source_text=f"业务规则草稿：{payload.asset_key}/{item.get('rule_id')}",
@@ -396,6 +405,8 @@ class AssetService:
                 "original_corpus": item.get("corpus") or "",
                 "draft_corpus": draft_corpus,
                 "draft_examples": _extract_examples_from_corpus(draft_corpus),
+                "original_comment_prompt_bundle": copy.deepcopy(item.get("comment_prompt_bundle")),
+                "draft_comment_prompt_bundle": draft_comment_prompt_bundle,
             },
             risk_notes_json=[
                 "草稿不会影响正式 production 规则包。",
@@ -637,12 +648,22 @@ class AssetService:
             # 重要逻辑：帖子/生文的规则语料与示例池分开维护；发布草稿只替换 corpus。
             item["corpus"] = draft_corpus
         else:
-            clean_corpus, draft_examples = _split_examples_from_corpus(draft_corpus)
-            # 重要逻辑：发布草稿只替换目标单条规则，保留当前 active 版本中的其他运营改动；
-            # 同时沿用导入器清洗，避免“关键词方向/全量示例”等运营备注进入生产 prompt。
-            item["corpus"] = _clean_corpus_for_prompt(clean_corpus, business_rule=_business_rule_name(item))
-            if draft_examples:
-                item["examples"] = draft_examples
+            draft_comment_prompt_bundle = normalize_comment_prompt_bundle(
+                changes.get("draft_comment_prompt_bundle")
+            )
+            if draft_comment_prompt_bundle:
+                item["prompt_mode"] = "comment_prompt_bundle"
+                item["comment_prompt_bundle"] = draft_comment_prompt_bundle
+                item["content_direction"] = draft_comment_prompt_bundle["content_direction"]
+                item["activity_material"] = draft_comment_prompt_bundle["activity_material"]
+                item["corpus"] = draft_comment_prompt_bundle["content_direction"]
+            else:
+                clean_corpus, draft_examples = _split_examples_from_corpus(draft_corpus)
+                # 重要逻辑：发布草稿只替换目标单条规则，保留当前 active 版本中的其他运营改动；
+                # 同时沿用导入器清洗，避免“关键词方向/全量示例”等运营备注进入生产 prompt。
+                item["corpus"] = _clean_corpus_for_prompt(clean_corpus, business_rule=_business_rule_name(item))
+                if draft_examples:
+                    item["examples"] = draft_examples
 
         await self.db.execute(
             update(AssetRegistry)
@@ -754,6 +775,212 @@ class AssetService:
             asset_stage="production",
             source_name=f"{source_prefix}:{item.get('rule_id') or item.get('source_row_no')}",
             source_uri=None,
+            source_hash=None,
+            content_json=content_json,
+            metadata_json=metadata_json,
+            created_by=payload.created_by,
+        )
+        self.db.add(new_asset)
+        await self.db.flush()
+        return new_asset
+
+    async def update_selling_painpoint_expression(
+        self,
+        asset_key: str,
+        source_row_no: int,
+        payload: SellingPainpointExpressionUpdate,
+    ) -> AssetRegistry:
+        asset = await self.get_latest_asset(ARTICLE_BUSINESS_RULE_ASSET_TYPE, asset_key)
+        if asset is None:
+            raise ValueError("article business rule asset not found")
+
+        content_json = copy.deepcopy(asset.content_json or {})
+        expressions = content_json.get("selling_painpoint_expressions")
+        if not isinstance(expressions, list):
+            raise ValueError("selling painpoint expressions not found")
+        matches = [
+            item
+            for item in expressions
+            if isinstance(item, dict) and _int_or_none(item.get("source_row_no")) == source_row_no
+        ]
+        if len(matches) != 1:
+            raise ValueError("selling painpoint expression selector must match exactly one item")
+
+        item = matches[0]
+        current_expression = str(item.get("expression") or "").strip()
+        if payload.expected_expression is not None and current_expression != payload.expected_expression.strip():
+            raise ValueError("selling painpoint expression changed since review")
+        next_expression = payload.expression.strip()
+        if current_expression == next_expression:
+            return asset
+        item["expression"] = next_expression
+
+        await self.db.execute(
+            update(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type == ARTICLE_BUSINESS_RULE_ASSET_TYPE,
+                AssetRegistry.asset_key == asset_key,
+                AssetRegistry.asset_stage == "production",
+                AssetRegistry.status == "active",
+            )
+            .values(status="archived")
+        )
+        metadata_json = copy.deepcopy(asset.metadata_json or {})
+        metadata_json.update(
+            {
+                "last_selling_painpoint_expression_source_row_no": source_row_no,
+                "last_selling_painpoint_expression_before": current_expression,
+                "last_selling_painpoint_expression_after": next_expression,
+                "last_selling_painpoint_expression_base_asset_id": asset.id,
+                "last_selling_painpoint_expression_base_version_no": asset.version_no,
+            }
+        )
+        new_asset = AssetRegistry(
+            asset_type=ARTICLE_BUSINESS_RULE_ASSET_TYPE,
+            asset_key=asset_key,
+            display_name=asset.display_name,
+            version_no=await self._next_asset_version(ARTICLE_BUSINESS_RULE_ASSET_TYPE, asset_key),
+            status="active",
+            asset_stage="production",
+            source_name=f"selling_painpoint_expression:{source_row_no}",
+            source_uri=asset.source_uri,
+            source_hash=None,
+            content_json=content_json,
+            metadata_json=metadata_json,
+            created_by=payload.created_by,
+        )
+        self.db.add(new_asset)
+        await self.db.flush()
+        return new_asset
+
+    async def replace_selling_painpoint_expressions(
+        self,
+        asset_key: str,
+        expressions: list[dict[str, Any]],
+        *,
+        source_name: str,
+        created_by: str | None,
+    ) -> AssetRegistry:
+        asset = await self.get_latest_asset(ARTICLE_BUSINESS_RULE_ASSET_TYPE, asset_key)
+        if asset is None:
+            raise ValueError("article business rule asset not found")
+        if not expressions:
+            raise ValueError("selling painpoint expressions cannot be empty")
+
+        content_json = copy.deepcopy(asset.content_json or {})
+        content_json["selling_painpoint_expressions"] = copy.deepcopy(expressions)
+        content_json["selling_painpoint_expression_label"] = "卖点痛点表达"
+        group_counts = Counter(str(item.get("selling_painpoint_group") or "") for item in expressions)
+
+        await self.db.execute(
+            update(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type == ARTICLE_BUSINESS_RULE_ASSET_TYPE,
+                AssetRegistry.asset_key == asset_key,
+                AssetRegistry.asset_stage == "production",
+                AssetRegistry.status == "active",
+            )
+            .values(status="archived")
+        )
+        metadata_json = copy.deepcopy(asset.metadata_json or {})
+        metadata_json.update(
+            {
+                "selling_painpoint_expression_source": source_name,
+                "selling_painpoint_expression_count": len(expressions),
+                "selling_painpoint_group_count": len(group_counts),
+                "selling_painpoint_group_counts": dict(group_counts),
+                "last_selling_painpoint_expression_import_base_asset_id": asset.id,
+                "last_selling_painpoint_expression_import_base_version_no": asset.version_no,
+            }
+        )
+        new_asset = AssetRegistry(
+            asset_type=ARTICLE_BUSINESS_RULE_ASSET_TYPE,
+            asset_key=asset_key,
+            display_name=asset.display_name,
+            version_no=await self._next_asset_version(ARTICLE_BUSINESS_RULE_ASSET_TYPE, asset_key),
+            status="active",
+            asset_stage="production",
+            source_name=f"selling_painpoint_expressions:{source_name}",
+            source_uri=asset.source_uri,
+            source_hash=None,
+            content_json=content_json,
+            metadata_json=metadata_json,
+            created_by=created_by,
+        )
+        self.db.add(new_asset)
+        await self.db.flush()
+        return new_asset
+
+    async def update_article_business_rule_fields(
+        self,
+        asset_key: str,
+        rule_id: str,
+        payload: ArticleBusinessRuleFieldsUpdate,
+    ) -> AssetRegistry:
+        asset = await self.get_latest_asset(ARTICLE_BUSINESS_RULE_ASSET_TYPE, asset_key)
+        if asset is None:
+            raise ValueError("article business rule asset not found")
+        if payload.corpus is None and payload.selling_painpoint_group is None:
+            raise ValueError("no article business rule fields to update")
+
+        content_json = copy.deepcopy(asset.content_json or {})
+        _, item = _find_business_rule_item(content_json, rule_id=rule_id, source_row_no=None)
+        current_corpus = str(item.get("corpus") or "")
+        current_group = str(item.get("selling_painpoint_group") or "")
+        if payload.expected_corpus is not None and current_corpus != payload.expected_corpus:
+            raise ValueError("article business rule corpus changed since review")
+        if (
+            payload.expected_selling_painpoint_group is not None
+            and current_group != payload.expected_selling_painpoint_group
+        ):
+            raise ValueError("article business rule selling painpoint group changed since review")
+
+        next_corpus = payload.corpus.strip() if payload.corpus is not None else current_corpus
+        next_group = (
+            payload.selling_painpoint_group.strip()
+            if payload.selling_painpoint_group is not None
+            else current_group
+        )
+        if not next_corpus:
+            raise ValueError("article business rule corpus cannot be empty")
+        if not next_group:
+            raise ValueError("article business rule selling painpoint group cannot be empty")
+        if next_corpus == current_corpus and next_group == current_group:
+            return asset
+        item["corpus"] = next_corpus
+        item["selling_painpoint_group"] = next_group
+
+        await self.db.execute(
+            update(AssetRegistry)
+            .where(
+                AssetRegistry.asset_type == ARTICLE_BUSINESS_RULE_ASSET_TYPE,
+                AssetRegistry.asset_key == asset_key,
+                AssetRegistry.asset_stage == "production",
+                AssetRegistry.status == "active",
+            )
+            .values(status="archived")
+        )
+        metadata_json = copy.deepcopy(asset.metadata_json or {})
+        metadata_json.update(
+            {
+                "last_article_business_rule_id": rule_id,
+                "last_article_business_rule_corpus_before": current_corpus,
+                "last_article_business_rule_corpus_after": next_corpus,
+                "last_article_business_rule_group_before": current_group,
+                "last_article_business_rule_group_after": next_group,
+                "last_article_business_rule_base_asset_id": asset.id,
+                "last_article_business_rule_base_version_no": asset.version_no,
+            }
+        )
+        new_asset = AssetRegistry(
+            asset_type=ARTICLE_BUSINESS_RULE_ASSET_TYPE,
+            asset_key=asset_key,
+            display_name=asset.display_name,
+            version_no=await self._next_asset_version(ARTICLE_BUSINESS_RULE_ASSET_TYPE, asset_key),
+            status="active",
+            asset_stage="production",
+            source_name=f"article_business_rule_fields:{rule_id}",
+            source_uri=asset.source_uri,
             source_hash=None,
             content_json=content_json,
             metadata_json=metadata_json,
@@ -971,6 +1198,8 @@ def comment_business_rule_draft_response(proposal: AssetChangeProposal) -> dict[
         "business_rule": target.get("business_rule"),
         "original_corpus": changes.get("original_corpus"),
         "draft_corpus": str(changes.get("draft_corpus") or ""),
+        "original_comment_prompt_bundle": changes.get("original_comment_prompt_bundle"),
+        "draft_comment_prompt_bundle": changes.get("draft_comment_prompt_bundle"),
         "created_by": proposal.created_by,
         "applied_by": proposal.applied_by,
         "create_time": proposal.create_time,

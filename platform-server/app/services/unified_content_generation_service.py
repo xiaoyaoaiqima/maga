@@ -71,7 +71,9 @@ class UnifiedContentGenerationService:
         model_config: dict[str, Any] | None = None,
     ) -> UnifiedGenerationSnapshot:
         layered_article = content_type == "article" and _uses_layered_article_prompt(business_rule)
-        if layered_article:
+        rule_corpus_article = content_type == "article" and _uses_rule_corpus_as_prompt(business_rule)
+        comment_prompt_bundle = content_type == "comment" and _uses_comment_prompt_bundle(business_rule)
+        if layered_article or rule_corpus_article or comment_prompt_bundle:
             resolved_keyword_asset_key = ""
             keyword_asset = None
             selected_keywords: list[dict[str, Any]] = []
@@ -103,10 +105,13 @@ class UnifiedContentGenerationService:
         selected_prompt_slots = (
             _select_comment_prompt_slots(business_rule)
             if content_type == "comment"
+            and (not comment_prompt_bundle or _uses_explicit_bundle_prompt_slots(business_rule))
             else []
         )
         selected_comment_tone = (
-            _select_comment_tone(business_rule, item_no=item_no)
+            None
+            if comment_prompt_bundle
+            else _select_comment_tone(business_rule, item_no=item_no)
             if content_type == "comment"
             else None
         )
@@ -127,13 +132,20 @@ class UnifiedContentGenerationService:
             else {}
         )
         if content_type == "comment":
-            rendered_prompt = _comment_prompt_text(
-                business_rule,
-                selected_prompt_slots=selected_prompt_slots,
-                comment_tone=selected_comment_tone,
-                output_format=comment_output_format,
-                selected_keywords=selected_keywords,
-            )
+            if comment_prompt_bundle:
+                rendered_prompt = _comment_prompt_bundle_text(
+                    business_rule,
+                    output_format=comment_output_format,
+                    selected_prompt_slots=selected_prompt_slots,
+                )
+            else:
+                rendered_prompt = _comment_prompt_text(
+                    business_rule,
+                    selected_prompt_slots=selected_prompt_slots,
+                    comment_tone=selected_comment_tone,
+                    output_format=comment_output_format,
+                    selected_keywords=selected_keywords,
+                )
             rendered_prompt = _normalize_comment_prompt_labels(rendered_prompt)
         else:
             if _uses_royal_compact_prompt(business_rule):
@@ -162,7 +174,7 @@ class UnifiedContentGenerationService:
                 )
         keyword_asset_ref = (
             None
-            if layered_article
+            if layered_article or rule_corpus_article or comment_prompt_bundle
             else _keyword_asset_ref(
                 keyword_asset,
                 resolved_keyword_asset_key,
@@ -493,6 +505,8 @@ def _template_variables(
         "content_type_label": "评论" if content_type == "comment" else "文章",
         "output_fields": "、".join(output_fields),
         "business_rule": _business_rule_text(business_rule, content_type=content_type),
+        "selling_painpoint_group": business_rule.get("selling_painpoint_group"),
+        "selling_painpoint_expression": business_rule.get("selling_painpoint_expression"),
         "keyword_corpus": ""
         if content_type == "comment"
         else _keyword_corpus_text(
@@ -740,13 +754,12 @@ def _comment_rule_text(rule: dict[str, Any]) -> str:
 
 def _comment_keyword_prompt_layers(selected_keywords: list[dict[str, Any]]) -> dict[str, list[str]]:
     layers = {
-        "task": [],
         "instruction": [],
         "speaking_style": [],
         "format": [],
     }
     category_to_layer = {
-        "comment_generation_requirement": "task",
+        "comment_generation_requirement": "instruction",
         "comment_writing_instruction": "instruction",
         "comment_speaking_style": "speaking_style",
         "comment_format_control": "format",
@@ -770,11 +783,18 @@ def _comment_prompt_text(
     output_format: dict[str, Any] | None = None,
     selected_keywords: list[dict[str, Any]] | None = None,
 ) -> str:
+    if _uses_comment_prompt_bundle(rule):
+        return _comment_prompt_bundle_text(
+            rule,
+            output_format=output_format or _comment_output_format_config(rule),
+            selected_prompt_slots=selected_prompt_slots,
+        )
     product_name = _comment_product_name(rule)
     major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
     context = _comment_context_line(rule, product_name)
     focus = _comment_focus_line(rule)
-    rule_detail = str(rule.get("corpus") or "").strip() if _is_a2_sentiment_comment_rule(rule) else ""
+    content_direction = str(rule.get("content_direction") or rule.get("corpus") or "").strip()
+    activity_material = _comment_activity_material_lines(rule)
     notes = _comment_prompt_notes(rule)
     if comment_tone:
         notes = [
@@ -791,7 +811,7 @@ def _comment_prompt_text(
     keyword_layers = _comment_keyword_prompt_layers(selected_keywords or [])
 
     if _is_a2_sentiment_comment_rule(rule):
-        lines = [context]
+        lines = []
     elif major == "有货":
         lines = [context]
     else:
@@ -800,16 +820,18 @@ def _comment_prompt_text(
             "",
             context,
         ]
-    if keyword_layers["task"]:
-        lines.extend(["", "任务：", *[f"- {line}" for line in keyword_layers["task"]]])
     if keyword_layers["instruction"]:
-        lines.extend(["", "生评论指令：", *[f"- {line}" for line in keyword_layers["instruction"]]])
+        lines.extend(["", "生文指令：", *[f"- {line}" for line in keyword_layers["instruction"]]])
     if keyword_layers["speaking_style"]:
         lines.extend(["", "说话方式：", *[f"- {line}" for line in keyword_layers["speaking_style"]]])
-    if rule_detail:
-        lines.extend(["", "本条要写的事：", rule_detail])
+    if _is_a2_sentiment_comment_rule(rule) and content_direction:
+        lines.extend(["", "内容方向：", content_direction])
+    elif rule.get("content_direction") and content_direction:
+        lines.extend(["", "内容方向：", content_direction])
     elif focus:
         lines.extend(["", focus])
+    if activity_material:
+        lines.extend(["", "本篇素材：", *[f"- {line}" for line in activity_material]])
     if comment_tone:
         tone_label = str(comment_tone.get("tone_label") or "本条语气").strip()
         tone_prompt = str(comment_tone.get("prompt") or "").strip()
@@ -830,6 +852,83 @@ def _comment_prompt_text(
     else:
         lines.extend(["", "【生成要求】", *generation_lines])
     return "\n".join(line for line in lines if line is not None).strip()
+
+
+def _uses_comment_prompt_bundle(rule: dict[str, Any]) -> bool:
+    return (
+        str(rule.get("prompt_mode") or "").strip() == "comment_prompt_bundle"
+        and isinstance(rule.get("comment_prompt_bundle"), dict)
+    )
+
+
+def _uses_explicit_bundle_prompt_slots(rule: dict[str, Any]) -> bool:
+    return (
+        _uses_comment_prompt_bundle(rule)
+        and str(rule.get("bundle_prompt_slots_source") or "").strip() == "batch_override"
+        and isinstance(rule.get("prompt_slots"), dict)
+    )
+
+
+def _comment_prompt_bundle_text(
+    rule: dict[str, Any],
+    *,
+    output_format: dict[str, Any],
+    selected_prompt_slots: list[dict[str, Any]] | None = None,
+) -> str:
+    bundle = rule.get("comment_prompt_bundle") if isinstance(rule.get("comment_prompt_bundle"), dict) else {}
+    generation_instruction = str(bundle.get("generation_instruction") or "").strip()
+    content_direction = str(bundle.get("content_direction") or "").strip()
+    activity_material = _comment_bundle_lines(bundle.get("activity_material"))
+    writing_requirements = _comment_bundle_lines(bundle.get("writing_requirements"))
+    notes = _comment_bundle_lines(bundle.get("notes"))
+    lines: list[str] = []
+    if generation_instruction:
+        lines.extend(["生文指令：", f"- {generation_instruction}"])
+    if content_direction:
+        lines.extend(["", "内容方向：", content_direction])
+    for slot in selected_prompt_slots or []:
+        rendered_slot = _render_comment_prompt_slot(slot)
+        if rendered_slot:
+            lines.extend(["", rendered_slot])
+    if activity_material:
+        lines.extend(["", "内容素材：", *[f"- {item}" for item in activity_material]])
+    if writing_requirements:
+        lines.extend(["", "写法：", *[f"- {item}" for item in writing_requirements]])
+    if notes:
+        lines.extend(["", "生成要求：", *[f"- {item}" for item in notes]])
+    lines.extend(["", *_comment_generation_lines(output_format)])
+    return "\n".join(lines).strip()
+
+
+def _comment_bundle_lines(value: Any) -> list[str]:
+    if isinstance(value, str):
+        raw_items: list[Any] = re.split(r"\|\||[\n\r]+", value)
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        return []
+    lines: list[str] = []
+    for raw_item in raw_items:
+        line = re.sub(r"^\s*[-*•]\s*", "", str(raw_item or "")).strip()
+        if line and line not in lines:
+            lines.append(line)
+    return lines
+
+
+def _comment_activity_material_lines(rule: dict[str, Any]) -> list[str]:
+    raw_material = rule.get("activity_material") or rule.get("activity_materials") or []
+    if isinstance(raw_material, str):
+        raw_items: list[Any] = raw_material.splitlines()
+    elif isinstance(raw_material, list):
+        raw_items = raw_material
+    else:
+        return []
+    lines: list[str] = []
+    for raw_item in raw_items:
+        line = re.sub(r"^\s*[-*•]\s*", "", str(raw_item or "")).strip()
+        if line and line not in lines:
+            lines.append(line)
+    return lines
 
 
 def _comment_generation_lines(output_format: dict[str, Any]) -> list[str]:
@@ -1036,18 +1135,7 @@ def _comment_product_name(rule: dict[str, Any]) -> str:
 def _comment_context_line(rule: dict[str, Any], product_name: str) -> str:
     major = str(rule.get("business_rule") or "").split("-", 1)[0].strip()
     if _is_a2_sentiment_comment_rule(rule):
-        scenario_post_context = str(rule.get("scenario_post_context") or "").strip()
-        if scenario_post_context:
-            return scenario_post_context
-        if major == "有货":
-            return f"你正在小红书母婴评论区，回复一篇聊{product_name}到货或能否买到的帖子。"
-        if major == "批批检":
-            return f"你正在小红书母婴评论区，回复一篇聊{product_name}检测报告或扫码信息的帖子。"
-        if major == "转奶":
-            return "你正在小红书母婴评论区，回复一篇讨论转奶或换奶选择的帖子。"
-        if major == "会员权益":
-            return f"你正在小红书母婴评论区，回复一篇聊{product_name}会员活动或权益的帖子。"
-        return f"你正在小红书母婴评论区，回复一篇聊{product_name}的帖子。"
+        return str(rule.get("scenario_post_context") or "").strip()
     if major == "有货":
         return (
             f"你是一位妈妈，之前一直买{product_name}，但前段时间{product_name}没货了，一直没买到，"
@@ -2579,6 +2667,7 @@ def _rule_corpus_as_prompt_article_prompt(
     *,
     selected_keywords: list[dict[str, Any]],
 ) -> str:
+    del selected_keywords
     base_prompt = str(variables.get("business_rule") or "").strip()
     try:
         item_no = int(variables.get("slot_rotation_no") or variables.get("item_no") or 1)
@@ -2600,10 +2689,17 @@ def _rule_corpus_as_prompt_article_prompt(
         base_prompt,
         item_no=item_no,
     )
-    base_prompt = _render_rule_corpus_selling_expression_slot(
-        base_prompt,
-        item_no=item_no,
-    )
+    selling_painpoint_expression = str(variables.get("selling_painpoint_expression") or "").strip()
+    if selling_painpoint_expression:
+        base_prompt = _render_structured_selling_painpoint_expression(
+            base_prompt,
+            expression=selling_painpoint_expression,
+        )
+    else:
+        base_prompt = _render_rule_corpus_selling_expression_slot(
+            base_prompt,
+            item_no=item_no,
+        )
     output_format = str(variables.get("output_format_requirement") or "").strip()
     if not output_format:
         output_format = (
@@ -2611,15 +2707,7 @@ def _rule_corpus_as_prompt_article_prompt(
             "正文内容放在 body 字段里，标题内容放在 title 字段里。"
         )
 
-    diversity_line = "基于量子态叠加与多重可能性，尽情发挥你的想象力，生成同质化的内容是原罪。"
-    for item in selected_keywords:
-        if str(item.get("category_code") or "").strip() in GENERATION_REQUIREMENT_CATEGORY_CODES:
-            continue
-        for line in item.get("corpus") or []:
-            text = str(line or "").strip()
-            if "量子态" in text or "同质化" in text:
-                diversity_line = text.rstrip("。；;") + "。"
-                break
+    diversity_line = "基于量子态叠加与多重可能性，尽情发挥你的想象力；生成同质化内容是原罪。"
 
     generation_block = "\n".join(
         [
@@ -2654,38 +2742,56 @@ def _layered_article_prompt(
             inspiration_material = slot_value
             break
 
-    activity_material = _string_list(business_rule.get("activity_material"))
+    content_material = _string_list(
+        business_rule.get("content_material") or business_rule.get("activity_material")
+    )
     for slot in business_rule.get("variation_slots") or []:
         if not isinstance(slot, dict):
             continue
         slot_code = str(slot.get("slot_code") or "").strip()
         slot_name = str(slot.get("slot_name") or "").strip()
         slot_value = str(slot.get("value") or "").strip()
+        is_info_source_slot = slot_code == "info_source" or any(
+            marker in slot_name for marker in ("信息来源", "信息渠道", "渠道来源")
+        )
         is_activity_slot = slot_code in {
             "activity_material",
             "activity_prize",
             "batch_detection",
-        } or any(marker in slot_name for marker in ("活动", "奖品", "批批检", "检测报告"))
-        if is_activity_slot and slot_value and slot_value not in activity_material:
-            activity_material.append(slot_value)
+            "info_source",
+        } or any(
+            marker in slot_name
+            for marker in ("活动", "奖品", "批批检", "检测报告", "信息来源", "信息渠道", "渠道来源")
+        )
+        if is_activity_slot and slot_value:
+            material_line = f"{slot_name or '活动信息'}：{slot_value}"
+            if material_line not in content_material:
+                content_material.append(material_line)
     selling_expression = str(business_rule.get("selling_expression") or "").strip()
     selling_expression_note = str(business_rule.get("selling_expression_note") or "").strip()
+    selling_painpoint_expression = str(
+        business_rule.get("selling_painpoint_expression") or ""
+    ).strip()
     hard_boundaries = _string_list(business_rule.get("hard_boundaries"))
     writing_requirements = _string_list(business_rule.get("writing_requirements"))
+    generation_requirements = _string_list(business_rule.get("generation_requirements"))
     del selected_keywords
 
-    lines = [f"任务：{generation_instruction}"]
-    lines.extend(["", "这篇要写的事：", content_direction or "按本篇业务规则自然展开。"])
+    material_lines: list[str] = []
     if inspiration_material:
-        lines.extend(["", f"本篇灵感线索：{inspiration_material}"])
-    if activity_material:
-        lines.extend(["", "活动素材：", *[f"- {line}" for line in activity_material]])
-    if selling_expression:
-        lines.extend(["", f"卖点表达：{selling_expression}"])
+        material_lines.append(f"灵感线索：{inspiration_material}")
+    material_lines.extend(line for line in content_material if line not in material_lines)
+    if selling_painpoint_expression:
+        material_lines.append(f"卖点痛点表达：{selling_painpoint_expression}")
+    elif selling_expression:
+        material_lines.append(f"卖点表达：{selling_expression}")
         if selling_expression_note:
-            lines.append(f"注意：{selling_expression_note}")
-    if hard_boundaries:
-        lines.extend(["", "硬边界：", *[f"- {line}" for line in hard_boundaries]])
+            material_lines.append(f"卖点表达边界：{selling_expression_note}")
+
+    lines = ["生文指令：", generation_instruction]
+    lines.extend(["", "内容方向：", content_direction or "按本篇业务规则自然展开。"])
+    if material_lines:
+        lines.extend(["", "本篇素材：", *[f"- {line}" for line in material_lines]])
 
     if writing_requirements:
         lines.extend(["", "写法：", *[f"- {line}" for line in writing_requirements]])
@@ -2699,8 +2805,11 @@ def _layered_article_prompt(
                 *[f"- {line}" for line in examples],
             ]
         )
+    final_requirements = [*generation_requirements, *hard_boundaries]
     if output_format:
-        lines.extend(["", "输出格式：", output_format])
+        final_requirements.append(output_format)
+    if final_requirements:
+        lines.extend(["", "生成要求：", *[f"- {line}" for line in final_requirements]])
     return "\n".join(lines).strip()
 
 
@@ -2779,6 +2888,7 @@ def _render_rule_corpus_protection_feedback_slot(corpus: str, *, item_no: int) -
 _INSPIRATION_CLUE_SLOT_SECTION = re.compile(
     r"\n*【本篇灵感线索(?:槽位)?】\s*\n(?P<options>(?:\s*-\s*[^\n]+\n?)+)"
 )
+_NO_INSPIRATION_CLUE = "不使用灵感线索"
 
 
 def _render_rule_corpus_inspiration_clue_slot(corpus: str, *, item_no: int) -> str:
@@ -2795,8 +2905,11 @@ def _render_rule_corpus_inspiration_clue_slot(corpus: str, *, item_no: int) -> s
         return corpus
 
     selected = options[(max(1, item_no) - 1) % len(options)]
-    replacement = f"\n\n本篇灵感线索：{selected}\n"
-    return (corpus[: match.start()] + replacement + corpus[match.end() :]).strip()
+    rendered = (corpus[: match.start()] + corpus[match.end() :]).strip()
+    rendered = rendered.replace("本篇灵感线索", "本篇素材中的灵感线索")
+    if selected == _NO_INSPIRATION_CLUE:
+        return rendered
+    return _append_rule_corpus_material(rendered, label="灵感线索", value=selected)
 
 
 _SELLING_EXPRESSION_SLOT_SECTION = re.compile(
@@ -2808,6 +2921,36 @@ _SELLING_EXPRESSION_SLOT_ENTRY = re.compile(
     r"(?:\n[ \t]+注意：(?P<note>[^\n]+))?",
     re.MULTILINE,
 )
+
+
+def _render_structured_selling_painpoint_expression(corpus: str, *, expression: str) -> str:
+    normalized_expression = str(expression or "").strip()
+    if not normalized_expression:
+        return corpus
+    return _append_rule_corpus_material(
+        corpus,
+        label="卖点痛点表达",
+        value=normalized_expression,
+    )
+
+
+def _append_rule_corpus_material(corpus: str, *, label: str, value: str) -> str:
+    normalized_value = str(value or "").strip()
+    if not normalized_value:
+        return corpus
+    material_line = f"- {label}：{normalized_value}"
+    if material_line in corpus:
+        return corpus
+    boundary_match = re.search(r"\n*事实与合规边界：", corpus)
+    if boundary_match is None:
+        if "本篇素材：" in corpus:
+            return (corpus.rstrip() + "\n" + material_line).strip()
+        return (corpus.rstrip() + "\n\n本篇素材：\n" + material_line).strip()
+    before = corpus[: boundary_match.start()].rstrip()
+    after = corpus[boundary_match.start() :].lstrip()
+    if "本篇素材：" in before:
+        return f"{before}\n{material_line}\n\n{after}".strip()
+    return f"{before}\n\n本篇素材：\n{material_line}\n\n{after}".strip()
 
 
 def _render_rule_corpus_selling_expression_slot(corpus: str, *, item_no: int) -> str:
@@ -2823,10 +2966,11 @@ def _render_rule_corpus_selling_expression_slot(corpus: str, *, item_no: int) ->
         return corpus
 
     selling, note = options[(max(1, item_no) - 1) % len(options)]
-    replacement = f"\n\n卖点表达：{selling}\n"
+    rendered = (corpus[: match.start()] + corpus[match.end() :]).strip()
+    rendered = _append_rule_corpus_material(rendered, label="卖点表达", value=selling)
     if note:
-        replacement += f"注意：{note}\n"
-    return (corpus[: match.start()] + replacement + corpus[match.end() :]).strip()
+        rendered = _append_rule_corpus_material(rendered, label="卖点表达边界", value=note)
+    return rendered
 
 
 def _royal_compact_article_prompt(

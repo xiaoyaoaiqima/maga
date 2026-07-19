@@ -469,24 +469,6 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
             "selection_policy": {"default_mode": "one_per_enabled_category"},
             "categories": [
                 {
-                    "category_code": "comment_generation_requirement",
-                    "category_name": "生成要求",
-                    "description": "评论任务入口要求，控制输出形态和基础口语感。",
-                    "sort_order": 5,
-                    "applicable_content_types": ["comment"],
-                    "selection_mode": "fixed",
-                    "selected_keyword_code": "xhs_maternal_comment_requirement",
-                    "sub_keywords": [
-                        {
-                            "keyword_code": "xhs_maternal_comment_requirement",
-                            "keyword_name": "小红书母婴评论生成要求",
-                            "corpus": [
-                                "生成一条小红书母婴社区真实用户评论，口语化，有活人感。只输出评论正文，不要标题、编号、解释。先看业务规则里的参考示例，再换一种自然说法输出。不要复述规则，也不要写成广告口播。"
-                            ],
-                        }
-                    ],
-                },
-                {
                     "category_code": "persona",
                     "category_name": "人设",
                     "description": "默认表达身份，不是类别上限。",
@@ -558,30 +540,18 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                 },
                 {
                     "category_code": "comment_writing_instruction",
-                    "category_name": "生评论指令",
-                    "description": "评论生成约束，不是类别上限。",
+                    "category_name": "生文指令",
+                    "description": "评论生成任务和基础表达要求。",
                     "sort_order": 25,
                     "applicable_content_types": ["comment"],
+                    "selection_mode": "fixed",
+                    "selected_keyword_code": "natural_comment",
                     "sub_keywords": [
                         {
                             "keyword_code": "natural_comment",
-                            "keyword_name": "自然评论区表达",
+                            "keyword_name": "小红书母婴评论生文指令",
                             "corpus": [
-                                "语言像妈妈在评论区顺手补一句，不写成广告口播或完整科普段落。"
-                            ],
-                        },
-                        {
-                            "keyword_code": "specific_comment_question",
-                            "keyword_name": "带着具体问题来",
-                            "corpus": [
-                                "把泛泛兴趣落到一个具体观察或个人处理上，让评论像真实交流；别批量套门店位置、剩余罐数或固定天数。"
-                            ],
-                        },
-                        {
-                            "keyword_code": "light_comment_experience",
-                            "keyword_name": "轻经验互动",
-                            "corpus": [
-                                "可以带一点轻量经验感、犹豫或小缺口，不必凑成完整总结，也别写成强推荐。"
+                                "生成一条小红书母婴社区真实用户评论，口语化，有活人感。像妈妈在评论区顺手补一句，可以带一点犹豫、小缺口或个人反应，不必凑成完整总结。只输出评论正文，不要标题、编号、解释，不要写成广告口播或完整科普段落。"
                             ],
                         },
                     ],
@@ -865,21 +835,14 @@ def fallback_system_prompt_keyword_content() -> dict[str, Any]:
                             "keyword_code": "comment_micro_reply",
                             "keyword_name": "5-8字短接话",
                             "corpus": [
-                                "评论控制在5到8字，最多10字，像评论区顺手接一句；主要说附近门店有货、准备去拿或已经拿到。可以少量带“还好、可算、赶紧”这类口气，但同批别都用口气词开头，也别都写成动作词；必须带一个到货、门店、店里、刚到、有货、导购、上架或拿到标记。同批开头词和到货标记都要轮换，别都拼成“门店刚到货”；少用“踏实、续上、补上”这类总结词，不加逗号串第二个信息点，喊我句式写成“到了喊我/有货喊我/到店喊我”，别写“店里新到”这种门店货品描述，别把“上架”压成“刚上”，别把“奶瓶快空、导购说到”这类生活细节硬压在一句里。"
-                            ],
-                        },
-                        {
-                            "keyword_code": "comment_micro_batch_check_reply",
-                            "keyword_name": "批批检短接话",
-                            "corpus": [
-                                "评论控制在10到32字，像负面帖下顺手接一句；要带出扫码、罐底码、二维码、报告能看、批批检、每批检测、Not Detected/未检出这类检测保障感，同时轻轻带一个有货、到货、门店、补到货、拿一罐、先试或转奶锚点。每条只抓一两个检测信息点，别在一句里同时塞满扫码、罐底码、每批检测、未检出、心里有底。可以说“有底点、有保障、放心点、敢先试、先拿一罐”，但别写“保证没问题、绝对安全”，也别堆专业数值、指标数量和三方数据。只讲一个简单判断或动作，别写成检测科普或扫码教程。"
+                                "评论控制在5到8字，最多10字，像评论区顺手接一句。只控制篇幅和短句形态，具体写什么服从生文指令、内容方向和活动素材；不要为了压短而写成含义不清的残句。"
                             ],
                         },
                         {
                             "keyword_code": "comment_thread_short_reply",
                             "keyword_name": "评论串短接楼",
                             "corpus": [
-                                "评论控制在3到12字，像评论串里顺手接半句，不补完整前因后果。可以是到货/发货报信、附和、松口气或个人选择，比如“终于到了”“我的也快到了”“先不转了”“有底了”“等发货中”“能不换就不换”。意思要能借上下文成立，别省成“这个挺好、先喝着、再等等”这种空泛残句，也别写成独立广告口号。"
+                                "评论控制在3到12字，像评论串里顺手接半句，不必补完整前因后果。只控制接楼感和短句形态，具体写什么服从生文指令、内容方向和活动素材；意思要能借上下文成立，别写成空泛残句或独立广告口号。"
                             ],
                         },
                         {
@@ -1138,8 +1101,8 @@ def _split_legacy_writing_instruction_categories(categories: list[dict[str, Any]
         comment_category = {
             **category,
             "category_code": "comment_writing_instruction",
-            "category_name": "生评论指令",
-            "description": "评论生成约束，不是类别上限。",
+            "category_name": "生文指令",
+            "description": "评论生成任务和基础表达要求。",
             "sort_order": _as_int(category.get("sort_order"), default=20) + 5,
             "applicable_content_types": ["comment"],
         }

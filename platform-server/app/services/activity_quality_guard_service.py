@@ -16,6 +16,7 @@ A2_COMMENT_PROFILE_KEYS = {
     A2_NEGATIVE_POST_COMMENT_PROFILE_KEY,
     A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY,
 }
+A2_UPPERCASE_BRAND_PATTERN = re.compile(r"A2(?!蛋白)")
 
 
 @dataclass(frozen=True)
@@ -362,6 +363,13 @@ A2_BRAND_BAD_STOCK_WORDING_PATTERN = re.compile(
     r"|多跑[一二两三四五六七八九十\d几]?家店|跑[一二两三四五六七八九十\d几]?家店|跑店"
     r"|(?:我这边|我们这边|我这里|我们这里)[^，。！？；;]{0,8}(?:还没消息|还没看到有?a2|没看到有?a2)"
 )
+A2_STOCK_DIRECT_WITH_PRODUCT_RULE_ID = "a2_direct_01"
+A2_STOCK_DIRECT_WITHOUT_PRODUCT_RULE_ID = "a2_direct_43"
+A2_STOCK_DIRECT_NATURAL_PURCHASE_HITS = {"付款不犹豫", "直接冲", "先冲"}
+A2_STOCK_DIRECT_INVALID_QUANTITY_UNIT_PATTERN = re.compile(
+    r"[一二两三四五六七八九十百千万几半\d]+(?:小|大)?[包袋盒件桶瓶]"
+)
+A2_PRODUCT_NAME_PATTERN = re.compile(r"a2(?:至初)?", re.IGNORECASE)
 A2_TRANSFER_TUTORIAL_PATTERN = re.compile(
     r"半勺|一勺|两勺|一两勺|按比例|(?:第[一二三四五六七八九十\d]+天|[一二三四五六七八九十\d]+天后)[^，。！？；;]{0,6}(?:全换|全转)"
     r"|直接换|马上适应|立刻适应"
@@ -1003,6 +1011,10 @@ class ActivityQualityGuardService:
                     }
                 )
         if profile.profile_key == A2_SENTIMENT_COMMENT_PROFILE_KEY:
+            brand_case_repaired = A2_UPPERCASE_BRAND_PATTERN.sub("a2", repaired)
+            if brand_case_repaired != repaired:
+                repaired = brand_case_repaired
+                repairs.append({"code": "activity_body_a2_brand_case_normalized"})
             # A2 蜡样相关表达必须回到“报告里的蜡样检测那项”，避免模型把数值写成竞品归因或悬空卖点。
             a2_repaired = _repair_a2_003_reference(repaired)
             if a2_repaired != repaired:
@@ -1129,12 +1141,19 @@ def _derive_keyword(item: Any, plan: dict[str, Any], profile: QualityGuardProfil
         not profile.context_keyword_allowlist or scenario_keyword in profile.context_keyword_allowlist
     ):
         return scenario_keyword
+    business_rule = str(_plan_business_rule(plan) or "").strip()
+    if profile.profile_key == A2_SENTIMENT_COMMENT_PROFILE_KEY and business_rule:
+        major = business_rule.split("-", 1)[0].strip()
+        if major == "会员权益":
+            return A2_MEMBER_BENEFIT_KEYWORD
+        if major == "有货":
+            return _derive_a2_combo_keyword(business_rule, profile)
     source = "\n".join(
         str(value or "")
         for value in (
             getattr(item, "title", None),
             getattr(item, "body", None),
-            _plan_business_rule(plan),
+            business_rule,
             plan.get("corpus"),
             " ".join(str(example) for example in plan.get("examples") or []),
         )
@@ -1460,6 +1479,39 @@ def _a2_negative_post_item_issues(body: str) -> list[dict[str, Any]]:
 
 def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
+    plan = _dict_value(getattr(item, "plan_json", None))
+    rule_id = str(plan.get("rule_id") or "").strip()
+    if rule_id in {A2_STOCK_DIRECT_WITH_PRODUCT_RULE_ID, A2_STOCK_DIRECT_WITHOUT_PRODUCT_RULE_ID}:
+        invalid_quantity_unit_hit = _a2_stock_direct_invalid_quantity_unit_hit(body)
+        if invalid_quantity_unit_hit:
+            issues.append(
+                {
+                    "code": "activity_body_stock_direct_invalid_quantity_unit",
+                    "message": "a2奶粉购买数量使用罐、箱或箱子，不要使用包、袋、盒、件、桶、瓶",
+                    "evidence": [invalid_quantity_unit_hit],
+                    "risk_level": "high",
+                }
+            )
+    if rule_id == A2_STOCK_DIRECT_WITH_PRODUCT_RULE_ID and not A2_PRODUCT_NAME_PATTERN.search(body):
+        issues.append(
+            {
+                "code": "activity_body_stock_direct_missing_product_name",
+                "message": "有货-直给-提产品方向需要在正文中出现a2或a2至初",
+                "evidence": ["缺少产品名"],
+                "risk_level": "high",
+            }
+        )
+    if rule_id == A2_STOCK_DIRECT_WITHOUT_PRODUCT_RULE_ID:
+        product_name_hit = A2_PRODUCT_NAME_PATTERN.search(body)
+        if product_name_hit:
+            issues.append(
+                {
+                    "code": "activity_body_stock_direct_unexpected_product_name",
+                    "message": "有货-直给-不提产品方向不要在正文中出现产品名",
+                    "evidence": [product_name_hit.group(0)],
+                    "risk_level": "high",
+                }
+            )
     product_split_hit = _a2_zhichu_product_split_hit(body)
     if product_split_hit:
         issues.append(
@@ -1491,7 +1543,11 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
             }
         )
     bad_stock_wording_hit = _a2_brand_bad_stock_wording_hit(body)
-    if bad_stock_wording_hit:
+    allow_natural_purchase_wording = (
+        rule_id in {A2_STOCK_DIRECT_WITH_PRODUCT_RULE_ID, A2_STOCK_DIRECT_WITHOUT_PRODUCT_RULE_ID}
+        and bad_stock_wording_hit in A2_STOCK_DIRECT_NATURAL_PURCHASE_HITS
+    )
+    if bad_stock_wording_hit and not allow_natural_purchase_wording:
         issues.append(
             {
                 "code": "activity_body_brand_bad_stock_wording",
@@ -1596,7 +1652,7 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
                 }
             )
     if keyword == A2_MEMBER_BENEFIT_KEYWORD:
-        if not _has_any_marker(body, ("a2", "A2", "至初")):
+        if not _has_any_marker(body, ("a2", "至初")):
             issues.append(
                 {
                     "code": "activity_body_missing_a2_member_brand_anchor",
@@ -1733,7 +1789,10 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
     incomplete_reason = _a2_incomplete_comment_reason(
         body,
         keyword=keyword,
-        allow_short=_a2_is_complete_crm_short_comment(item, body),
+        allow_short=(
+            _a2_is_complete_crm_short_comment(item, body)
+            or _a2_is_complete_stock_short_comment(body, keyword=keyword)
+        ),
     )
     if incomplete_reason:
         issues.append(
@@ -1768,6 +1827,11 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
 
 def _a2_zhichu_product_split_hit(body: str) -> str | None:
     match = A2_ZHICHU_PRODUCT_SPLIT_PATTERN.search(str(body or ""))
+    return match.group(0) if match else None
+
+
+def _a2_stock_direct_invalid_quantity_unit_hit(body: str) -> str | None:
+    match = A2_STOCK_DIRECT_INVALID_QUANTITY_UNIT_PATTERN.search(str(body or ""))
     return match.group(0) if match else None
 
 
@@ -1880,6 +1944,19 @@ def _a2_is_complete_crm_short_comment(item: Any, body: str) -> bool:
     if len(text) < 5 or text in {"这个挺好", "挺好", "不错", "可以", "开心", "安心"}:
         return False
     return any(anchor in text for anchor in anchors)
+
+
+def _a2_is_complete_stock_short_comment(body: str, *, keyword: str | None) -> bool:
+    if keyword != A2_STOCK_ONLY_KEYWORD:
+        return False
+    normalized = re.sub(r"\s+", "", str(body or "").strip("，。！？,!?；;、 "))
+    if len(normalized) < 5:
+        return False
+    has_supply = any(
+        marker in normalized
+        for marker in ("到货", "来货", "有货", "能买", "买到", "能拍", "补货", "上架", "到了")
+    )
+    return has_supply
 
 
 def _a2_vague_deictic_without_product_reason(body: str, *, keyword: str | None = None) -> str | None:
