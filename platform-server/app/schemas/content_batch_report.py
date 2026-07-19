@@ -443,6 +443,7 @@ class ContentBatchListItem(TimestampSchema):
 class ContentBatchListResponse(BaseSchema):
     total: int
     items: list[ContentBatchListItem]
+    product_topics: list[str] = Field(default_factory=list)
 
 
 class ContentFeedbackSample(BaseSchema):

@@ -469,6 +469,8 @@ async def list_batches(
     asset_key: str | None = Query(default=None, max_length=128),
     rule_id: str | None = Query(default=None, max_length=128),
     source_row_no: int | None = Query(default=None, ge=1),
+    keyword: str | None = Query(default=None, max_length=255),
+    product_topic: str | None = Query(default=None, max_length=255),
     db: AsyncSession = Depends(get_db),
 ) -> ResponseData[ContentBatchListResponse]:
     batches = await ContentBatchReportService(db).list_batch_reports(
@@ -477,6 +479,8 @@ async def list_batches(
         asset_key=asset_key,
         rule_id=rule_id,
         source_row_no=source_row_no,
+        keyword=keyword,
+        product_topic=product_topic,
     )
     return ResponseData(data=batches)
 

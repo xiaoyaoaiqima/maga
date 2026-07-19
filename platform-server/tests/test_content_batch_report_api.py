@@ -129,6 +129,28 @@ async def test_list_batches_endpoint_filters_by_asset_and_rule(batch_report_clie
     assert missing_response.status_code == 200
     assert missing_response.json()["data"]["total"] == 0
 
+    title_response = await client.get(
+        "/api/v1/content-agent/batches",
+        params={"keyword": "换奶前", "product_topic": "源悦小红书小批量"},
+    )
+    assert title_response.status_code == 200
+    assert title_response.json()["data"]["total"] == 1
+    assert title_response.json()["data"]["product_topics"] == ["源悦小红书小批量"]
+
+    body_response = await client.get(
+        "/api/v1/content-agent/batches",
+        params={"keyword": "慢慢观察"},
+    )
+    assert body_response.status_code == 200
+    assert body_response.json()["data"]["total"] == 1
+
+    missing_content_response = await client.get(
+        "/api/v1/content-agent/batches",
+        params={"keyword": "不存在的标题正文"},
+    )
+    assert missing_content_response.status_code == 200
+    assert missing_content_response.json()["data"]["total"] == 0
+
 
 @pytest.mark.asyncio
 async def test_get_batch_report_endpoint_returns_404_when_batch_missing(batch_report_client):

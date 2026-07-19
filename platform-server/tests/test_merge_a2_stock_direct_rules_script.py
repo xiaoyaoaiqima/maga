@@ -1,7 +1,9 @@
 import pytest
 
 from scripts.merge_a2_stock_direct_rules import (
+    BATCH_VARIATION_REVIEW,
     CONTENT_DIRECTION,
+    EXPRESSION_PATH_PROMPT_SLOTS,
     GENERATION_INSTRUCTION,
     merge_content,
 )
@@ -55,6 +57,12 @@ def test_merge_content_keeps_two_stock_direct_rules_and_updates_scenarios():
     assert "不要提产品名" in by_id["a2_direct_43"]["activity_material"][0]
     assert by_id["a2_direct_01"]["examples"] == ["a2到货了"]
     assert by_id["a2_direct_43"]["examples"] == ["我也买到了新货"]
+    for rule_id in ("a2_direct_01", "a2_direct_43"):
+        assert by_id[rule_id]["prompt_slots"] == EXPRESSION_PATH_PROMPT_SLOTS
+        assert by_id[rule_id]["prompt_slot_selection_mode"] == "round_robin"
+        assert by_id[rule_id]["bundle_prompt_slots_source"] == "rule_asset"
+        assert by_id[rule_id]["batch_variation_review"] == BATCH_VARIATION_REVIEW
+        assert "delivery_selection" not in by_id[rule_id]
     assert [item["source_row_no"] for item in updated["items"]] == [1, 2, 3]
     assert updated["comment_scenarios"][0]["directions"][0]["rule_ids"] == [
         "a2_direct_01",
@@ -63,13 +71,27 @@ def test_merge_content_keeps_two_stock_direct_rules_and_updates_scenarios():
     ]
 
 
-def test_merge_content_requires_all_three_source_rules():
+def test_merge_content_is_idempotent_when_removed_rule_is_already_absent():
     content = {
         "items": [
             _item("a2_direct_01", "有货-直给简单报喜", 1, []),
             _item("a2_direct_43", "有货-直给已经买到", 2, []),
+            _item("other", "其他规则", 3, ["保留"]),
         ]
     }
 
-    with pytest.raises(ValueError, match="a2_direct_44"):
+    updated = merge_content(content)
+
+    assert [item["rule_id"] for item in updated["items"]] == [
+        "a2_direct_01",
+        "a2_direct_43",
+        "other",
+    ]
+    assert updated["items"][2] == content["items"][2]
+
+
+def test_merge_content_requires_both_active_stock_rules():
+    content = {"items": [_item("a2_direct_01", "有货-直给简单报喜", 1, [])]}
+
+    with pytest.raises(ValueError, match="a2_direct_43"):
         merge_content(content)

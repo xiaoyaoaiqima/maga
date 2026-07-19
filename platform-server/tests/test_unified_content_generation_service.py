@@ -430,6 +430,47 @@ async def test_comment_prompt_bundle_snapshot_skips_global_keywords_and_tone_slo
     assert "不应该进入Prompt" not in snapshot.input_snapshot["rendered_prompt"]
 
 
+@pytest.mark.asyncio
+async def test_comment_prompt_bundle_snapshot_renders_rule_asset_expression_path(
+    unified_session_factory,
+):
+    async with unified_session_factory() as session:
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="comment",
+            business_rule={
+                "asset_key": "a2_sentiment_comment_activity",
+                "business_rule": "有货-直给-不提产品",
+                "prompt_mode": "comment_prompt_bundle",
+                "bundle_prompt_slots_source": "rule_asset",
+                "prompt_slots": {"本条表达路径": ["像评论区顺手报信。"]},
+                "variation_slots": {
+                    "旧槽": ["不应该进入Prompt"]
+                },
+                "comment_prompt_bundle": {
+                    "generation_instruction": "生成一条真实用户评论。",
+                    "content_direction": "写看到有货后的自然反应。",
+                    "activity_material": ["a2奶粉已经到货，正文不提产品名。"],
+                    "writing_requirements": ["字数在30字以内"],
+                    "notes": ["不要说消极词。"],
+                },
+                "examples": ["不应该进入Prompt"],
+            },
+            item_no=1,
+            output_fields=["comment"],
+        )
+
+    assert snapshot.input_snapshot["selected_prompt_slots"] == [
+        {
+            "slot_name": "本条表达路径",
+            "text": "像评论区顺手报信。",
+            "selected_index": 0,
+            "candidate_count": 1,
+        }
+    ]
+    assert "本条表达路径：像评论区顺手报信。" in snapshot.input_snapshot["rendered_prompt"]
+    assert "不应该进入Prompt" not in snapshot.input_snapshot["rendered_prompt"]
+
+
 def test_rule_corpus_as_prompt_mode_skips_legacy_article_layers():
     from app.services.unified_content_generation_service import (
         _generation_requirements,

@@ -103,9 +103,12 @@ class UnifiedContentGenerationService:
             selected_keywords=selected_keywords,
         )
         selected_prompt_slots = (
-            _select_comment_prompt_slots(business_rule)
+            _select_comment_prompt_slots(
+                business_rule,
+                include_variation_slots=not comment_prompt_bundle,
+            )
             if content_type == "comment"
-            and (not comment_prompt_bundle or _uses_explicit_bundle_prompt_slots(business_rule))
+            and (not comment_prompt_bundle or _bundle_prompt_slots_source(business_rule))
             else []
         )
         selected_comment_tone = (
@@ -861,12 +864,11 @@ def _uses_comment_prompt_bundle(rule: dict[str, Any]) -> bool:
     )
 
 
-def _uses_explicit_bundle_prompt_slots(rule: dict[str, Any]) -> bool:
-    return (
-        _uses_comment_prompt_bundle(rule)
-        and str(rule.get("bundle_prompt_slots_source") or "").strip() == "batch_override"
-        and isinstance(rule.get("prompt_slots"), dict)
-    )
+def _bundle_prompt_slots_source(rule: dict[str, Any]) -> str | None:
+    if not _uses_comment_prompt_bundle(rule) or not isinstance(rule.get("prompt_slots"), dict):
+        return None
+    source = str(rule.get("bundle_prompt_slots_source") or "").strip()
+    return source if source in {"batch_override", "rule_asset"} else None
 
 
 def _comment_prompt_bundle_text(
@@ -978,11 +980,16 @@ def _positive_int(value: Any, *, default: int = 1, minimum: int = 1, maximum: in
     return max(minimum, min(parsed, maximum))
 
 
-def _select_comment_prompt_slots(rule: dict[str, Any]) -> list[dict[str, Any]]:
+def _select_comment_prompt_slots(
+    rule: dict[str, Any],
+    *,
+    include_variation_slots: bool = True,
+) -> list[dict[str, Any]]:
     slots = _normalize_comment_prompt_slots(
         rule.get("prompt_slots") or rule.get("comment_prompt_slots")
     )
-    slots.extend(_normalize_comment_prompt_slots(rule.get("variation_slots")))
+    if include_variation_slots:
+        slots.extend(_normalize_comment_prompt_slots(rule.get("variation_slots")))
     selected: list[dict[str, Any]] = []
     for slot in slots:
         entries = slot["entries"]

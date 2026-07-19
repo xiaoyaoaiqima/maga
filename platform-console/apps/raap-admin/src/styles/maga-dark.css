@@ -17,6 +17,7 @@ html.dark body {
 html.dark .business-rule-page,
 html.dark .content-agent-result-page,
 html.dark .content-agent-feedback-page,
+html.dark .prompt-debug-page,
 html.dark .system-prompt-keywords-page,
 html.dark .content-flow-experts {
   min-height: 100%;
@@ -41,6 +42,8 @@ html.dark .preview-box,
 html.dark .snapshot-section,
 html.dark .snapshot-keyword,
 html.dark .snapshot-pre,
+html.dark .prompt-debug-page .system-prompt-collapse,
+html.dark .prompt-debug-page .result-box,
 html.dark .trace-modal-stage {
   color: var(--maga-text);
   background: var(--maga-surface-soft) !important;
@@ -69,6 +72,8 @@ html.dark .snapshot-section-title,
 html.dark .snapshot-pre,
 html.dark .table-main,
 html.dark .panel-title,
+html.dark .prompt-debug-page .page-header h1,
+html.dark .prompt-debug-page .result-box,
 html.dark .expert-name,
 html.dark .term-title,
 html.dark .confirm-file strong {
@@ -78,6 +83,7 @@ html.dark .confirm-file strong {
 html.dark .batch-meta,
 html.dark .batch-total,
 html.dark .content-meta,
+html.dark .search-result-hint,
 html.dark .table-sub,
 html.dark .field-label,
 html.dark .muted,
@@ -101,6 +107,62 @@ html.dark .confirm-file span {
 
 html.dark .reason-code {
   color: #fda4af;
+}
+
+html.dark .content-agent-result-page .article-edit,
+html.dark .content-agent-result-page .feedback-editor,
+html.dark .content-agent-result-page .article-field,
+html.dark .content-agent-result-page .version-compare-panel,
+html.dark .content-agent-result-page .compare-pane {
+  color: var(--maga-text);
+  background: var(--maga-surface-soft) !important;
+  border-color: var(--maga-border) !important;
+}
+
+html.dark .content-agent-result-page .feedback-editor {
+  background: rgb(14 165 233 / 6%) !important;
+}
+
+html.dark .content-agent-result-page .article-body-field,
+html.dark .content-agent-result-page .compare-pane {
+  background: var(--maga-surface) !important;
+}
+
+html.dark .content-agent-result-page .content-title,
+html.dark .content-agent-result-page .feedback-editor-header strong,
+html.dark .content-agent-result-page .compare-head strong,
+html.dark .content-agent-result-page .compare-title,
+html.dark .content-agent-result-page .compare-body {
+  color: var(--maga-text) !important;
+}
+
+html.dark .content-agent-result-page .article-field-label,
+html.dark .content-agent-result-page .feedback-editor-hint,
+html.dark .content-agent-result-page .compare-feedback,
+html.dark .content-agent-result-page .compare-no-change,
+html.dark .content-agent-result-page .compare-pane-title,
+html.dark .content-agent-result-page .compare-pane-title span {
+  color: var(--maga-text-muted) !important;
+}
+
+html.dark .content-agent-result-page .diff-delete {
+  color: #fecaca;
+  background: rgb(248 113 113 / 18%) !important;
+}
+
+html.dark .content-agent-result-page .diff-insert {
+  color: #bbf7d0;
+  background: rgb(74 222 128 / 16%) !important;
+}
+
+html.dark .prompt-debug-page .system-prompt-collapse .ant-collapse-header {
+  color: var(--maga-text-muted) !important;
+}
+
+html.dark .prompt-debug-page .result-box-error {
+  color: #fecaca !important;
+  background: rgba(127, 29, 29, 0.22) !important;
+  border-color: rgba(248, 113, 113, 0.38) !important;
 }
 
 html.dark body .active-row > td,

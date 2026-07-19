@@ -272,6 +272,7 @@ export namespace ContentAgentApi {
   export interface BatchListResponse {
     total: number;
     items: BatchListItem[];
+    product_topics: string[];
   }
 
   export interface AssetGenerationOptionsResponse {
@@ -347,8 +348,10 @@ export async function preflightContentGenerationApi(
 
 export async function getContentBatchListApi(params?: {
   asset_key?: string;
+  keyword?: string;
   limit?: number;
   offset?: number;
+  product_topic?: string;
   rule_id?: null | string;
   source_row_no?: null | number;
 }) {

@@ -43,6 +43,59 @@ CONTENT_DIRECTION = (
 )
 WRITING_REQUIREMENTS = ["字数在20字以内"]
 NOTES = ["不要说缺货、断粮等消极词。"]
+EXPRESSION_PATH_PROMPT_SLOTS = {
+    "本条表达路径": [
+        "从常买的渠道看到消息起句，不用刚或终于。",
+        "从门店或导购发来的消息起句。",
+        "从群聊、评论区或朋友转告起句。",
+        "从商品页面状态变化起句。",
+        "省略主语，直接说现在能买了。",
+        "用自然疑问句确认是否到货。",
+        "从早上、中午或下班后的生活时间起句。",
+        "从路过或逛店时看到来货起句。",
+        "从到店通知或快递消息起句。",
+        "先说自然反应，再补一句有货事实。",
+        "先说有货事实，再落一个简短反应。",
+        "用原来、没想到或咦起句。",
+        "不用时间词，像评论区顺手报信。",
+        "用两个短分句，开头不写品牌。",
+        "从自己日常查看的渠道起句，结尾自然停住。",
+    ]
+}
+BATCH_VARIATION_REVIEW = {
+    "enabled": True,
+    "affects_hard_pass": False,
+    "expression_frequency": [
+        {
+            "group_key": "opener_gang",
+            "label": "刚字开头",
+            "terms": ["刚"],
+            "match_mode": "prefix",
+            "max_ratio": 0.2,
+        },
+        {
+            "group_key": "opener_zhongyu",
+            "label": "终于开头",
+            "terms": ["终于"],
+            "match_mode": "prefix",
+            "max_ratio": 0.15,
+        },
+        {
+            "group_key": "opener_kandao",
+            "label": "看到开头",
+            "terms": ["看到"],
+            "match_mode": "prefix",
+            "max_ratio": 0.15,
+        },
+    ],
+    "opening_prefix_frequency": {
+        "prefix_chars": 3,
+        "max_count": 3,
+    },
+    "opening_clause_frequency": {
+        "max_count": 2,
+    },
+}
 RULE_DEFINITIONS = {
     WITH_PRODUCT_RULE_ID: {
         "business_rule": "有货-直给-提产品",
@@ -66,7 +119,7 @@ def merge_content(content_json: dict[str, Any]) -> dict[str, Any]:
         for item in items
         if isinstance(item, dict)
     }
-    required_ids = {WITH_PRODUCT_RULE_ID, WITHOUT_PRODUCT_RULE_ID, REMOVED_RULE_ID}
+    required_ids = {WITH_PRODUCT_RULE_ID, WITHOUT_PRODUCT_RULE_ID}
     missing = sorted(required_ids - existing_ids)
     if missing:
         raise ValueError(f"active asset is missing expected rules: {', '.join(missing)}")
@@ -96,6 +149,10 @@ def merge_content(content_json: dict[str, Any]) -> dict[str, Any]:
                         "writing_requirements": list(WRITING_REQUIREMENTS),
                         "notes": list(NOTES),
                     },
+                    "prompt_slots": copy.deepcopy(EXPRESSION_PATH_PROMPT_SLOTS),
+                    "prompt_slot_selection_mode": "round_robin",
+                    "bundle_prompt_slots_source": "rule_asset",
+                    "batch_variation_review": copy.deepcopy(BATCH_VARIATION_REVIEW),
                     "supplements": [],
                 }
             )

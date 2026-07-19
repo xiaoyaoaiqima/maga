@@ -659,6 +659,51 @@ def test_comment_prompt_bundle_rotates_only_explicit_batch_prompt_slots():
     assert "variation_slots" not in first
 
 
+def test_comment_prompt_bundle_rotates_rule_asset_prompt_slots():
+    service = ContentCommentBatchService.__new__(ContentCommentBatchService)
+    bundle = {
+        "generation_instruction": "生成一条真实用户评论。",
+        "content_direction": "写看到有货后的自然反应。",
+        "activity_material": ["a2已经到货。"],
+        "writing_requirements": ["字数在30字以内"],
+        "notes": ["不要说消极词。"],
+    }
+    rule = {
+        "rule_id": "a2_direct_43",
+        "business_rule": "有货-直给-不提产品",
+        "prompt_mode": "comment_prompt_bundle",
+        "comment_prompt_bundle": bundle,
+        "corpus": bundle["content_direction"],
+        "prompt_slots": {
+            "本条表达路径": [
+                "从常买渠道看到消息起句。",
+                "像评论区顺手报信。",
+            ]
+        },
+        "prompt_slot_selection_mode": "round_robin",
+        "bundle_prompt_slots_source": "rule_asset",
+        "variation_slots": [
+            {"slot_code": "old", "slot_name": "旧槽", "options": ["不应该进入Prompt"]}
+        ],
+        "source_row_no": 2,
+    }
+    asset = SimpleNamespace(
+        asset_key="a2_sentiment_comment_activity",
+        id=7,
+        version_no=77,
+        content_json={},
+        metadata_json={},
+    )
+
+    first = service._plan_from_rule(rule, asset=asset, item_no=1, rule_occurrence_no=0)
+    second = service._plan_from_rule(rule, asset=asset, item_no=2, rule_occurrence_no=1)
+
+    assert first["prompt_slots"] == {"本条表达路径": ["从常买渠道看到消息起句。"]}
+    assert second["prompt_slots"] == {"本条表达路径": ["像评论区顺手报信。"]}
+    assert first["bundle_prompt_slots_source"] == "rule_asset"
+    assert "variation_slots" not in first
+
+
 def test_comment_plan_preserves_variation_slots_from_rule():
     service = ContentCommentBatchService.__new__(ContentCommentBatchService)
     rule = {

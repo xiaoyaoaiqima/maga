@@ -528,6 +528,7 @@ async def test_list_batch_reports_filters_by_asset_and_rule():
                     item_no=1,
                     status="generated",
                     plan_json={"rule_id": "business_rule_001", "source_row_no": 5},
+                    title="标题搜索命中",
                     body="第一条规则的结果",
                     quality_json={"hard_pass": True},
                 ),
@@ -560,6 +561,9 @@ async def test_list_batch_reports_filters_by_asset_and_rule():
             source_row_no=8,
             limit=10,
         )
+        title_search_result = await service.list_batch_reports(keyword="标题搜索", limit=10)
+        body_search_result = await service.list_batch_reports(keyword="第二条规则", limit=10)
+        topic_result = await service.list_batch_reports(product_topic="评论测试 B", limit=10)
 
     assert asset_result.total == 2
     assert {item.batch_code for item in asset_result.items} == {
@@ -568,6 +572,13 @@ async def test_list_batch_reports_filters_by_asset_and_rule():
     }
     assert rule_result.total == 1
     assert rule_result.items[0].batch_code == "comment_a_rule_2"
+    assert title_search_result.total == 1
+    assert title_search_result.items[0].batch_code == "comment_a_rule_1"
+    assert body_search_result.total == 1
+    assert body_search_result.items[0].batch_code == "comment_a_rule_2"
+    assert topic_result.total == 1
+    assert topic_result.items[0].batch_code == "comment_b_rule_1"
+    assert topic_result.product_topics == ["评论测试 A", "评论测试 B"]
 
     await engine.dispose()
 

@@ -12,7 +12,7 @@ from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content_agent import (
@@ -183,11 +183,39 @@ class ContentBatchReportService:
         asset_key: str | None = None,
         rule_id: str | None = None,
         source_row_no: int | None = None,
+        keyword: str | None = None,
+        product_topic: str | None = None,
     ) -> ContentBatchListResponse:
         conditions = []
         normalized_asset_key = str(asset_key or "").strip()
         if normalized_asset_key:
             conditions.append(ContentBatchJob.asset_key == normalized_asset_key)
+
+        normalized_product_topic = str(product_topic or "").strip()
+        if normalized_product_topic:
+            conditions.append(ContentBatchJob.product_topic == normalized_product_topic)
+
+        normalized_keyword = str(keyword or "").strip()
+        if normalized_keyword:
+            content_match = (
+                select(ContentBatchItem.id)
+                .where(
+                    ContentBatchItem.batch_id == ContentBatchJob.id,
+                    or_(
+                        ContentBatchItem.title.contains(normalized_keyword, autoescape=True),
+                        ContentBatchItem.body.contains(normalized_keyword, autoescape=True),
+                    ),
+                )
+                .exists()
+            )
+            conditions.append(content_match)
+
+        topic_result = await self.db.execute(
+            select(ContentBatchJob.product_topic)
+            .distinct()
+            .order_by(ContentBatchJob.product_topic)
+        )
+        product_topics = [topic for topic in topic_result.scalars().all() if topic]
 
         rule_filter_enabled = (
             bool(str(rule_id or "").strip()) or source_row_no is not None
@@ -255,7 +283,11 @@ class ContentBatchReportService:
                     update_time=job.update_time,
                 )
             )
-        return ContentBatchListResponse(total=total, items=list_items)
+        return ContentBatchListResponse(
+            total=total,
+            items=list_items,
+            product_topics=product_topics,
+        )
 
     def _items_match_rule_filter(
         self,

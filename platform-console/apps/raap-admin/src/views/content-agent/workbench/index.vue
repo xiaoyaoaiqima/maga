@@ -17,11 +17,13 @@ import {
   Divider,
   Empty,
   Input,
+  InputSearch,
   List,
   ListItem,
   message,
   Modal,
   Row,
+  Select,
   Space,
   Spin,
   Statistic,
@@ -51,6 +53,10 @@ const promptLoadingTaskId = ref<null | number>(null);
 const selectedReport = ref<ContentAgentApi.BatchReport | null>(null);
 const batchList = ref<ContentAgentApi.BatchListItem[]>([]);
 const batchTotal = ref(0);
+const productTopics = ref<string[]>([]);
+const searchDraft = ref('');
+const searchKeyword = ref('');
+const topicFilter = ref<string>();
 const feedbackDrafts = reactive<Record<number, string>>({});
 const editDrafts = reactive<Record<number, { body: string; title: string }>>(
   {},
@@ -64,7 +70,33 @@ const currentOperator = computed(
 );
 
 const selectedItems = computed(() => selectedReport.value?.items || []);
+const normalizedSearchKeyword = computed(() =>
+  searchKeyword.value.trim().toLocaleLowerCase(),
+);
+const visibleSelectedItems = computed(() => {
+  const keyword = normalizedSearchKeyword.value;
+  if (!keyword) return selectedItems.value;
+  return selectedItems.value.filter((item) =>
+    `${item.title || ''}\n${item.body || ''}`
+      .toLocaleLowerCase()
+      .includes(keyword),
+  );
+});
 const selectedSummary = computed(() => selectedReport.value?.summary || null);
+const hasHistoryFilters = computed(
+  () => Boolean(searchKeyword.value.trim()) || Boolean(topicFilter.value),
+);
+const hasDeliverySummary = computed(() => {
+  const summary = selectedSummary.value;
+  if (!summary) return false;
+  return Boolean(
+    summary.batch_variation_warning_count ||
+      summary.delivery_candidate_count ||
+      summary.delivery_selected_count ||
+      summary.delivery_shortfall_count ||
+      summary.suggested_bulk_refill_count,
+  );
+});
 const selectedBatch = computed(() =>
   batchList.value.find(
     (batch) => batch.batch_id === selectedReport.value?.batch_id,
@@ -110,6 +142,17 @@ const passColor = (value?: boolean | null) => {
   if (value === true) return 'green';
   if (value === false) return 'red';
   return 'default';
+};
+
+const deliveryNonSelectionReasonLabel = (reason?: null | string) => {
+  if (reason === 'business_hard_pass_required') return '业务审核未通过';
+  if (reason === 'exact_duplicate') return '完全重复';
+  if (reason === 'opening_prefix_cap_exceeded') return '相同前三字过多';
+  if (reason === 'opening_first_char_cap_exceeded') return '相同首字过多';
+  if (reason === 'opening_clause_cap_exceeded') return '相同开头分句过多';
+  if (reason === 'similarity_threshold_exceeded') return '相似度过高';
+  if (reason === 'delivery_target_reached') return '已达到交付目标';
+  return reason || '未入选';
 };
 
 const formatDuration = (durationMs?: null | number) => {
@@ -587,21 +630,48 @@ const saveEdit = async (item: ContentAgentApi.BatchReportItem) => {
 const loadBatches = async () => {
   batchLoading.value = true;
   try {
-    const data = await getContentBatchListApi({ limit: 20, offset: 0 });
+    const data = await getContentBatchListApi({
+      keyword: searchKeyword.value.trim() || undefined,
+      limit: 20,
+      offset: 0,
+      product_topic: topicFilter.value || undefined,
+    });
     batchList.value = data?.items || [];
     batchTotal.value = data?.total || 0;
+    productTopics.value = data?.product_topics || [];
     // 从生产工作台跳转过来时，优先打开刚生成的批次报告。
     const queryBatchId = Number(route.query.batch_id || 0);
-    if (queryBatchId > 0 && selectedReport.value?.batch_id !== queryBatchId) {
+    if (
+      queryBatchId > 0 &&
+      !hasHistoryFilters.value &&
+      selectedReport.value?.batch_id !== queryBatchId
+    ) {
       await openReport(queryBatchId, false);
       return;
     }
-    if (!selectedReport.value && batchList.value[0]) {
+    const selectedBatchStillVisible = batchList.value.some(
+      (batch) => batch.batch_id === selectedReport.value?.batch_id,
+    );
+    if (!selectedBatchStillVisible && batchList.value[0]) {
       await openReport(batchList.value[0].batch_id, false);
+    } else if (!batchList.value.length) {
+      selectedReport.value = null;
     }
   } finally {
     batchLoading.value = false;
   }
+};
+
+const applyHistorySearch = async (value: string) => {
+  searchKeyword.value = value.trim();
+  await loadBatches();
+};
+
+const resetHistoryFilters = async () => {
+  searchDraft.value = '';
+  searchKeyword.value = '';
+  topicFilter.value = undefined;
+  await loadBatches();
 };
 
 const goBusinessRules = () => {
@@ -628,6 +698,40 @@ watch(
           <template #extra>
             <Button size="small" @click="loadBatches">刷新</Button>
           </template>
+          <div class="history-filters">
+            <InputSearch
+              v-model:value="searchDraft"
+              allow-clear
+              enter-button="搜索"
+              placeholder="搜索标题或正文"
+              @clear="applyHistorySearch('')"
+              @search="applyHistorySearch"
+            />
+            <div class="history-filter-row">
+              <Select
+                v-model:value="topicFilter"
+                allow-clear
+                class="history-topic-select"
+                :options="
+                  productTopics.map((topic) => ({
+                    label: topic,
+                    value: topic,
+                  }))
+                "
+                placeholder="筛选主题"
+                show-search
+                :filter-option="true"
+                @change="loadBatches"
+              />
+              <Button
+                v-if="hasHistoryFilters"
+                size="small"
+                @click="resetHistoryFilters"
+              >
+                重置
+              </Button>
+            </div>
+          </div>
           <Spin :spinning="batchLoading">
             <Empty v-if="batchList.length === 0" description="暂无批次" />
             <div v-else class="batch-list">
@@ -659,10 +763,24 @@ watch(
                   {{ batch.summary.audit_skipped_count }} · 反馈
                   {{ batch.summary.feedback_count }}
                 </div>
+                <div
+                  v-if="
+                    batch.summary.delivery_candidate_count ||
+                    batch.summary.delivery_selected_count ||
+                    batch.summary.delivery_shortfall_count ||
+                    batch.summary.batch_variation_warning_count
+                  "
+                  class="batch-meta"
+                >
+                  交付 {{ batch.summary.delivery_selected_count }}/{{
+                    batch.summary.delivery_candidate_count
+                  }} · 缺口 {{ batch.summary.delivery_shortfall_count }} ·
+                  同质化提醒 {{ batch.summary.batch_variation_warning_count }}
+                </div>
               </div>
             </div>
             <div v-if="batchTotal" class="batch-total">
-              共 {{ batchTotal }} 个批次
+              共 {{ batchTotal }} 个{{ hasHistoryFilters ? '匹配' : '' }}批次
             </div>
           </Spin>
         </Card>
@@ -761,6 +879,47 @@ watch(
               </Col>
             </Row>
 
+            <Row v-if="hasDeliverySummary" class="mt-3" :gutter="12">
+              <Col :span="6">
+                <Statistic
+                  title="交付候选"
+                  :value="selectedSummary?.delivery_candidate_count || 0"
+                />
+              </Col>
+              <Col :span="6">
+                <Statistic
+                  title="交付入选"
+                  :value="selectedSummary?.delivery_selected_count || 0"
+                />
+              </Col>
+              <Col :span="6">
+                <Statistic
+                  title="交付缺口"
+                  :value="selectedSummary?.delivery_shortfall_count || 0"
+                />
+              </Col>
+              <Col :span="6">
+                <Statistic
+                  title="同质化提醒"
+                  :value="selectedSummary?.batch_variation_warning_count || 0"
+                />
+              </Col>
+            </Row>
+
+            <Alert
+              v-if="selectedSummary?.delivery_shortfall_count"
+              class="mt-3"
+              show-icon
+              type="warning"
+              :message="
+                '交付还差 ' +
+                selectedSummary.delivery_shortfall_count +
+                ' 条，建议下一轮整批补 ' +
+                (selectedSummary.suggested_bulk_refill_count || 0) +
+                ' 条候选。'
+              "
+            />
+
             <Alert
               v-if="
                 selectedSummary?.forbidden_hit_count ||
@@ -786,7 +945,11 @@ watch(
 
             <Divider />
 
-            <List :data-source="selectedItems" item-layout="vertical">
+            <div v-if="searchKeyword" class="search-result-hint">
+              当前批次命中 {{ visibleSelectedItems.length }} 条标题/正文
+            </div>
+
+            <List :data-source="visibleSelectedItems" item-layout="vertical">
               <template #renderItem="{ item }">
                 <ListItem :key="item.item_id">
                   <Card class="content-card" :bordered="true">
@@ -823,6 +986,28 @@ watch(
                           color="orange"
                         >
                           疑似趋同 {{ item.similarity_warnings.length }}
+                        </Tag>
+                        <Tag
+                          v-if="item.batch_variation_pass === false"
+                          color="orange"
+                        >
+                          批次同质化提醒
+                        </Tag>
+                        <Tag
+                          v-if="item.delivery_selected === true"
+                          color="green"
+                        >
+                          交付入选 #{{ item.delivery_rank || '-' }}
+                        </Tag>
+                        <Tag
+                          v-else-if="item.delivery_selected === false"
+                          color="default"
+                        >
+                          未入选 · {{
+                            deliveryNonSelectionReasonLabel(
+                              item.delivery_non_selection_reason,
+                            )
+                          }}
                         </Tag>
                         <Tag v-if="item.review_status" color="purple">
                           {{ reviewStatusLabel(item.review_status) }} · v{{
@@ -1149,7 +1334,11 @@ watch(
 
           <Card v-else :bordered="false">
             <Empty
-              description="暂无生成结果，请先在生产工作台上传业务规则并生成"
+              :description="
+                hasHistoryFilters
+                  ? '没有匹配的生成历史'
+                  : '暂无生成结果，请先在生产工作台上传业务规则并生成'
+              "
             />
           </Card>
         </Spin>
@@ -1167,6 +1356,24 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.history-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.history-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-topic-select {
+  min-width: 0;
+  flex: 1;
 }
 
 .batch-list-item {
@@ -1197,6 +1404,12 @@ watch(
   color: #666;
   font-size: 12px;
   margin-top: 4px;
+}
+
+.search-result-hint {
+  margin-bottom: 8px;
+  color: #8c8c8c;
+  font-size: 12px;
 }
 
 .content-card {

@@ -893,8 +893,8 @@ class ContentCommentBatchService:
         quality_guard_profile_key: str | None = None,
     ) -> dict[str, Any]:
         uses_prompt_bundle = _uses_comment_prompt_bundle_rule(rule)
-        uses_explicit_batch_prompt_slots = _uses_explicit_batch_prompt_slots(rule)
-        if not uses_prompt_bundle or uses_explicit_batch_prompt_slots:
+        bundle_prompt_slots_source = _bundle_prompt_slots_source(rule)
+        if not uses_prompt_bundle or bundle_prompt_slots_source:
             rule = _rule_with_rotated_prompt_slots(rule, rule_occurrence_no=rule_occurrence_no)
         if not uses_prompt_bundle:
             rule = _rule_with_rotated_variation_slots(rule, rule_occurrence_no=rule_occurrence_no)
@@ -983,13 +983,13 @@ class ContentCommentBatchService:
             plan["output_format_mode"] = output_config["mode"]
             plan["expansion_count"] = output_config["count"]
         for key in ("prompt_slots", "comment_prompt_slots", "preselected_prompt_slots"):
-            if (not uses_prompt_bundle or uses_explicit_batch_prompt_slots) and rule.get(key):
+            if (not uses_prompt_bundle or bundle_prompt_slots_source) and rule.get(key):
                 plan[key] = rule.get(key)
         for key in ("variation_slots", "preselected_variation_slots"):
             if not uses_prompt_bundle and rule.get(key):
                 plan[key] = rule.get(key)
-        if uses_explicit_batch_prompt_slots:
-            plan["bundle_prompt_slots_source"] = "batch_override"
+        if bundle_prompt_slots_source:
+            plan["bundle_prompt_slots_source"] = bundle_prompt_slots_source
         return plan
 
     def _selected_prompt_examples(self, rule: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
@@ -2204,12 +2204,11 @@ def _uses_comment_prompt_bundle_rule(rule: dict[str, Any]) -> bool:
     )
 
 
-def _uses_explicit_batch_prompt_slots(rule: dict[str, Any]) -> bool:
-    return (
-        _uses_comment_prompt_bundle_rule(rule)
-        and str(rule.get("bundle_prompt_slots_source") or "").strip() == "batch_override"
-        and isinstance(rule.get("prompt_slots"), dict)
-    )
+def _bundle_prompt_slots_source(rule: dict[str, Any]) -> str | None:
+    if not _uses_comment_prompt_bundle_rule(rule) or not isinstance(rule.get("prompt_slots"), dict):
+        return None
+    source = str(rule.get("bundle_prompt_slots_source") or "").strip()
+    return source if source in {"batch_override", "rule_asset"} else None
 
 
 def _normalize_comment_prompt_slots_override(
