@@ -1,4 +1,4 @@
-"""LLM quality review for Wangyue product-experience UGC articles."""
+"""Versioned LLM business-usability review for Wangyue and Chunyue UGC articles."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -8,6 +8,11 @@ from typing import Any
 
 from app.services.executor_invocation_service import call_direct_llm_text
 from app.services.product_experience_phrase_guard_service import ProductExperiencePhraseReview
+
+
+CHUNYUE_ARTICLE_ASSET_KEY = "chunyue_v2_painpoint_sellingpoint_article_rules"
+CHUNYUE_REVIEW_RUBRIC_CODE = "chunyue_business_usability_v1"
+WANGYUE_REVIEW_RUBRIC_CODE = "wangyue_product_experience_v1"
 
 
 @dataclass(slots=True)
@@ -32,6 +37,8 @@ class ProductExperienceLLMReview:
     human_realness: int = 3
     overall_reason: str = ""
     raw_response: str = ""
+    review_rubric_code: str = ""
+    review_attempts: int = 1
 
     def model_dump(self) -> dict[str, Any]:
         data = asdict(self)
@@ -53,26 +60,51 @@ class ProductExperienceLLMReviewService:
     ) -> ProductExperienceLLMReview:
         plan = plan or {}
         model_config = _review_model_config(plan)
-        response = await call_direct_llm_text(
-            model_config=model_config,
-            system_prompt=_SYSTEM_PROMPT,
-            user_prompt=_user_prompt(
-                title=title,
-                body=body,
-                plan=plan,
-                phrase_review=phrase_review,
-                ai_flavor_review=ai_flavor_review,
-            ),
-            temperature=0.1,
-            max_tokens=1200,
+        system_prompt = _review_system_prompt(plan)
+        review_max_tokens = (
+            2400
+            if str(plan.get("asset_key") or "") == CHUNYUE_ARTICLE_ASSET_KEY
+            else 1200
         )
-        review = parse_product_experience_llm_review(str(response or ""))
-        return _calibrate_review_with_context(
+        user_prompt = _user_prompt(
+            title=title,
+            body=body,
+            plan=plan,
+            phrase_review=phrase_review,
+            ai_flavor_review=ai_flavor_review,
+        )
+
+        async def invoke() -> str:
+            return str(
+                await call_direct_llm_text(
+                    model_config=model_config,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=0.1,
+                    max_tokens=review_max_tokens,
+                )
+                or ""
+            )
+
+        attempts = 1
+        response = await invoke()
+        try:
+            review = parse_product_experience_llm_review(response)
+        except (json.JSONDecodeError, ValueError):
+            if str(plan.get("asset_key") or "") != CHUNYUE_ARTICLE_ASSET_KEY:
+                raise
+            attempts = 2
+            response = await invoke()
+            review = parse_product_experience_llm_review(response)
+        review = _calibrate_review_with_context(
             review,
             title=title,
             body=body,
             phrase_review=phrase_review,
         )
+        review.review_rubric_code = _review_rubric_code(plan)
+        review.review_attempts = attempts
+        return review
 
 
 def parse_product_experience_llm_review(raw_response: str) -> ProductExperienceLLMReview:
@@ -262,6 +294,18 @@ def _review_model_config(plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _review_rubric_code(plan: dict[str, Any]) -> str:
+    if str(plan.get("asset_key") or "") == CHUNYUE_ARTICLE_ASSET_KEY:
+        return CHUNYUE_REVIEW_RUBRIC_CODE
+    return WANGYUE_REVIEW_RUBRIC_CODE
+
+
+def _review_system_prompt(plan: dict[str, Any]) -> str:
+    if str(plan.get("asset_key") or "") == CHUNYUE_ARTICLE_ASSET_KEY:
+        return _CHUNYUE_SYSTEM_PROMPT
+    return _SYSTEM_PROMPT
+
+
 def _user_prompt(
     *,
     title: str | None,
@@ -286,12 +330,21 @@ def _user_prompt(
             "painpoint",
             "selling_point",
             "corpus",
+            "content_direction",
+            "selling_painpoint_expression",
+            "selling_painpoint_expression_source_row_no",
+            "variation_slots",
         )
         if plan.get(key) is not None
     }
     return json.dumps(
         {
-            "task": "review_wangyue_ugc_product_naturalness",
+            "task": (
+                "review_chunyue_ugc_business_usability"
+                if str(plan.get("asset_key") or "") == CHUNYUE_ARTICLE_ASSET_KEY
+                else "review_wangyue_ugc_product_naturalness"
+            ),
+            "review_rubric_code": _review_rubric_code(plan),
             "title": title or "",
             "body": body or "",
             "plan": compact_plan,
@@ -562,4 +615,45 @@ _SYSTEM_PROMPT = """你是中文小红书母婴 UGC 内容质检员，专门判�
 }
 
 打分要求：低分用于解释风险，不自动等于 rewrite。只有产品出现自然度、人味、产品价值或风险项显示“不改不能用”时才 rewrite；decision_chain_fit 单项低分通常只给 minor 或批量分布提醒。不要给明显广告链路打 5 分。
+"""
+
+
+_CHUNYUE_SYSTEM_PROMPT = """你只审核皇家美素佳儿莼悦强种草 UGC 的业务可用性。审核标准版本：chunyue_business_usability_v1。
+
+输入 plan.selling_painpoint_expression 是本篇已确认的原始卖点痛点事实，审核时把它作为可核验产品事实的唯一依据。允许自然转述、拆开表达，也允许穿插渠道、时间、地点、动作和心情。
+
+必须遵守以下人工校准边界：
+1. 只拦新增或改变的可核验产品事实，包括认证、成分、数字、周期、作用机制、具体孩子变化、明确前后对比或因果。正文新增“奶源知根知底”但原始表达只写“自家牧场”，属于 product_fact_expansion，判 hard / hold_out。
+   - 审核时必须先把正文里的产品属性逐项和 selling_painpoint_expression 对照，不能用常识替原始素材补全事实。
+   - “自家牧场”只说明牧场归属或关系，不等于“奶源知根知底”；后者额外增加了奶源可追溯/透明这一产品属性。只要正文出现“奶源知根知底”而原始表达没有同义事实，CYU-001 必须判 hard / hold_out / product_fact_expansion。
+2. 抽象、不可量化的使用感受可以自然外扩，例如“现在喝着挺安稳”“宝宝喝得挺顺口”“我也放心了”。不能仅因这些话不在原始表达中判事实外扩。
+   - 抽象感受指人的心情、笼统体验或不可核验评价；“奶源知根知底”描述的是产品或奶源属性，不属于抽象感受。
+3. UGC 本来就是种草文。标题允许在原始事实基础上强化主观效果判断，例如“焦虑终结者”“让敏敏宝宝安心”；不能仅因标题强种草、带效果感就判 rewrite 或 hold_out。
+4. 不强制文章完成“最终选择/购买莼悦”的闭环。只要自然建立了与莼悦的产品关系，停在被推荐、了解到、记下来或继续关注都可以；不能因没有下单或明确选择动作判问题。
+5. 原始表达中的强因果、产品事实和效果已经业务确认，不主动降调，不因为表达力度强就判风险。
+6. 像“就靠这个依据确认的”这种直接复述任务字段、审核字段或内容方向的话，属于 brief_translation_tone；事实和种草内核成立时判 minor / light_fix_usable，不要整篇否定。
+7. 如果把产品事实写成罐身、包装、标签、说明或配料表上的文字，或发生主体归因错误、价格负向、医疗治疗、绝对保证，按实际严重程度判 rewrite/hard。
+
+业务入池三档：
+- direct_pool：可直接入池。允许强种草标题、抽象使用感受和不完整购买链路。
+- light_fix_usable：事实正确、种草内核成立，只有局部任务复述、病句或轻微表达问题。
+- hold_out：新增/改变可核验产品事实，或存在医疗、保证、价格负向、主体归因等硬问题。
+
+输出严格 JSON，不要 Markdown：
+{
+  "pass": true,
+  "rewrite_required": false,
+  "severity": "pass|minor|rewrite|hard",
+  "business_usability_tier": "direct_pool|light_fix_usable|hold_out",
+  "business_usability_reason": "按莼悦 v1 标准说明",
+  "issues": [
+    {
+      "code": "product_fact_expansion|brief_translation_tone|source_attribution_error|price_negative|claim_risk|other",
+      "evidence": "原文片段",
+      "reason": "为什么命中",
+      "rewrite_direction": "最小修改方向"
+    }
+  ],
+  "overall_reason": "一句话总结"
+}
 """

@@ -1,0 +1,160 @@
+{
+  "dataset_code": "chunyue_review_gold_v1",
+  "slice": "business_usability_v1",
+  "review_rubric_code": "chunyue_business_usability_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-19",
+  "description": "莼悦强种草 UGC 人工业务校准金标。可核验产品事实受本篇原始表达约束，抽象使用感受、强种草标题和不完整购买链路允许通过。",
+  "labels": ["direct_pool", "light_fix_usable", "hold_out"],
+  "label_semantics": {
+    "direct_pool": "可直接入池。允许强种草标题、抽象使用感受和不完整购买链路。",
+    "light_fix_usable": "事实与种草内核成立，只有局部任务复述、病句或轻微表达问题。",
+    "hold_out": "新增或改变可核验产品事实，或存在医疗、保证、价格负向、主体归因等硬问题。"
+  },
+  "rubric": [
+    "本篇 selling_painpoint_expression 是认证、成分、数字、周期、作用机制、具体孩子变化和明确因果的唯一事实依据；允许自然转述和拆开表达。",
+    "新增‘奶源知根知底’这类可核验产品事实时判 hold_out；原始表达中的强因果和效果已经业务确认，不主动降调。",
+    "‘现在喝着挺安稳’‘宝宝喝得挺顺口’等抽象、不可量化的使用感受可以自然外扩，不按事实漂移处理。",
+    "标题允许‘焦虑终结者’‘让敏敏宝宝安心’等主观效果强化和强种草表达，不仅因力度强而降级。",
+    "不强制正文完成最终选择或购买莼悦；停在被推荐、了解到、记下来或继续关注均可直接入池。",
+    "‘就靠这个依据确认的’等直接复述任务字段或内容方向的表达判 light_fix_usable，不整篇否定。"
+  ],
+  "items": [
+    {
+      "title": "荷兰自家牧场，让我安心选莼悦",
+      "content": "每次给娃冲奶，我都会想起皇家美素佳儿多年的荷兰自家牧场。那天在货架前对比，看到这个卖点，一下就戳中我了。自家牧场，奶源知根知底，感觉特别踏实。果断选了莼悦，宝宝喝得挺顺口，我也放心了。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "皇家美素佳儿多年的荷兰自家牧场"
+      },
+      "meta": {
+        "case_code": "CYU-001",
+        "expected_label": "hold_out",
+        "issue_code": "product_fact_expansion",
+        "evidence": ["奶源知根知底"],
+        "reason": "‘奶源知根知底’是原始表达未提供的可核验奶源事实；‘宝宝喝得挺顺口’属于允许的抽象使用感受。",
+        "source": "batch_704_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "verifiable_fact_expansion", "source_type": "human_feedback"}
+    },
+    {
+      "title": "导购一句话，我选了莼悦",
+      "content": "在母婴店转悠半天，导购问我平时选奶最怕啥。我盯着货架发愣，她说莼悦的牧场压根不用人工激素，奶牛更健康，产出来的奶源更安全。回家路上越想越觉得对，当妈的图的不就是这点踏实么。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "不使用人工激素，奶牛更健康，奶源更安全"
+      },
+      "meta": {
+        "case_code": "CYU-002",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["牧场压根不用人工激素", "奶牛更健康", "奶源更安全"],
+        "reason": "自然转述未改变原始产品事实。",
+        "source": "batch_704_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "natural_fact_rephrase", "source_type": "human_feedback"}
+    },
+    {
+      "title": "朋友聊到的有机奶粉选择",
+      "content": "今天跟朋友聊起选奶粉，她特别强调要有机牧场保证的。正发愁呢，她顺手推荐了莼悦，说是欧盟认证的有机产品，我赶紧拿手机记下来。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "要有机牧场保证的，莼悦是欧盟认证的有机产品"
+      },
+      "meta": {
+        "case_code": "CYU-003",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["我赶紧拿手机记下来"],
+        "reason": "不要求文章必须完成最终选择或购买闭环。",
+        "source": "batch_704_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "purchase_closure_not_required", "source_type": "human_feedback"}
+    },
+    {
+      "title": "双重有机认证让我选了莼悦",
+      "content": "最近给娃选奶粉，刷到好多推荐。对比一圈，发现莼悦有欧盟和中国双重有机认证，这可是欧盟认证的有机产品！一下子放心了。果断下单莼悦。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "欧盟认证的有机产品，欧盟和中国双重有机认证的有机奶粉"
+      },
+      "meta": {
+        "case_code": "CYU-004",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["欧盟和中国双重有机认证", "欧盟认证的有机产品"],
+        "reason": "产品事实来自原始表达，强种草选择动作允许。",
+        "source": "batch_704_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "confirmed_strong_fact", "source_type": "human_feedback"}
+    },
+    {
+      "title": "草地上的奶源选择",
+      "content": "带娃在小区草坪玩，看他趴着闻青草香，忽然想起选奶粉也该这么纯粹。后来了解莼悦，因为不使用化肥、农药，牧场环境纯天然，奶源才更干净。就冲这份自然干净，我直接确认了莼悦。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "因为不使用化肥，农药，所以牧场环境纯天然，奶源才更干净"
+      },
+      "meta": {
+        "case_code": "CYU-005",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["不使用化肥、农药", "牧场环境纯天然", "奶源才更干净"],
+        "reason": "原始表达中的强因果已经业务确认，可以保留。",
+        "source": "batch_704_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "source_strong_causality_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "群聊一句话让我选了莼悦",
+      "content": "昨天在妈妈群闲聊，有姐妹说莼悦的奶牛不吃任何转基因饲料，所以奶质更有机。我本来还在纠结选哪个牌子，听到这个心里一下踏实了。后来就给宝宝选了莼悦。就靠这个依据确认的。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "奶牛不吃任何转基因饲料，所以奶质更有机"
+      },
+      "meta": {
+        "case_code": "CYU-006",
+        "expected_label": "light_fix_usable",
+        "issue_code": "brief_translation_tone",
+        "evidence": ["就靠这个依据确认的"],
+        "reason": "产品事实和种草内核成立，只有任务复述式收尾需要局部轻修。",
+        "source": "batch_704_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "task_recap_light_fix", "source_type": "human_feedback"}
+    },
+    {
+      "title": "被家长一句话种草了莼悦",
+      "content": "带娃在小区遛弯，听到别的家长随口说莼悦是欧盟和中国双重有机认证的有机产品。我家宝宝口粮我一直很纠结，有机的才放心。回家就查了查，确认属实，果断选了莼悦。现在喝着挺安稳。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "欧盟和中国双重有机认证的有机产品"
+      },
+      "meta": {
+        "case_code": "CYU-007",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["现在喝着挺安稳"],
+        "reason": "抽象、不可量化的使用感受允许自然外扩。",
+        "source": "batch_704_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "abstract_usage_feeling_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "选奶焦虑终结者？莼悦让敏敏宝宝安心",
+      "content": "每次冲奶都盯着粉勺，生怕一点点化学残留害了宝宝。尤其担心引起敏敏或者早熟，选来选去最终还是选了莼悦。现在敏敏宝宝喝了之后很少出现敏敏情况，老母亲悬着的心总算可以放一放。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "担心奶粉中有化学残留，怕影响宝宝发育或引起敏敏、早熟，敏敏宝宝喝了之后很少出现敏敏情况"
+      },
+      "meta": {
+        "case_code": "CYU-008",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["焦虑终结者", "让敏敏宝宝安心"],
+        "reason": "UGC 标题允许在原始事实基础上增加主观效果判断和强种草表达。",
+        "source": "batch_704_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "strong_seeding_title_allowed", "source_type": "human_feedback"}
+    }
+  ]
+}

@@ -42,6 +42,7 @@ from app.services.product_experience_phrase_guard_service import (
     should_review_product_experience,
 )
 from app.services.product_experience_llm_review_service import (
+    CHUNYUE_ARTICLE_ASSET_KEY,
     ProductExperienceLLMIssue,
     ProductExperienceLLMReview,
     ProductExperienceLLMReviewService,
@@ -2785,6 +2786,8 @@ class ContentBatchExecutionService:
             "rewrite_required": review.rewrite_required,
             "mark_rewrite_required": should_mark_rewrite,
             "severity": review.severity,
+            "review_rubric_code": review.review_rubric_code,
+            "review_attempts": review.review_attempts,
             "business_usability_tier": review.business_usability_tier,
             "business_usability_reason": review.business_usability_reason,
             "issues": [issue.code for issue in review.issues],
@@ -4753,12 +4756,17 @@ def _is_ai_flavor_title_only_review(review: AIFlavorReview) -> bool:
 
 def _should_review_product_experience_llm_quality(plan: dict[str, Any] | None) -> bool:
     plan = plan or {}
+    asset_key = str(plan.get("asset_key") or "")
+    if asset_key == CHUNYUE_ARTICLE_ASSET_KEY:
+        return True
     if not should_review_product_experience(plan):
         return False
     if plan.get("product_experience_llm_review_enabled") is True:
         return True
-    asset_key = str(plan.get("asset_key") or "")
-    return "wangyue_painpoint_selling_posttype_matrix" in asset_key or asset_key.startswith("wangyue_")
+    return (
+        "wangyue_painpoint_selling_posttype_matrix" in asset_key
+        or asset_key.startswith("wangyue_")
+    )
 
 
 def _should_rewrite_product_experience_llm_quality(
