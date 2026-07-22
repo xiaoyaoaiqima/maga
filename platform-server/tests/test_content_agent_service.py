@@ -4,6 +4,7 @@ import pytest_asyncio
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.core.content_agent_defaults import DEFAULT_CONTENT_GENERATION_SYSTEM_PROMPT
 from app.models.base import Base
 from app.models.content_agent import ContentAgentRun, ContentAgentTask
 from app.schemas.content_agent import (
@@ -80,6 +81,34 @@ async def test_claim_task_returns_none_when_no_pending_task_matches_capability(d
     )
 
     assert claim is None
+
+
+@pytest.mark.asyncio
+async def test_task_snapshot_exposes_effective_generation_system_prompt(db_session):
+    service = ContentAgentService(db_session)
+    default_task = await service.create_task(
+        ContentAgentTaskCreate(
+            task_type="content_generate",
+            input_snapshot={"model_config": {}, "rendered_prompt": "用户提示词"},
+        )
+    )
+    custom_task = await service.create_task(
+        ContentAgentTaskCreate(
+            task_type="content_generate",
+            input_snapshot={
+                "model_config": {"system_prompt": "自定义 system prompt"},
+                "rendered_prompt": "用户提示词",
+            },
+        )
+    )
+
+    default_snapshot = await service.get_task_snapshot(default_task.id)
+    custom_snapshot = await service.get_task_snapshot(custom_task.id)
+
+    assert default_snapshot is not None
+    assert default_snapshot.system_prompt == DEFAULT_CONTENT_GENERATION_SYSTEM_PROMPT
+    assert custom_snapshot is not None
+    assert custom_snapshot.system_prompt == "自定义 system prompt"
 
 
 @pytest.mark.asyncio

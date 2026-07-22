@@ -45,7 +45,6 @@ WANGYUE_STATIC_FORBIDDEN_TERMS = [
     "脾胃",
     "天然",
     "儿保",
-    "抵抗力",
     "宝宝",
     "宝妈",
     "自护力",
@@ -424,7 +423,8 @@ class ForbiddenTermReviewService:
 def find_forbidden_hits(text: str, terms: list[str] | None = None) -> list[str]:
     hits: list[str] = []
     checked_text = _mask_allowed_proprietary_terms(text)
-    for term in terms or STATIC_FORBIDDEN_TERMS:
+    terms_to_check = STATIC_FORBIDDEN_TERMS if terms is None else terms
+    for term in terms_to_check:
         if term and term in checked_text and term not in hits:
             hits.append(term)
     # 重叠禁词需要先处理长词，避免兜底清理时短词先删掉后留下怪碎片。
@@ -440,6 +440,8 @@ def _business_entry_matches(text: str, entry: dict[str, Any]) -> bool:
         return _matches_activity_prize_context(text, term)
     if match_mode == "detection_page_context":
         return _matches_detection_page_context(text, term)
+    if match_mode == "registration_required_context":
+        return _matches_registration_required_context(text, term)
     if match_mode == "risk_polarity_context":
         return _matches_risk_polarity_context(text, term)
     return True
@@ -489,6 +491,20 @@ def _matches_activity_prize_context(text: str, term: str) -> bool:
 def _matches_detection_page_context(text: str, term: str) -> bool:
     for sentence in re.split(r"[\n。！？!?；;]", text):
         if term in sentence and any(marker in sentence for marker in ("每批", "批批", "检测")):
+            return True
+    return False
+
+
+def _matches_registration_required_context(text: str, term: str) -> bool:
+    allowed_no_registration_pattern = re.compile(
+        rf"(?:不用|无需|不需要|不必|免)(?:先)?{re.escape(term)}"
+        rf"|{re.escape(term)}(?:并)?(?:不需要|不是必须|非必须)"
+    )
+    for sentence in re.split(r"[\n。！？!?；;]", text):
+        if term not in sentence:
+            continue
+        remaining = allowed_no_registration_pattern.sub("", sentence)
+        if term in remaining:
             return True
     return False
 
@@ -573,7 +589,11 @@ def _mask_allowed_proprietary_terms(text: str) -> str:
 def _static_forbidden_terms_for_asset(asset_key: str | None) -> list[str]:
     terms = list(STATIC_FORBIDDEN_TERMS)
     if asset_key == A2_REIYU_UGC_POST_ASSET_KEY:
-        terms = [term for term in terms if term not in STATIC_MEDICAL_FORBIDDEN_TERMS]
+        terms = [
+            term
+            for term in terms
+            if term not in STATIC_MEDICAL_FORBIDDEN_TERMS and term != "肠胃"
+        ]
     if _is_wangyue_asset(asset_key):
         terms.extend(WANGYUE_STATIC_FORBIDDEN_TERMS)
     return terms
@@ -581,6 +601,8 @@ def _static_forbidden_terms_for_asset(asset_key: str | None) -> list[str]:
 
 def _static_forbidden_replacements_for_asset(asset_key: str | None) -> dict[str, str]:
     replacements = dict(STATIC_FORBIDDEN_REPLACEMENTS)
+    if asset_key == A2_REIYU_UGC_POST_ASSET_KEY:
+        replacements.pop("肠胃", None)
     if _is_wangyue_asset(asset_key):
         replacements.update(WANGYUE_STATIC_FORBIDDEN_REPLACEMENTS)
     return replacements
@@ -792,6 +814,8 @@ def _remove_or_replace_forbidden_terms(value: str, hits: list[str], replacements
     text = value
     removed_term = False
     for term in hits:
+        if term not in text:
+            continue
         replacement = replacements.get(term, "")
         removed_term = removed_term or not replacement
         text = text.replace(term, replacement)

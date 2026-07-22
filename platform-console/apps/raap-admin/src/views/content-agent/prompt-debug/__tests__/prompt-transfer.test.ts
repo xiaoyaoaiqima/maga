@@ -16,22 +16,28 @@ function createStorage() {
 describe('prompt debug transfer', () => {
   it('stores and restores the complete prompt without putting it in the URL', () => {
     const storage = createStorage();
-    const prompt = '系统要求\n\n完整生文 Prompt';
+    const payload = {
+      max_tokens: 256,
+      model_code: 'deepseek-v4-flash',
+      prompt: '完整生文 Prompt',
+      system_prompt: '系统要求',
+      temperature: 0.85,
+    };
 
-    const key = savePromptDebugTransfer(prompt, storage);
+    const key = savePromptDebugTransfer(payload, storage);
 
     expect(key).toMatch(/^content-agent-prompt-debug:/);
-    expect(loadPromptDebugTransfer(key, storage)).toBe(prompt);
+    expect(loadPromptDebugTransfer(key, storage)).toEqual(payload);
   });
 
   it('ignores missing or invalid transfer data', () => {
     const storage = createStorage();
     storage.setItem('content-agent-prompt-debug:broken', '{');
 
-    expect(loadPromptDebugTransfer(undefined, storage)).toBe('');
-    expect(loadPromptDebugTransfer('other-key', storage)).toBe('');
+    expect(loadPromptDebugTransfer(undefined, storage)).toBeNull();
+    expect(loadPromptDebugTransfer('other-key', storage)).toBeNull();
     expect(
       loadPromptDebugTransfer('content-agent-prompt-debug:broken', storage),
-    ).toBe('');
+    ).toBeNull();
   });
 });

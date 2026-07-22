@@ -2114,6 +2114,12 @@ def _final_postprocess_state(quality: dict[str, Any] | None) -> dict[str, Any]:
         "product_experience_llm_review"
     )
     _append_blocking_review_reason(reasons, rewrite_reasons, "product_experience_llm_quality_review", llm_review)
+    _append_blocking_review_reason(
+        reasons,
+        rewrite_reasons,
+        "a2_reiyu_old_can_guard",
+        quality.get("a2_reiyu_old_can_guard") or review_report.get("a2_reiyu_old_can_guard"),
+    )
 
     focused_review = quality.get("wangyue_focused_pipeline_review") or review_report.get(
         "wangyue_focused_pipeline_review"
@@ -2236,6 +2242,12 @@ def _bool_label(value: bool | None) -> str:
 
 
 def _business_usability_from_quality(quality: dict[str, Any]) -> dict[str, str | None]:
+    old_can_guard = quality.get("a2_reiyu_old_can_guard")
+    if isinstance(old_can_guard, dict) and old_can_guard.get("pass") is False:
+        return {
+            "tier": "hold_out",
+            "reason": str(old_can_guard.get("reason") or "旧罐或家庭现有库存被暗示可参加本次集罐。"),
+        }
     review = quality.get("product_experience_llm_quality_review")
     if not isinstance(review, dict):
         return {"tier": None, "reason": None}

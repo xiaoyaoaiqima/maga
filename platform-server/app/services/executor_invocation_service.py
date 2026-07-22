@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from app.core.content_agent_defaults import DEFAULT_CONTENT_GENERATION_SYSTEM_PROMPT
 from app.utils.model_config import ensure_chat_completions_endpoint, normalize_default_model
 
 PROTOCOL_VERSION = "0.1"
@@ -462,7 +463,7 @@ async def _direct_content_generate(input_payload: dict[str, Any]) -> dict[str, A
     max_tokens = _int_or_none(model_config.get("max_tokens"))
     system = str(
         model_config.get("system_prompt")
-        or "你是中文小红书内容生成器，严格按用户提示输出，不解释过程。"
+        or DEFAULT_CONTENT_GENERATION_SYSTEM_PROMPT
     )
     prompt = str(input_payload.get("rendered_prompt") or "").strip() or _fallback_rendered_prompt(input_payload)
     output, meta = await _direct_generate_with_empty_retry(

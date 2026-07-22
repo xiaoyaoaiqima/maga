@@ -131,7 +131,9 @@ async def test_prompt_debug_run_returns_readable_model_error(monkeypatch):
     async def fake_model_config(_db, *, model_code):
         return {"model_code": model_code}
 
-    async def fake_call_direct_llm(**_kwargs):
+    async def fake_call_direct_llm(**kwargs):
+        assert kwargs["temperature"] == 0.9
+        assert kwargs["max_tokens"] == 1500
         raise RuntimeError("未配置 API Key，无法调用模型")
 
     monkeypatch.setattr(content_agent, "_prompt_debug_model_config", fake_model_config)
@@ -161,6 +163,7 @@ async def test_prompt_debug_run_returns_readable_model_error(monkeypatch):
     assert payload["data"]["run_group_id"] == "group-failed"
     history = app.state.prompt_debug_db.records[0]
     assert history.success is False
+    assert history.temperature == 0.9
     assert history.error_message == "未配置 API Key，无法调用模型"
 
 

@@ -260,7 +260,7 @@ async def run_prompt_debug(
             model_config=await _prompt_debug_model_config(db, model_code=request.model_code),
             system_prompt=request.system_prompt or "",
             user_prompt=request.prompt,
-            temperature=request.temperature if request.temperature is not None else 0.7,
+            temperature=request.temperature if request.temperature is not None else 0.9,
             max_tokens=request.max_tokens if request.max_tokens is not None else 1500,
         )
     except Exception as exc:

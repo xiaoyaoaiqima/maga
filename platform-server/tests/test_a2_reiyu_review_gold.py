@@ -245,6 +245,7 @@ def test_a2_reiyu_business_allowlist_keeps_user_confirmed_passes() -> None:
         "A2RY-BA-008",
         "A2RY-BA-009",
         "A2RY-BA-010",
+        "A2RY-BA-011",
     }
     assert all(item["meta"]["expected_label"] == "pass" for item in items.values())
 
@@ -318,10 +319,12 @@ def test_a2_reiyu_business_allowlist_allows_negated_risk_wording() -> None:
     rubric = "\n".join(payload["rubric"])
     items = {item["meta"]["case_code"]: item for item in payload["items"]}
 
-    assert "‘闭眼入不踩雷’‘选对了没踩雷’" in rubric
+    assert "‘闭眼入不踩雷’‘转奶没翻车’" in rubric
     assert "明确负面经历才处理" in rubric
     assert "闭眼入不踩雷" in items["A2RY-BA-010"]["content"]
     assert items["A2RY-BA-010"]["meta"]["expected_label"] == "pass"
+    assert "转奶那会儿没翻车" in items["A2RY-BA-011"]["content"]
+    assert items["A2RY-BA-011"]["meta"]["expected_label"] == "pass"
 
 
 def test_a2_reiyu_activity_mechanism_gold_keeps_approved_boundary() -> None:
@@ -351,6 +354,8 @@ def test_a2_reiyu_activity_mechanism_gold_keeps_approved_boundary() -> None:
         "A2RY-AM-015",
         "A2RY-AM-016",
         "A2RY-AM-017",
+        "A2RY-AM-018",
+        "A2RY-AM-019",
     }
 
 
@@ -388,6 +393,8 @@ def test_a2_reiyu_activity_mechanism_rejects_confirmed_fact_errors() -> None:
     assert items["A2RY-AM-015"]["meta"]["expected_label"] == "reject"
     assert items["A2RY-AM-016"]["meta"]["expected_label"] == "light_fix"
     assert items["A2RY-AM-017"]["meta"]["expected_label"] == "reject"
+    assert items["A2RY-AM-018"]["meta"]["expected_label"] == "reject"
+    assert items["A2RY-AM-019"]["meta"]["expected_label"] == "pass"
 
 
 def test_a2_reiyu_activity_mechanism_keeps_confirmed_review_passes() -> None:
@@ -419,6 +426,10 @@ def test_a2_reiyu_activity_mechanism_covers_new_backup_batch_boundaries() -> Non
     )
     assert items["A2RY-AM-017"]["meta"]["issue_code"] == "fabricated_points_reward"
     assert "小玩具、绘本、奶粉周边" in items["A2RY-AM-017"]["content"]
+    assert items["A2RY-AM-018"]["meta"]["issue_code"] == "old_can_eligibility_implied"
+    assert "家里刚囤了一箱" in items["A2RY-AM-018"]["content"]
+    assert items["A2RY-AM-019"]["meta"]["expected_label"] == "pass"
+    assert "活动期间买完后扫罐码累计" in items["A2RY-AM-019"]["content"]
 
 
 def test_a2_reiyu_source_stacking_gold_rejects_three_discovery_sources() -> None:

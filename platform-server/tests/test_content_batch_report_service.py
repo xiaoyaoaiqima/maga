@@ -179,6 +179,31 @@ def test_article_pool_export_uses_final_postprocess_state():
     assert _article_pool_item_exportable(item) is False
 
 
+def test_article_pool_export_blocks_a2_old_can_guard_failure():
+    item = ContentBatchReportItem(
+        item_id=1,
+        item_no=1,
+        status="generated",
+        title="集罐活动",
+        body="家里刚囤了一箱，集3罐就能换小车车。",
+        hard_pass=True,
+        rewrite_required=False,
+        quality={
+            "hard_pass": True,
+            "review_report": {"rewrite_required": False},
+            "a2_reiyu_old_can_guard": {
+                "pass": False,
+                "rewrite_required": False,
+                "severity": "hard",
+                "business_usability_tier": "hold_out",
+                "issue_code": "old_can_eligibility_error",
+            },
+        },
+    )
+
+    assert _article_pool_item_exportable(item) is False
+
+
 def test_article_pool_export_allows_wangyue_v2_llm_review_unavailable_mark_only():
     item = ContentBatchReportItem(
         item_id=1,

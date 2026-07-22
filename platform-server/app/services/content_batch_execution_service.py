@@ -19,6 +19,7 @@ from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.content_rewrite_context import rewrite_business_rule_context
 from app.services.executor_invocation_service import ExecutorInvocationClient
 from app.services.activity_quality_guard_service import ActivityQualityGuardService
+from app.services.a2_reiyu_old_can_guard_service import review_a2_reiyu_old_can_eligibility
 from app.services.ai_flavor_humanizer_service import AIFlavorReview, review_ai_flavor
 from app.services.forbidden_term_review_service import (
     WANGYUE_STATIC_FORBIDDEN_TERMS,
@@ -532,6 +533,7 @@ class ContentBatchExecutionService:
             product_experience_review_step = self._rewrite_product_experience_llm_quality_items
         postprocess_steps = [
             ("a2_reiyu_title_hard_drop", self._drop_a2_reiyu_overlong_titles),
+            ("a2_reiyu_old_can_review", self._review_a2_reiyu_old_can_items),
             ("similarity_watch", self._watch_similar_generated_items),
             ("product_experience_phrase_rewrite", self._rewrite_product_experience_phrase_items),
             ("mouth_phrase_budget_rewrite", self._rewrite_mouth_phrase_budget_items),
@@ -571,6 +573,35 @@ class ContentBatchExecutionService:
             failed_count=failed,
             item_ids=item_ids,
         )
+
+    async def _review_a2_reiyu_old_can_items(self, batch_id: int, job: ContentBatchJob) -> int:
+        if str(job.asset_key or "") != A2_REIYU_ARTICLE_ASSET_KEY:
+            return 0
+
+        async def worker(item_id: int) -> int:
+            async with self.session_factory() as db:
+                item = await self._require_item(db, item_id)
+                if item.status != "generated":
+                    return 0
+                review = review_a2_reiyu_old_can_eligibility(
+                    title=item.title,
+                    body=item.body,
+                    plan=item.plan_json,
+                )
+                payload = review.to_payload()
+                quality = dict(item.quality_json or {})
+                review_report = dict(quality.get("review_report") or {})
+                quality["a2_reiyu_old_can_guard"] = payload
+                review_report["a2_reiyu_old_can_guard"] = payload
+                quality["review_report"] = review_report
+                if not review.pass_:
+                    quality["hard_pass"] = False
+                item.quality_json = quality
+                flag_modified(item, "quality_json")
+                await db.commit()
+                return 0 if review.pass_ else 1
+
+        return await self._run_generated_item_workers(batch_id, worker)
 
     async def review_business_usability_items(
         self,
@@ -5025,7 +5056,13 @@ def _blocking_product_experience_phrase_hits(review: ProductExperiencePhraseRevi
             + review.product_fact_number_drift_hits
             + review.effect_scope_drift_hits
             + review.malformed_fragment_hits
-            + [hit for hit in review.hard_risk_hits if hit.startswith("症状效果证明：")]
+            + [
+                hit
+                for hit in review.hard_risk_hits
+                if hit.startswith(
+                    ("症状效果证明：", "即时单杯硬反转：", "严重竞品拉踩：")
+                )
+            ]
         )
     )
 
@@ -5079,7 +5116,13 @@ def _production_blocking_product_experience_phrase_hits(
             + review.physical_action_carrier_mismatch_hits
             + review.product_fact_number_drift_hits
             + review.malformed_fragment_hits
-            + [hit for hit in review.hard_risk_hits if hit.startswith("症状效果证明：")]
+            + [
+                hit
+                for hit in review.hard_risk_hits
+                if hit.startswith(
+                    ("症状效果证明：", "即时单杯硬反转：", "严重竞品拉踩：")
+                )
+            ]
         )
     )
 

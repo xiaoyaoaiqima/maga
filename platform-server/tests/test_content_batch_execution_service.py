@@ -305,6 +305,170 @@ def test_wangyue_production_phrase_blocker_excludes_semantic_experiment_signal()
     assert any("自己" in hit and ("舀粉" in hit or "冲奶" in hit) for hit in hard_hits)
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        "每天户外疯跑回家累得瘫沙发，有次看他连饭都不想扒拉，给冲了一杯，咕嘟喝完又活蹦乱跳。",
+        "刚到家就累瘫了，我给他冲了一杯旺玥，喝完马上满血复活。",
+    ],
+)
+def test_wangyue_production_phrase_blocker_blocks_instant_single_cup_hard_reversal(body):
+    review = review_product_experience_phrase(
+        title="旺玥日常记录",
+        body=body,
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "正文小于250字。",
+        },
+    )
+
+    assert any(hit.startswith("即时单杯硬反转：") for hit in review.hard_risk_hits)
+    assert "hard_risk_expression" in review.reasons
+    assert any(
+        hit.startswith("即时单杯硬反转：")
+        for hit in _blocking_product_experience_phrase_hits(review)
+    )
+    assert any(
+        hit.startswith("即时单杯硬反转：")
+        for hit in _production_blocking_product_experience_phrase_hits(review)
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "旺玥喝了一段时间后，状态变好，也比以前更能坐住。",
+        "户外回来有点累，我冲了一杯旺玥，孩子喝完坐着休息了一会儿。",
+        "晚饭没吃好，我冲了一杯旺玥，作为日常营养补充。",
+        "累得瘫在沙发上，我冲了一杯旺玥，他喝完后休息了半小时，精神缓过来些。",
+        "我照例冲了一杯旺玥，孩子喝完就去搭积木了。",
+        "累得瘫在沙发上，也不是冲一杯就能满血复活，日常状态还是要慢慢看。",
+        "累得瘫在沙发上，我冲了一杯旺玥，我马上去洗杯子，转头看他活蹦乱跳。",
+    ],
+)
+def test_wangyue_production_phrase_blocker_allows_non_hard_reversal_effects(body):
+    review = review_product_experience_phrase(
+        title="旺玥日常记录",
+        body=body,
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "正文小于250字。",
+        },
+    )
+
+    assert not any(hit.startswith("即时单杯硬反转：") for hit in review.hard_risk_hits)
+    assert _production_blocking_product_experience_phrase_hits(review) == []
+
+
+def test_wangyue_production_phrase_blocker_blocks_severe_competitor_disparagement():
+    review = review_product_experience_phrase(
+        title="从纠结到安心，选奶粉我就认准了这点",
+        body=(
+            "对比了好几个牌子，有的花里胡哨成分多但核心不够，有的钙铁锌偏低。"
+            "旺玥恰好每一项都到位，冲泡后孩子愿意喝。"
+        ),
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "post_type": "对比选择",
+            "corpus": "正文小于250字。",
+        },
+    )
+
+    assert any(hit.startswith("严重竞品拉踩：") for hit in review.hard_risk_hits)
+    assert "hard_risk_expression" in review.reasons
+    assert any(
+        hit.startswith("严重竞品拉踩：")
+        for hit in _blocking_product_experience_phrase_hits(review)
+    )
+    assert any(
+        hit.startswith("严重竞品拉踩：")
+        for hit in _production_blocking_product_experience_phrase_hits(review)
+    )
+
+
+def test_wangyue_production_phrase_blocker_blocks_batch805_competitor_disparagement():
+    review = review_product_experience_phrase(
+        title="选奶粉那次，我停在了钙铁锌",
+        body=(
+            "厨房里熬着汤，我边切菜边回想当初给娃挑奶粉的日子。"
+            "看了好多罐，不是这个缺就是那个少。后来翻到旺玥的成分表，"
+            "钙铁锌和多种营养排得明明白白。"
+        ),
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "post_type": "对比选择",
+            "corpus": "正文小于250字。",
+        },
+    )
+
+    assert any(hit.startswith("严重竞品拉踩：") for hit in review.hard_risk_hits)
+    assert any(
+        hit.startswith("严重竞品拉踩：")
+        for hit in _blocking_product_experience_phrase_hits(review)
+    )
+    assert any(
+        hit.startswith("严重竞品拉踩：")
+        for hit in _production_blocking_product_experience_phrase_hits(review)
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "selling_group"),
+    [
+        (
+            "当初对比了好几个牌子，最后觉得旺玥的钙铁锌和多种维生素更符合我家日常需要。",
+            "营养丰富+营养不足",
+        ),
+        (
+            "吸引我的是旺玥的保护力组合。喝到现在快一年，孩子胃口好，日常跑跳精神足，小体格也扎实了。",
+            "进阶保护力+容易中招",
+        ),
+        (
+            "换旺玥后不用追着补这补那了，营养种类也全。可能真就是那杯奶把缺的都悄悄补齐了吧。",
+            "营养丰富+营养不足",
+        ),
+        (
+            "对比了几款，不是说别的奶粉核心不够，只是我家更看重钙铁锌。",
+            "营养丰富+营养不足",
+        ),
+        (
+            "对比了几款奶粉。孩子之前钙铁锌摄入偏低。最后选了旺玥。",
+            "营养丰富+营养不足",
+        ),
+        (
+            "看了好多罐，最后更看重旺玥的钙铁锌和多种营养。",
+            "营养丰富+营养不足",
+        ),
+        (
+            "看了好多罐，不是说这个缺那个少，只是我家更看重旺玥的钙铁锌。",
+            "营养丰富+营养不足",
+        ),
+    ],
+)
+def test_wangyue_production_phrase_blocker_allows_normal_comparison_and_ugc_effects(
+    body,
+    selling_group,
+):
+    review = review_product_experience_phrase(
+        title="旺玥日常记录",
+        body=body,
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "post_type": "对比选择",
+            "selling_painpoint_group": selling_group,
+            "corpus": "正文小于250字。",
+        },
+    )
+
+    assert not any(hit.startswith("严重竞品拉踩：") for hit in review.hard_risk_hits)
+    assert _production_blocking_product_experience_phrase_hits(review) == []
+
+
 @pytest.mark.asyncio
 async def test_wangyue_production_records_legacy_rewrite_signals_without_model_calls():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -531,6 +695,7 @@ def test_current_wangyue_v3_blocks_concrete_disease_scenarios_but_allows_abstrac
         "医院": "以前三天两头跑医院，后来状态稳了些。",
         "请假": "以前有点小状况就请假，最近状态挺稳。",
         "同伴生病": "去年朋友家娃总生病，她问我怎么选奶粉。",
+        "同伴中招对照": "前阵子一起玩的几个孩子都中招了，就他没事，我暗暗觉得这奶粉选对了。",
     }
     for label, body in blocked_cases.items():
         blocked = review_product_experience_phrase(
@@ -813,6 +978,43 @@ async def test_wangyue_production_forbidden_review_only_applies_exact_replacemen
     assert review["final_hits"] == ["换季"]
     assert review["rewrite_rounds"] == 0
     assert review["rewrite_method"] == "deterministic_replace+model_rewrite_disabled"
+
+
+@pytest.mark.asyncio
+async def test_wangyue_production_keeps_resistance_word_out_of_hard_forbidden_terms():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, tables=[AssetRegistry.__table__])
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    body = "旺玥喝了一段时间，孩子状态变好，感觉抵抗力也上来了。"
+    async with session_factory() as session:
+        service = ForbiddenTermReviewService(session)
+        item = ContentBatchItem(title="最近的小变化", body=body, quality_json={})
+        terms = await service.list_terms(asset_key="wangyue_v3_core_storyline_article_rules")
+        review = await service.review_and_rewrite_item(
+            item=item,
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            orchestrator=None,
+            executor_code=None,
+            content_type="article",
+            allow_model_rewrite=False,
+        )
+
+    phrase_review = review_product_experience_phrase(
+        title=item.title,
+        body=item.body,
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "正文小于250字。",
+        },
+    )
+    assert "抵抗力" not in terms
+    assert review["initial_hits"] == []
+    assert item.body == body
+    assert "抵抗力" in phrase_review.odd_phrase_hits
+    assert _production_blocking_product_experience_phrase_hits(phrase_review) == []
 
 
 @pytest.mark.asyncio
@@ -1168,10 +1370,13 @@ def test_product_experience_phrase_guard_blocks_wangyue_product_fact_number_drif
     assert safe_review.product_fact_number_drift_hits == []
 
 
-def test_product_experience_phrase_guard_keeps_wangyue_sleep_effect_as_watch_only():
+def test_product_experience_phrase_guard_does_not_emit_v3_sleep_effect_scope_signal():
     review = review_product_experience_phrase(
-        title="今天玩得超累，回来倒头就睡",
-        body="结果洗完澡，旺玥喝完后自己爬上床就睡了，一整夜都很安稳。想想这段时间家里一直在喝旺玥，日常活动后的恢复力看得见。",
+        title="换一轮清单，旺玥始终在",
+        body=(
+            "我习惯晚上看书时，顺手给他冲一杯旺玥，喝完他翻个身就睡沉了，"
+            "半夜不翻来覆去。第二天精力满满。"
+        ),
         plan={
             "rule_type": "business_rule",
             "asset_key": "wangyue_v3_core_storyline_article_rules",
@@ -1183,8 +1388,23 @@ def test_product_experience_phrase_guard_keeps_wangyue_sleep_effect_as_watch_onl
     )
 
     assert "effect_scope_drift" not in review.reasons
-    assert any("旺玥喝完后自己爬上床就睡" in hit for hit in review.effect_scope_drift_hits)
+    assert review.effect_scope_drift_hits == []
     assert review.rewrite_required is False
+
+
+def test_product_experience_phrase_guard_keeps_sleep_effect_scope_for_legacy_wangyue_asset():
+    review = review_product_experience_phrase(
+        title="今天玩得超累，回来倒头就睡",
+        body="结果洗完澡，旺玥喝完后自己爬上床就睡了，一整夜都很安稳。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_product_permission_3x10_20260623",
+            "corpus": "0705旺玥活动",
+        },
+    )
+
+    assert any("旺玥喝完后自己爬上床就睡" in hit for hit in review.effect_scope_drift_hits)
+    assert "effect_scope_drift" in review.reasons
 
 
 def test_product_experience_phrase_guard_allows_sleep_as_background_context():
@@ -2076,6 +2296,18 @@ def test_product_experience_phrase_guard_blocks_wangyue_brand_as_handed_object()
     assert "physical_action_carrier_mismatch" not in natural_review.reasons
     assert natural_review.physical_action_carrier_mismatch_hits == []
 
+    prepared_cup_review = review_product_experience_phrase(
+        title="运动后喝一杯",
+        body="有次他满头汗冲进来，我正好冲了杯旺玥递过去，咕嘟咕嘟喝完。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "0705旺玥活动",
+        },
+    )
+    assert "physical_action_carrier_mismatch" not in prepared_cup_review.reasons
+    assert prepared_cup_review.physical_action_carrier_mismatch_hits == []
+
 
 def test_product_experience_phrase_guard_blocks_drink_bag_carrier_artifact():
     review = review_product_experience_phrase(
@@ -2306,6 +2538,36 @@ def test_product_experience_phrase_guard_allows_child_says_tastes_ok():
             "rule_type": "business_rule",
             "asset_key": "wangyue_v3_core_storyline_article_rules",
             "corpus": "正文40-130字。",
+        },
+    )
+
+    assert review.wangyue_child_product_promo_hits == []
+    assert "wangyue_child_product_promo_context" not in review.reasons
+
+
+def test_product_experience_phrase_guard_allows_caregiver_brewing_across_title_body_boundary():
+    review = review_product_experience_phrase(
+        title="孩子的小变化让我惊喜✨",
+        body="今天早晨照例给孩子冲旺玥，看他喝完一杯精神抖擞地跑开。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "正文小于250字。",
+        },
+    )
+
+    assert review.wangyue_child_product_promo_hits == []
+    assert "wangyue_child_product_promo_context" not in review.reasons
+
+
+def test_product_experience_phrase_guard_allows_caregiver_recommendation_after_child_topic():
+    review = review_product_experience_phrase(
+        title="朋友聊孩子营养，我顺势安利旺玥",
+        body="朋友来家里聊起孩子挑食，我说自己选旺玥时主要看钙铁锌和日常营养。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "正文小于250字。",
         },
     )
 
@@ -3585,6 +3847,21 @@ def test_product_experience_phrase_guard_allows_bag_detail_without_product_carri
     assert "wangyue_portable_form_context" not in review.reasons
 
 
+def test_product_experience_phrase_guard_does_not_join_title_and_body_into_portable_context():
+    review = review_product_experience_phrase(
+        title="回家还惦记下次跑？旺玥长肉真香",
+        body="从出门撒欢到回家还念叨要再去，孩子活动量蹭蹭涨。每天冲一杯，小家伙喝得挺顺。",
+        plan={
+            "rule_type": "business_rule",
+            "asset_key": "wangyue_v3_core_storyline_article_rules",
+            "corpus": "正文小于250字。",
+        },
+    )
+
+    assert review.wangyue_portable_form_hits == []
+    assert "wangyue_portable_form_context" not in review.reasons
+
+
 def test_product_experience_phrase_guard_blocks_wangyue_supplement_replacement():
     review = review_product_experience_phrase(
         title="被问儿童奶粉怎么选",
@@ -4249,6 +4526,7 @@ def test_product_experience_phrase_guard_allows_wangyue_effect_when_time_span_ex
         "旺玥一直在喝，最近没怎么请假，精神头也还行。",
         "昨天接娃排队，听前面妈妈说她家又请假了，我家倒是一直全勤，旺玥也一直喝着。",
         "今天一本找不同自己磨了快半小时，比之前坐得住些，旺玥这罐我会继续留着。",
+        "喝旺玥后状态变好，写作业也比之前更能坐住。",
     ]
 
     for body in samples:

@@ -507,33 +507,56 @@ const showGenerationSnapshot = (item: ContentAgentApi.BatchReportItem) => {
   });
 };
 
-const loadGenerationPrompt = async (item: ContentAgentApi.BatchReportItem) => {
+const loadGenerationDebugInput = async (
+  item: ContentAgentApi.BatchReportItem,
+) => {
   let prompt = item.generation_snapshot?.rendered_prompt || '';
-  if (!prompt && item.task_id) {
+  let modelConfig = item.generation_snapshot?.model_config || {};
+  let systemPrompt = String(modelConfig.system_prompt || '');
+  if (item.task_id) {
     promptLoadingTaskId.value = item.task_id;
     try {
       const snapshot = await getContentAgentTaskSnapshotApi(
         item.task_id,
         item.run_id,
       );
-      prompt = snapshot.input?.rendered_prompt || '';
+      prompt = snapshot.input?.rendered_prompt || prompt;
+      modelConfig = snapshot.input?.model_config || modelConfig;
+      systemPrompt = String(
+        snapshot.system_prompt || modelConfig.system_prompt || '',
+      );
     } catch {
       message.error('生成 Prompt 加载失败');
-      return '';
+      return null;
     } finally {
       promptLoadingTaskId.value = null;
     }
   }
   if (!prompt) {
     message.warning('这条历史记录没有保存生成 Prompt');
-    return '';
+    return null;
   }
-  return prompt;
+  return {
+    max_tokens:
+      typeof modelConfig.max_tokens === 'number'
+        ? modelConfig.max_tokens
+        : undefined,
+    model_code:
+      typeof modelConfig.model_code === 'string'
+        ? modelConfig.model_code
+        : undefined,
+    prompt,
+    system_prompt: systemPrompt,
+    temperature:
+      typeof modelConfig.temperature === 'number'
+        ? modelConfig.temperature
+        : undefined,
+  };
 };
 
 const showGenerationPrompt = async (item: ContentAgentApi.BatchReportItem) => {
-  const prompt = await loadGenerationPrompt(item);
-  if (!prompt) return;
+  const debugInput = await loadGenerationDebugInput(item);
+  if (!debugInput) return;
   Modal.info({
     title: `第 ${item.item_no} 条生成 Prompt`,
     width: 980,
@@ -542,21 +565,21 @@ const showGenerationPrompt = async (item: ContentAgentApi.BatchReportItem) => {
         Button,
         {
           size: 'small',
-          onClick: () => copyText(prompt),
+          onClick: () => copyText(debugInput.prompt),
         },
         () => '复制 Prompt',
       ),
-      snapshotTextPre(prompt),
+      snapshotTextPre(debugInput.prompt),
     ]),
     okText: '关闭',
   });
 };
 
 const goToPromptDebug = async (item: ContentAgentApi.BatchReportItem) => {
-  const prompt = await loadGenerationPrompt(item);
-  if (!prompt) return;
+  const debugInput = await loadGenerationDebugInput(item);
+  if (!debugInput) return;
   try {
-    const promptKey = savePromptDebugTransfer(prompt);
+    const promptKey = savePromptDebugTransfer(debugInput);
     await router.push({
       path: '/content-agent/prompt-debug',
       query: { prompt_key: promptKey },

@@ -935,6 +935,7 @@ class AssetService:
         content_json = copy.deepcopy(asset.content_json or {})
         _, item = _find_business_rule_item(content_json, rule_id=rule_id, source_row_no=None)
         current_corpus = str(item.get("corpus") or "")
+        current_content_direction = str(item.get("content_direction") or "")
         current_group = str(item.get("selling_painpoint_group") or "")
         current_inspiration_none_source_row_nos = sorted(
             {
@@ -980,6 +981,10 @@ class AssetService:
             raise ValueError("article business rule generation requirements changed since review")
 
         next_corpus = payload.corpus.strip() if payload.corpus is not None else current_corpus
+        sync_content_direction = payload.corpus is not None and "content_direction" in item
+        next_content_direction = (
+            next_corpus if sync_content_direction else current_content_direction
+        )
         next_group = (
             payload.selling_painpoint_group.strip()
             if payload.selling_painpoint_group is not None
@@ -1015,6 +1020,7 @@ class AssetService:
             raise ValueError("article business rule selling painpoint group cannot be empty")
         if (
             next_corpus == current_corpus
+            and next_content_direction == current_content_direction
             and next_group == current_group
             and next_inspiration_none_source_row_nos == current_inspiration_none_source_row_nos
             and next_inspiration_clue_by_source_row_no == current_inspiration_clue_by_source_row_no
@@ -1038,6 +1044,8 @@ class AssetService:
         ):
             return asset
         item["corpus"] = next_corpus
+        if sync_content_direction:
+            item["content_direction"] = next_content_direction
         item["selling_painpoint_group"] = next_group
         if next_inspiration_none_source_row_nos:
             item["inspiration_none_source_row_nos"] = next_inspiration_none_source_row_nos

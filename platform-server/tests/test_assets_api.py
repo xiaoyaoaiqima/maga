@@ -633,6 +633,7 @@ async def test_update_article_business_rule_fields_versions_corpus_and_group_tog
                                     "rule_id": "business_rule_017",
                                     "source_row_no": 17,
                                     "corpus": old_corpus,
+                                    "content_direction": old_corpus,
                                     "selling_painpoint_group": "进阶保护力+精力不足",
                                     "writing_requirements": ["旧的单条写法覆盖"],
                                     "generation_requirements": ["旧的单条生成覆盖"],
@@ -677,6 +678,7 @@ async def test_update_article_business_rule_fields_versions_corpus_and_group_tog
     assert asset["version_no"] == 2
     item = asset["content_json"]["items"][0]
     assert item["corpus"] == new_corpus
+    assert item["content_direction"] == new_corpus
     assert item["selling_painpoint_group"] == "进阶保护力+精力不足-ugc"
     assert item["inspiration_none_source_row_nos"] == [63, 68]
     assert item["inspiration_clue_by_source_row_no"] == {

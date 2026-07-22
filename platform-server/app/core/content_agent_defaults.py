@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 DEFAULT_EXECUTOR_CODE = "maga_direct_llm_executor"
+DEFAULT_CONTENT_GENERATION_SYSTEM_PROMPT = "你是中文小红书内容生成器，严格按用户提示输出，不解释过程。"
 MAGA_WORKER_PROFILE_NAME = "maga-worker"
 MAGA_WORKER_DISPLAY_NAME = "MAGA direct LLM executor"
 MAGA_WORKER_INVOKE_URL = "llm://direct/content"

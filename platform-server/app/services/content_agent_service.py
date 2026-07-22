@@ -6,6 +6,7 @@ from uuid import uuid4
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.content_agent_defaults import DEFAULT_CONTENT_GENERATION_SYSTEM_PROMPT
 from app.models.content_agent import (
     ContentAgentArtifact,
     ContentAgentEvent,
@@ -188,11 +189,22 @@ class ContentAgentService:
         task = await self.db.get(ContentAgentTask, task_id)
         if not task:
             return None
+        input_snapshot = task.input_snapshot or {}
+        model_config = input_snapshot.get("model_config") if isinstance(input_snapshot, dict) else {}
+        if not isinstance(model_config, dict):
+            model_config = {}
+        system_prompt = None
+        if task.task_type == "content_generate":
+            system_prompt = str(
+                model_config.get("system_prompt")
+                or DEFAULT_CONTENT_GENERATION_SYSTEM_PROMPT
+            )
         return ContentAgentSnapshotResponse(
             task_id=task.id,
             run_id=run_id,
             task_type=task.task_type,
-            input=task.input_snapshot or {},
+            system_prompt=system_prompt,
+            input=input_snapshot,
             asset_refs=task.asset_refs or {},
         )
 

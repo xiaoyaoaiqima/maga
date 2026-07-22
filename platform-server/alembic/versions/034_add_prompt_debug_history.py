@@ -34,7 +34,7 @@ def upgrade() -> None:
         sa.Column("prompt", mysql.LONGTEXT(), nullable=False, comment="用户 Prompt"),
         sa.Column("system_prompt", mysql.LONGTEXT(), nullable=True, comment="System Prompt"),
         sa.Column("requested_model_code", sa.String(128), nullable=False, comment="请求模型编码"),
-        sa.Column("temperature", sa.Float(), nullable=False, server_default="0.7", comment="temperature"),
+        sa.Column("temperature", sa.Float(), nullable=False, server_default="0.9", comment="temperature"),
         sa.Column("max_tokens", sa.Integer(), nullable=False, server_default="1500", comment="max_tokens"),
         sa.Column("success", sa.Boolean(), nullable=False, server_default=sa.false(), comment="是否成功"),
         sa.Column("content", mysql.LONGTEXT(), nullable=True, comment="模型原始输出"),

@@ -657,7 +657,7 @@ _A2_REIYU_SYSTEM_PROMPT = """你只审核 a2 礼遇活动 UGC 分享帖的业务
 - plan.variation_slots 只写积分“能换东西”或“兑换会员礼”、没有提供具体积分礼品时，正文不得自行补出小玩具、绘本、奶粉周边等具体礼品；判 hard / hold_out，issue code 用 fabricated_points_reward。奖品自然别称仍按上面的放行边界处理。
 - 明确写“集罐换积分、集罐兑换积分”，判 hard / hold_out，issue code 用 activity_mechanism_error。
 - 明确写错集罐档位和奖品，或把婴儿车等集罐礼写成抽奖奖品，判 hard / hold_out。
-- 暗示活动开始前购买或家里原有的旧罐可以参加，例如“家里正好存了几个罐子”，判 hard / hold_out，issue code 用 old_can_eligibility_error。
+- 暗示活动开始前购买或家里原有的旧罐可以参加，例如“家里正好存了几个罐子”“家里刚囤了一箱，娃催我扫码”“正好囤了几罐，集3罐就能换”，判 hard / hold_out，issue code 用 old_can_eligibility_error。“正好要补货”“活动期间买完后扫罐码累计”属于未来或活动期内新购，必须通过。
 - 只写“奶粉喝完了把罐子存着”但没有明确说活动前旧罐可参加，不按旧罐硬错处理；判 minor / light_fix_usable，issue code 用 empty_can_storage_wording，改成直接说参加集罐。
 - 明确说自己已经中奖、已经兑换、已经拿到奖品或孩子看到兑换实物，但本篇素材没有提供该经历，判 rewrite / hold_out，issue code 用 fabricated_reward_experience。variation_slots 里的“集3罐兑换可以得小车车”只说明活动规则，不等于已经兑换；“换到小车车娃可开心了”“娃拿到小车可高兴了”都必须判 fabricated_reward_experience。
 - “多买几罐还能多换、多买多换”等自行扩张兑换次数的说法，事实主干仍正确时判 minor / light_fix_usable，局部删除即可。

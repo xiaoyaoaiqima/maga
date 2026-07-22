@@ -19,6 +19,7 @@ FORBIDDEN_TERM_MATCH_MODES = {
     "literal",
     "activity_prize_context",
     "detection_page_context",
+    "registration_required_context",
     "risk_polarity_context",
 }
 A2_SENTIMENT_COMMENT_ASSET_KEY = "a2_sentiment_comment_activity"
@@ -95,13 +96,11 @@ A2_REIYU_REPLACE_TERMS = {
     "a2至现在": "a2至初现在",
     "A2蛋白质": "A2蛋白",
     "a2蛋白质": "A2蛋白",
-    "肠胃": "肚肚",
     "肚子": "肚肚",
     "脾胃": "肚肚状态",
     "大脑": "🧠",
     "眼睛": "👀",
     "敏感": "敏敏",
-    "便便": "💩",
     "粑粑": "💩",
     "预防针": "💉",
     "微信": "🌍",
@@ -120,7 +119,6 @@ A2_REIYU_REPLACE_TERMS = {
     "🎵": "",
 }
 A2_REIYU_MODEL_REWRITE_TERMS = (
-    "报名",
     "顺手",
     "顺口",
     "顺便",
@@ -136,10 +134,10 @@ A2_REIYU_MODEL_REWRITE_TERMS = (
     "顺便看到",
     "带一嘴",
     "失败",
-    "翻车",
     "避雷",
 )
-A2_REIYU_RISK_POLARITY_REWRITE_TERMS = ("踩雷",)
+A2_REIYU_REGISTRATION_REWRITE_TERMS = ("报名",)
+A2_REIYU_RISK_POLARITY_REWRITE_TERMS = ("踩雷", "翻车")
 A2_REIYU_DETECTION_NAVIGATION_REWRITE_TERMS = (
     "往下翻",
     "翻着翻着",
@@ -220,8 +218,17 @@ A2_REIYU_UGC_POST_SEED_TERMS = (
         _a2_reiyu_entry(
             term,
             enforcement="model_rewrite",
+            match_mode="registration_required_context",
+            reason="只有正文写成需要报名、先报名或报名参加时改写；不用报名、无需报名等正确规则说明放行",
+        )
+        for term in A2_REIYU_REGISTRATION_REWRITE_TERMS
+    ),
+    *(
+        _a2_reiyu_entry(
+            term,
+            enforcement="model_rewrite",
             match_mode="risk_polarity_context",
-            reason="只在句子明确表达踩雷风险时改写；不踩雷、没踩雷等正向否定表达放行",
+            reason="只在句子明确表达风险发生时改写；不踩雷、没翻车等正向否定表达放行",
         )
         for term in A2_REIYU_RISK_POLARITY_REWRITE_TERMS
     ),

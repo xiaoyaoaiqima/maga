@@ -123,6 +123,7 @@ export namespace ContentAgentApi {
     task_id: number;
     run_id?: null | number;
     task_type: string;
+    system_prompt?: null | string;
     input: GenerationSnapshot;
     asset_refs: Record<string, any>;
   }

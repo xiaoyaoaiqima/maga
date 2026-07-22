@@ -117,7 +117,7 @@ class ContentPromptDebugHistory(Base):
     prompt: Mapped[str] = mapped_column(LONGTEXT_TYPE, nullable=False, comment="用户 Prompt")
     system_prompt: Mapped[Optional[str]] = mapped_column(LONGTEXT_TYPE, nullable=True, comment="System Prompt")
     requested_model_code: Mapped[str] = mapped_column(String(128), nullable=False, comment="请求模型编码")
-    temperature: Mapped[float] = mapped_column(Float, nullable=False, default=0.7, comment="temperature")
+    temperature: Mapped[float] = mapped_column(Float, nullable=False, default=0.9, comment="temperature")
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1500, comment="max_tokens")
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True, comment="是否成功")
     content: Mapped[Optional[str]] = mapped_column(LONGTEXT_TYPE, nullable=True, comment="模型原始输出")

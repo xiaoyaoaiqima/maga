@@ -106,7 +106,7 @@ const visiblePanelKeys = computed<PanelKey[]>(() =>
 
 function createPanelState(): DebugPanelState {
   return {
-    batch_size: 1,
+    batch_size: 2,
     completed_count: 0,
     loading: false,
     max_tokens: 1500,
@@ -114,7 +114,7 @@ function createPanelState(): DebugPanelState {
     prompt: '',
     results: [],
     system_prompt: '',
-    temperature: 0.7,
+    temperature: 0.9,
   };
 }
 
@@ -406,10 +406,20 @@ async function restoreHistory(group: PromptDebugApi.HistoryGroupSummary) {
 
 onMounted(() => {
   const promptKey = route.query.prompt_key;
-  const transferredPrompt = loadPromptDebugTransfer(promptKey);
-  if (transferredPrompt) {
-    panels.left.prompt = transferredPrompt;
-    message.success('已带入生成 Prompt');
+  const transferredInput = loadPromptDebugTransfer(promptKey);
+  if (transferredInput) {
+    panels.left.prompt = transferredInput.prompt;
+    panels.left.system_prompt = transferredInput.system_prompt || '';
+    if (transferredInput.model_code) {
+      panels.left.model_code = transferredInput.model_code;
+    }
+    if (typeof transferredInput.temperature === 'number') {
+      panels.left.temperature = transferredInput.temperature;
+    }
+    if (typeof transferredInput.max_tokens === 'number') {
+      panels.left.max_tokens = transferredInput.max_tokens;
+    }
+    message.success('已带入完整生成配置');
   } else if (promptKey) {
     message.warning('生成 Prompt 已失效，请从生成历史重新进入');
   }

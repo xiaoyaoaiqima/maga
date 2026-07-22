@@ -191,6 +191,38 @@ async def test_layered_replace_is_deterministic_without_model_call(forbidden_ter
 
 
 @pytest.mark.asyncio
+async def test_deterministic_title_removal_preserves_body_terminal_punctuation(forbidden_term_session_factory):
+    asset_key = "article_title_only_forbidden_term"
+    async with forbidden_term_session_factory() as session:
+        await BusinessForbiddenTermService(session).upsert_entries(
+            asset_key=asset_key,
+            entries=[
+                {
+                    "term": "🍼",
+                    "replacement": "",
+                    "enforcement": "replace",
+                }
+            ],
+            created_by="ops",
+        )
+        item = ContentBatchItem(title="🍼最近的小变化", body="孩子今天状态不错。", run_id=1)
+        orchestrator = RecordingRewriteOrchestrator({"title": "不应调用", "body": "不应调用"})
+        review = await ForbiddenTermReviewService(session).review_and_rewrite_item(
+            item=item,
+            asset_key=asset_key,
+            orchestrator=orchestrator,
+            executor_code="test",
+            content_type="article",
+        )
+
+    assert orchestrator.calls == []
+    assert item.title == "最近的小变化"
+    assert item.body == "孩子今天状态不错。"
+    assert review["rewrite_method"] == "deterministic_replace"
+    assert review["final_hits"] == []
+
+
+@pytest.mark.asyncio
 async def test_a2_reiyu_lexical_normalization_is_fully_downstream(forbidden_term_session_factory):
     replacements = {
         "肚子": "肚肚",
@@ -387,7 +419,12 @@ async def test_risk_polarity_term_allows_negated_endorsement_and_rewrites_negati
                     "term": "踩雷",
                     "enforcement": "model_rewrite",
                     "match_mode": "risk_polarity_context",
-                }
+                },
+                {
+                    "term": "翻车",
+                    "enforcement": "model_rewrite",
+                    "match_mode": "risk_polarity_context",
+                },
             ],
             created_by="ops",
         )
@@ -407,10 +444,28 @@ async def test_risk_polarity_term_allows_negated_endorsement_and_rewrites_negati
             title="活动分享",
             body="这次没踩雷，但之前确实踩雷了。",
         )
+        smooth_transition = await service.audit_text(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            title="转奶分享",
+            body="转奶那会儿没翻车，适应得挺快。",
+        )
+        failed_transition = await service.audit_text(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            title="转奶分享",
+            body="这次转奶真的翻车了。",
+        )
+        mixed_transition = await service.audit_text(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            title="转奶分享",
+            body="前半程没翻车，后面还是翻车了。",
+        )
 
     assert endorsement.hits == []
     assert negative_assertion.hits == ["踩雷"]
     assert mixed_context.hits == ["踩雷"]
+    assert smooth_transition.hits == []
+    assert failed_transition.hits == ["翻车"]
+    assert mixed_transition.hits == ["翻车"]
 
 
 @pytest.mark.asyncio
@@ -486,7 +541,7 @@ async def test_a2_reiyu_seed_excludes_overbroad_operator_terms():
     by_term = {entry["term"]: entry for entry in entries}
     assert by_term["A2至初"]["enforcement"] == "replace"
     assert by_term["肚子"]["replacement"] == "肚肚"
-    assert by_term["便便"]["replacement"] == "💩"
+    assert {"便便", "肠胃"}.isdisjoint(by_term)
     assert by_term["粑粑"]["replacement"] == "💩"
     assert by_term["眼睛"]["replacement"] == "👀"
     assert by_term["QQ"]["replacement"] == "🌍"
@@ -494,7 +549,9 @@ async def test_a2_reiyu_seed_excludes_overbroad_operator_terms():
     assert by_term["羊毛"]["enforcement"] == "model_rewrite"
     assert by_term["羊毛"]["rewrite_model_config"]["model_code"] == "qwen-plus"
     assert by_term["踩雷"]["match_mode"] == "risk_polarity_context"
+    assert by_term["翻车"]["match_mode"] == "risk_polarity_context"
     assert by_term["报名"]["enforcement"] == "model_rewrite"
+    assert by_term["报名"]["match_mode"] == "registration_required_context"
     assert {"焦虑", "担心", "不安", "不放心"}.isdisjoint(by_term)
     assert by_term["朋友圈"]["enforcement"] == "replace"
     assert by_term["朋友圈"]["replacement"] == "pyq"
@@ -513,6 +570,38 @@ async def test_a2_reiyu_seed_excludes_overbroad_operator_terms():
     assert medical_audit.hits == []
     assert anxiety_audit.hits == []
     assert old_stock_audit.hits == ["囤了好几罐"]
+
+
+@pytest.mark.asyncio
+async def test_a2_reiyu_registration_and_digestive_terms_use_contextual_policy(
+    forbidden_term_session_factory,
+):
+    async with forbidden_term_session_factory() as session:
+        await BusinessForbiddenTermService(session).upsert_entries(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            entries=[
+                {
+                    "term": "报名",
+                    "enforcement": "model_rewrite",
+                    "match_mode": "registration_required_context",
+                }
+            ],
+            created_by="ops",
+        )
+        service = ForbiddenTermReviewService(session)
+        allowed = await service.audit_text(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            title="活动分享",
+            body="这活动不用报名，宝宝肠胃挺适应，便便也规律。",
+        )
+        required = await service.audit_text(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            title="活动分享",
+            body="参加前需要先报名，再去了解活动内容。",
+        )
+
+    assert allowed.hits == []
+    assert required.hits == ["报名"]
 
 
 @pytest.mark.asyncio

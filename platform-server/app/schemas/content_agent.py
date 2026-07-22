@@ -65,6 +65,7 @@ class ContentAgentSnapshotResponse(BaseSchema):
     task_id: int
     run_id: Optional[int] = None
     task_type: str
+    system_prompt: Optional[str] = None
     input: dict[str, Any] = Field(default_factory=dict)
     asset_refs: dict[str, Any] = Field(default_factory=dict)
 

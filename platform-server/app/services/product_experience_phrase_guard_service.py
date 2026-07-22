@@ -639,6 +639,7 @@ WANGYUE_CONCRETE_DISEASE_SCENARIO_PATTERNS = (
     re.compile(r"(?:感冒|咳嗽|传染|发烧|医院|请假)"),
     re.compile(r"(?:同伴|朋友家娃)[^。！？；;\n]{0,12}生病"),
     re.compile(r"生病[^。！？；;\n]{0,12}(?:同伴|朋友家娃)"),
+    re.compile(r"(?:一起玩的)?(?:几个|好几个)孩子[^。！？；;\n]{0,12}(?:都|也)?中招"),
 )
 WANGYUE_NEUTRAL_DRINKING_SOUND_PHRASES = {
     "咕咚咕咚",
@@ -1548,7 +1549,7 @@ WANGYUE_CHILD_PRODUCT_PROMO_PATTERNS = (
     re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,30}}(?:你也来一杯|要不要来一杯)"),
     re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,30}}我家也有[^。！？；;]{{0,20}}(?:旺玥|奶|一杯|喝)"),
     re.compile(r"(?:跟人家说|跟旁边(?:的)?(?:小朋友|小孩|孩子)说|跟(?:别的|其他)(?:小朋友|小孩|孩子)说)[^。！？；;]{0,30}(?:我家也有|你也来一杯|要不要来一杯)"),
-    re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,24}}(?:推荐|安利)[^。！？；;]{{0,20}}(?:旺玥|奶粉|这款|这个奶)"),
+    re.compile(rf"{CHILD_SUBJECT_PATTERN}[^。！？；;，,]{{0,24}}(?:推荐|安利)[^。！？；;]{{0,20}}(?:旺玥|奶粉|这款|这个奶)"),
     re.compile(
         rf"{CHILD_SUBJECT_PATTERN}[^。！？；;]{{0,18}}(?:给|替|帮)"
         r"[^。！？；;]{0,12}(?:每个|旁边的|别的|其他|几个|一群)?(?:小朋友|小孩|孩子|同伴|同学|伙伴)"
@@ -2093,7 +2094,11 @@ def review_product_experience_phrase(
         _physical_action_carrier_mismatch_hits(text) if is_wangyue else []
     )
     product_fact_number_drift_hits = _wangyue_product_fact_number_drift_hits(text) if is_wangyue else []
-    effect_scope_drift_hits = _wangyue_effect_scope_drift_hits(text, plan) if is_wangyue else []
+    effect_scope_drift_hits = (
+        _wangyue_effect_scope_drift_hits(text, plan)
+        if is_wangyue and not is_wangyue_article_rules
+        else []
+    )
     scene_motive_drift_hits = _scene_motive_drift_hits(text, plan)
     product_action_surface_hits = _product_action_surface_hits(text, plan)
     decision_chain_hits = _decision_chain_hits(body_text, plan)
@@ -2165,9 +2170,9 @@ def review_product_experience_phrase(
         reasons.append("physical_action_carrier_mismatch")
     if product_fact_number_drift_hits:
         reasons.append("product_fact_number_drift")
-    # Current Wangyue V3 lets the active business rule control positive effect scope.
-    # Keep the hits observable, but do not turn sleep/energy/growth wording into a
-    # deterministic rewrite by itself.
+    # Current Wangyue V3 lets the active business rule control positive effect scope
+    # and does not emit legacy sleep-effect drift signals. Older Wangyue assets keep
+    # the existing deterministic rewrite behavior.
     if effect_scope_drift_hits and not is_wangyue_article_rules:
         reasons.append("effect_scope_drift")
     if scene_motive_drift_hits:
@@ -3001,6 +3006,7 @@ def _is_prepared_formula_handoff(text: str, start: int, end: int) -> bool:
         re.search(
             r"(?:"
             r"(?:冲|泡)(?:好|完)(?:的)?[^。！？；;，,\r\n]{0,6}(?:旺玥|皇家美素佳儿旺玥)"
+            r"|(?:冲|泡)了?(?:一|这|那)?杯[^。！？；;，,\r\n]{0,4}(?:旺玥|皇家美素佳儿旺玥)"
             r"|(?:旺玥|皇家美素佳儿旺玥)[^。！？；;，,\r\n]{0,6}(?:冲|泡)(?:好|完)"
             r")[^。！？；;，,\r\n]{0,8}递",
             context,
@@ -3174,6 +3180,8 @@ def _hard_risk_hits(text: str, *, is_wangyue: bool = False) -> list[str]:
             _hits(text, WANGYUE_META_AD_RISK_PHRASES),
             _wangyue_temporary_remedy_chain_hits(text),
             _wangyue_symptom_effect_proof_hits(text),
+            _wangyue_instant_single_cup_reversal_hits(text),
+            _wangyue_severe_competitor_disparagement_hits(text),
         )
     if "临时补救" not in hits:
         return hits
@@ -3201,6 +3209,185 @@ def _wangyue_symptom_effect_proof_hits(text: str) -> list[str]:
             hit = match.group(0).strip(" ，,。；;\n")
             if hit:
                 hits.append((match.start(), f"症状效果证明：{hit}"))
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _wangyue_instant_single_cup_reversal_hits(text: str) -> list[str]:
+    """Catch only severe-state to single-cup immediate full-recovery claims."""
+    severe_state_pattern = re.compile(
+        r"(?:"
+        r"累(?:得|到)(?:直接)?瘫(?:在)?(?:沙发|床|地上|地毯)?|"
+        r"累瘫(?:了)?|"
+        r"(?:累|蔫)(?:得|到)(?:一点劲都没有|抬不起头|不想动|一点都不想动)|"
+        r"(?:连)?(?:饭|东西)都不想(?:吃|扒拉)|"
+        r"(?:饭|东西|什么)都吃不下"
+        r")"
+    )
+    single_cup_pattern = re.compile(
+        r"(?:"
+        r"(?:给(?:他|她|孩子|娃)?|妈妈|家里大人)?(?:冲|泡)(?:好|了|上)?(?:一|这|那)?杯"
+        r"(?!热水|温水|凉水|白水|水|茶|果汁|豆浆|咖啡|饮料|牛奶)|"
+        r"(?:喝完(?:了)?|喝(?:了)?)(?:一|这|那)杯(?:旺玥|奶粉)?|"
+        r"(?:一|这|那)杯(?:旺玥|奶粉)?(?:下肚|下去|喝完)"
+        r")"
+    )
+    full_recovery_pattern = re.compile(
+        r"(?:活蹦乱跳|满血复活|原地复活|精神十足|精神抖擞|生龙活虎|"
+        r"跟没事人(?:一样|似的)|一点也不累|完全不累|又跑又跳)"
+    )
+    immediate_pattern = re.compile(
+        r"(?:"
+        r"喝完(?:了)?(?:(?:一|这|那)杯)?[^。！？；;\r\n]{0,3}"
+        r"(?:就|又|马上|立刻|瞬间|立马|一下子|当场|随即)|"
+        r"(?:冲|泡)(?:好|了|上)?(?:一|这|那)?杯[^。！？；;\r\n]{0,5}(?:就|又)|"
+        r"马上|立刻|瞬间|立马|一下子|当场|随即"
+        r")(?:就|又|能|便|变得)?$"
+    )
+    delayed_pattern = re.compile(
+        r"(?:休息|歇了|歇一会|缓了一会|过了一会|半小时|一小时|第二天|隔天|"
+        r"晚上|后来|慢慢|逐渐|坚持|一阵|一段时间|几天后|一周后|一个月后|"
+        r"过后)"
+    )
+    negated_claim_pattern = re.compile(
+        r"(?:不是|并非|不可能|哪有|别写成|不能说|不要写)[^。！？；;\r\n]{0,36}"
+        r"(?:一杯|喝完|活蹦乱跳|满血复活|精神十足|精神抖擞)"
+    )
+
+    hits: list[tuple[int, str]] = []
+    value = text or ""
+    for paragraph_match in re.finditer(r"[^\r\n]+", value):
+        paragraph = paragraph_match.group(0)
+        paragraph_start = paragraph_match.start()
+        for severe_match in severe_state_pattern.finditer(paragraph):
+            if _is_other_child_symptom_context(paragraph, severe_match.start()):
+                continue
+            action_end_limit = min(len(paragraph), severe_match.end() + 72)
+            matched = False
+            for cup_match in single_cup_pattern.finditer(
+                paragraph,
+                severe_match.end(),
+                action_end_limit,
+            ):
+                recovery_end_limit = min(len(paragraph), cup_match.end() + 48)
+                for recovery_match in full_recovery_pattern.finditer(
+                    paragraph,
+                    cup_match.end(),
+                    recovery_end_limit,
+                ):
+                    chain = paragraph[cup_match.start() : recovery_match.start()].rstrip(
+                        " ，,：:"
+                    )
+                    if not immediate_pattern.search(chain):
+                        continue
+                    if delayed_pattern.search(chain):
+                        continue
+                    evidence = paragraph[severe_match.start() : recovery_match.end()].strip(
+                        " ，,。；;"
+                    )
+                    if negated_claim_pattern.search(evidence):
+                        continue
+                    if evidence:
+                        hits.append(
+                            (
+                                paragraph_start + severe_match.start(),
+                                f"即时单杯硬反转：{evidence}",
+                            )
+                        )
+                    matched = True
+                    break
+                if matched:
+                    break
+
+    ordered_hits: list[str] = []
+    seen: set[str] = set()
+    for _, hit in sorted(hits, key=lambda item: item[0]):
+        if hit not in seen:
+            ordered_hits.append(hit)
+            seen.add(hit)
+    return ordered_hits
+
+
+def _wangyue_severe_competitor_disparagement_hits(text: str) -> list[str]:
+    """Catch explicit competitor attacks without blocking neutral product comparison."""
+    competitor_scope_patterns = (
+        re.compile(
+            r"(?:其他|其它|别的|某些|有些|有的|不少)"
+            r"[^，,。！？；;\r\n]{0,6}(?:儿童)?(?:奶粉|品牌|牌子|产品|款)"
+        ),
+        re.compile(r"市面上[^，,。！？；;\r\n]{0,10}(?:儿童)?(?:奶粉|品牌|牌子|产品|款)"),
+        re.compile(
+            r"(?:对比|比较|看|挑|翻)(?:了|过)?"
+            r"[^，,。！？；;\r\n]{0,12}(?:好?几(?:款|个)|一圈|好多)"
+            r"[^，,。！？；;\r\n]{0,8}(?:奶粉|品牌|牌子|产品|款|罐)"
+        ),
+    )
+    severe_predicate_patterns = (
+        re.compile(
+            r"(?:核心|基础)(?:营养|成分|配方)?"
+            r"[^，,。！？；;\r\n]{0,8}(?:不够|不足|不到位|偏弱|太弱|缺失|缺少)"
+        ),
+        re.compile(
+            r"(?:钙铁锌|DHA|乳铁蛋白|HMO)(?:含量|配比|添加量)?"
+            r"(?:都|也|明显|普遍)?(?:偏低|太低|不足|不够|不到位|缩水|少得可怜)"
+        ),
+        re.compile(
+            r"(?:营养|成分|含量)(?:水平|配比|添加量)?"
+            r"(?:都|也|明显|普遍)?(?:偏低|太低|不足|不够|不到位|缩水|少得可怜)"
+        ),
+        re.compile(
+            r"(?:不是)?这个(?:缺|少)"
+            r"[^，,。！？；;\r\n]{0,8}(?:就是)?那个(?:缺|少)"
+        ),
+        re.compile(
+            r"(?:花里胡哨|堆料|堆成分)"
+            r"[^。！？；;\r\n]{0,12}(?:配方|成分|核心|营养)"
+            r"[^。！？；;\r\n]{0,12}(?:不够|不足|不到位|没用|没什么用|噱头)"
+        ),
+        re.compile(
+            r"(?:都是|全是|不过是|只是)(?:营销)?噱头"
+            r"[^。！？；;\r\n]{0,12}(?:配方|成分|核心|营养)"
+            r"[^。！？；;\r\n]{0,8}(?:没用|没什么用|不够|不足|不到位)"
+        ),
+        re.compile(r"(?:营销大于配方|智商税)"),
+    )
+    negated_claim_pattern = re.compile(
+        r"(?:不是说|并不是|并非|不能说|不要写成|没有证据(?:说|证明)?|不代表)"
+        r"[^，,。！？；;\r\n]{0,28}$"
+    )
+
+    hits: list[tuple[int, str]] = []
+    for sentence_match in re.finditer(r"[^。！？；;\r\n]+", text or ""):
+        sentence = sentence_match.group(0).strip(" ，,")
+        if not sentence or not any(
+            pattern.search(sentence) for pattern in competitor_scope_patterns
+        ):
+            continue
+        severe_match = next(
+            (
+                match
+                for pattern in severe_predicate_patterns
+                for match in pattern.finditer(sentence)
+                if not negated_claim_pattern.search(
+                    sentence[max(0, match.start() - 36) : match.start()]
+                )
+            ),
+            None,
+        )
+        if severe_match is None:
+            continue
+        hits.append(
+            (
+                sentence_match.start(),
+                f"严重竞品拉踩：{sentence}",
+            )
+        )
+
     ordered_hits: list[str] = []
     seen: set[str] = set()
     for _, hit in sorted(hits, key=lambda item: item[0]):
@@ -3566,11 +3753,14 @@ def _wangyue_row2_drinking_action_regex_hits(text: str) -> list[str]:
 
 def _wangyue_child_product_promo_regex_hits(text: str) -> list[str]:
     hits: list[str] = []
-    for pattern in WANGYUE_CHILD_PRODUCT_PROMO_PATTERNS:
-        for match in pattern.finditer(text):
-            hit = match.group(0).strip(" ，,。；;")
-            if hit and hit not in hits:
-                hits.append(hit)
+    for segment in text.splitlines():
+        if not segment.strip():
+            continue
+        for pattern in WANGYUE_CHILD_PRODUCT_PROMO_PATTERNS:
+            for match in pattern.finditer(segment):
+                hit = match.group(0).strip(" ，,。；;")
+                if hit and hit not in hits:
+                    hits.append(hit)
     return hits
 
 
@@ -3586,14 +3776,17 @@ def _child_self_brewing_regex_hits(text: str) -> list[str]:
 
 def _wangyue_portable_form_regex_hits(text: str) -> list[str]:
     hits: list[str] = []
-    for pattern in WANGYUE_PORTABLE_FORM_PATTERNS:
-        for match in pattern.finditer(text):
-            hit = match.group(0).strip(" ，,。；;")
-            if hit and hit not in hits:
-                hits.append(hit)
-            for term in WANGYUE_PORTABLE_CONTEXT_TERMS:
-                if term in hit and term not in hits:
-                    hits.append(term)
+    for segment in text.splitlines():
+        if not segment.strip():
+            continue
+        for pattern in WANGYUE_PORTABLE_FORM_PATTERNS:
+            for match in pattern.finditer(segment):
+                hit = match.group(0).strip(" ，,。；;")
+                if hit and hit not in hits:
+                    hits.append(hit)
+                for term in WANGYUE_PORTABLE_CONTEXT_TERMS:
+                    if term in hit and term not in hits:
+                        hits.append(term)
     return hits
 
 
