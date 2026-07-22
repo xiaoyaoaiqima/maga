@@ -1,0 +1,79 @@
+{
+  "dataset_code": "a2_reiyu_review_gold_v1",
+  "slice": "activity_naming_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-20",
+  "description": "a2 礼遇活动文章人工审核金标：活动名可以出现，但不要专门解释活动叫什么，应直接嵌入自然发现活动的表达。",
+  "labels": ["pass", "light_fix"],
+  "label_semantics": {
+    "pass": "活动名自然嵌入发现活动的叙述，无需因本规则改写。",
+    "light_fix": "使用‘活动叫……’‘活动名称是……’等介绍名称的口吻；活动事实成立，局部改写后即可使用。"
+  },
+  "rubric": [
+    "活动名允许出现在正文中，本规则不是禁止写活动名。",
+    "不要单独介绍‘这个活动叫什么名字’，避免‘这个活动叫×××’‘活动名称是×××’等品牌说明式表达。",
+    "直接把活动名放进自然发现句，例如‘发现a2上了会员礼遇升级活动’。",
+    "命中时优先做局部轻修，不因活动名称介绍口吻否定整篇文章。"
+  ],
+  "items": [
+    {
+      "title": "最近发现a2有新活动",
+      "content": "昨天闺蜜给我发了个链接，说这个活动叫会员礼遇升级活动。我点进去看了下，集罐还能换礼品，家里一直喝a2至初的话还挺实用。",
+      "meta": {
+        "case_code": "A2RY-AN-001",
+        "expected_label": "light_fix",
+        "issue_code": "activity_name_explanation_tone",
+        "evidence": ["这个活动叫会员礼遇升级活动"],
+        "reason": "活动名被写成专门介绍名称的说明句，不像普通用户自然聊到自己发现的活动。",
+        "minimal_fix": "将‘说这个活动叫会员礼遇升级活动’改为‘我才发现a2上了会员礼遇升级活动’。",
+        "source": "user_confirmed_activity_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "activity_naming",
+        "boundary": "name_explanation_vs_natural_discovery",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "最近发现a2有新活动",
+      "content": "昨天闺蜜给我发了个链接，我才发现a2上了会员礼遇升级活动。点进去看了下，集罐还能换礼品，家里一直喝a2至初的话还挺实用。",
+      "meta": {
+        "case_code": "A2RY-AN-002",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["发现a2上了会员礼遇升级活动"],
+        "reason": "活动名直接嵌入发现活动的自然叙述，没有专门解释活动叫什么。",
+        "source": "user_confirmed_preferred_expression"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "activity_naming",
+        "boundary": "natural_activity_discovery",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "a2至初会员升级，老母亲实名心动",
+      "content": "刷puq看到这个活动，我家崽一直喝a2至初，没犹豫就点进去了。活动是会员升级，多层福利叠一起。",
+      "meta": {
+        "case_code": "A2RY-AN-003",
+        "expected_label": "light_fix",
+        "issue_code": "activity_name_explanation_tone",
+        "evidence": ["活动是会员升级"],
+        "reason": "‘活动是会员升级’仍是说明活动是什么的口吻，业务确认需要改写但不删除。",
+        "minimal_fix": "将‘刷puq看到这个活动……活动是会员升级’改为‘刷puq发现a2上了会员升级活动’。",
+        "source": "user_confirmed_badcase_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "activity_naming",
+        "boundary": "name_explanation_vs_natural_discovery",
+        "source_type": "human_feedback"
+      }
+    }
+  ]
+}

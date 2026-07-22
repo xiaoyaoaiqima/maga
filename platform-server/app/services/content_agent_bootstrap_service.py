@@ -17,6 +17,8 @@ from app.models.content_agent import ExecutorRegistry
 from app.models.agent import Agent
 from app.models.maga_assets import AssetRegistry
 from app.services.business_forbidden_term_service import (
+    A2_REIYU_UGC_POST_ASSET_KEY,
+    A2_REIYU_UGC_POST_SEED_TERMS,
     A2_SENTIMENT_COMMENT_ASSET_KEY,
     A2_SENTIMENT_COMMENT_SEED_TERMS,
     BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
@@ -127,12 +129,37 @@ async def seed_default_realtime_chat_agent(
 
 async def seed_a2_sentiment_comment_forbidden_terms(conn: AsyncConnection) -> None:
     """Seed the A2 comment-scoped business forbidden terms asset."""
+    await _seed_business_forbidden_terms_asset(
+        conn,
+        asset_key=A2_SENTIMENT_COMMENT_ASSET_KEY,
+        display_name="A2舆情改善评论业务违禁词",
+        seed_terms=A2_SENTIMENT_COMMENT_SEED_TERMS,
+    )
+
+
+async def seed_a2_reiyu_forbidden_terms(conn: AsyncConnection) -> None:
+    """Seed the confirmed layered forbidden-term policy for A2 礼遇 UGC."""
+    await _seed_business_forbidden_terms_asset(
+        conn,
+        asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+        display_name="a2礼遇UGC分享贴分层审核词策略",
+        seed_terms=A2_REIYU_UGC_POST_SEED_TERMS,
+    )
+
+
+async def _seed_business_forbidden_terms_asset(
+    conn: AsyncConnection,
+    *,
+    asset_key: str,
+    display_name: str,
+    seed_terms: tuple[dict, ...],
+) -> None:
     existing = (
         await conn.execute(
             select(AssetRegistry.content_json)
             .where(
                 AssetRegistry.asset_type == BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
-                AssetRegistry.asset_key == A2_SENTIMENT_COMMENT_ASSET_KEY,
+                AssetRegistry.asset_key == asset_key,
                 AssetRegistry.asset_stage == "production",
                 AssetRegistry.status == "active",
             )
@@ -142,10 +169,9 @@ async def seed_a2_sentiment_comment_forbidden_terms(conn: AsyncConnection) -> No
     ).scalar_one_or_none()
     existing_entries = _business_forbidden_seed_entries(existing or {})
     existing_by_term = {entry.get("term"): entry for entry in existing_entries}
-    seed_terms_by_term = {entry["term"]: entry for entry in A2_SENTIMENT_COMMENT_SEED_TERMS}
+    seed_terms_by_term = {entry["term"]: entry for entry in seed_terms}
     if all(
-        (existing_by_term.get(term) or {}).get("reason") == seed_entry["reason"]
-        and (existing_by_term.get(term) or {}).get("enabled") is not False
+        _seed_entry_is_current(existing_by_term.get(term), seed_entry)
         for term, seed_entry in seed_terms_by_term.items()
     ):
         return
@@ -171,7 +197,7 @@ async def seed_a2_sentiment_comment_forbidden_terms(conn: AsyncConnection) -> No
             **seed_entry,
             "created_at": now,
         }
-        for seed_entry in A2_SENTIMENT_COMMENT_SEED_TERMS
+        for seed_entry in seed_terms
         if seed_entry["term"] not in existing_terms
     ]
     if added_seed_entries:
@@ -183,10 +209,7 @@ async def seed_a2_sentiment_comment_forbidden_terms(conn: AsyncConnection) -> No
         1
         for term, seed_entry in seed_terms_by_term.items()
         if term in existing_by_term
-        and (
-            existing_by_term[term].get("reason") != seed_entry["reason"]
-            or existing_by_term[term].get("enabled") is False
-        )
+        and not _seed_entry_is_current(existing_by_term[term], seed_entry)
     )
     added_term_count = len(added_seed_entries)
     if existing is not None:
@@ -194,7 +217,7 @@ async def seed_a2_sentiment_comment_forbidden_terms(conn: AsyncConnection) -> No
             update(AssetRegistry)
             .where(
                 AssetRegistry.asset_type == BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
-                AssetRegistry.asset_key == A2_SENTIMENT_COMMENT_ASSET_KEY,
+                AssetRegistry.asset_key == asset_key,
                 AssetRegistry.asset_stage == "production",
                 AssetRegistry.status == "active",
             )
@@ -203,14 +226,14 @@ async def seed_a2_sentiment_comment_forbidden_terms(conn: AsyncConnection) -> No
     current_version = await conn.scalar(
         select(func.max(AssetRegistry.version_no)).where(
             AssetRegistry.asset_type == BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
-            AssetRegistry.asset_key == A2_SENTIMENT_COMMENT_ASSET_KEY,
+            AssetRegistry.asset_key == asset_key,
         )
     )
     await conn.execute(
         insert(AssetRegistry).values(
             asset_type=BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
-            asset_key=A2_SENTIMENT_COMMENT_ASSET_KEY,
-            display_name="A2舆情改善评论业务违禁词",
+            asset_key=asset_key,
+            display_name=display_name,
             version_no=int(current_version or 0) + 1,
             status="active",
             asset_stage="production",
@@ -229,6 +252,20 @@ async def seed_a2_sentiment_comment_forbidden_terms(conn: AsyncConnection) -> No
             created_by="system",
         )
     )
+
+
+def _seed_entry_is_current(existing: dict | None, seed_entry: dict) -> bool:
+    if not existing or existing.get("enabled") is False:
+        return False
+    compared_fields = (
+        "reason",
+        "replacement",
+        "enforcement",
+        "match_mode",
+        "rewrite_model_config",
+        "source",
+    )
+    return all((existing.get(field) or "") == (seed_entry.get(field) or "") for field in compared_fields)
 
 
 def _business_forbidden_seed_entries(content_json: dict | None) -> list[dict]:

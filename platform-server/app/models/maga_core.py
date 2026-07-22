@@ -23,6 +23,7 @@ from app.models.content_agent import (
     ContentBatchItem,
     ContentBatchItemVersion,
     ContentFeedback,
+    ContentPromptDebugHistory,
     CommentDeliveryLedger,
     ExecutorRegistry,
 )
@@ -88,6 +89,7 @@ MAGA_CORE_MODELS = (
     ContentBatchItem,
     ContentBatchItemVersion,
     ContentFeedback,
+    ContentPromptDebugHistory,
     CommentDeliveryLedger,
     ContentAgentTask,
     ContentAgentRun,

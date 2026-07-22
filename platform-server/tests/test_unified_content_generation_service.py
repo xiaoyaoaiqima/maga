@@ -41,9 +41,7 @@ def test_article_output_format_supports_explicit_two_items_mode():
     single = _article_output_format_requirement("article", ["title", "body"], {})
     multi = _article_output_format_requirement("article", ["title", "body"], {"multi_output_count": 2})
 
-    assert '格式必须是 {"title":"...","body":"..."}' in single
-    assert "顶层只能包含 title 和 body 两个字段" in single
-    assert "不要输出 items 数组" in single
+    assert single == '只输出 JSON：{"title":"...","body":"..."}。'
     assert '只输出 JSON object，格式：{"items":[{"title":"...","body":"..."}]}。' in multi
     assert "items 必须正好 2 个" in multi
     assert "一次生成 2 篇" not in multi
@@ -64,8 +62,7 @@ def test_rule_corpus_as_prompt_keeps_single_article_output_format():
         selected_keywords=[],
     )
 
-    assert '格式必须是 {"title":"...","body":"..."}' in prompt
-    assert "不要输出 items 数组" in prompt
+    assert '只输出 JSON：{"title":"...","body":"..."}。' in prompt
     assert "items 必须正好" not in prompt
     assert '"items"' not in prompt
     assert "基于量子态叠加与多重可能性" in prompt
@@ -108,7 +105,7 @@ async def test_rule_corpus_as_prompt_snapshot_does_not_load_expression_keywords(
     assert snapshot.asset_refs["keyword_asset"] is None
     assert "不应从资产进入 prompt" not in snapshot.input_snapshot["rendered_prompt"]
     assert "基于量子态叠加与多重可能性" in snapshot.input_snapshot["rendered_prompt"]
-    assert '格式必须是 {"title":"...","body":"..."}' in snapshot.input_snapshot["rendered_prompt"]
+    assert '只输出 JSON：{"title":"...","body":"..."}。' in snapshot.input_snapshot["rendered_prompt"]
 
 
 def test_layered_article_prompt_renders_the_five_layer_framework():
@@ -177,6 +174,21 @@ def test_layered_article_prompt_renders_the_five_layer_framework():
     assert "- 只输出 JSON 对象" in prompt
 
 
+def test_layered_article_prompt_does_not_duplicate_configured_output_requirement():
+    output_format = '只输出 JSON：{"title":"...","body":"..."}。'
+
+    prompt = _layered_article_prompt(
+        {
+            "content_direction": "记录一个普通日常瞬间。",
+            "generation_requirements": [output_format],
+        },
+        selected_keywords=[],
+        output_format=output_format,
+    )
+
+    assert prompt.count(output_format) == 1
+
+
 def test_layered_article_prompt_renders_selected_info_source_as_generation_material():
     prompt = _layered_article_prompt(
         {
@@ -197,6 +209,95 @@ def test_layered_article_prompt_renders_selected_info_source_as_generation_mater
 
     assert "本篇素材：\n- 信息来源线索：朋友聊天" in prompt
     assert "- 卖点痛点表达：奶源更干净" in prompt
+
+
+def test_layered_article_prompt_uses_selected_direction_and_activity_material_slots():
+    prompt = _layered_article_prompt(
+        {
+            "generation_instruction": "写一篇普通宝妈的纯分享笔记。",
+            "content_direction": "静态兜底方向。",
+            "variation_slots": [
+                {
+                    "slot_code": "content_direction",
+                    "slot_name": "内容方向",
+                    "value": "直给参加活动，讲完活动再提每批检测，最后写体验和认可。",
+                },
+                {
+                    "slot_code": "info_source",
+                    "slot_name": "活动了解途径",
+                    "value": "去门店时导购说起。",
+                },
+                {
+                    "slot_code": "participation_motive",
+                    "slot_name": "参加活动原因",
+                    "value": "觉得这次升级挺有诚意。",
+                },
+                {
+                    "slot_code": "activity_content",
+                    "slot_name": "活动内容",
+                    "value": "集12罐兑换1罐奶粉。",
+                },
+                {
+                    "slot_code": "product_experience",
+                    "slot_name": "活动后的产品体验",
+                    "value": "a2至初粉质细腻，好冲开。",
+                },
+                {
+                    "slot_code": "consumer_praise",
+                    "slot_name": "活动后的消费者认可",
+                    "value": "觉得a2做得认真，愿意推荐。",
+                },
+                {
+                    "slot_code": "positive_expression",
+                    "slot_name": "活动分享正向表达",
+                    "value": "品质在线。",
+                },
+            ],
+        },
+        selected_keywords=[],
+        output_format="只输出 JSON。",
+    )
+
+    assert "内容方向：\n直给参加活动，讲完活动再提每批检测" in prompt
+    assert "静态兜底方向" not in prompt
+    assert "- 活动了解途径：去门店时导购说起。" in prompt
+    assert "- 参加活动原因：觉得这次升级挺有诚意。" in prompt
+    assert "- 活动内容：集12罐兑换1罐奶粉。" in prompt
+    assert "- 活动后的产品体验：a2至初粉质细腻，好冲开。" in prompt
+    assert "- 活动后的消费者认可：觉得a2做得认真，愿意推荐。" in prompt
+    assert "- 活动分享正向表达：品质在线。" in prompt
+
+
+def test_layered_article_prompt_renders_merged_consumer_recognition_slot():
+    prompt = _layered_article_prompt(
+        {
+            "generation_instruction": "写一篇普通宝妈分享。",
+            "content_direction": "活动后提检测，再写认可。",
+            "variation_slots": [
+                {
+                    "slot_code": "activity_content",
+                    "slot_name": "活动内容",
+                    "value": "积分、集罐、抽奖、回馈礼都有。",
+                },
+                {
+                    "slot_code": "batch_detection",
+                    "slot_name": "批批检素材",
+                    "value": "a2至初现在每批都有检测。",
+                },
+                {
+                    "slot_code": "consumer_recognition",
+                    "slot_name": "认可表达",
+                    "value": "消费者有被重视到，品质也更透明。a2至初奶香自然。",
+                },
+            ],
+        },
+        selected_keywords=[],
+        output_format="只输出 JSON。",
+    )
+
+    assert "- 活动内容：积分、集罐、抽奖、回馈礼都有。" in prompt
+    assert "- 批批检素材：a2至初现在每批都有检测。" in prompt
+    assert "- 认可表达：消费者有被重视到，品质也更透明。a2至初奶香自然。" in prompt
 
 
 def test_layered_article_prompt_renders_no_source_control_as_generation_material():
@@ -662,6 +763,62 @@ def test_rule_corpus_inspiration_slot_can_render_without_inspiration_material():
     assert "不使用灵感线索" not in rendered
     assert "本篇素材：" not in rendered
     assert "事实与合规边界" in rendered
+
+
+def test_rule_corpus_selling_expression_can_disable_inspiration_slot():
+    from app.services.unified_content_generation_service import _rule_corpus_as_prompt_article_prompt
+
+    prompt = _rule_corpus_as_prompt_article_prompt(
+        {
+            "item_no": 1,
+            "business_rule": (
+                "生文指令：写妈妈UGC。\n\n"
+                "内容方向：记录一段普通日常。\n\n"
+                "【本篇灵感线索】\n"
+                "- 和游戏相关\n"
+                "- 和朋友相关\n\n"
+                "事实与合规边界：\n"
+                "- 不写保证有效。"
+            ),
+            "selling_painpoint_expression": "去年校服裤子短了不少",
+            "selling_painpoint_expression_inspiration_mode": "none",
+            "output_format_requirement": '只输出 {"title":"...","body":"..."}。',
+        },
+        selected_keywords=[],
+    )
+
+    assert "和游戏相关" not in prompt
+    assert "和朋友相关" not in prompt
+    assert "灵感线索" not in prompt
+    assert "卖点痛点表达：去年校服裤子短了不少" in prompt
+
+
+def test_rule_corpus_selling_expression_can_select_exact_inspiration_clue():
+    from app.services.unified_content_generation_service import _rule_corpus_as_prompt_article_prompt
+
+    prompt = _rule_corpus_as_prompt_article_prompt(
+        {
+            "item_no": 1,
+            "business_rule": (
+                "生文指令：写妈妈UGC。\n\n"
+                "内容方向：记录一段普通日常。\n\n"
+                "【本篇灵感线索】\n"
+                "- 和游戏相关\n"
+                "- 和整理旧衣服相关\n\n"
+                "事实与合规边界：\n"
+                "- 不写保证有效。"
+            ),
+            "selling_painpoint_expression": "营养多样，感觉够娃长身体",
+            "selling_painpoint_expression_inspiration_mode": "auto",
+            "selling_painpoint_expression_inspiration_clue": "和整理旧衣服相关",
+            "output_format_requirement": '只输出 {"title":"...","body":"..."}。',
+        },
+        selected_keywords=[],
+    )
+
+    assert "灵感线索：和整理旧衣服相关" in prompt
+    assert "和游戏相关" not in prompt
+    assert "卖点痛点表达：营养多样，感觉够娃长身体" in prompt
 
 
 def test_rule_corpus_selling_expression_note_is_optional():
@@ -2384,12 +2541,7 @@ async def test_unified_article_generation_renders_article_requirement_before_bus
     assert "不要照搬语料，也不要把语料扩成新的事实、第二个生活入口、第二个收尾现场" in prompt
     assert "业务内核发散" not in prompt[prompt.index("【表达扩散语料】") :]
     assert prompt.rstrip().endswith(
-        "【输出格式】\n"
-        '只输出一个 JSON 对象，格式必须是 {"title":"...","body":"..."}；'
-        "顶层只能包含 title 和 body 两个字段，不要输出 items 数组；"
-        "不要输出 Markdown 标题、编号、解释、前后缀；"
-        "不要写“标题：”“正文：”“### 标题”“### 正文”；"
-        "正文内容放在 body 字段里，标题内容放在 title 字段里。"
+        '【输出格式】\n只输出 JSON：{"title":"...","body":"..."}。'
     )
     assert "表达参考：以下内容可以不用；只借说话方式，不照搬事实和句式" in prompt
     assert "参考短句" in prompt
@@ -2447,7 +2599,7 @@ async def test_unified_article_generation_renders_mouth_phrase_budget_before_key
     prompt = snapshot.input_snapshot["rendered_prompt"]
     assert prompt.index("批量口癖控制") < prompt.index(requirement)
     assert prompt.index(requirement) < prompt.index("【输出格式】")
-    assert prompt.rstrip().endswith("正文内容放在 body 字段里，标题内容放在 title 字段里。")
+    assert prompt.rstrip().endswith('只输出 JSON：{"title":"...","body":"..."}。')
 
 
 @pytest.mark.asyncio

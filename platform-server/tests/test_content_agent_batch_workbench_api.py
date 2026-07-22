@@ -165,7 +165,7 @@ async def test_ppl_profile_list_exposes_brand_generation_profiles(content_agent_
     wangyue_v3 = next(profile for profile in profiles if profile["profile_code"] == "wangyue_v3_0705_article")
     assert wangyue_v3["asset_key"] == "wangyue_v3_core_storyline_article_rules"
     assert wangyue_v3["keyword_asset_key"] is None
-    assert wangyue_v3["prompt_mode"] == "rule_corpus_as_prompt"
+    assert wangyue_v3["prompt_mode"] == "layered_article"
     assert wangyue_v3["default_count"] == 20
     assert wangyue_v3["default_articles_per_prompt"] == 1
 
@@ -1302,7 +1302,7 @@ def test_a2_comment_replacement_still_trims_comment_body():
 
     assert payload is not None
     assert item.body.startswith("a2这次到货")
-    assert "三方检测数据" in item.body
+    assert "三方质检报告" in item.body
     assert len(item.body) <= 60
 
 
@@ -2887,7 +2887,8 @@ def test_a2_activity_guard_repairs_marker_and_entry_terms():
     assert payload["context_list"]["关键词"] == "有货+批批检"
     assert "爱他美" not in item.body
     assert "其他品牌" in item.body
-    assert "物流码" in item.body
+    assert "物流码" not in item.body
+    assert "罐底码" in item.body
     assert "物流码物流码" not in item.body
     assert "物流码那个物流码" not in item.body
     assert "记录" in item.body
@@ -3005,9 +3006,8 @@ def test_a2_activity_guard_repairs_incomplete_scan_bottom_wording():
 
     assert payload is not None
     assert payload["pass"] is True
-    assert "扫完罐底物流码看报告" in item.body
+    assert item.body == "我家宝快喝完了，刚好看到a2新到货，扫完罐底才安心带回家"
     assert not payload["issues"]
-    assert any(repair["source"] == "扫完罐底" for repair in payload["repairs"])
 
 
 def test_a2_activity_guard_repairs_bad_waxy_report_detail_but_blocks_003():
@@ -3386,7 +3386,7 @@ def test_a2_activity_guard_accepts_new_zealand_third_party_data_without_report_w
     assert not payload["issues"]
 
 
-def test_a2_activity_guard_replaces_third_party_report_wording_with_data():
+def test_a2_activity_guard_normalizes_third_party_report_wording():
     item = ContentBatchItem(
         body="功课做了几圈，a2的三方检测报告列得明明白白，选起来更踏实",
         plan_json=_a2_guard_plan("对比后看新西兰三方检测信息：\n关键词方向是批批检+转奶。"),
@@ -3398,7 +3398,7 @@ def test_a2_activity_guard_replaces_third_party_report_wording_with_data():
     assert payload is not None
     assert payload["pass"] is True
     assert "三方检测报告" not in item.body
-    assert "三方检测数据" in item.body
+    assert "三方质检报告" in item.body
 
 
 def test_a2_activity_guard_blocks_003_even_with_waxy_detection_standard_wording():
@@ -4318,6 +4318,8 @@ def test_a2_activity_guard_does_not_require_combo_scene_marker():
 
     assert payload is not None
     assert payload["pass"] is True
+    assert "物流码" not in item.body
+    assert "罐底码" in item.body
     assert not any(issue["code"] == "activity_body_missing_combo_scene" for issue in payload["issues"])
 
 
@@ -4352,8 +4354,8 @@ def test_a2_activity_guard_repairs_duplicate_logistics_code_suffix():
     assert payload is not None
     assert payload["pass"] is True
     assert "物流码码" not in item.body
-    assert "扫物流码看报告" in item.body
-    assert any(repair["code"] == "activity_body_duplicate_term_collapsed" for repair in payload["repairs"])
+    assert "扫罐底码看报告" in item.body
+    assert any(repair["code"] == "activity_body_can_bottom_code_normalized" for repair in payload["repairs"])
 
 
 def test_a2_activity_guard_repairs_redundant_logistics_code_reference():
@@ -4368,8 +4370,8 @@ def test_a2_activity_guard_repairs_redundant_logistics_code_reference():
     assert payload is not None
     assert payload["pass"] is True
     assert "物流码那个码" not in item.body
-    assert "扫罐底物流码就能看到" in item.body
-    assert any(repair["code"] == "activity_body_duplicate_term_collapsed" for repair in payload["repairs"])
+    assert "扫罐底码就能看到" in item.body
+    assert any(repair["code"] == "activity_body_can_bottom_code_normalized" for repair in payload["repairs"])
 
 
 def test_a2_activity_guard_repairs_logistics_code_repeated_after_can_bottom_replacement():
@@ -4383,9 +4385,39 @@ def test_a2_activity_guard_repairs_logistics_code_repeated_after_can_bottom_repl
 
     assert payload is not None
     assert payload["pass"] is True
-    assert item.body == "原来扫罐底物流码就能看到检测报告啊"
-    assert "物流码的物流码" not in item.body
-    assert any(repair["code"] == "activity_body_duplicate_term_collapsed" for repair in payload["repairs"])
+    assert item.body == "原来扫罐底码就能看到检测报告啊"
+    assert "物流码" not in item.body
+    assert any(repair["code"] == "activity_body_can_bottom_code_normalized" for repair in payload["repairs"])
+
+
+def test_a2_activity_guard_normalizes_qr_code_and_third_party_report_name():
+    item = ContentBatchItem(
+        body="刚开新罐扫了二维码，第三方检测报告能查到。",
+        plan_json=_a2_guard_plan("开新罐查看报告：\n关键词方向是有货+批批检，像妈妈开罐时看报告。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert item.body == "刚开新罐扫了罐底码，三方质检报告能查到。"
+    assert any(repair["code"] == "activity_body_can_bottom_code_normalized" for repair in payload["repairs"])
+
+
+@pytest.mark.parametrize("body", ["看到熟悉的蓝罐子又有货了", "门店摆着蓝色的罐子，a2终于到了"])
+def test_a2_activity_guard_rejects_can_color_description(body):
+    item = ContentBatchItem(
+        body=body,
+        plan_json=_a2_guard_plan("有货直给：\n关键词方向是有货，像妈妈顺手报喜。"),
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is False
+    assert any(issue["code"] == "activity_body_can_color_description" for issue in payload["issues"])
 
 
 def test_a2_activity_guard_limits_wax_term_to_once_per_comment():
@@ -6487,6 +6519,12 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
             "quoted_text": "原正文比较总结。",
             "feedback_categories": ["unnatural", "too_ad_like", "unknown"],
             "auto_rewrite": True,
+            "model_config": {
+                "provider_code": "aliyun",
+                "model_code": "qwen-plus",
+                "ge_model": "qwen-plus",
+                "ae_model": "qwen-plus",
+            },
             "created_by": "reviewer-a",
         },
     )
@@ -6531,8 +6569,16 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
     rewrite_input = rewrite_stage.input_snapshot or {}
     rewrite_instructions = "\n".join(rewrite_input.get("rewrite_instructions") or [])
     assert rewrite_input["rewrite_source"] == "operator_feedback"
+    assert rewrite_input["content_type"] == "article"
+    assert rewrite_input["output_fields"] == ["title", "body"]
+    assert "只输出 JSON" in rewrite_input["rendered_prompt"]
+    assert "只输出改写后的评论正文" not in rewrite_input["rendered_prompt"]
     assert rewrite_input["quoted_text"] == "原正文比较总结。"
     assert rewrite_input["feedback_categories"] == ["unnatural", "too_ad_like"]
+    assert rewrite_input["model_config"]["provider_code"] == "aliyun"
+    assert rewrite_input["model_config"]["model_code"] == "qwen-plus"
+    assert rewrite_input["model_config"]["ge_model"] == "qwen-plus"
+    assert rewrite_input["model_config"]["ae_model"] == "qwen-plus"
     assert rewrite_input["model_config"]["temperature"] >= 0.55
     assert "不是违禁词替换" in rewrite_instructions
     assert "不要只做同义替换" in rewrite_instructions
@@ -6540,6 +6586,47 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
     assert "不自然/生硬" in rewrite_instructions
     assert feedback.quoted_text == "原正文比较总结。"
     assert feedback.metadata_json["feedback_categories"] == ["unnatural", "too_ad_like"]
+
+
+@pytest.mark.asyncio
+async def test_batch_feedback_can_auto_rewrite_failed_item_with_generated_content(
+    content_agent_workbench_client,
+):
+    client, session_factory = content_agent_workbench_client
+    start_response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "yuanyue",
+            "product_topic": "宝宝便便不规律",
+            "target_audience": "新手妈妈",
+            "style": "经验老道型",
+            "count": 1,
+            "created_by": "ops",
+        },
+    )
+    item = start_response.json()["data"]["report"]["items"][0]
+
+    async with session_factory() as session:
+        stored_item = await session.get(ContentBatchItem, item["item_id"])
+        stored_item.status = "failed"
+        stored_item.error_message = "自动审核失败，但已保留生成正文"
+        await session.commit()
+
+    feedback_response = await client.post(
+        f"/api/v1/content-agent/batch-items/{item['item_id']}/feedback",
+        json={
+            "action": "request_revision",
+            "feedback_text": "去掉页面承接，保留已有事实。",
+            "auto_rewrite": True,
+            "created_by": "reviewer-a",
+        },
+    )
+
+    assert feedback_response.status_code == 200
+    rewritten = feedback_response.json()["data"]["item"]
+    assert rewritten["status"] == "needs_revision"
+    assert rewritten["body"] != item["body"]
+    assert rewritten["quality"]["review_report"]["rewrite_reason"] == "operator_feedback"
 
 
 @pytest.mark.asyncio

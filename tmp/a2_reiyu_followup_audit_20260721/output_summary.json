@@ -1,0 +1,41 @@
+{
+  "remaining_source": 301,
+  "remaining_usable": 294,
+  "remaining_deleted_rows": [
+    47,
+    272,
+    315,
+    318,
+    414,
+    487,
+    523
+  ],
+  "new_source": 200,
+  "new_usable": 198,
+  "new_problem_rows": [
+    51,
+    54
+  ],
+  "combined_duplicate_bodies": 0,
+  "missing_required_keyword": 0,
+  "residual_formal_hits": 0,
+  "verify_shapes": {
+    "remaining": [
+      295,
+      6
+    ],
+    "new_usable": [
+      199,
+      9
+    ],
+    "new_problems": [
+      3,
+      9
+    ]
+  },
+  "outputs": {
+    "remainingPath": "/Users/luxifa/maga/outputs/a2_reiyu_followup_audit_20260721/A2礼遇_剩余301篇_清理后可用294篇.csv",
+    "newPath": "/Users/luxifa/maga/outputs/a2_reiyu_followup_audit_20260721/A2礼遇_新200篇_审核后可用198篇.csv",
+    "problemPath": "/Users/luxifa/maga/outputs/a2_reiyu_followup_audit_20260721/A2礼遇_新200篇_明确问题2篇.csv"
+  }
+}

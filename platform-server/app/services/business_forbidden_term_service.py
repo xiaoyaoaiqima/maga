@@ -13,8 +13,22 @@ from app.models.maga_assets import AssetRegistry
 
 BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE = "business_forbidden_terms"
 DEFAULT_BUSINESS_FORBIDDEN_TERMS_ASSET_KEY = "default_business_forbidden_terms"
-BUSINESS_FORBIDDEN_TERMS_SCHEMA_VERSION = "1"
+BUSINESS_FORBIDDEN_TERMS_SCHEMA_VERSION = "2"
+FORBIDDEN_TERM_ENFORCEMENTS = {"replace", "model_rewrite", "hard_ban"}
+FORBIDDEN_TERM_MATCH_MODES = {
+    "literal",
+    "activity_prize_context",
+    "detection_page_context",
+    "risk_polarity_context",
+}
 A2_SENTIMENT_COMMENT_ASSET_KEY = "a2_sentiment_comment_activity"
+A2_REIYU_UGC_POST_ASSET_KEY = "a2_reiyu_ugc_post_rules_v1"
+A2_REIYU_QWEN_PLUS_MODEL_CONFIG = {
+    "provider_code": "aliyun",
+    "model_code": "qwen-plus",
+    "ge_model": "qwen-plus",
+    "ae_model": "qwen-plus",
+}
 A2_SENTIMENT_COMMENT_SEED_TERMS = (
     {
         "term": "小程序",
@@ -50,6 +64,194 @@ A2_SENTIMENT_COMMENT_SEED_TERMS = (
     },
 )
 A2_SENTIMENT_COMMENT_SEED_TERM = A2_SENTIMENT_COMMENT_SEED_TERMS[0]
+
+
+def _a2_reiyu_entry(
+    term: str,
+    *,
+    enforcement: str,
+    reason: str,
+    replacement: str = "",
+    match_mode: str = "literal",
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "term": term,
+        "reason": reason,
+        "enabled": True,
+        "replacement": replacement,
+        "enforcement": enforcement,
+        "match_mode": match_mode,
+        "rewrite_model_config": {},
+        "source": "operator_rule_20260721",
+        "created_by": "ops",
+    }
+    if enforcement == "model_rewrite":
+        entry["rewrite_model_config"] = dict(A2_REIYU_QWEN_PLUS_MODEL_CONFIG)
+    return entry
+
+
+A2_REIYU_REPLACE_TERMS = {
+    "A2至初": "a2至初",
+    "a2至现在": "a2至初现在",
+    "A2蛋白质": "A2蛋白",
+    "a2蛋白质": "A2蛋白",
+    "肠胃": "肚肚",
+    "肚子": "肚肚",
+    "脾胃": "肚肚状态",
+    "大脑": "🧠",
+    "眼睛": "👀",
+    "敏感": "敏敏",
+    "便便": "💩",
+    "粑粑": "💩",
+    "预防针": "💉",
+    "微信": "🌍",
+    "QQ": "🌍",
+    "小红书": "🍠",
+    "朋友圈": "pyq",
+    "钱": "💰",
+    "免费": "🆓",
+    "母乳": "母R",
+    "批批检透明": "每批都有检测，信息更透明",
+    "叫会员礼遇活动": "发现a2上了会员礼遇活动",
+    "emoji": "",
+    "♀️": "",
+    "♂": "",
+    "#": "",
+    "🎵": "",
+}
+A2_REIYU_MODEL_REWRITE_TERMS = (
+    "报名",
+    "顺手",
+    "顺口",
+    "顺便",
+    "麻烦",
+    "薅",
+    "白嫖",
+    "羊毛",
+    "真的会谢",
+    "彩虹屁",
+    "挺逗",
+    "Emm",
+    "笑哭R",
+    "顺便看到",
+    "带一嘴",
+    "失败",
+    "翻车",
+    "避雷",
+)
+A2_REIYU_RISK_POLARITY_REWRITE_TERMS = ("踩雷",)
+A2_REIYU_DETECTION_NAVIGATION_REWRITE_TERMS = (
+    "往下翻",
+    "翻着翻着",
+    "往下滑",
+    "仔细翻",
+    "翻了翻活动页面",
+)
+A2_REIYU_HARD_BAN_TERMS = (
+    "质量问题",
+    "风险澄清",
+    "问题批次",
+    "没货",
+    "缺货",
+    "召回",
+    "买不到",
+    "断货",
+    "断供",
+    "不好买",
+    "又没了",
+    "断粮",
+    "抢不到",
+    "真伪",
+    "假货",
+    "代购不确定",
+    "被迫转奶",
+    "维权",
+    "投诉",
+    "塌房",
+    "爆雷",
+    "正文",
+    "标题",
+    "卖点",
+    "痛点",
+    "问配方",
+    "填表",
+    "自己账号",
+    "无限",
+    "全检",
+    "A2蛋白质检测",
+    "生产批号",
+    "新码",
+    "空罐",
+    "攒着罐子",
+    "攒罐子",
+    "囤了好几罐",
+    "扫罐底码就能抽奖",
+    "一罐小车车",
+    "婴儿车抽奖",
+)
+A2_REIYU_CONTEXTUAL_PRIZE_HARD_BAN_TERMS = (
+    "赢一辆",
+    "积木",
+    "拉链包",
+    "小玩具",
+    "小书包",
+    "辅食碗",
+    "贝亲",
+)
+A2_REIYU_UGC_POST_SEED_TERMS = (
+    *(
+        _a2_reiyu_entry(
+            term,
+            enforcement="replace",
+            replacement=replacement,
+            reason="运营确认可做确定性规范化",
+        )
+        for term, replacement in A2_REIYU_REPLACE_TERMS.items()
+    ),
+    *(
+        _a2_reiyu_entry(
+            term,
+            enforcement="model_rewrite",
+            reason="运营确认应由 qwen-plus 结合上下文自然改写，不做字符串硬删",
+        )
+        for term in A2_REIYU_MODEL_REWRITE_TERMS
+    ),
+    *(
+        _a2_reiyu_entry(
+            term,
+            enforcement="model_rewrite",
+            match_mode="risk_polarity_context",
+            reason="只在句子明确表达踩雷风险时改写；不踩雷、没踩雷等正向否定表达放行",
+        )
+        for term in A2_REIYU_RISK_POLARITY_REWRITE_TERMS
+    ),
+    *(
+        _a2_reiyu_entry(
+            term,
+            enforcement="model_rewrite",
+            match_mode="detection_page_context",
+            reason="只在用翻页动作承接每批检测信息时，由 qwen-plus 改写来源关系",
+        )
+        for term in A2_REIYU_DETECTION_NAVIGATION_REWRITE_TERMS
+    ),
+    *(
+        _a2_reiyu_entry(
+            term,
+            enforcement="hard_ban",
+            reason="运营确认属于供应风险、指令泄露、检测乱编、旧罐暗示或明确机制错误",
+        )
+        for term in A2_REIYU_HARD_BAN_TERMS
+    ),
+    *(
+        _a2_reiyu_entry(
+            term,
+            enforcement="hard_ban",
+            match_mode="activity_prize_context",
+            reason="仅在活动奖品或兑换机制语境中属于新增奖品或机制错误",
+        )
+        for term in A2_REIYU_CONTEXTUAL_PRIZE_HARD_BAN_TERMS
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -184,6 +386,9 @@ class BusinessForbiddenTermService:
                 "created_by": created_by or str(new_entry.get("created_by") or "content_batch_workbench"),
                 "reason": str(new_entry.get("reason") or new_entry.get("note") or "运营反馈不希望出现").strip(),
                 "replacement": str(new_entry.get("replacement") or "").strip(),
+                "enforcement": _enforcement_from_entry(new_entry),
+                "match_mode": _match_mode_from_entry(new_entry),
+                "rewrite_model_config": _rewrite_model_config_from_entry(new_entry),
                 **({"source_context": source_context} if source_context else {}),
             }
             if match_index is None:
@@ -418,12 +623,17 @@ def normalize_business_forbidden_term_entries(entries: list[dict[str, Any]] | No
         replacement = str(raw.get("replacement") or raw.get("rewrite_to") or raw.get("replace_with") or "").strip()
         if len(replacement) > 100:
             raise ValueError("business forbidden term replacement is too long")
+        enforcement = _enforcement_from_entry(raw)
+        match_mode = _match_mode_from_entry(raw)
         normalized.append(
             {
                 **raw,
                 "term": term,
                 "reason": reason,
                 "replacement": replacement,
+                "enforcement": enforcement,
+                "match_mode": match_mode,
+                "rewrite_model_config": _rewrite_model_config_from_entry(raw),
                 "enabled": raw.get("enabled") is not False,
             }
         )
@@ -473,6 +683,9 @@ def _normalized_entry(entry: dict[str, Any], *, fallback_asset_key: str | None =
         "updated_at": str(entry.get("updated_at") or ""),
         "updated_by": str(entry.get("updated_by") or "").strip(),
         "replacement": _replacement_from_entry(entry),
+        "enforcement": _enforcement_from_entry(entry),
+        "match_mode": _match_mode_from_entry(entry),
+        "rewrite_model_config": _rewrite_model_config_from_entry(entry),
         "source": str(entry.get("source") or "").strip(),
         "asset_key": str(entry.get("asset_key") or fallback_asset_key or "").strip(),
         **({"source_context": entry.get("source_context")} if entry.get("source_context") is not None else {}),
@@ -502,6 +715,25 @@ def _replacement_from_entry(entry: dict[str, Any]) -> str:
         or entry.get("suggested_replacement")
         or ""
     ).strip()
+
+
+def _enforcement_from_entry(entry: dict[str, Any]) -> str:
+    value = str(entry.get("enforcement") or "").strip()
+    if value and value not in FORBIDDEN_TERM_ENFORCEMENTS:
+        raise ValueError(f"unsupported business forbidden term enforcement: {value}")
+    return value
+
+
+def _match_mode_from_entry(entry: dict[str, Any]) -> str:
+    value = str(entry.get("match_mode") or "literal").strip() or "literal"
+    if value not in FORBIDDEN_TERM_MATCH_MODES:
+        raise ValueError(f"unsupported business forbidden term match mode: {value}")
+    return value
+
+
+def _rewrite_model_config_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    value = entry.get("rewrite_model_config")
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _now_iso() -> str:

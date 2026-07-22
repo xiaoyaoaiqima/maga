@@ -1,7 +1,7 @@
 """Schemas for content-generation flow Expert management."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -36,6 +36,9 @@ class BusinessForbiddenTermEntryRequest(BaseSchema):
     term: str = Field(..., min_length=1, max_length=100)
     reason: str | None = Field(default=None, max_length=1000)
     replacement: str | None = Field(default=None, max_length=100)
+    enforcement: Literal["replace", "model_rewrite", "hard_ban"] | None = None
+    match_mode: Literal["literal", "activity_prize_context", "detection_page_context"] = "literal"
+    rewrite_model_config: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
 
 
@@ -48,6 +51,9 @@ class BusinessForbiddenTermEntryResponse(BaseSchema):
     updated_at: str = ""
     updated_by: str = ""
     replacement: str = ""
+    enforcement: str = ""
+    match_mode: str = "literal"
+    rewrite_model_config: dict[str, Any] = Field(default_factory=dict)
     source: str = ""
     asset_key: str = ""
 

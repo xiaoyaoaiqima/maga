@@ -39,6 +39,7 @@ import {
 } from '#/api/core/content-agent';
 
 import VersionComparePanel from '../components/version_compare_panel.vue';
+import { savePromptDebugTransfer } from '../prompt-debug/prompt-transfer';
 
 const route = useRoute();
 const router = useRouter();
@@ -506,7 +507,7 @@ const showGenerationSnapshot = (item: ContentAgentApi.BatchReportItem) => {
   });
 };
 
-const showGenerationPrompt = async (item: ContentAgentApi.BatchReportItem) => {
+const loadGenerationPrompt = async (item: ContentAgentApi.BatchReportItem) => {
   let prompt = item.generation_snapshot?.rendered_prompt || '';
   if (!prompt && item.task_id) {
     promptLoadingTaskId.value = item.task_id;
@@ -518,15 +519,21 @@ const showGenerationPrompt = async (item: ContentAgentApi.BatchReportItem) => {
       prompt = snapshot.input?.rendered_prompt || '';
     } catch {
       message.error('生成 Prompt 加载失败');
-      return;
+      return '';
     } finally {
       promptLoadingTaskId.value = null;
     }
   }
   if (!prompt) {
     message.warning('这条历史记录没有保存生成 Prompt');
-    return;
+    return '';
   }
+  return prompt;
+};
+
+const showGenerationPrompt = async (item: ContentAgentApi.BatchReportItem) => {
+  const prompt = await loadGenerationPrompt(item);
+  if (!prompt) return;
   Modal.info({
     title: `第 ${item.item_no} 条生成 Prompt`,
     width: 980,
@@ -543,6 +550,20 @@ const showGenerationPrompt = async (item: ContentAgentApi.BatchReportItem) => {
     ]),
     okText: '关闭',
   });
+};
+
+const goToPromptDebug = async (item: ContentAgentApi.BatchReportItem) => {
+  const prompt = await loadGenerationPrompt(item);
+  if (!prompt) return;
+  try {
+    const promptKey = savePromptDebugTransfer(prompt);
+    await router.push({
+      path: '/content-agent/prompt-debug',
+      query: { prompt_key: promptKey },
+    });
+  } catch {
+    message.error('跳转到提示词调试失败');
+  }
 };
 
 const openReport = async (batchId: number, showLoading = true) => {
@@ -1045,6 +1066,17 @@ watch(
                           @click="showGenerationPrompt(item)"
                         >
                           生成 Prompt
+                        </Button>
+                        <Button
+                          v-if="
+                            item.task_id ||
+                            item.generation_snapshot?.rendered_prompt
+                          "
+                          size="small"
+                          :loading="promptLoadingTaskId === item.task_id"
+                          @click="goToPromptDebug(item)"
+                        >
+                          去调试
                         </Button>
                         <Button
                           v-if="item.trace_run_id || item.run_id"

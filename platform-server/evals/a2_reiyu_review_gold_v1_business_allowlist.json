@@ -1,0 +1,217 @@
+{
+  "dataset_code": "a2_reiyu_review_gold_v1",
+  "slice": "business_allowlist_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-21",
+  "description": "a2 礼遇活动人工确认的业务放行边界：奖品金额和医疗效果表达按已确认口径放行；生成提示中的正文长度不作为审核硬规则；标题按中文、字母、数字、标点各1、emoji2且上限20；自然推荐词、上下文明确后的品牌指代、已缓解的焦虑表达、正向否定风险表达和‘抽奖那种虚的’允许。",
+  "labels": ["pass"],
+  "label_semantics": {
+    "pass": "符合当前 a2 礼遇活动业务口径，不因本切片降级或改写。"
+  },
+  "rubric": [
+    "‘2w’‘两万’‘万元’用于新西兰旅游、溯源或出行大奖时按已确认正确事实放行，不再标记事实待核。",
+    "本活动审核不拦截疾病或医疗效果表达；换季不感冒、周围孩子感冒但自家状态好、少跑医院、体质/抵抗力/自护力提升等表达均可出现。",
+    "生成提示中的正文200-250字属于生文约束，只观察生成命中情况，不因正文略短或略长直接判审核问题。",
+    "标题审核按中文字符1、emoji2计算，加权长度不超过20即可；不能拿提示词里的18字直接作为审核上限。",
+    "‘别错过’‘值得试试’属于允许的自然分享和推荐表达，不单独判促销或导购收束。",
+    "上下文已经明确出现a2时，后文可用‘品牌’自然指代；只在全文没有品牌锚点、仅剩指代词时判问题。",
+    "‘检测很严格’‘标准高’属于对每批检测的合理概括，可以放行；只拦没有素材支持的具体检测项目、数量、结果或报告细节。",
+    "‘仔细看了下’本身允许；检测承接只禁止写成翻看页面、往下翻页面或从活动规则里发现。",
+    "焦虑、担心、不安、不放心等自然情绪词不能按单词机械拦截；‘焦虑一下没了’‘之前担心，现在放心’等正向转折允许。只有明确把a2、a2至初或活动写成持续负面情绪来源、形成品牌或产品负面经历时才处理。",
+    "踩雷等风险词按句子极性判断，不能按单词机械拦截；‘闭眼入不踩雷’‘选对了没踩雷’等正向否定风险表达允许，只有‘这款真的踩雷了’等明确负面经历才处理。",
+    "‘抽奖那种虚的’是消费者表达更偏爱确定性兑换福利的自然口语，不按贬损活动处理。",
+    "上述表达按本活动业务口径放行，不应再次作为通用逻辑、事实或文风问题计入批审结果。"
+  ],
+  "items": [
+    {
+      "title": "a2至初礼遇活动奖品分享",
+      "content": "抽奖里有2w的新西兰旅游大奖，还有金手链和夏凉被。",
+      "meta": {
+        "case_code": "A2RY-BA-001",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["2w的新西兰旅游大奖"],
+        "reason": "2w、两万或万元的新西兰旅游/溯源奖金额度已由业务确认正确。",
+        "source": "user_confirmed_activity_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "confirmed_prize_amount",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "换季状态分享",
+      "content": "我家娃换季不容易感冒，少跑医院，当妈的省心不少。",
+      "meta": {
+        "case_code": "A2RY-BA-002",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["换季不容易感冒", "少跑医院"],
+        "reason": "疾病、换季和医疗效果表达在本活动审核中由业务确认允许，不作为问题拦截。",
+        "source": "user_confirmed_activity_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "medical_effect_allowed",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "宝妈群里的宝藏活动，a2至初会员积分真香",
+      "content": "标题按中文1、emoji2计算不超过20字；正文长度只作为生成约束观察。",
+      "meta": {
+        "case_code": "A2RY-BA-003",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["标题加权不超过20", "正文长度只作生成观察"],
+        "reason": "不能将生文提示中的18字或正文200-250字机械升级为审核硬规则。",
+        "source": "user_confirmed_activity_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "generation_constraint_not_audit_block",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "a2至初活动太香了，宝妈别错过",
+      "content": "a2做得用心，值得试试。",
+      "meta": {
+        "case_code": "A2RY-BA-004",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["别错过", "值得试试"],
+        "reason": "这两种表达由业务确认可以正常使用，不单独判促销或导购收束。",
+        "source": "user_confirmed_activity_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "natural_recommendation_allowed",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "a2活动让我好感up up",
+      "content": "反正这次活动让我对a2好感up up，品牌靠谱又大方，继续支持！",
+      "meta": {
+        "case_code": "A2RY-BA-005",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["对a2好感up up", "品牌靠谱又大方"],
+        "reason": "同一上下文已明确出现a2，后文使用‘品牌’指代关系清楚，可以放行。",
+        "source": "user_confirmed_activity_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "contextual_brand_reference_allowed",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "a2每批检测做得挺严格",
+      "content": "a2至初现在每批都有检测，就是那种很严格的批次检测。",
+      "meta": {
+        "case_code": "A2RY-BA-006",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["很严格的批次检测"],
+        "reason": "这是对已确认每批检测事实的合理概括，没有编造具体项目、数量、结果或报告细节。",
+        "source": "user_confirmed_activity_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "general_detection_strictness_allowed",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "仔细看了下a2活动",
+      "content": "而且我仔细看了下，a2至初现在每批都有检测。",
+      "meta": {
+        "case_code": "A2RY-BA-007",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["仔细看了下"],
+        "reason": "‘仔细看了下’不是翻看页面；只拦明确的翻页面、往下翻页面或从活动规则中发现检测。",
+        "source": "user_confirmed_activity_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "careful_reading_allowed_page_flipping_blocked",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "喝至初后踏实多了",
+      "content": "之前总怕宝宝不长肉，喝a2至初以后，娃的小脸终于肉嘟嘟了，老母亲的焦虑一下没了。",
+      "meta": {
+        "case_code": "A2RY-BA-008",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["老母亲的焦虑一下没了"],
+        "reason": "焦虑处于已经缓解的正向结果中，没有把a2或a2至初写成负面风险来源。",
+        "source": "user_confirmed_activity_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "resolved_anxiety_wording_allowed",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "我还是喜欢集罐这种实在的",
+      "content": "比起抽奖那种虚的，我还是喜欢集罐这种实在的福利，a2至初这次挺懂老客。",
+      "meta": {
+        "case_code": "A2RY-BA-009",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["抽奖那种虚的"],
+        "reason": "消费者是在表达自己更偏爱确定性兑换福利，没有否定a2或活动本身。",
+        "source": "user_confirmed_batch_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "lottery_is_virtual_wording_allowed",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "a2至初亲测不踩雷",
+      "content": "反正我是闭眼入不踩雷，亲测推荐a2至初。",
+      "meta": {
+        "case_code": "A2RY-BA-010",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["闭眼入不踩雷"],
+        "reason": "踩雷处于明确的正向否定风险表达中，没有陈述a2或a2至初存在负面经历，不能按词面误杀。",
+        "source": "user_confirmed_forbidden_term_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "negated_risk_wording_allowed",
+        "source_type": "human_feedback"
+      }
+    }
+  ]
+}

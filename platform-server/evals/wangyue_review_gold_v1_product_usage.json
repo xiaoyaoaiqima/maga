@@ -229,7 +229,7 @@
         "expected_label": "pass",
         "issue_code": "none",
         "evidence": ["晚上睡得沉", "白天精力旺盛", "身高都窜了一截"],
-        "reason": "睡眠、精力和身高属于业务规则可控制的积极自家反馈，不由产品使用事实硬审自动拦截或改写。",
+        "reason": "没有计划卖点上下文时，积极自家反馈不由产品使用事实硬审强制补齐双卖点；卖点是否跑偏应结合本篇计划在Content Fit判断。",
         "source": "batch437_item14_human_review"
       },
       "tags": {"brand": "旺玥", "dimension": "product_usage_facts", "boundary": "positive_effect_scope_business_controlled", "source_type": "human_feedback"}

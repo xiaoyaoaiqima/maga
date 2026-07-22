@@ -409,6 +409,52 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
     if layered_fields_present and not prompt_mode:
         prompt_mode = "layered_article"
     variation_slots: list[dict[str, Any]] = list(content_material_variation_slots)
+    trailing_variation_slots: list[dict[str, Any]] = []
+    for column_name, slot_code, slot_name in (
+        ("内容方向素材", "content_direction", "内容方向"),
+        ("活动了解途径素材", "info_source", "活动了解途径"),
+        ("参加活动原因素材", "participation_motive", "参加活动原因"),
+        ("活动内容素材", "activity_content", "活动内容"),
+        ("产品体验素材", "product_experience", "活动后的产品体验"),
+        ("消费者认可素材", "consumer_praise", "活动后的消费者认可"),
+        ("认可表达素材", "consumer_recognition", "认可表达"),
+        ("正向表达素材", "positive_expression", "活动分享正向表达"),
+    ):
+        options = _cell_lines(row.get(column_name))
+        if not options:
+            continue
+        existing_slot = next(
+            (
+                slot
+                for slot in variation_slots
+                if str(slot.get("slot_code") or "").strip() == slot_code
+            ),
+            None,
+        )
+        if existing_slot is not None:
+            existing_options = existing_slot.setdefault("options", [])
+            existing_options.extend(option for option in options if option not in existing_options)
+            existing_slot["offset"] = 0
+            continue
+        target_slots = (
+            trailing_variation_slots
+            if slot_code
+            in {
+                "product_experience",
+                "consumer_praise",
+                "consumer_recognition",
+                "positive_expression",
+            }
+            else variation_slots
+        )
+        target_slots.append(
+            {
+                "slot_code": slot_code,
+                "slot_name": slot_name,
+                "options": options,
+                "offset": 0,
+            }
+        )
     if prize_material:
         variation_slots.append(
             {
@@ -425,6 +471,7 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
                 "options": batch_detection_material,
             }
         )
+    variation_slots.extend(trailing_variation_slots)
     explicit_post_type = (
         row.get("帖子类型")
         or row.get("内容类型")
@@ -659,8 +706,22 @@ def _row_to_rule_item(row: dict[str, str], index: int) -> dict[str, Any] | None:
 
 
 def _cell_lines(value: str | None) -> list[str]:
+    raw_value = str(value or "").strip()
+    if raw_value.startswith("["):
+        try:
+            parsed = json.loads(raw_value)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            lines: list[str] = []
+            for raw in parsed:
+                line = _clean_example_line(str(raw or ""))
+                if line and line not in lines:
+                    lines.append(line)
+            return lines
+
     lines: list[str] = []
-    for raw in re.split(r"\r?\n|\s*\|\|\s*", str(value or "")):
+    for raw in re.split(r"\r?\n|\s*\|\|\s*", raw_value):
         line = _clean_example_line(raw)
         if line and line not in lines:
             lines.append(line)

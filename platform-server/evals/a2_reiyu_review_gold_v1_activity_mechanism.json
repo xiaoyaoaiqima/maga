@@ -1,0 +1,220 @@
+{
+  "dataset_code": "a2_reiyu_review_gold_v1",
+  "slice": "activity_mechanism_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-20",
+  "description": "a2 礼遇活动人工确认的集罐、积分、扫码和奖品归属边界。",
+  "labels": ["pass", "light_fix", "reject"],
+  "label_semantics": {
+    "pass": "符合当前活动事实，可保留。",
+    "light_fix": "活动事实主体成立，但当前句式容易造成档位误读，局部改写后保留。",
+    "reject": "活动机制或资格事实明确错误，批量交付时直接删除。"
+  },
+  "rubric": [
+    "抽奖奖品口径为旅游基金大奖、金手链、夏凉被；旅游基金也可以自然写成‘新西兰旅游’或‘新西兰旅游大奖’，不要求名称逐字统一，但不得把集罐奖品归到抽奖机制。",
+    "集罐奖品标准为：3罐换小车车，6罐换自行车，12罐换奶粉，18罐换婴儿车。",
+    "‘买完奶粉扫罐码集罐’允许表达，不因扫码参与集罐而判错。",
+    "积分不能写成兑换小车车、自行车、奶粉或婴儿车等集罐奖品，也不能写成兑换旅游基金、金手链或夏凉被等抽奖奖品。",
+    "积分素材只提供‘能换东西’或‘兑换会员礼’而没有给出具体礼品时，不能自行编造小玩具、绘本、奶粉周边等具体积分礼品。",
+    "积分可以正常出现，也可以和集罐、抽奖、回馈礼在同篇并列；只有把集罐写成兑换积分或‘集罐换积分’时才判为活动机制错误。",
+    "活动开始前购买或家中原有的旧罐不能参加本次集罐活动；‘家里正好存了几个罐子’属于隐含旧罐资格错误。",
+    "只写‘奶粉喝完了把罐子存着’但没有明确说活动前旧罐可参加时，不按旧罐硬错处理，标为 light_fix，改成直接说参加集罐。",
+    "没有素材提供中奖或兑换经历时，不能写自己已经中奖、已经兑换、已经拿到奖品或孩子已经拿到兑换实物。",
+    "同篇可以同时写抽奖和集罐；明确写清各自奖品归属可以放行。",
+    "先列出抽奖、集罐等玩法，再统一罗列活动奖品也可以放行；只要没有把某个奖品明确归到错误机制，就不要求逐项拆分归属。",
+    "写完正确档位后，可以继续泛提其他档位奖品；只有句式明确暗示同一档位还会额外送其他档位奖品时，才标为轻修或错误。",
+    "6罐换自行车后用‘小车车’口语指代这辆自行车可以放行。",
+    "奶粉使用‘吃’‘吃完’等口语表达允许，不作为审核问题。"
+  ],
+  "items": [
+    {
+      "title": "买奶粉后参加集罐",
+      "content": "买完奶粉记得扫罐码集罐，集12罐可以换一罐奶粉。",
+      "meta": {
+        "case_code": "A2RY-AM-001",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "业务确认买完奶粉扫罐码集罐属于正确活动参与表达。",
+        "source": "user_confirmed_activity_review"
+      }
+    },
+    {
+      "title": "活动奖品分开说明",
+      "content": "集罐能兑自行车或奶粉，抽奖有旅游基金、金手链和夏凉被。",
+      "meta": {
+        "case_code": "A2RY-AM-002",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "集罐和抽奖的奖品归属明确，业务确认正确。",
+        "source": "user_confirmed_activity_review"
+      }
+    },
+    {
+      "title": "奶粉口语表达",
+      "content": "这罐奶粉娃很快就吃完了。",
+      "meta": {
+        "case_code": "A2RY-AM-003",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "业务确认奶粉使用‘吃’等口语动词可以出现。",
+        "source": "user_confirmed_activity_review"
+      }
+    },
+    {
+      "title": "积分兑换集罐奖品",
+      "content": "攒积分能换小车车、自行车和奶粉。",
+      "meta": {
+        "case_code": "A2RY-AM-004",
+        "expected_label": "reject",
+        "issue_code": "points_redeem_collect_can_prize",
+        "reason": "把集罐奖品错误归到积分兑换机制。",
+        "source": "user_confirmed_activity_review"
+      }
+    },
+    {
+      "title": "旧罐参加活动",
+      "content": "家里以前买的罐子一直没扔，现在正好可以参加集罐。",
+      "meta": {
+        "case_code": "A2RY-AM-005",
+        "expected_label": "reject",
+        "issue_code": "old_can_eligibility_implied",
+        "reason": "活动开始前购买或家中原有的旧罐不具备本次活动资格。",
+        "source": "user_confirmed_activity_review"
+      }
+    },
+    {
+      "title": "罐数奖品对应错误",
+      "content": "集12罐可以换婴儿车。",
+      "meta": {
+        "case_code": "A2RY-AM-006",
+        "expected_label": "reject",
+        "issue_code": "wrong_can_count_prize_mapping",
+        "reason": "12罐应换奶粉，婴儿车对应18罐。",
+        "source": "user_confirmed_activity_review"
+      }
+    },
+    {
+      "title": "正确档位后泛提其他奖品",
+      "content": "买12罐就能再换1罐，还有小车车、婴儿车那些好礼能兑。",
+      "meta": {
+        "case_code": "A2RY-AM-007",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "12罐换奶粉的档位正确，后半句只是泛提活动中的其他档位奖品，业务确认保留。",
+        "source": "user_confirmed_badcase_review"
+      }
+    },
+    {
+      "title": "同一句暗示12罐还送小车车",
+      "content": "正常买12罐的钱，现在能到手13罐，还有小车车送呢。",
+      "meta": {
+        "case_code": "A2RY-AM-008",
+        "expected_label": "light_fix",
+        "issue_code": "can_count_prize_wording_ambiguous",
+        "reason": "句式容易被理解为12罐除了奶粉还会送3罐档位的小车车。",
+        "minimal_fix": "改为‘正常买12罐的钱，现在能到手13罐；另外活动还有集3罐换小车车的档位。’",
+        "source": "user_confirmed_badcase_review"
+      }
+    },
+    {
+      "title": "自行车的口语指代",
+      "content": "集6罐就能换辆自行车，这小车车可太戳我了。",
+      "meta": {
+        "case_code": "A2RY-AM-009",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "6罐换自行车的档位正确，后面的‘小车车’是对自行车的口语指代。",
+        "source": "user_confirmed_badcase_review"
+      }
+    },
+    {
+      "title": "多种玩法后的奖品总列表",
+      "content": "抽奖、集罐、积分、回馈礼全都有，奖品有旅游基金、金手链、夏凉被，还有小车车婴儿车。",
+      "meta": {
+        "case_code": "A2RY-AM-010",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "文章没有把奖品明确归到错误机制，业务确认不要求逐项拆分归属。",
+        "source": "user_confirmed_badcase_review"
+      }
+    },
+    {
+      "title": "旅游大奖自然说法",
+      "content": "抽奖里有2w多的新西兰旅游，太给力了。",
+      "meta": {
+        "case_code": "A2RY-AM-011",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "业务确认旅游基金大奖和新西兰旅游都可以说，金额正确即可，不要求奖品名称逐字统一。",
+        "source": "user_confirmed_badcase_review"
+      }
+    },
+    {
+      "title": "虚构已经拿到集罐奖品",
+      "content": "集3罐能换小车车，娃拿到小车可高兴了。",
+      "meta": {
+        "case_code": "A2RY-AM-012",
+        "expected_label": "reject",
+        "issue_code": "fabricated_reward_experience",
+        "reason": "本篇素材没有提供已经兑换或拿到奖品的经历，却写孩子已经拿到兑换实物。",
+        "source": "user_confirmed_backup_batch_review"
+      }
+    },
+    {
+      "title": "积分兑换抽奖奖品",
+      "content": "积分能换夏凉被和金手链，长期喝挺划算。",
+      "meta": {
+        "case_code": "A2RY-AM-013",
+        "expected_label": "reject",
+        "issue_code": "points_redeem_lottery_prize",
+        "reason": "夏凉被和金手链属于抽奖奖品，不能写成积分兑换礼品。",
+        "source": "user_confirmed_backup_batch_review"
+      }
+    },
+    {
+      "title": "集罐兑换积分",
+      "content": "现在集罐还能换积分，这个活动挺实在。",
+      "meta": {
+        "case_code": "A2RY-AM-014",
+        "expected_label": "reject",
+        "issue_code": "collect_can_redeem_points",
+        "reason": "集罐不能兑换积分，属于明确的活动机制串换。",
+        "source": "user_confirmed_backup_batch_review"
+      }
+    },
+    {
+      "title": "隐含家中旧罐参加",
+      "content": "家里正好存了几个罐子，现在可以参加集罐了。",
+      "meta": {
+        "case_code": "A2RY-AM-015",
+        "expected_label": "reject",
+        "issue_code": "old_can_eligibility_implied",
+        "reason": "发现活动时家中已经存放的罐子属于活动前原有罐子，不能参加本次集罐。",
+        "source": "user_confirmed_backup_batch_review"
+      }
+    },
+    {
+      "title": "存空罐参加集罐的说法",
+      "content": "奶粉喝完了把罐子存着就行，集罐还能换奶粉。",
+      "meta": {
+        "case_code": "A2RY-AM-016",
+        "expected_label": "light_fix",
+        "issue_code": "empty_can_storage_wording",
+        "reason": "句子没有明确说活动前旧罐可以参加，不按旧罐资格硬错处理；但把集罐写成存放空罐容易造成误读，需要局部改写。",
+        "minimal_fix": "改为‘参加集罐还能换奶粉’，不描述存放空罐。",
+        "source": "user_confirmed_backup_batch_review"
+      }
+    },
+    {
+      "title": "积分礼品无素材时自行编造",
+      "content": "积分能换的还挺多，什么小玩具、绘本、奶粉周边都有。",
+      "meta": {
+        "case_code": "A2RY-AM-017",
+        "expected_label": "reject",
+        "issue_code": "fabricated_points_reward",
+        "reason": "本篇积分素材只说能换东西，没有提供具体积分礼品，正文自行补出了未确认礼品。",
+        "source": "batch_759_human_review"
+      }
+    }
+  ]
+}

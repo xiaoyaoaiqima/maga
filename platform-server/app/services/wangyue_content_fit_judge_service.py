@@ -13,6 +13,7 @@ CONTENT_FIT_ISSUE_CODES = {
     "unnatural_product_appearance",
     "post_type_mismatch",
     "ad_like_closure",
+    "selling_point_effect_mismatch",
 }
 CONTENT_FIT_MODEL_CODE = "deepseek-v4-flash"
 CONTENT_FIT_MAX_TOKENS = 800
@@ -43,10 +44,12 @@ class WangyueContentFitJudgeService:
         title: str | None,
         body: str | None,
         post_type: str | None,
+        selling_painpoint_group: str | None = None,
         model_config: dict[str, Any] | None = None,
     ) -> WangyueContentFitJudgment:
         user_prompt = (
             f"目标帖子类型：{post_type or '未指定'}\n"
+            f"计划卖点痛点组合：{selling_painpoint_group or '未指定'}\n"
             f"标题：{title or ''}\n"
             f"正文：{body or ''}"
         )
@@ -93,7 +96,9 @@ CONTENT_FIT_SYSTEM_PROMPT = """你只审核旺玥文章的内容适配：产品�
 7. 朋友问起、成分依据、多个自家反馈、孩子接受和继续使用可以构成完整强种草链。只要各节点自然成立，就必须 pass；不能仅因节点多、链路完整而标 watch 或 block。节点密度和同类链路占比属于批量治理，不是 Content Fit 问题。
 8. “营养满满”是普通宝妈口语里的正向评价，本身可以 pass。不能仅凭这个词判 abstract_brief_translation、unnatural_product_appearance 或 ad_like_closure，也不能因此触发改写；只有句子另有明确内容适配问题时，才按对应问题判断。
 9. 自家长期使用中的消化吸收体验可以直接表达，例如便便规律、胀气少、小肚子舒服、积食或排便状态前后变化。即使形成明确消化效果链，也不能仅凭这一点标 watch 或 block；医疗化、治疗或保证有效不属于本审核维度，由独立合规审核处理。
+10. 卖点效果必须结合“计划卖点痛点组合”判断，不能脱离计划做全局关键词拼盘。计划是“进阶保护力+容易中招”时，如果正文没有落到保护力、少中招、状态稳、小状况少等保护方向，反而主要用旺玥或乳铁蛋白、免疫球蛋白、HMO去解释多读书、少揉眼、专注、精力或体能，block，selling_point_effect_mismatch。只要计划里的保护方向已经自然成立，正文顺带出现眼脑、营养或精力内容也可以 pass。计划是精力双卖点组合时，双卖点是生成方向，不是正文逐项齐全审核；正文自然带到保护力、眼脑或营养丰富中的一个相关支点即可，不要求两侧卖点全部显式写齐。营养丰富计划用钙铁锌、多种关键营养或营养丰富承接精力、活力、成长，也可以 pass。
+11. “每天一杯、每天早晚一杯、早晚各一杯”属于正常且可合理虚构的使用频次；热奶、温奶和奶的温度也可以正常表达。只要大人完成冲泡、没有动作载体或产品形态错误，就不能因此标 watch 或 block。
 
-issue_code 只能从以下值选择：none、abstract_brief_translation、unnatural_product_appearance、post_type_mismatch、ad_like_closure。label=pass 时 issue_code 必须是 none。
+issue_code 只能从以下值选择：none、abstract_brief_translation、unnatural_product_appearance、post_type_mismatch、ad_like_closure、selling_point_effect_mismatch。label=pass 时 issue_code 必须是 none。
 
 只输出 JSON object：{"label":"pass|watch|block","issue_code":"上述枚举之一","evidence":"原文证据"}。"""

@@ -109,6 +109,24 @@ def test_summary_separates_unreviewed_items_from_redline_failures():
     assert summary.audit_skipped_count == 1
 
 
+def test_report_uses_contextual_forbidden_review_instead_of_literal_rescan():
+    service = ContentBatchReportService(db=None)
+
+    allowed_hits = service._forbidden_hits_for_report(
+        "闭眼入不踩雷",
+        ["踩雷"],
+        quality={"forbidden_terms_review": {"final_hits": []}},
+    )
+    negative_hits = service._forbidden_hits_for_report(
+        "这款真的踩雷了",
+        ["踩雷"],
+        quality={"forbidden_terms_review": {"final_hits": ["踩雷"]}},
+    )
+
+    assert allowed_hits == []
+    assert negative_hits == ["踩雷"]
+
+
 def test_report_surfaces_history_similarity_watch_without_rewrite():
     service = ContentBatchReportService(db=None)
     items = [

@@ -920,13 +920,34 @@ class AssetService:
         asset = await self.get_latest_asset(ARTICLE_BUSINESS_RULE_ASSET_TYPE, asset_key)
         if asset is None:
             raise ValueError("article business rule asset not found")
-        if payload.corpus is None and payload.selling_painpoint_group is None:
+        writing_requirements_requested = "writing_requirements" in payload.model_fields_set
+        generation_requirements_requested = "generation_requirements" in payload.model_fields_set
+        if (
+            payload.corpus is None
+            and payload.selling_painpoint_group is None
+            and payload.inspiration_none_source_row_nos is None
+            and payload.inspiration_clue_by_source_row_no is None
+            and not writing_requirements_requested
+            and not generation_requirements_requested
+        ):
             raise ValueError("no article business rule fields to update")
 
         content_json = copy.deepcopy(asset.content_json or {})
         _, item = _find_business_rule_item(content_json, rule_id=rule_id, source_row_no=None)
         current_corpus = str(item.get("corpus") or "")
         current_group = str(item.get("selling_painpoint_group") or "")
+        current_inspiration_none_source_row_nos = sorted(
+            {
+                int(value)
+                for value in item.get("inspiration_none_source_row_nos") or []
+                if _int_or_none(value) is not None
+            }
+        )
+        current_inspiration_clue_by_source_row_no = _normalize_inspiration_clue_map(
+            item.get("inspiration_clue_by_source_row_no")
+        )
+        current_writing_requirements = _clean_text_list(item.get("writing_requirements"))
+        current_generation_requirements = _clean_text_list(item.get("generation_requirements"))
         if payload.expected_corpus is not None and current_corpus != payload.expected_corpus:
             raise ValueError("article business rule corpus changed since review")
         if (
@@ -934,6 +955,29 @@ class AssetService:
             and current_group != payload.expected_selling_painpoint_group
         ):
             raise ValueError("article business rule selling painpoint group changed since review")
+        if (
+            payload.expected_inspiration_none_source_row_nos is not None
+            and current_inspiration_none_source_row_nos
+            != sorted(set(payload.expected_inspiration_none_source_row_nos))
+        ):
+            raise ValueError("article business rule inspiration mapping changed since review")
+        if (
+            payload.expected_inspiration_clue_by_source_row_no is not None
+            and current_inspiration_clue_by_source_row_no
+            != _normalize_inspiration_clue_map(payload.expected_inspiration_clue_by_source_row_no)
+        ):
+            raise ValueError("article business rule inspiration clue mapping changed since review")
+        if (
+            payload.expected_writing_requirements is not None
+            and current_writing_requirements != _clean_text_list(payload.expected_writing_requirements)
+        ):
+            raise ValueError("article business rule writing requirements changed since review")
+        if (
+            payload.expected_generation_requirements is not None
+            and current_generation_requirements
+            != _clean_text_list(payload.expected_generation_requirements)
+        ):
+            raise ValueError("article business rule generation requirements changed since review")
 
         next_corpus = payload.corpus.strip() if payload.corpus is not None else current_corpus
         next_group = (
@@ -941,14 +985,81 @@ class AssetService:
             if payload.selling_painpoint_group is not None
             else current_group
         )
+        next_inspiration_none_source_row_nos = (
+            sorted(set(payload.inspiration_none_source_row_nos))
+            if payload.inspiration_none_source_row_nos is not None
+            else current_inspiration_none_source_row_nos
+        )
+        next_inspiration_clue_by_source_row_no = (
+            _normalize_inspiration_clue_map(payload.inspiration_clue_by_source_row_no)
+            if payload.inspiration_clue_by_source_row_no is not None
+            else current_inspiration_clue_by_source_row_no
+        )
+        next_writing_requirements: list[str] | None = current_writing_requirements
+        if writing_requirements_requested:
+            next_writing_requirements = (
+                _clean_text_list(payload.writing_requirements)
+                if payload.writing_requirements is not None
+                else None
+            )
+        next_generation_requirements: list[str] | None = current_generation_requirements
+        if generation_requirements_requested:
+            next_generation_requirements = (
+                _clean_text_list(payload.generation_requirements)
+                if payload.generation_requirements is not None
+                else None
+            )
         if not next_corpus:
             raise ValueError("article business rule corpus cannot be empty")
         if not next_group:
             raise ValueError("article business rule selling painpoint group cannot be empty")
-        if next_corpus == current_corpus and next_group == current_group:
+        if (
+            next_corpus == current_corpus
+            and next_group == current_group
+            and next_inspiration_none_source_row_nos == current_inspiration_none_source_row_nos
+            and next_inspiration_clue_by_source_row_no == current_inspiration_clue_by_source_row_no
+            and (
+                not writing_requirements_requested
+                or (
+                    next_writing_requirements == current_writing_requirements
+                    and (next_writing_requirements is not None or "writing_requirements" not in item)
+                )
+            )
+            and (
+                not generation_requirements_requested
+                or (
+                    next_generation_requirements == current_generation_requirements
+                    and (
+                        next_generation_requirements is not None
+                        or "generation_requirements" not in item
+                    )
+                )
+            )
+        ):
             return asset
         item["corpus"] = next_corpus
         item["selling_painpoint_group"] = next_group
+        if next_inspiration_none_source_row_nos:
+            item["inspiration_none_source_row_nos"] = next_inspiration_none_source_row_nos
+        else:
+            item.pop("inspiration_none_source_row_nos", None)
+        if next_inspiration_clue_by_source_row_no:
+            item["inspiration_clue_by_source_row_no"] = {
+                str(source_row_no): clue
+                for source_row_no, clue in next_inspiration_clue_by_source_row_no.items()
+            }
+        else:
+            item.pop("inspiration_clue_by_source_row_no", None)
+        if writing_requirements_requested:
+            if next_writing_requirements:
+                item["writing_requirements"] = next_writing_requirements
+            else:
+                item.pop("writing_requirements", None)
+        if generation_requirements_requested:
+            if next_generation_requirements:
+                item["generation_requirements"] = next_generation_requirements
+            else:
+                item.pop("generation_requirements", None)
 
         await self.db.execute(
             update(AssetRegistry)
@@ -968,6 +1079,30 @@ class AssetService:
                 "last_article_business_rule_corpus_after": next_corpus,
                 "last_article_business_rule_group_before": current_group,
                 "last_article_business_rule_group_after": next_group,
+                "last_article_business_rule_inspiration_none_source_row_nos_before": (
+                    current_inspiration_none_source_row_nos
+                ),
+                "last_article_business_rule_inspiration_none_source_row_nos_after": (
+                    next_inspiration_none_source_row_nos
+                ),
+                "last_article_business_rule_inspiration_clue_by_source_row_no_before": (
+                    current_inspiration_clue_by_source_row_no
+                ),
+                "last_article_business_rule_inspiration_clue_by_source_row_no_after": (
+                    next_inspiration_clue_by_source_row_no
+                ),
+                "last_article_business_rule_writing_requirements_before": (
+                    current_writing_requirements
+                ),
+                "last_article_business_rule_writing_requirements_after": (
+                    next_writing_requirements
+                ),
+                "last_article_business_rule_generation_requirements_before": (
+                    current_generation_requirements
+                ),
+                "last_article_business_rule_generation_requirements_after": (
+                    next_generation_requirements
+                ),
                 "last_article_business_rule_base_asset_id": asset.id,
                 "last_article_business_rule_base_version_no": asset.version_no,
             }
@@ -1182,6 +1317,18 @@ def _int_or_none(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_inspiration_clue_map(value: Any) -> dict[int, str]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[int, str] = {}
+    for key, clue in value.items():
+        source_row_no = _int_or_none(key)
+        normalized_clue = str(clue or "").strip()
+        if source_row_no is not None and normalized_clue:
+            normalized[source_row_no] = normalized_clue
+    return dict(sorted(normalized.items()))
 
 
 def comment_business_rule_draft_response(proposal: AssetChangeProposal) -> dict[str, Any]:

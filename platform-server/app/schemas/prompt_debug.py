@@ -1,5 +1,7 @@
 """Schemas for the MAGA prompt debug workbench."""
+from datetime import datetime
 from typing import Optional
+from typing import Literal
 
 from pydantic import Field, field_validator
 
@@ -14,6 +16,11 @@ class PromptDebugRequest(BaseSchema):
     temperature: Optional[float] = Field(default=None, ge=0, le=2)
     max_tokens: Optional[int] = Field(default=None, ge=1, le=20000)
     system_prompt: Optional[str] = Field(default=None)
+    run_group_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    workbench_mode: Literal["single", "compare"] = "single"
+    panel_key: Literal["left", "right"] = "left"
+    item_index: int = Field(default=0, ge=0, le=19)
+    batch_size: int = Field(default=1, ge=1, le=20)
 
     @field_validator("prompt", "model_code")
     @classmethod
@@ -47,3 +54,51 @@ class PromptDebugResponse(BaseSchema):
     usage: Optional[PromptDebugTokenUsage] = None
     latency_ms: Optional[int] = None
     error_message: Optional[str] = None
+    history_id: Optional[int] = None
+    run_group_id: Optional[str] = None
+
+
+class PromptDebugHistoryItem(BaseSchema):
+    id: int
+    run_group_id: str
+    workbench_mode: Literal["single", "compare"]
+    panel_key: Literal["left", "right"]
+    item_index: int
+    batch_size: int
+    prompt: str
+    system_prompt: Optional[str] = None
+    requested_model_code: str
+    temperature: float
+    max_tokens: int
+    success: bool
+    content: Optional[str] = None
+    model_code: Optional[str] = None
+    provider_code: Optional[str] = None
+    provider_model: Optional[str] = None
+    token_usage: Optional[dict] = None
+    latency_ms: Optional[int] = None
+    error_message: Optional[str] = None
+    create_time: Optional[datetime] = None
+
+
+class PromptDebugHistoryGroupSummary(BaseSchema):
+    run_group_id: str
+    workbench_mode: Literal["single", "compare"]
+    create_time: Optional[datetime] = None
+    total_count: int
+    success_count: int
+    failed_count: int
+    panel_keys: list[Literal["left", "right"]] = Field(default_factory=list)
+    model_codes: list[str] = Field(default_factory=list)
+    prompt_preview: str = ""
+
+
+class PromptDebugHistoryListResponse(BaseSchema):
+    items: list[PromptDebugHistoryGroupSummary] = Field(default_factory=list)
+
+
+class PromptDebugHistoryGroupDetail(BaseSchema):
+    run_group_id: str
+    workbench_mode: Literal["single", "compare"]
+    create_time: Optional[datetime] = None
+    records: list[PromptDebugHistoryItem] = Field(default_factory=list)

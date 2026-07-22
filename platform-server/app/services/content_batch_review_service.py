@@ -113,6 +113,13 @@ class ContentBatchReviewService:
                 raise ValueError("manual edit requires title and body")
             item.title = request.title.strip()
             item.body = request.body.strip()
+        elif item.status == "failed":
+            if (
+                request.action != "request_revision"
+                or not (item.title or "").strip()
+                or not (item.body or "").strip()
+            ):
+                raise ValueError("failed batch item requires generated content for revision")
         elif item.status not in {"generated", "approved", "manual_edited", "needs_revision"}:
             raise ValueError("batch item is not ready for operator review")
 
@@ -427,7 +434,17 @@ class ContentBatchReviewService:
             rewrite_instructions=rewrite_instructions,
             output_fields=output_fields,
         )
-        rewrite_snapshot["model_config"] = _operator_feedback_model_config(rewrite_snapshot.get("model_config"))
+        requested_model_config = (
+            request.generation_model_config.model_dump(exclude_none=True)
+            if request.generation_model_config is not None
+            else {}
+        )
+        rewrite_snapshot["model_config"] = _operator_feedback_model_config(
+            {
+                **dict(rewrite_snapshot.get("model_config") or {}),
+                **requested_model_config,
+            }
+        )
         input_payload.update(rewrite_snapshot)
         executor_code = await self._executor_code_for_item(item)
         orchestrator = ContentAgentOrchestrator(
@@ -641,7 +658,12 @@ def _excerpt(value: str | None, *, limit: int = 500) -> str | None:
 
 def _content_type_for_item(item: ContentBatchItem) -> str:
     plan = item.plan_json or {}
-    if plan.get("rule_type") == "business_rule" or plan.get("output_fields") == ["comment"]:
+    output_fields = plan.get("output_fields")
+    if output_fields == ["comment"] or str(plan.get("content_type") or "").strip() == "comment":
+        return "comment"
+    if item.title:
+        return "article"
+    if plan.get("scenario_code") or plan.get("comment_prompt_bundle"):
         return "comment"
     return "article"
 

@@ -32,6 +32,11 @@ REWRITE_QUALITY_HOLDOUT_PATH = (
 )
 FLUENCY_GOLD_PATH = Path(__file__).parents[1] / "evals" / "wangyue_review_gold_v1_fluency.json"
 CONTENT_FIT_GOLD_PATH = Path(__file__).parents[1] / "evals" / "wangyue_review_gold_v1_content_fit.json"
+CLAIM_PUBLIC_DISEASE_GOLD_PATH = (
+    Path(__file__).parents[1]
+    / "evals"
+    / "wangyue_review_gold_v1_claim_and_public_disease.json"
+)
 
 
 class _Result:
@@ -130,6 +135,7 @@ def test_wangyue_product_usage_gold_slice_has_stable_labels_and_boundaries() -> 
     assert by_code["WYU-013"]["meta"]["issue_code"] == "wangyue_four_stage_association"
     assert by_code["WYU-016"]["meta"]["expected_label"] == "pass"
     assert by_code["WYU-017"]["meta"]["expected_label"] == "pass"
+    assert by_code["WYU-017"]["meta"]["issue_code"] == "none"
 
 
 def test_wangyue_rewrite_quality_gold_slice_has_item5_regression_pair() -> None:
@@ -177,7 +183,7 @@ def test_wangyue_content_fit_gold_keeps_post_type_as_generation_direction() -> N
     by_code = {item["meta"]["case_code"]: item for item in payload["items"]}
 
     assert payload["review_status"] == "approved"
-    assert len(payload["items"]) == 22
+    assert len(payload["items"]) == 27
     assert by_code["WYF-002"]["meta"]["expected_label"] == "pass"
     assert by_code["WYF-002"]["meta"]["issue_code"] == "none"
     assert by_code["WYF-004"]["meta"]["expected_label"] == "block"
@@ -202,9 +208,34 @@ def test_wangyue_content_fit_gold_keeps_post_type_as_generation_direction() -> N
     assert by_code["WYF-022"]["meta"]["expected_label"] == "pass"
     assert by_code["WYF-022"]["tags"]["boundary"] == "post_type_is_generation_direction"
     assert "连着几天" in by_code["WYF-022"]["content"]
+    assert by_code["WYF-023"]["meta"]["expected_label"] == "block"
+    assert by_code["WYF-023"]["meta"]["issue_code"] == "selling_point_effect_mismatch"
+    assert by_code["WYF-023"]["context"]["selling_painpoint_group"] == "进阶保护力+容易中招"
+    assert by_code["WYF-024"]["meta"]["expected_label"] == "pass"
+    assert "热奶" in by_code["WYF-024"]["content"]
+    assert by_code["WYF-025"]["meta"]["expected_label"] == "pass"
+    assert by_code["WYF-025"]["tags"]["boundary"] == "nutrition_supports_energy_without_protection"
+    assert by_code["WYF-026"]["meta"]["expected_label"] == "pass"
+    assert by_code["WYF-027"]["meta"]["expected_label"] == "pass"
     assert "不能因为出现“重新看奶粉、后来选了”" in by_code["WYF-009"]["meta"]["reason"]
     assert by_code["WYF-014"]["meta"]["expected_label"] == "watch"
     assert by_code["WYF-014"]["meta"]["acceptable_labels"] == ["pass", "watch"]
+
+
+def test_wangyue_claim_public_disease_gold_blocks_concrete_scenarios_and_keeps_abstract_feedback() -> None:
+    payload = json.loads(CLAIM_PUBLIC_DISEASE_GOLD_PATH.read_text(encoding="utf-8"))
+    by_code = {item["meta"]["case_code"]: item for item in payload["items"]}
+
+    assert payload["review_status"] == "approved"
+    assert len(payload["items"]) == 17
+    for case_code in ("WYC-001", "WYC-002", "WYC-004", "WYC-005", "WYC-006", "WYC-007"):
+        assert by_code[case_code]["meta"]["expected_label"] == "block"
+        assert by_code[case_code]["meta"]["issue_code"] == "concrete_disease_scenario"
+    assert by_code["WYC-003"]["meta"]["expected_label"] == "pass"
+    assert by_code["WYC-015"]["meta"]["expected_label"] == "pass"
+    assert by_code["WYC-016"]["meta"]["expected_label"] == "pass"
+    assert "少中招" in by_code["WYC-016"]["content"]
+    assert by_code["WYC-017"]["meta"]["expected_label"] == "pass"
 
 
 def test_approved_product_usage_gold_matches_current_hard_review() -> None:

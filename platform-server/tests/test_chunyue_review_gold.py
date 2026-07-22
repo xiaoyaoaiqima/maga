@@ -35,6 +35,7 @@ def test_chunyue_business_usability_gold_keeps_approved_boundaries() -> None:
         "CYU-006": "light_fix_usable",
         "CYU-007": "direct_pool",
         "CYU-008": "direct_pool",
+        "CYU-009": "direct_pool",
     }
 
 
@@ -49,6 +50,7 @@ def test_chunyue_review_prompt_contains_user_confirmed_calibration() -> None:
     assert "让敏敏宝宝安心" in prompt
     assert "不强制文章完成“最终选择/购买莼悦”的闭环" in prompt
     assert "就靠这个依据确认的" in prompt
+    assert "别的品牌介绍里从没这样说过" in prompt
 
 
 def test_chunyue_review_user_prompt_carries_source_expression_and_rubric_code() -> None:

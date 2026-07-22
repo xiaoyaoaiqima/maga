@@ -545,7 +545,7 @@ def test_a2_comment_guard_does_not_require_duplicate_persona_slot():
     assert "人设" not in profile.context_required_fields
 
 
-def test_crm_third_party_direction_preserves_business_report_terms():
+def test_crm_third_party_direction_normalizes_business_report_terms():
     item = ContentBatchItem(
         body="a2罐底码扫出来是新西兰三方检测报告，批次信息也有",
         plan_json={
@@ -562,7 +562,26 @@ def test_crm_third_party_direction_preserves_business_report_terms():
     assert payload is not None
     assert payload["pass"] is True
     assert "罐底码" in item.body
-    assert "三方检测报告" in item.body
+    assert "三方质检报告" in item.body
+    assert "三方检测报告" not in item.body
+
+
+def test_review_replay_does_not_rewrite_previous_report_naming():
+    item = ContentBatchItem(
+        body="a2罐底物流码能查三方检测报告",
+        plan_json={
+            "quality_guard_profile_key": "a2_sentiment_comment_202606",
+            "business_rule": "批批检-自己这批报告可查",
+            "review_replay": True,
+        },
+        quality_json={},
+    )
+
+    payload = ActivityQualityGuardService().review_item(item)
+
+    assert payload is not None
+    assert payload["pass"] is True
+    assert item.body == "a2罐底物流码能查三方检测报告"
 
 
 @pytest.mark.parametrize(

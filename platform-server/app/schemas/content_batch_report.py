@@ -524,6 +524,10 @@ class ContentBatchItemFeedbackRequest(BaseSchema):
     business_forbidden_terms: list[str] = Field(default_factory=list)
     business_forbidden_term_entries: list[dict] = Field(default_factory=list)
     auto_rewrite: bool = False
+    generation_model_config: ContentBatchModelConfig | None = Field(
+        default=None,
+        alias="model_config",
+    )
 
 
 class ContentBatchItemFeedbackResponse(BaseSchema):

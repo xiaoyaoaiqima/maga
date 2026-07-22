@@ -42,6 +42,7 @@ from app.services.product_experience_phrase_guard_service import (
     should_review_product_experience,
 )
 from app.services.product_experience_llm_review_service import (
+    A2_REIYU_ARTICLE_ASSET_KEY,
     CHUNYUE_ARTICLE_ASSET_KEY,
     ProductExperienceLLMIssue,
     ProductExperienceLLMReview,
@@ -148,6 +149,9 @@ TITLE_GUARD_FORBIDDEN_SUBSTRINGS = (
 )
 
 CURRENT_WANGYUE_ARTICLE_ASSET_KEY = "wangyue_v3_core_storyline_article_rules"
+WANGYUE_PRODUCTION_REWRITE_POLICY = "production"
+WANGYUE_EXPERIMENTAL_REWRITE_POLICY = "experimental"
+PERSONA_STYLE_REWRITE_PRODUCTION_ENABLED = False
 PERSONA_STYLE_REWRITE_DISABLED_ASSET_KEYS = {
     "a2_momclass_month_center",
 }
@@ -472,6 +476,7 @@ class ContentBatchExecutionService:
             "batch_code": job.batch_code,
             "count": job.count,
             "postprocess_mode": _postprocess_mode(job),
+            "wangyue_rewrite_policy": _wangyue_rewrite_policy(job),
         }
         semaphore = asyncio.Semaphore(concurrency)
 
@@ -517,18 +522,26 @@ class ContentBatchExecutionService:
             )
 
         postprocess_errors = []
-        product_experience_review_step = (
-            self._run_wangyue_focused_pipeline_postprocess
-            if str(job.asset_key or "") == CURRENT_WANGYUE_ARTICLE_ASSET_KEY
-            else self._rewrite_product_experience_llm_quality_items
-        )
+        if str(job.asset_key or "") == CURRENT_WANGYUE_ARTICLE_ASSET_KEY:
+            product_experience_review_step = (
+                self._run_wangyue_focused_pipeline_postprocess
+                if _wangyue_rewrite_policy(job) == WANGYUE_EXPERIMENTAL_REWRITE_POLICY
+                else None
+            )
+        else:
+            product_experience_review_step = self._rewrite_product_experience_llm_quality_items
         postprocess_steps = [
+            ("a2_reiyu_title_hard_drop", self._drop_a2_reiyu_overlong_titles),
             ("similarity_watch", self._watch_similar_generated_items),
             ("product_experience_phrase_rewrite", self._rewrite_product_experience_phrase_items),
             ("mouth_phrase_budget_rewrite", self._rewrite_mouth_phrase_budget_items),
             ("article_length_repair", self._repair_article_length_items),
             ("ai_flavor_rewrite", self._rewrite_ai_flavor_items),
-            ("product_experience_review", product_experience_review_step),
+            *(
+                [("product_experience_review", product_experience_review_step)]
+                if product_experience_review_step is not None
+                else []
+            ),
             ("royal_friso_structure_review", self._review_royal_friso_structure_items),
             ("title_repair", self._repair_generated_titles),
             ("product_experience_phrase_refresh", self._refresh_product_experience_phrase_reviews),
@@ -713,9 +726,11 @@ class ContentBatchExecutionService:
                 title=item.title or "",
                 body=item.body or "",
             )
+            rewrite_policy = _wangyue_rewrite_policy_from_plan(item.plan_json)
             aggregate = aggregate_wangyue_focused_reviews(
                 initial_reviews,
                 hard_pass=quality.get("hard_pass"),
+                rewrite_policy=rewrite_policy,
             )
             final_reviews = initial_reviews
             rewrite_result: dict[str, Any] | None = None
@@ -753,6 +768,7 @@ class ContentBatchExecutionService:
                     final_aggregate = aggregate_wangyue_focused_reviews(
                         final_reviews,
                         hard_pass=quality.get("hard_pass"),
+                        rewrite_policy=rewrite_policy,
                     )
                     aggregate = final_aggregate
                     if final_aggregate.can_auto_pool:
@@ -773,6 +789,7 @@ class ContentBatchExecutionService:
                 **aggregate.model_dump(),
                 "status": status,
                 "affects_pool": True,
+                "rewrite_policy": rewrite_policy,
                 "initial_reviews": initial_reviews,
             }
             if rewrite_result is not None:
@@ -1041,6 +1058,7 @@ class ContentBatchExecutionService:
             aggregate = aggregate_wangyue_focused_reviews(
                 judgments,
                 hard_pass=quality.get("hard_pass"),
+                rewrite_policy="experimental",
             )
             comparison = compare_focused_review_with_legacy(
                 aggregate,
@@ -1152,6 +1170,13 @@ class ContentBatchExecutionService:
         original = {"title": item.title or "", "body": item.body or ""}
         current = dict(original)
         attempts: list[dict[str, Any]] = []
+        max_attempts = (
+            2
+            if shadow
+            or _wangyue_rewrite_policy_from_plan(item.plan_json)
+            == WANGYUE_EXPERIMENTAL_REWRITE_POLICY
+            else 1
+        )
 
         for rewrite_mode in aggregate.get("rewrite_modes") or []:
             focused_issues = [
@@ -1168,7 +1193,7 @@ class ContentBatchExecutionService:
             validator_feedback = ""
             accepted = False
 
-            for attempt_no in range(1, 3):
+            for attempt_no in range(1, max_attempts + 1):
                 candidate_item = ContentBatchItem(
                     run_id=item.run_id,
                     title=current["title"],
@@ -1297,7 +1322,10 @@ class ContentBatchExecutionService:
             if not accepted:
                 return {
                     "status": "manual_review",
-                    "reason": "focused target issue remained after two local rewrite attempts",
+                    "reason": (
+                        "focused target issue remained after "
+                        f"{max_attempts} local rewrite attempt(s)"
+                    ),
                     "original": original,
                     "attempts": attempts,
                     "shadow": shadow,
@@ -1353,6 +1381,9 @@ class ContentBatchExecutionService:
                     (item.plan_json or {}).get("post_type")
                     or (item.plan_json or {}).get("ugc_post_type")
                     or ""
+                )
+                review_kwargs["selling_painpoint_group"] = str(
+                    (item.plan_json or {}).get("selling_painpoint_group") or ""
                 )
             judgment = await judge.review(**review_kwargs)
             reviews[dimension] = {
@@ -1534,6 +1565,9 @@ class ContentBatchExecutionService:
                         or (item.plan_json or {}).get("ugc_post_type")
                         or ""
                     )
+                    review_kwargs["selling_painpoint_group"] = str(
+                        (item.plan_json or {}).get("selling_painpoint_group") or ""
+                    )
                 judgment = await judge.review(
                     **review_kwargs,
                 )
@@ -1680,6 +1714,7 @@ class ContentBatchExecutionService:
                     "batch_id": job_context["id"],
                     "batch_code": job_context["batch_code"],
                     "item_no": item.item_no,
+                    "wangyue_rewrite_policy": job_context["wangyue_rewrite_policy"],
                 },
                 "unified_generation": {
                     "capability": CONTENT_GENERATE_CAPABILITY,
@@ -1722,6 +1757,8 @@ class ContentBatchExecutionService:
                     "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                     "expert_config_code": (unified.input_snapshot.get("expert") or {}).get("expert_config_code"),
                 }
+                if _is_current_wangyue_article_plan(item.plan_json):
+                    item.quality_json["wangyue_rewrite_policy"] = job_context["wangyue_rewrite_policy"]
                 if multi_output_items:
                     item.quality_json["multi_output"] = {
                         "mode": "items_json",
@@ -1754,12 +1791,14 @@ class ContentBatchExecutionService:
                         executor_code=self.executor_code,
                         content_type="article",
                         allow_rewrite=not audit_only,
+                        allow_model_rewrite=_forbidden_model_rewrite_allowed(item.plan_json),
                     )
                     if forbidden_review.get("final_hits"):
                         if not audit_only:
                             self._mark_forbidden_term_blocking_failure(
                                 item,
                                 list(forbidden_review.get("final_hits") or []),
+                                rewrite_attempted=_forbidden_model_rewrite_attempted(forbidden_review),
                             )
                         await db.commit()
                         return _ItemExecutionResult(item_id=item_id, generated=True, failed=False)
@@ -1834,6 +1873,7 @@ class ContentBatchExecutionService:
                         "batch_id": job_context["id"],
                         "batch_code": job_context["batch_code"],
                         "item_no": item.item_no,
+                        "wangyue_rewrite_policy": job_context["wangyue_rewrite_policy"],
                     },
                     "unified_generation": unified_generation,
                 }
@@ -1915,6 +1955,8 @@ class ContentBatchExecutionService:
                             "materialized_to_batch_items": True,
                         },
                     }
+                    if _is_current_wangyue_article_plan(item.plan_json):
+                        item.quality_json["wangyue_rewrite_policy"] = job_context["wangyue_rewrite_policy"]
                     item.diversity_json = {
                         "selected_keywords": unified.input_snapshot.get("selected_keywords") or [],
                     }
@@ -1940,12 +1982,14 @@ class ContentBatchExecutionService:
                             executor_code=self.executor_code,
                             content_type="article",
                             allow_rewrite=not audit_only,
+                            allow_model_rewrite=_forbidden_model_rewrite_allowed(item.plan_json),
                         )
                         if forbidden_review.get("final_hits"):
                             if not audit_only:
                                 self._mark_forbidden_term_blocking_failure(
                                     item,
                                     list(forbidden_review.get("final_hits") or []),
+                                    rewrite_attempted=_forbidden_model_rewrite_attempted(forbidden_review),
                                 )
                         elif not audit_only:
                             ActivityQualityGuardService().review_item(item)
@@ -2059,14 +2103,22 @@ class ContentBatchExecutionService:
                     return 0
                 rewrite_count = 0
                 review_count = 0
+                review = review_ai_flavor(title=item.title, body=item.body, plan=item.plan_json)
+                production_detection_only = _is_wangyue_production_rewrite_plan(item.plan_json)
+                self._mark_ai_flavor_review(
+                    item,
+                    review,
+                    mark_rewrite_required=not production_detection_only,
+                )
+                review_count += 1
+                if production_detection_only:
+                    await db.commit()
+                    return 0
                 orchestrator = ContentAgentOrchestrator(
                     db,
                     invocation_client=self.invocation_client,
                     callback_base_url=self.callback_base_url,
                 )
-                review = review_ai_flavor(title=item.title, body=item.body, plan=item.plan_json)
-                self._mark_ai_flavor_review(item, review)
-                review_count += 1
                 while review.rewrite_required and self._ai_flavor_rewrite_rounds(item) < MAX_AI_FLAVOR_REWRITE_ROUNDS:
                     if not item.run_id or not item.body:
                         break
@@ -2199,6 +2251,7 @@ class ContentBatchExecutionService:
             orchestrator=orchestrator,
             executor_code=self.executor_code,
             content_type="article",
+            allow_model_rewrite=_forbidden_model_rewrite_allowed(item.plan_json),
         )
 
     async def _repair_product_experience_phrase_after_post_rewrite(
@@ -2209,6 +2262,8 @@ class ContentBatchExecutionService:
         *,
         cleanup_key_prefix: str,
     ) -> ProductExperiencePhraseReview:
+        if _is_wangyue_production_rewrite_plan(item.plan_json):
+            return review
         if _has_no_rewrite_product_experience_phrase_review(review):
             return review
         cleanup_applied = False
@@ -2805,6 +2860,25 @@ class ContentBatchExecutionService:
         failures = list(quality.get("product_experience_llm_quality_failures") or [])
         failures.append({"error_message": error_message})
         quality["product_experience_llm_quality_failures"] = failures
+        if str((item.plan_json or {}).get("asset_key") or "") == A2_REIYU_ARTICLE_ASSET_KEY:
+            quality["product_experience_llm_quality_review_unavailable_watch"] = True
+            quality["product_experience_llm_quality_review"] = {
+                "pass": False,
+                "rewrite_required": False,
+                "mark_rewrite_required": False,
+                "severity": "unavailable",
+                "business_usability_tier": "watch",
+                "business_usability_reason": "a2礼遇业务审核不可用，不能进入直接可用池。",
+                "issues": [],
+                "scores": {},
+            }
+            quality["hard_pass"] = False
+            review_report = dict(quality.get("review_report") or {})
+            review_report["product_experience_llm_review_unavailable"] = {
+                "error_message": error_message,
+                "watch": True,
+            }
+            quality["review_report"] = review_report
         if _is_current_wangyue_article_plan(item.plan_json):
             quality["product_experience_llm_quality_review_unavailable_mark_only"] = True
             if quality.get("product_experience_llm_quality_rewrites"):
@@ -2896,8 +2970,8 @@ class ContentBatchExecutionService:
     def _repair_article_length_if_needed(
         item: ContentBatchItem,
     ) -> dict[str, Any] | None:
-        min_chars = 30
-        max_chars = 600
+        min_chars, max_chars = _article_length_bounds(item.plan_json)
+        asset_length_contract = (min_chars, max_chars) != (30, 600)
         body = item.body or ""
         body_chars = _compact_len(body)
         full_text = f"{item.title or ''}\n{body}"
@@ -2919,7 +2993,7 @@ class ContentBatchExecutionService:
         review_report = dict(quality.get("review_report") or {})
         review_report.update(
             {
-                "rewrite_required": True,
+                "rewrite_required": not asset_length_contract,
                 "rewrite_reason": reason,
             }
         )
@@ -2975,7 +3049,66 @@ class ContentBatchExecutionService:
                     review_report = ((item.quality_json or {}).get("review_report") or {})
                     if review_report.get("similarity_rewrite_passed") is True:
                         break
-            return rewrite_count
+        return rewrite_count
+
+    async def _drop_a2_reiyu_overlong_titles(
+        self,
+        batch_id: int,
+        job: ContentBatchJob,
+    ) -> int:
+        if str(job.asset_key or "") != A2_REIYU_ARTICLE_ASSET_KEY:
+            return 0
+
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(ContentBatchItem)
+                .where(
+                    ContentBatchItem.batch_id == batch_id,
+                    ContentBatchItem.status == "generated",
+                )
+                .order_by(ContentBatchItem.item_no)
+            )
+            dropped_count = 0
+            for item in result.scalars().all():
+                weighted_len = _title_weighted_len(item.title)
+                if weighted_len <= 20:
+                    continue
+
+                payload = {
+                    "pass": False,
+                    "reason": "title_too_long",
+                    "title": item.title or "",
+                    "weighted_len": weighted_len,
+                    "max_weighted_len": 20,
+                    "rewrite_allowed": False,
+                }
+                quality = dict(item.quality_json or {})
+                review_report = dict(quality.get("review_report") or {})
+                review_report.update(
+                    {
+                        "rewrite_required": False,
+                        "rewrite_reason": "a2礼遇标题加权长度超过20，直接淘汰",
+                        "a2_reiyu_title_guard": payload,
+                    }
+                )
+                quality["review_report"] = review_report
+                quality["hard_pass"] = False
+                quality["a2_reiyu_title_guard"] = payload
+                quality["postprocess_blocked"] = {
+                    "source": "a2_reiyu_title_guard",
+                    "reasons": ["title_too_long"],
+                    "hits": [item.title or ""],
+                }
+                item.quality_json = quality
+                item.status = "failed"
+                item.error_message = (
+                    f"a2礼遇标题加权长度{weighted_len}超过20，直接淘汰且不改写"
+                )
+                dropped_count += 1
+
+            if dropped_count:
+                await db.commit()
+            return dropped_count
 
     async def _repair_generated_titles(self, batch_id: int, job: ContentBatchJob) -> int:
         async with self.session_factory() as db:
@@ -2988,15 +3121,26 @@ class ContentBatchExecutionService:
             if not _should_apply_title_guard(job, items):
                 return 0
 
-            history_titles = await self._recent_title_norms_for_title_guard(db, job, batch_id)
+            production_title_guard = _is_wangyue_production_rewrite_job(job)
+            history_titles = (
+                set()
+                if production_title_guard
+                else await self._recent_title_norms_for_title_guard(db, job, batch_id)
+            )
             used_titles: set[str] = set()
             repair_count = 0
             metadata_changed = False
             for item in items:
                 if _is_postprocess_blocked(item):
                     continue
-                format_cleaned_title = _sanitize_generated_title_format(item.title or "")
-                if format_cleaned_title and format_cleaned_title != (item.title or ""):
+                format_cleaned_title = (
+                    _sanitize_wangyue_production_title_format(item.title or "")
+                    if production_title_guard
+                    else _sanitize_generated_title_format(item.title or "")
+                )
+                if format_cleaned_title != (item.title or "") and (
+                    format_cleaned_title or production_title_guard
+                ):
                     before = item.title or ""
                     item.title = format_cleaned_title
                     quality = dict(item.quality_json or {})
@@ -3005,6 +3149,41 @@ class ContentBatchExecutionService:
                     quality["title_format_cleanups"] = cleanups
                     item.quality_json = quality
                     repair_count += 1
+
+                if production_title_guard:
+                    reasons = _wangyue_production_title_guard_reasons(item.title or "")
+                    if reasons:
+                        weighted_len = _title_weighted_len(item.title)
+                        payload = {
+                            "pass": False,
+                            "reasons": reasons,
+                            "title": item.title or "",
+                            "weighted_len": weighted_len,
+                            "max_weighted_len": 20,
+                            "rewrite_allowed": False,
+                        }
+                        quality = dict(item.quality_json or {})
+                        review_report = dict(quality.get("review_report") or {})
+                        review_report.update(
+                            {
+                                "rewrite_required": False,
+                                "rewrite_reason": "旺玥标题客观格式未通过，直接阻断且不改写",
+                                "wangyue_title_guard": payload,
+                            }
+                        )
+                        quality["review_report"] = review_report
+                        quality["hard_pass"] = False
+                        quality["wangyue_title_guard"] = payload
+                        quality["postprocess_blocked"] = {
+                            "source": "wangyue_title_guard",
+                            "reasons": reasons,
+                            "hits": [item.title or ""],
+                        }
+                        item.quality_json = quality
+                        item.status = "failed"
+                        item.error_message = "旺玥标题为空或加权长度超过20，直接阻断且不改写"
+                        metadata_changed = True
+                    continue
 
                 reasons = _title_guard_reasons(item.title or "", used_titles | history_titles, item)
                 if not reasons:
@@ -3040,7 +3219,19 @@ class ContentBatchExecutionService:
                 item.quality_json = quality
                 if should_review_product_experience(item.plan_json):
                     review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
-                    self._mark_product_experience_phrase_review(item, review)
+                    self._mark_product_experience_phrase_review(
+                        item,
+                        review,
+                        mark_rewrite_required=(
+                            False if _is_wangyue_production_rewrite_plan(item.plan_json) else None
+                        ),
+                    )
+                if _is_wangyue_production_rewrite_plan(item.plan_json):
+                    self._mark_ai_flavor_review(
+                        item,
+                        review_ai_flavor(title=item.title, body=item.body, plan=item.plan_json),
+                        mark_rewrite_required=False,
+                    )
                 repair_count += 1
             if repair_count or metadata_changed:
                 await db.commit()
@@ -3081,6 +3272,24 @@ class ContentBatchExecutionService:
                 if _is_postprocess_blocked(item):
                     return 0
                 review = review_product_experience_phrase(title=item.title, body=item.body, plan=item.plan_json)
+                if _is_wangyue_production_rewrite_plan(item.plan_json):
+                    production_blocking_hits = _production_blocking_product_experience_phrase_hits(review)
+                    if production_blocking_hits:
+                        self._mark_product_experience_blocking_failure(
+                            item,
+                            review,
+                            source="product_experience_phrase_guard",
+                            rewrite_attempted=False,
+                            blocking_hits=production_blocking_hits,
+                        )
+                    else:
+                        self._mark_product_experience_phrase_review(
+                            item,
+                            review,
+                            mark_rewrite_required=False,
+                        )
+                    await db.commit()
+                    return 0
                 if _has_no_rewrite_product_experience_phrase_review(review):
                     self._mark_product_experience_blocking_failure(
                         item,
@@ -3170,6 +3379,9 @@ class ContentBatchExecutionService:
         return await self._run_generated_item_workers(batch_id, worker)
 
     async def _refresh_product_experience_phrase_reviews(self, batch_id: int, job: ContentBatchJob) -> int:
+        if _is_wangyue_production_rewrite_job(job):
+            return 0
+
         async def worker(item_id: int) -> int:
             async with self.session_factory() as db:
                 item = await self._require_item(db, item_id)
@@ -3180,13 +3392,22 @@ class ContentBatchExecutionService:
                     body=item.body,
                     plan=item.plan_json,
                 )
-                self._mark_product_experience_phrase_review(item, review)
+                self._mark_product_experience_phrase_review(
+                    item,
+                    review,
+                    mark_rewrite_required=(
+                        False if _is_wangyue_production_rewrite_plan(item.plan_json) else None
+                    ),
+                )
                 await db.commit()
                 return 1
 
         return await self._run_generated_item_workers(batch_id, worker)
 
     async def _rewrite_mouth_phrase_budget_items(self, batch_id: int, job: ContentBatchJob) -> int:
+        if _is_wangyue_production_rewrite_job(job):
+            return 0
+
         async def worker(item_id: int) -> int:
             async with self.session_factory() as db:
                 item = await self._require_item(db, item_id)
@@ -3196,8 +3417,23 @@ class ContentBatchExecutionService:
                     return 0
                 rewrite_count = 0
                 initial_hits = _mouth_phrase_budget_hits(item)
+                production_detection_only = _is_wangyue_production_rewrite_plan(item.plan_json)
                 if not initial_hits:
-                    self._mark_mouth_phrase_budget_guard(item, initial_hits=[], final_hits=[])
+                    self._mark_mouth_phrase_budget_guard(
+                        item,
+                        initial_hits=[],
+                        final_hits=[],
+                        mark_rewrite_required=not production_detection_only,
+                    )
+                    await db.commit()
+                    return 0
+                if production_detection_only:
+                    self._mark_mouth_phrase_budget_guard(
+                        item,
+                        initial_hits=initial_hits,
+                        final_hits=initial_hits,
+                        mark_rewrite_required=False,
+                    )
                     await db.commit()
                     return 0
                 hits = initial_hits
@@ -3595,7 +3831,7 @@ class ContentBatchExecutionService:
             "本轮命中明确时间语境："
             f"{'/'.join(review.temporal_context_hits)}。"
             "用模型改顺上下文，不要硬替换；核心是删掉会和发布时间冲突的季节、天气、疾病大环境或季节性活动时点。"
-            "可以保留最近、现在、今天、昨天、上周、前两天、刚才、刚补、刚到、班里请假这类真人随手记录口吻，只要不和换季/流感/季节语境绑定。"
+            "可以保留最近、现在、今天、昨天、上周、前两天、刚才、刚补、刚到这类真人随手记录口吻，只要不和换季/流感/季节语境绑定。"
             "删除后如果上下文不顺，只补主语、标点或极短连接；不要新增新的活动、天气、疾病或季节性场景。"
             if review.temporal_context_hits
             else "不要新增会和发布时间冲突的季节、天气、疾病大环境或季节性活动时点；最近、昨天、刚补货、刚拆快递等真人时间口吻可以保留。"
@@ -3639,13 +3875,19 @@ class ContentBatchExecutionService:
             if review.physical_action_carrier_mismatch_hits
             else "写配方/成分时要让信息载体符合现实：罐装奶粉适合写看罐身、扫一眼营养成分；不要把奶粉罐动作硬写成翻配方表。"
         )
+        is_energy_pair_plan = "精力不足" in str(item.plan_json or "") and "进阶保护力" in str(
+            item.plan_json or ""
+        )
         ingredient_benefit_instruction = (
-            "本轮命中旺玥成分和正向效果承接："
+            "本轮命中旺玥计划卖点与效果承接错误："
             f"{'/'.join(review.ingredient_benefit_mismatch_hits)}。"
-            "这类表达不作为硬性错误；如需改写，只按当前业务规则控制卖点侧重和语气强度。"
-            "不要把强效果洗成“还在观察/不一定/每家不同”，也不要新增第二套成分清单或医疗事实。"
+            "本篇计划是保护力方向，但正文没有落到保护力、少中招、状态稳或小状况少，反而让产品承接了眼脑或精力结果。"
+            "只需把计划里的保护方向自然带回来，或删掉错接效果；不要为了审核补齐一整套双卖点。"
+            "不要把强效果洗成“还在观察/不一定/每家不同”，也不要新增业务规则之外的成分、产品事实或医疗事实。"
             if review.ingredient_benefit_mismatch_hits
-            else "旺玥成分可以承接保护力、精神头、状态稳和正向成长观察；具体卖点侧重服从本篇业务规则，不因成分和积极结果相连而硬改写。"
+            else "旺玥精力不足场景可使用进阶保护力+眼脑双引擎或进阶保护力+营养丰富作为生成方向；正文自然带到其中一个相关卖点支点即可，不要求两侧全部写齐。"
+            if is_energy_pair_plan
+            else "旺玥卖点效果服从本篇计划：保护力方向落到保护力、少中招、状态稳或小状况少；营养丰富可以自然承接精力、活力或成长，不强制同时补齐其它卖点。"
         )
         supplement_replacement_instruction = (
             "本轮命中旺玥营养替代暗示："
@@ -3680,6 +3922,15 @@ class ContentBatchExecutionService:
             "删除后如果句子不通，只补最短连接，不新增另一种疾病、天气、季节、出勤或医疗事实。"
             if review.wangyue_public_disease_context_hits
             else "不要新增班里、周围或其他孩子请假、咳嗽、中招、生病等公共疾病环境对照；自家普通状态观察可以保留。"
+        )
+        concrete_disease_scenario_instruction = (
+            "本轮命中旺玥具体疾病场景："
+            f"{'/'.join(review.wangyue_concrete_disease_scenario_hits)}。"
+            "删除感冒、咳嗽、传染、发烧、医院、请假或同伴生病等具体情节；"
+            "可以保留少中招、容易中招、保护力在线、状态稳、小状况少些等抽象表达和正确产品依据。"
+            "删除后如果不通，只补最短连接，不替换成新的疾病、就医、出勤或医疗事实。"
+            if review.wangyue_concrete_disease_scenario_hits
+            else "旺玥可以写少中招、容易中招、保护力在线、状态稳、小状况少些，但不要新增感冒、咳嗽、传染、发烧、医院、请假或同伴生病等具体场景。"
         )
         semantic_odd_instruction = (
             "本轮命中会牵动上下文逻辑的敏感表达："
@@ -3739,7 +3990,7 @@ class ContentBatchExecutionService:
             f"{'/'.join(review.wangyue_article_logic_drift_hits)}。"
             "这些不是通用禁词，但会把帖子带成购买渠道、囤货、冲泡口感、眼脑具体效果或效果证明。"
             "硬性验收：改写后的 title/body 不能再出现这些命中词；"
-            "如果命中的是单点时间搭配累计效果，例如今天/昨天/刚开/这次换后接少请假、没中招、状态稳、长高长肉，"
+            "如果命中的是单点时间搭配累计效果，例如今天/昨天/刚开/这次换后接少中招、状态稳、长高长肉，"
             "不要削弱正向效果本身，改成有时间跨度的表达，或删除单点时间锚点。"
             "直接删除对应半句；删除后只做通顺度修复，不补新的卖点白话、购买渠道、喝奶动作或效果证明。"
             if review.wangyue_article_logic_drift_hits
@@ -3906,6 +4157,7 @@ class ContentBatchExecutionService:
                 odd_phrase_instruction,
                 hard_risk_instruction,
                 public_disease_context_instruction,
+                concrete_disease_scenario_instruction,
                 adult_self_drinking_instruction,
                 formula_usage_form_instruction,
                 physical_action_carrier_instruction,
@@ -3935,7 +4187,7 @@ class ContentBatchExecutionService:
                 "rewrite 优先删除问题内容或压缩问题句；不要为了多样化整段重写。只有删除后语义断裂时，才补极短连接。",
                 skeleton_redirect_instruction,
                 "不要用“省心、踏实、固定下来、心里有数、先这样”作为统一收口。",
-                "长个、少请假、不生病、保护力、坐不住这类真人强表达可以保留为观察或别人问，不能写成确定因果。",
+                "少中招、容易中招、保护力在线、状态稳、小状况少些这类抽象表达可以保留；感冒、咳嗽、传染、发烧、医院、请假和同伴生病等具体场景必须删除。",
                 "正文段落服从业务规则；原文已有自然换行时尽量保留，不要为了改写压成单段，也不要为了换行硬拆句。",
                 "不要写成导购或品牌介绍。",
                 "只输出 JSON：title, body。",
@@ -3984,11 +4236,16 @@ class ContentBatchExecutionService:
         *,
         source: str,
         rewrite_attempted: bool = True,
+        blocking_hits: list[str] | None = None,
     ) -> None:
         self._mark_product_experience_phrase_review(item, review)
         quality = dict(item.quality_json or {})
         review_report = dict(quality.get("review_report") or {})
-        blocking_hits = _blocking_product_experience_phrase_hits(review)
+        resolved_blocking_hits = (
+            list(blocking_hits)
+            if blocking_hits is not None
+            else _blocking_product_experience_phrase_hits(review)
+        )
         review_report.update(
             {
                 "rewrite_required": True,
@@ -4000,7 +4257,7 @@ class ContentBatchExecutionService:
                 "blocking_failure": {
                     "source": source,
                     "reasons": review.reasons,
-                    "hits": blocking_hits,
+                    "hits": resolved_blocking_hits,
                     "rewrite_allowed": rewrite_attempted,
                 },
             }
@@ -4010,12 +4267,12 @@ class ContentBatchExecutionService:
         quality["postprocess_blocked"] = {
             "source": source,
             "reasons": review.reasons,
-            "hits": blocking_hits,
+            "hits": resolved_blocking_hits,
         }
         item.quality_json = quality
         item.status = "failed"
         prefix = "硬性规则改写后仍命中：" if rewrite_attempted else "生成后硬拦截命中："
-        item.error_message = prefix + "、".join(blocking_hits or review.reasons)
+        item.error_message = prefix + "、".join(resolved_blocking_hits or review.reasons)
 
     def _mark_royal_friso_structure_review(
         self,
@@ -4071,16 +4328,27 @@ class ContentBatchExecutionService:
         item.status = "failed"
         item.error_message = "皇家UGC结构风险命中：" + "、".join(payload["hits"] or payload["reasons"])
 
-    def _mark_forbidden_term_blocking_failure(self, item: ContentBatchItem, hits: list[str]) -> None:
+    def _mark_forbidden_term_blocking_failure(
+        self,
+        item: ContentBatchItem,
+        hits: list[str],
+        *,
+        rewrite_attempted: bool = True,
+    ) -> None:
         quality = dict(item.quality_json or {})
         review_report = dict(quality.get("review_report") or {})
         review_report.update(
             {
                 "rewrite_required": True,
-                "rewrite_reason": "违禁词自动改写失败，需要人工复核",
+                "rewrite_reason": (
+                    "违禁词自动改写失败，需要人工复核"
+                    if rewrite_attempted
+                    else "命中生成后硬拦截，禁止自动改写"
+                ),
                 "blocking_failure": {
                     "source": "forbidden_terms_guard",
                     "hits": hits,
+                    "rewrite_allowed": rewrite_attempted,
                 },
             }
         )
@@ -4093,13 +4361,21 @@ class ContentBatchExecutionService:
         }
         item.quality_json = quality
         item.status = "failed"
-        item.error_message = "违禁词自动改写后仍命中：" + "、".join(hits)
+        prefix = "违禁词自动改写后仍命中：" if rewrite_attempted else "生成后硬拦截命中："
+        item.error_message = prefix + "、".join(hits)
 
-    def _mark_ai_flavor_review(self, item: ContentBatchItem, review: AIFlavorReview) -> None:
+    def _mark_ai_flavor_review(
+        self,
+        item: ContentBatchItem,
+        review: AIFlavorReview,
+        *,
+        mark_rewrite_required: bool = True,
+    ) -> None:
         quality = dict(item.quality_json or {})
         review_report = dict(quality.get("review_report") or {})
         review_report["ai_flavor_review"] = review.model_dump()
-        if review.rewrite_required:
+        should_mark_rewrite = review.rewrite_required and mark_rewrite_required
+        if should_mark_rewrite:
             review_report.update(
                 {
                     "rewrite_required": True,
@@ -4113,6 +4389,8 @@ class ContentBatchExecutionService:
         quality["ai_flavor_humanizer"] = {
             "pass": review.pass_,
             "rewrite_required": review.rewrite_required,
+            "mark_rewrite_required": should_mark_rewrite,
+            "affects_hard_pass": mark_rewrite_required,
             "reasons": review.reasons,
             "title_hits": review.title_hits,
             "body_hits": review.body_hits,
@@ -4445,6 +4723,7 @@ class ContentBatchExecutionService:
         *,
         initial_hits: list[str],
         final_hits: list[str],
+        mark_rewrite_required: bool = True,
     ) -> None:
         quality = dict(item.quality_json or {})
         guard_payload = {
@@ -4452,17 +4731,20 @@ class ContentBatchExecutionService:
             "initial_hits": initial_hits,
             "final_hits": final_hits,
             "rewrite_required": bool(final_hits),
+            "mark_rewrite_required": bool(final_hits) and mark_rewrite_required,
+            "affects_hard_pass": mark_rewrite_required,
         }
         quality["mouth_phrase_budget_guard"] = guard_payload
         review_report = dict(quality.get("review_report") or {})
         review_report["mouth_phrase_budget_guard"] = guard_payload
-        if final_hits:
+        if final_hits and mark_rewrite_required:
             review_report["rewrite_required"] = True
             review_report["rewrite_reason"] = "批量口癖预算仍有未清理命中"
         elif review_report.get("rewrite_reason") == "批量口癖预算仍有未清理命中":
             review_report["rewrite_required"] = False
             review_report.pop("rewrite_reason", None)
-        quality["hard_pass"] = bool(quality.get("hard_pass", True)) and not final_hits
+        if mark_rewrite_required:
+            quality["hard_pass"] = bool(quality.get("hard_pass", True)) and not final_hits
         quality["review_report"] = review_report
         item.quality_json = quality
 
@@ -4704,6 +4986,10 @@ def _append_product_experience_review_reason(
 
 
 def _persona_style_rewrite_enabled(plan: dict[str, Any] | None) -> bool:
+    # Historical research only: keep the presets and prompt builder for replay,
+    # but do not run persona-style rewriting in the production generation chain.
+    if not PERSONA_STYLE_REWRITE_PRODUCTION_ENABLED:
+        return False
     plan = plan or {}
     if str(plan.get("asset_key") or "").strip() in PERSONA_STYLE_REWRITE_DISABLED_ASSET_KEYS:
         return False
@@ -4724,18 +5010,74 @@ def _blocking_product_experience_phrase_hits(review: ProductExperiencePhraseRevi
             review.wangyue_time_event_context_hits
             + review.wangyue_no_rewrite_block_hits
             + review.wangyue_public_disease_context_hits
+            + review.wangyue_concrete_disease_scenario_hits
             + review.wangyue_child_product_promo_hits
             + review.temporal_context_hits
             + review.wangyue_wrong_brand_hits
             + review.wangyue_explicit_age_hits
             + review.wangyue_portable_form_hits
             + review.formula_dry_powder_ingestion_hits
+            + review.ingredient_benefit_mismatch_hits
             + review.formula_usage_form_hits
             + review.child_self_brewing_hits
             + review.child_formula_bottle_hits
             + review.physical_action_carrier_mismatch_hits
             + review.product_fact_number_drift_hits
             + review.effect_scope_drift_hits
+            + review.malformed_fragment_hits
+            + [hit for hit in review.hard_risk_hits if hit.startswith("症状效果证明：")]
+        )
+    )
+
+
+def _production_blocking_product_experience_phrase_hits(
+    review: ProductExperiencePhraseReview,
+) -> list[str]:
+    """Only objective Wangyue business errors block production without rewrite."""
+    under_three_age_hits = [
+        hit
+        for hit in review.wangyue_explicit_age_hits
+        if any(
+            marker in hit
+            for marker in (
+                "断奶",
+                "辅食",
+                "半岁",
+                "一岁",
+                "1岁",
+                "两岁",
+                "二岁",
+                "2岁",
+                "个月",
+                "三岁前",
+                "3岁前",
+                "三岁以前",
+                "3岁以前",
+                "不到三岁",
+                "不到3岁",
+                "未满三岁",
+                "未满3岁",
+            )
+        )
+    ]
+    return list(
+        dict.fromkeys(
+            review.wangyue_no_rewrite_block_hits
+            + review.wangyue_public_disease_context_hits
+            + review.wangyue_concrete_disease_scenario_hits
+            + review.wangyue_child_product_promo_hits
+            + review.wangyue_time_event_context_hits
+            + review.temporal_context_hits
+            + review.wangyue_wrong_brand_hits
+            + under_three_age_hits
+            + review.wangyue_portable_form_hits
+            + review.adult_self_drinking_hits
+            + review.formula_dry_powder_ingestion_hits
+            + review.formula_usage_form_hits
+            + review.child_self_brewing_hits
+            + review.child_formula_bottle_hits
+            + review.physical_action_carrier_mismatch_hits
+            + review.product_fact_number_drift_hits
             + review.malformed_fragment_hits
             + [hit for hit in review.hard_risk_hits if hit.startswith("症状效果证明：")]
         )
@@ -4759,6 +5101,8 @@ def _should_review_product_experience_llm_quality(plan: dict[str, Any] | None) -
     asset_key = str(plan.get("asset_key") or "")
     if asset_key == CHUNYUE_ARTICLE_ASSET_KEY:
         return True
+    if asset_key == A2_REIYU_ARTICLE_ASSET_KEY:
+        return True
     if not should_review_product_experience(plan):
         return False
     if plan.get("product_experience_llm_review_enabled") is True:
@@ -4774,6 +5118,8 @@ def _should_rewrite_product_experience_llm_quality(
     review: ProductExperienceLLMReview,
 ) -> bool:
     plan = plan or {}
+    if str(plan.get("asset_key") or "") == A2_REIYU_ARTICLE_ASSET_KEY:
+        return False
     if _is_current_wangyue_article_plan(plan):
         return review.rewrite_required and _product_experience_rewrite_mode(review) is not None
     if _is_wangyue_mark_only_llm_quality_review(plan, review):
@@ -4791,6 +5137,8 @@ def _should_repair_product_experience_llm_quality(
     plan: dict[str, Any] | None,
     review: ProductExperienceLLMReview,
 ) -> bool:
+    if str((plan or {}).get("asset_key") or "") == A2_REIYU_ARTICLE_ASSET_KEY:
+        return False
     if _is_current_wangyue_article_plan(plan):
         return _should_rewrite_product_experience_llm_quality(plan, review)
     if _is_wangyue_mark_only_llm_quality_review(plan or {}, review):
@@ -4968,6 +5316,62 @@ def _should_mark_only_product_experience_phrase_review(
 def _postprocess_mode(job: ContentBatchJob) -> str:
     strategy = job.strategy_json if isinstance(job.strategy_json, dict) else {}
     return str(strategy.get("postprocess_mode") or "").strip()
+
+
+def _article_length_bounds(plan: dict[str, Any] | None) -> tuple[int, int]:
+    if _is_current_wangyue_article_plan(plan):
+        return 1, 249
+    return 30, 600
+
+
+def _wangyue_rewrite_policy(job: ContentBatchJob) -> str:
+    strategy = job.strategy_json if isinstance(job.strategy_json, dict) else {}
+    requested = str(strategy.get("wangyue_rewrite_policy") or "").strip().lower()
+    if not requested:
+        return WANGYUE_PRODUCTION_REWRITE_POLICY
+    if requested not in {
+        WANGYUE_PRODUCTION_REWRITE_POLICY,
+        WANGYUE_EXPERIMENTAL_REWRITE_POLICY,
+    }:
+        raise ValueError(f"unsupported Wangyue rewrite policy: {requested}")
+    return requested
+
+
+def _wangyue_rewrite_policy_from_plan(plan: dict[str, Any] | None) -> str:
+    plan = plan or {}
+    batch_context = plan.get("batch_context") if isinstance(plan.get("batch_context"), dict) else {}
+    requested = str(
+        batch_context.get("wangyue_rewrite_policy")
+        or plan.get("wangyue_rewrite_policy")
+        or ""
+    ).strip().lower()
+    if requested == WANGYUE_EXPERIMENTAL_REWRITE_POLICY:
+        return WANGYUE_EXPERIMENTAL_REWRITE_POLICY
+    return WANGYUE_PRODUCTION_REWRITE_POLICY
+
+
+def _is_wangyue_production_rewrite_plan(plan: dict[str, Any] | None) -> bool:
+    return (
+        _is_current_wangyue_article_plan(plan)
+        and _wangyue_rewrite_policy_from_plan(plan) == WANGYUE_PRODUCTION_REWRITE_POLICY
+    )
+
+
+def _is_wangyue_production_rewrite_job(job: ContentBatchJob) -> bool:
+    return (
+        str(job.asset_key or "") == CURRENT_WANGYUE_ARTICLE_ASSET_KEY
+        and _wangyue_rewrite_policy(job) == WANGYUE_PRODUCTION_REWRITE_POLICY
+    )
+
+
+def _forbidden_model_rewrite_allowed(plan: dict[str, Any] | None) -> bool:
+    return not _is_wangyue_production_rewrite_plan(plan)
+
+
+def _forbidden_model_rewrite_attempted(review: dict[str, Any]) -> bool:
+    return int(review.get("rewrite_rounds") or 0) > 0 and "content.rewrite" in str(
+        review.get("rewrite_method") or ""
+    )
 
 
 def _generate_only_postprocess_enabled(job: ContentBatchJob) -> bool:
@@ -5353,6 +5757,28 @@ def _sanitize_generated_title_format(title: str | None) -> str:
     text = text.strip(" *_`~#")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+def _sanitize_wangyue_production_title_format(title: str | None) -> str:
+    text = str(title or "").strip()
+    if not text:
+        return text
+    for pattern in TITLE_FORMAT_PATTERNS:
+        text = pattern.sub("", text).strip()
+    text = re.sub(r"^\s*(?:标题|title)[:：]\s*", "", text, flags=re.IGNORECASE).strip()
+    text = text.strip(" *_`~#")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _wangyue_production_title_guard_reasons(title: str | None) -> list[str]:
+    text = str(title or "").strip()
+    reasons: list[str] = []
+    if not text:
+        reasons.append("title_empty")
+    elif _title_weighted_len(text) > 20:
+        reasons.append("title_too_long")
+    return reasons
 
 
 def _sanitize_title_emojis(title: str) -> str:

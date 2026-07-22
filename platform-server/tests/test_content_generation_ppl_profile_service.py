@@ -11,7 +11,7 @@ def test_wangyue_alias_resolves_to_v3_profile_defaults():
     assert profile.profile_code == "wangyue_v3_0705_article"
     assert request.asset_key == "wangyue_v3_core_storyline_article_rules"
     assert request.keyword_asset_key is None
-    assert request.prompt_mode == "rule_corpus_as_prompt"
+    assert request.prompt_mode == "layered_article"
     assert request.count == 20
     assert request.articles_per_prompt == 1
 

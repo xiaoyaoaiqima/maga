@@ -1,5 +1,7 @@
 """Tests for deterministic Wangyue focused-review aggregation."""
 
+import pytest
+
 from app.services.wangyue_focused_review_aggregator_service import (
     aggregate_wangyue_focused_reviews,
     compare_focused_review_with_legacy,
@@ -31,6 +33,7 @@ def test_aggregate_routes_compliance_before_fluency_without_rewriting_watch() ->
             },
         },
         hard_pass=True,
+        rewrite_policy="experimental",
     )
 
     assert result.decision == "block"
@@ -53,11 +56,129 @@ def test_aggregate_routes_added_temporal_issue_to_compliance_cleanup() -> None:
             "fluency": _pass(),
         },
         hard_pass=True,
+        rewrite_policy="experimental",
     )
 
     assert result.decision == "block"
     assert result.rewrite_modes == ["compliance_cleanup"]
     assert result.requires_rewrite is True
+
+
+def test_aggregate_routes_concrete_disease_scenario_to_compliance_cleanup() -> None:
+    result = aggregate_wangyue_focused_reviews(
+        {
+            "temporal_logic": _pass(),
+            "claim_public_disease": {
+                "label": "block",
+                "issue_code": "concrete_disease_scenario",
+                "evidence": "以前有点小状况就请假",
+            },
+            "content_fit": _pass(),
+            "fluency": _pass(),
+        },
+        hard_pass=True,
+        rewrite_policy="experimental",
+    )
+
+    assert result.decision == "block"
+    assert result.rewrite_modes == ["compliance_cleanup"]
+    assert result.requires_rewrite is True
+
+
+@pytest.mark.parametrize(
+    ("dimension", "issue_code"),
+    [
+        ("temporal_logic", "publication_time_anchor"),
+        ("temporal_logic", "pre_usage_effect_evidence"),
+        ("claim_public_disease", "concrete_disease_scenario"),
+        ("content_fit", "unnatural_product_appearance"),
+        ("fluency", "incomplete_sentence"),
+    ],
+)
+def test_production_does_not_route_experimental_only_issues(
+    dimension: str,
+    issue_code: str,
+) -> None:
+    judgments = {
+        focused_dimension: _pass()
+        for focused_dimension in (
+            "temporal_logic",
+            "claim_public_disease",
+            "content_fit",
+            "fluency",
+        )
+    }
+    judgments[dimension] = {
+        "label": "block",
+        "issue_code": issue_code,
+        "evidence": "需要重构事实或叙事",
+    }
+
+    result = aggregate_wangyue_focused_reviews(judgments, hard_pass=True)
+
+    assert result.decision == "block"
+    assert result.rewrite_modes == []
+    assert result.requires_rewrite is False
+    assert result.can_auto_pool is False
+
+
+@pytest.mark.parametrize("issue_code", ["unnatural_collocation", "instruction_leak"])
+def test_production_does_not_route_fluency_issues_to_model_rewrite(issue_code: str) -> None:
+    result = aggregate_wangyue_focused_reviews(
+        {
+            "temporal_logic": _pass(),
+            "claim_public_disease": _pass(),
+            "content_fit": _pass(),
+            "fluency": {
+                "label": "block",
+                "issue_code": issue_code,
+                "evidence": "局部表达问题",
+            },
+        },
+        hard_pass=True,
+    )
+
+    assert result.decision == "block"
+    assert result.rewrite_modes == []
+    assert result.requires_rewrite is False
+
+
+def test_production_does_not_rewrite_when_any_block_is_experimental_only() -> None:
+    result = aggregate_wangyue_focused_reviews(
+        {
+            "temporal_logic": {
+                "label": "block",
+                "issue_code": "publication_time_anchor",
+                "evidence": "最近正是流感季",
+            },
+            "claim_public_disease": _pass(),
+            "content_fit": _pass(),
+            "fluency": {
+                "label": "block",
+                "issue_code": "unnatural_collocation",
+                "evidence": "饭菜经常不稳定",
+            },
+        },
+        hard_pass=True,
+    )
+
+    assert result.decision == "block"
+    assert result.rewrite_modes == []
+    assert result.requires_rewrite is False
+
+
+def test_aggregate_rejects_unknown_rewrite_policy() -> None:
+    with pytest.raises(ValueError, match="unsupported focused rewrite policy"):
+        aggregate_wangyue_focused_reviews(
+            {
+                "temporal_logic": _pass(),
+                "claim_public_disease": _pass(),
+                "content_fit": _pass(),
+                "fluency": _pass(),
+            },
+            hard_pass=True,
+            rewrite_policy="unknown",
+        )
 
 
 def test_aggregate_unavailable_dimension_is_watch_and_prevents_auto_pool() -> None:

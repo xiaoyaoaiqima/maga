@@ -6,13 +6,15 @@ executors such as the Hermes MAGA worker perform capability work through APIs.
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
 
 BIGINT_PK = BigInteger().with_variant(Integer, "sqlite")
+LONGTEXT_TYPE = LONGTEXT().with_variant(Text(), "sqlite")
 
 
 class ContentBatchJob(Base):
@@ -99,6 +101,33 @@ class ContentFeedback(Base):
     submitter: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True, comment="提交人")
     metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, comment="扩展数据")
     create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), nullable=True)
+
+
+class ContentPromptDebugHistory(Base):
+    """Persistent raw prompt-debug execution record."""
+
+    __tablename__ = "content_prompt_debug_history"
+
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
+    run_group_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="工作台执行组ID")
+    workbench_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="single", comment="single/compare")
+    panel_key: Mapped[str] = mapped_column(String(16), nullable=False, default="left", comment="left/right")
+    item_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="组内篇序号，从0开始")
+    batch_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1, comment="面板并发篇数")
+    prompt: Mapped[str] = mapped_column(LONGTEXT_TYPE, nullable=False, comment="用户 Prompt")
+    system_prompt: Mapped[Optional[str]] = mapped_column(LONGTEXT_TYPE, nullable=True, comment="System Prompt")
+    requested_model_code: Mapped[str] = mapped_column(String(128), nullable=False, comment="请求模型编码")
+    temperature: Mapped[float] = mapped_column(Float, nullable=False, default=0.7, comment="temperature")
+    max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1500, comment="max_tokens")
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True, comment="是否成功")
+    content: Mapped[Optional[str]] = mapped_column(LONGTEXT_TYPE, nullable=True, comment="模型原始输出")
+    model_code: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, comment="实际模型编码")
+    provider_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, comment="Provider 编码")
+    provider_model: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, comment="Provider 模型")
+    token_usage: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, comment="Token 使用")
+    latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="调用耗时毫秒")
+    error_message: Mapped[Optional[str]] = mapped_column(LONGTEXT_TYPE, nullable=True, comment="失败信息")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), nullable=True, index=True)
 
 
 class CommentDeliveryLedger(Base):

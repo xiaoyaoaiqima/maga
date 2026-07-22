@@ -727,7 +727,11 @@ class ContentBatchReportService:
         runtime_result = self._runtime_result(stage_calls)
         generation_stage = self._generation_stage(stage_calls)
         text = f"{item.title or ''}\n{item.body or ''}"
-        forbidden_hits = self._forbidden_hits(text, forbidden_terms)
+        forbidden_hits = self._forbidden_hits_for_report(
+            text,
+            forbidden_terms,
+            quality=quality,
+        )
         final_state = _final_postprocess_state(quality)
         rewrite_required = final_state["rewrite_required"]
         hard_pass = final_state["hard_pass"]
@@ -1334,6 +1338,18 @@ class ContentBatchReportService:
 
     def _forbidden_hits(self, text: str, business_terms: list[str] | None = None) -> list[str]:
         return find_forbidden_hits(text, business_terms)
+
+    def _forbidden_hits_for_report(
+        self,
+        text: str,
+        business_terms: list[str] | None,
+        *,
+        quality: dict[str, Any],
+    ) -> list[str]:
+        review = quality.get("forbidden_terms_review")
+        if isinstance(review, dict) and isinstance(review.get("final_hits"), list):
+            return self._list_of_strings(review["final_hits"])
+        return self._forbidden_hits(text, business_terms)
 
     def _closure_cluster_stats(self, items: list[ContentBatchReportItem]) -> dict[str, Any]:
         checked_items = [item for item in items if str(item.body or "").strip()]

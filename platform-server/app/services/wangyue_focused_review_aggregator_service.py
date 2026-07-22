@@ -11,7 +11,7 @@ FOCUSED_REVIEW_DIMENSIONS = (
     "content_fit",
     "fluency",
 )
-FOCUSED_REWRITE_MODE_BY_ISSUE = {
+FOCUSED_EXPERIMENT_REWRITE_MODE_BY_ISSUE = {
     ("temporal_logic", "same_period_state_contradiction"): "compliance_cleanup",
     ("temporal_logic", "immediate_rescue_causality"): "compliance_cleanup",
     ("temporal_logic", "insufficient_effect_duration"): "compliance_cleanup",
@@ -27,6 +27,7 @@ FOCUSED_REWRITE_MODE_BY_ISSUE = {
     ("claim_public_disease", "medical_treatment_claim"): "compliance_cleanup",
     ("claim_public_disease", "disease_prevention_guarantee"): "compliance_cleanup",
     ("claim_public_disease", "current_public_disease_environment"): "compliance_cleanup",
+    ("claim_public_disease", "concrete_disease_scenario"): "compliance_cleanup",
     ("content_fit", "abstract_brief_translation"): "fluency_humanize",
     ("content_fit", "unnatural_product_appearance"): "fluency_humanize",
     ("fluency", "unnatural_collocation"): "fluency_humanize",
@@ -34,6 +35,13 @@ FOCUSED_REWRITE_MODE_BY_ISSUE = {
     ("fluency", "title_body_contradiction"): "fluency_humanize",
     ("fluency", "instruction_leak"): "fluency_humanize",
     ("fluency", "incomplete_sentence"): "fluency_humanize",
+}
+
+FOCUSED_PRODUCTION_REWRITE_MODE_BY_ISSUE: dict[tuple[str, str], str] = {}
+
+FOCUSED_REWRITE_MODE_BY_POLICY = {
+    "production": FOCUSED_PRODUCTION_REWRITE_MODE_BY_ISSUE,
+    "experimental": FOCUSED_EXPERIMENT_REWRITE_MODE_BY_ISSUE,
 }
 
 
@@ -81,7 +89,13 @@ def aggregate_wangyue_focused_reviews(
     judgments: Mapping[str, Any],
     *,
     hard_pass: bool | None,
+    rewrite_policy: str = "production",
 ) -> WangyueFocusedReviewAggregate:
+    try:
+        rewrite_mode_by_issue = FOCUSED_REWRITE_MODE_BY_POLICY[rewrite_policy]
+    except KeyError as exc:
+        raise ValueError(f"unsupported focused rewrite policy: {rewrite_policy}") from exc
+
     issues: list[WangyueFocusedReviewIssue] = []
     unavailable_dimensions: list[str] = []
     rewrite_modes: list[str] = []
@@ -99,7 +113,7 @@ def aggregate_wangyue_focused_reviews(
             continue
         issue_code = str(judgment.get("issue_code") or "none")
         rewrite_mode = (
-            FOCUSED_REWRITE_MODE_BY_ISSUE.get((dimension, issue_code))
+            rewrite_mode_by_issue.get((dimension, issue_code))
             if label == "block"
             else None
         )
@@ -114,7 +128,11 @@ def aggregate_wangyue_focused_reviews(
         if rewrite_mode and rewrite_mode not in rewrite_modes:
             rewrite_modes.append(rewrite_mode)
 
-    has_block = hard_pass is False or any(issue.label == "block" for issue in issues)
+    block_issues = [issue for issue in issues if issue.label == "block"]
+    has_block = hard_pass is False or bool(block_issues)
+    all_blocks_rewriteable = bool(block_issues) and all(
+        issue.rewrite_mode is not None for issue in block_issues
+    )
     if has_block:
         decision = "block"
     elif unavailable_dimensions or any(issue.label == "watch" for issue in issues):
@@ -127,7 +145,7 @@ def aggregate_wangyue_focused_reviews(
         issues=issues,
         unavailable_dimensions=unavailable_dimensions,
         rewrite_modes=rewrite_modes,
-        requires_rewrite=bool(rewrite_modes) and hard_pass is not False,
+        requires_rewrite=all_blocks_rewriteable and hard_pass is not False,
         can_auto_pool=hard_pass is not False and not has_block and not unavailable_dimensions,
         blocked_by_code_hard=hard_pass is False,
     )

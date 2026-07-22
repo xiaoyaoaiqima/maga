@@ -454,7 +454,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     item_for_name = _select_prompt_item(_items(report), args.prompt_item_no)
     prompt_item_no = _item_no(item_for_name or {})
     prompt_path = output_dir / f"{started_at}_{profile_slug}_batch{batch_id}_item{prompt_item_no}_rendered_prompt.md"
-    prompt_meta = write_prompt(report, output_path=prompt_path, prompt_item_no=args.prompt_item_no)
+    prompt_meta = write_prompt(report, output_path=prompt_path, prompt_item_no=prompt_item_no)
     preview_path = output_dir / f"{started_at}_{profile_slug}_batch{batch_id}_preview.md"
     preview_meta = write_preview(
         report,

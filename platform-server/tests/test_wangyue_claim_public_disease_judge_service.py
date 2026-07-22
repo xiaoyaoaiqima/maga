@@ -35,8 +35,10 @@ def test_parse_claim_public_disease_judgment_normalizes_invalid_output_to_watch(
     assert result.issue_code == "past_public_disease_reference"
 
 
-def test_claim_public_disease_prompt_preserves_allowed_observations() -> None:
-    assert "不要因为出现感冒、请假、全勤就硬拦" in CLAIM_PUBLIC_DISEASE_SYSTEM_PROMPT
+def test_claim_public_disease_prompt_blocks_concrete_scenarios_and_preserves_abstract_observations() -> None:
+    assert "concrete_disease_scenario" in CLAIM_PUBLIC_DISEASE_SYSTEM_PROMPT
+    assert "感冒、咳嗽、传染、发烧、医院或请假" in CLAIM_PUBLIC_DISEASE_SYSTEM_PROMPT
+    assert "少中招、容易中招、保护力在线、状态稳、小状况少些" in CLAIM_PUBLIC_DISEASE_SYSTEM_PROMPT
     assert "不审核一般时间逻辑" in CLAIM_PUBLIC_DISEASE_SYSTEM_PROMPT
 
 

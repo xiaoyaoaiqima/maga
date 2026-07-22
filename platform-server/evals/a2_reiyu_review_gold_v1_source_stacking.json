@@ -1,0 +1,53 @@
+{
+  "dataset_code": "a2_reiyu_review_gold_v1",
+  "slice": "source_stacking_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-20",
+  "description": "a2 礼遇活动文章发现来源的真人感边界：同一句堆叠邻居、闺蜜和导购三个独立来源时直接删除；同一经历里的关注度变化不算来源叠加。",
+  "labels": ["pass", "reject"],
+  "label_semantics": {
+    "pass": "使用一个自然的活动发现来源，可保留。",
+    "reject": "同一句堆叠三个独立活动来源，人工确认删除。"
+  },
+  "rubric": [
+    "活动来源可以是邻居、闺蜜、导购、品牌官号或社交平台中的一个自然入口。",
+    "不要在同一句同时堆叠‘邻居说、闺蜜发消息、导购打电话’三个独立来源。",
+    "先看到品牌官号但没太在意，后来因听说礼品丰富再点进去，属于同一经历里的兴趣变化，不按来源叠加处理。",
+    "命中三个来源堆叠时按reject处理，不仅作为提示项。"
+  ],
+  "items": [
+    {
+      "title": "a2至初活动真香！宝宝长肉看得见",
+      "content": "电梯里听邻居说，闺蜜也发消息，导购打电话来就参加了。",
+      "meta": {
+        "case_code": "A2RY-SS-001",
+        "expected_label": "reject",
+        "issue_code": "stacked_discovery_sources",
+        "reason": "同一句堆叠三个独立发现来源，业务人工review确认删除。",
+        "source": "user_confirmed_badcase_review"
+      }
+    },
+    {
+      "title": "闺蜜发来的活动",
+      "content": "前几天闺蜜给我发消息，说a2至初上了新活动，我就点进去看了下。",
+      "meta": {
+        "case_code": "A2RY-SS-002",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "使用单一自然来源引出活动。",
+        "source": "gold_pair_control"
+      }
+    },
+    {
+      "title": "后来还是点进去看了",
+      "content": "看到a2官号推会员升级，本来没太在意，后来听说a2至初这次礼品挺丰富的，就点进去瞅了眼。",
+      "meta": {
+        "case_code": "A2RY-SS-003",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "这是同一经历里的兴趣变化，没有堆叠多个独立人物或渠道作为同一次发现来源。",
+        "source": "user_confirmed_batch_review"
+      }
+    }
+  ]
+}

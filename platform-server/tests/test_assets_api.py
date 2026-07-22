@@ -1,5 +1,7 @@
 """API tests for MAGA Asset Steward surfaces."""
 
+import json
+
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
@@ -154,6 +156,137 @@ def test_row_to_rule_item_extracts_info_source_options_from_generation_material(
             ],
         }
     ]
+
+
+def test_row_to_rule_item_parses_layered_article_operator_variation_columns():
+    item = _row_to_rule_item(
+        {
+            "业务规则名称": "a2礼遇｜集罐12罐换奶粉",
+            "内容方向": "静态兜底方向。",
+            "内容方向素材": "直给参加活动，再写活动内容。||先写生活来源，再写活动内容。",
+            "活动了解途径素材": "门店导购说起。||宝妈群里有人提。",
+            "参加活动原因素材": "长期在喝，觉得福利实在。",
+            "活动内容素材": "集12罐兑换1罐奶粉。",
+            "批批检素材": "a2至初现在每批都有检测。",
+            "产品体验素材": "a2至初粉质细腻，好冲开。",
+            "消费者认可素材": "觉得a2做得认真，愿意推荐。",
+            "正向表达素材": "品质在线。||细节到位。",
+        },
+        1,
+    )
+
+    assert item is not None
+    assert item["variation_slots"] == [
+        {
+            "slot_code": "content_direction",
+            "slot_name": "内容方向",
+            "options": ["直给参加活动，再写活动内容。", "先写生活来源，再写活动内容。"],
+            "offset": 0,
+        },
+        {
+            "slot_code": "info_source",
+            "slot_name": "活动了解途径",
+            "options": ["门店导购说起。", "宝妈群里有人提。"],
+            "offset": 0,
+        },
+        {
+            "slot_code": "participation_motive",
+            "slot_name": "参加活动原因",
+            "options": ["长期在喝，觉得福利实在。"],
+            "offset": 0,
+        },
+        {
+            "slot_code": "activity_content",
+            "slot_name": "活动内容",
+            "options": ["集12罐兑换1罐奶粉。"],
+            "offset": 0,
+        },
+        {
+            "slot_code": "batch_detection",
+            "slot_name": "批批检素材",
+            "options": ["a2至初现在每批都有检测。"],
+        },
+        {
+            "slot_code": "product_experience",
+            "slot_name": "活动后的产品体验",
+            "options": ["a2至初粉质细腻，好冲开。"],
+            "offset": 0,
+        },
+        {
+            "slot_code": "consumer_praise",
+            "slot_name": "活动后的消费者认可",
+            "options": ["觉得a2做得认真，愿意推荐。"],
+            "offset": 0,
+        },
+        {
+            "slot_code": "positive_expression",
+            "slot_name": "活动分享正向表达",
+            "options": ["品质在线。", "细节到位。"],
+            "offset": 0,
+        },
+    ]
+
+
+def test_row_to_rule_item_preserves_multiline_json_variation_options():
+    original_direction = (
+        "先说自己怎么了解到活动和参加活动的原因，再讲下活动内容。\n"
+        "再另起一段，讲你又看到了检测升级的信息。\n"
+        "最后结合起来再夸夸a2品牌。"
+    )
+    item = _row_to_rule_item(
+        {
+            "业务规则名称": "a2礼遇｜多重福利叠加",
+            "内容方向": original_direction,
+            "内容方向素材": json.dumps(
+                [original_direction, "直给点说自己参加了活动。"],
+                ensure_ascii=False,
+            ),
+        },
+        1,
+    )
+
+    assert item is not None
+    assert item["variation_slots"] == [
+        {
+            "slot_code": "content_direction",
+            "slot_name": "内容方向",
+            "options": [original_direction, "直给点说自己参加了活动。"],
+            "offset": 0,
+        }
+    ]
+
+
+def test_row_to_rule_item_parses_merged_consumer_recognition_slot():
+    item = _row_to_rule_item(
+        {
+            "业务规则名称": "a2礼遇｜多重福利叠加",
+            "内容方向": "活动后写检测，再写认可。",
+            "活动内容素材": "积分、集罐、抽奖、回馈礼都有。",
+            "批批检素材": "a2至初现在每批都有检测。",
+            "认可表达素材": (
+                "消费者有被重视到，品质也更透明。"
+                "而且a2至初奶香自然，宝宝每次都咕咚咕咚喝光。"
+            ),
+            "正向表达素材": "a2品质在线。",
+        },
+        1,
+    )
+
+    assert item is not None
+    assert [slot["slot_code"] for slot in item["variation_slots"]] == [
+        "activity_content",
+        "batch_detection",
+        "consumer_recognition",
+        "positive_expression",
+    ]
+    assert item["variation_slots"][2] == {
+        "slot_code": "consumer_recognition",
+        "slot_name": "认可表达",
+        "options": [
+            "消费者有被重视到，品质也更透明。而且a2至初奶香自然，宝宝每次都咕咚咕咚喝光。"
+        ],
+        "offset": 0,
+    }
 
 
 def test_layered_article_rules_do_not_require_examples():
@@ -412,6 +545,7 @@ async def test_update_selling_painpoint_expression_creates_new_production_versio
     assert asset["metadata_json"]["last_selling_painpoint_expression_source_row_no"] == 163
 
 
+
 @pytest.mark.asyncio
 async def test_import_selling_painpoint_expressions_replaces_pool_and_preserves_groups(asset_client):
     request_response = await asset_client.post(
@@ -500,6 +634,8 @@ async def test_update_article_business_rule_fields_versions_corpus_and_group_tog
                                     "source_row_no": 17,
                                     "corpus": old_corpus,
                                     "selling_painpoint_group": "进阶保护力+精力不足",
+                                    "writing_requirements": ["旧的单条写法覆盖"],
+                                    "generation_requirements": ["旧的单条生成覆盖"],
                                 }
                             ],
                             "selling_painpoint_expressions": [],
@@ -519,8 +655,19 @@ async def test_update_article_business_rule_fields_versions_corpus_and_group_tog
         json={
             "expected_corpus": old_corpus,
             "expected_selling_painpoint_group": "进阶保护力+精力不足",
+            "expected_inspiration_none_source_row_nos": [],
+            "expected_inspiration_clue_by_source_row_no": {},
+            "expected_writing_requirements": ["旧的单条写法覆盖"],
+            "expected_generation_requirements": ["旧的单条生成覆盖"],
             "corpus": new_corpus,
             "selling_painpoint_group": "进阶保护力+精力不足-ugc",
+            "inspiration_none_source_row_nos": [68, 63, 68],
+            "inspiration_clue_by_source_row_no": {
+                "64": "和一次户外活动相关",
+                "67": "和放学后的一件小事相关",
+            },
+            "writing_requirements": None,
+            "generation_requirements": None,
             "created_by": "test",
         },
     )
@@ -531,7 +678,29 @@ async def test_update_article_business_rule_fields_versions_corpus_and_group_tog
     item = asset["content_json"]["items"][0]
     assert item["corpus"] == new_corpus
     assert item["selling_painpoint_group"] == "进阶保护力+精力不足-ugc"
+    assert item["inspiration_none_source_row_nos"] == [63, 68]
+    assert item["inspiration_clue_by_source_row_no"] == {
+        "64": "和一次户外活动相关",
+        "67": "和放学后的一件小事相关",
+    }
+    assert "writing_requirements" not in item
+    assert "generation_requirements" not in item
     assert asset["metadata_json"]["last_article_business_rule_id"] == "business_rule_017"
+    assert asset["metadata_json"]["last_article_business_rule_inspiration_none_source_row_nos_before"] == []
+    assert asset["metadata_json"]["last_article_business_rule_inspiration_none_source_row_nos_after"] == [63, 68]
+    assert asset["metadata_json"]["last_article_business_rule_inspiration_clue_by_source_row_no_before"] == {}
+    assert asset["metadata_json"]["last_article_business_rule_inspiration_clue_by_source_row_no_after"] == {
+        "64": "和一次户外活动相关",
+        "67": "和放学后的一件小事相关",
+    }
+    assert asset["metadata_json"]["last_article_business_rule_writing_requirements_before"] == [
+        "旧的单条写法覆盖"
+    ]
+    assert asset["metadata_json"]["last_article_business_rule_writing_requirements_after"] is None
+    assert asset["metadata_json"]["last_article_business_rule_generation_requirements_before"] == [
+        "旧的单条生成覆盖"
+    ]
+    assert asset["metadata_json"]["last_article_business_rule_generation_requirements_after"] is None
 
 
 def test_product_experience_rule_import_preserves_structure_and_scene_constraint_fields():

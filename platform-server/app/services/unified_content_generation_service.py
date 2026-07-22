@@ -510,6 +510,12 @@ def _template_variables(
         "business_rule": _business_rule_text(business_rule, content_type=content_type),
         "selling_painpoint_group": business_rule.get("selling_painpoint_group"),
         "selling_painpoint_expression": business_rule.get("selling_painpoint_expression"),
+        "selling_painpoint_expression_inspiration_mode": business_rule.get(
+            "selling_painpoint_expression_inspiration_mode"
+        ),
+        "selling_painpoint_expression_inspiration_clue": business_rule.get(
+            "selling_painpoint_expression_inspiration_clue"
+        ),
         "keyword_corpus": ""
         if content_type == "comment"
         else _keyword_corpus_text(
@@ -1847,13 +1853,7 @@ def _article_output_format_requirement(
             "不要输出 Markdown 标题、编号、解释、前后缀；"
             "不要写“标题：”“正文：”“### 标题”“### 正文”；"
         )
-    return (
-        '只输出一个 JSON 对象，格式必须是 {"title":"...","body":"..."}；'
-        "顶层只能包含 title 和 body 两个字段，不要输出 items 数组；"
-        "不要输出 Markdown 标题、编号、解释、前后缀；"
-        "不要写“标题：”“正文：”“### 标题”“### 正文”；"
-        "正文内容放在 body 字段里，标题内容放在 title 字段里。"
-    )
+    return '只输出 JSON：{"title":"...","body":"..."}。'
 
 
 def _article_multi_output_count(business_rule: dict[str, Any] | None) -> int:
@@ -2692,10 +2692,24 @@ def _rule_corpus_as_prompt_article_prompt(
         base_prompt,
         item_no=item_no,
     )
-    base_prompt = _render_rule_corpus_inspiration_clue_slot(
-        base_prompt,
-        item_no=item_no,
-    )
+    inspiration_mode = str(
+        variables.get("selling_painpoint_expression_inspiration_mode") or "auto"
+    ).strip()
+    inspiration_clue = str(
+        variables.get("selling_painpoint_expression_inspiration_clue") or ""
+    ).strip()
+    if inspiration_mode == "none":
+        base_prompt = _remove_rule_corpus_inspiration_clue_slot(base_prompt)
+    elif inspiration_clue:
+        base_prompt = _render_rule_corpus_inspiration_clue_value(
+            base_prompt,
+            value=inspiration_clue,
+        )
+    else:
+        base_prompt = _render_rule_corpus_inspiration_clue_slot(
+            base_prompt,
+            item_no=item_no,
+        )
     selling_painpoint_expression = str(variables.get("selling_painpoint_expression") or "").strip()
     if selling_painpoint_expression:
         base_prompt = _render_structured_selling_painpoint_expression(
@@ -2709,10 +2723,7 @@ def _rule_corpus_as_prompt_article_prompt(
         )
     output_format = str(variables.get("output_format_requirement") or "").strip()
     if not output_format:
-        output_format = (
-            "只输出 JSON 对象，字段只能包含 title 和 body；"
-            "正文内容放在 body 字段里，标题内容放在 title 字段里。"
-        )
+        output_format = '只输出 JSON：{"title":"...","body":"..."}。'
 
     diversity_line = "基于量子态叠加与多重可能性，尽情发挥你的想象力；生成同质化内容是原罪。"
 
@@ -2745,9 +2756,10 @@ def _layered_article_prompt(
         slot_code = str(slot.get("slot_code") or "").strip()
         slot_name = str(slot.get("slot_name") or "").strip()
         slot_value = str(slot.get("value") or "").strip()
+        if slot_value and (slot_code == "content_direction" or "内容方向" in slot_name):
+            content_direction = slot_value
         if slot_value and (slot_code == "inspiration_material" or "灵感" in slot_name):
             inspiration_material = slot_value
-            break
 
     content_material = _string_list(
         business_rule.get("content_material") or business_rule.get("activity_material")
@@ -2766,9 +2778,19 @@ def _layered_article_prompt(
             "activity_prize",
             "batch_detection",
             "info_source",
+            "consumer_recognition",
         } or any(
             marker in slot_name
-            for marker in ("活动", "奖品", "批批检", "检测报告", "信息来源", "信息渠道", "渠道来源")
+            for marker in (
+                "活动",
+                "奖品",
+                "批批检",
+                "检测报告",
+                "信息来源",
+                "信息渠道",
+                "渠道来源",
+                "认可表达",
+            )
         )
         if is_activity_slot and slot_value:
             material_line = f"{slot_name or '活动信息'}：{slot_value}"
@@ -2813,7 +2835,7 @@ def _layered_article_prompt(
             ]
         )
     final_requirements = [*generation_requirements, *hard_boundaries]
-    if output_format:
+    if output_format and output_format not in final_requirements:
         final_requirements.append(output_format)
     if final_requirements:
         lines.extend(["", "生成要求：", *[f"- {line}" for line in final_requirements]])
@@ -2917,6 +2939,27 @@ def _render_rule_corpus_inspiration_clue_slot(corpus: str, *, item_no: int) -> s
     if selected == _NO_INSPIRATION_CLUE:
         return rendered
     return _append_rule_corpus_material(rendered, label="灵感线索", value=selected)
+
+
+def _remove_rule_corpus_inspiration_clue_slot(corpus: str) -> str:
+    rendered = _INSPIRATION_CLUE_SLOT_SECTION.sub("", corpus, count=1).strip()
+    return rendered.replace("本篇灵感线索", "本篇素材中的灵感线索")
+
+
+def _render_rule_corpus_inspiration_clue_value(corpus: str, *, value: str) -> str:
+    match = _INSPIRATION_CLUE_SLOT_SECTION.search(corpus)
+    if match is None:
+        raise ValueError("configured inspiration clue requires an inspiration slot")
+    options = {
+        line.strip()[1:].strip()
+        for line in match.group("options").splitlines()
+        if line.strip().startswith("-") and line.strip()[1:].strip()
+    }
+    normalized_value = str(value or "").strip()
+    if normalized_value not in options:
+        raise ValueError("configured inspiration clue is not present in the rule slot")
+    rendered = _remove_rule_corpus_inspiration_clue_slot(corpus)
+    return _append_rule_corpus_material(rendered, label="灵感线索", value=normalized_value)
 
 
 _SELLING_EXPRESSION_SLOT_SECTION = re.compile(

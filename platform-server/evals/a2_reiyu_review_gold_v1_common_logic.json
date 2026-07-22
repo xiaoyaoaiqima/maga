@@ -1,0 +1,37 @@
+{
+  "dataset_code": "a2_reiyu_review_gold_v1",
+  "slice": "common_logic_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-21",
+  "description": "a2 礼遇活动文章中与活动机制无关、但会影响交付使用的明确生活常识问题。",
+  "labels": ["light_fix"],
+  "label_semantics": {
+    "light_fix": "文章主体和活动事实成立，仅局部生活常识表达错误，最小修改后即可使用。"
+  },
+  "rubric": [
+    "通用生活常识问题与活动机制错误分开审核，不把产品使用表达混入奖品或资格金标。",
+    "明确写用冷水冲调奶粉属于冲调常识错误，但只需把‘冷水’改为符合实际的冲调表达，不因此淘汰整篇。",
+    "疾病、医疗效果、换季状态和抵抗力表达仍按 business_allowlist_v1 放行，不属于本切片。"
+  ],
+  "items": [
+    {
+      "title": "冷水冲调奶粉",
+      "content": "a2至初粉质很细，冷水一冲就化开。",
+      "meta": {
+        "case_code": "A2RY-CL-001",
+        "expected_label": "light_fix",
+        "issue_code": "common_sense_error",
+        "reason": "‘冷水冲调奶粉’属于明确的冲调常识错误，但可通过局部替换修复。",
+        "minimal_fix": "删除‘冷水’，改为‘冲泡时很快就化开’等不新增具体水温的表达。",
+        "source": "user_confirmed_backup_batch_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "common_logic",
+        "boundary": "formula_preparation_common_sense",
+        "source_type": "human_feedback"
+      }
+    }
+  ]
+}

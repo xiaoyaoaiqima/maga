@@ -17,6 +17,7 @@ from app.services.content_batch_planner import (
     _resolve_postprocess_mode,
     _resolve_real_user_pool_config,
     _resolve_selling_painpoint_expression,
+    _inspiration_clue_for_expression,
     _rotated_model_config,
     _select_article_business_rules_for_generation,
 )
@@ -55,6 +56,17 @@ def test_selling_painpoint_base_group_includes_ugc_suffix_but_ugc_group_stays_sc
         "进阶保护力+容易中招-ugc",
         item_no=1,
     )["expression"] == "UGC表达"
+
+
+def test_inspiration_clue_mapping_is_scoped_to_rule_and_expression_row():
+    rule = {
+        "inspiration_clue_by_source_row_no": {
+            "32": "和整理旧衣服相关",
+        }
+    }
+
+    assert _inspiration_clue_for_expression(rule, {"source_row_no": 32}) == "和整理旧衣服相关"
+    assert _inspiration_clue_for_expression(rule, {"source_row_no": 33}) is None
 
 
 def test_postprocess_mode_accepts_audit_only_without_rewrite():
@@ -507,7 +519,6 @@ def test_article_business_rule_plan_applies_source_row_rule_override_by_item_no(
         quality_guard_profile_key=None,
         model_config=None,
     )
-
     assert first["story_spine"] == "活动后的话头还没断"
     assert first["scene_motive_bucket"] == "活动后的话头还没断"
     assert first["selling_description"] == "旺玥承接活动后状态观察"
@@ -609,6 +620,16 @@ def test_article_business_rule_plan_rotates_rule_variation_slots_by_item_no():
         quality_guard_profile_key=None,
         model_config=None,
     )
+    first_occurrence_later_in_batch = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=7,
+        variation_item_no=1,
+        keyword_asset_key="royal_keywords",
+        prompt_mode="royal_compact",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
 
     assert first["variation_slots"] == [
         {"slot_code": "info_source", "slot_name": "信息来源", "value": "朋友聊天"},
@@ -618,6 +639,242 @@ def test_article_business_rule_plan_rotates_rule_variation_slots_by_item_no():
         {"slot_code": "info_source", "slot_name": "信息来源", "value": "门店导购"},
         {"slot_code": "life_scene", "slot_name": "生活场景", "value": "家庭聚会"},
     ]
+    assert first_occurrence_later_in_batch["variation_slots"] == first["variation_slots"]
+
+
+def test_article_business_rule_plan_can_rotate_variation_slots_by_batch_and_item():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_002",
+        "business_rule": "渠道和场景轮换",
+        "corpus": "写一次自然使用记录。",
+        "source_row_no": 2,
+        "variation_slots": [
+            {
+                "slot_code": "info_source",
+                "slot_name": "信息来源",
+                "options": ["朋友聊天", "门店导购", "小红书分享", "朋友圈讨论"],
+                "offset": 0,
+            },
+            {
+                "slot_code": "life_scene",
+                "slot_name": "生活场景",
+                "options": ["亲子活动", "兴趣课", "家庭聚会"],
+                "offset": 0,
+            },
+        ],
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="a2_reiyu_ugc_post_rules_v1",
+        content_json={
+            "rule_type": "business_rule",
+            "variation_slot_selection_mode": "batch_item_cycle",
+        },
+        metadata_json={},
+    )
+
+    first_batch_item = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        variation_item_no=1,
+        variation_batch_seed=1,
+        keyword_asset_key=None,
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+    second_batch_item = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=2,
+        variation_item_no=1,
+        variation_batch_seed=1,
+        keyword_asset_key=None,
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+    next_batch_first_item = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        variation_item_no=1,
+        variation_batch_seed=2,
+        keyword_asset_key=None,
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert first_batch_item["variation_slots"] == [
+        {"slot_code": "info_source", "slot_name": "信息来源", "value": "朋友聊天"},
+        {"slot_code": "life_scene", "slot_name": "生活场景", "value": "兴趣课"},
+    ]
+    assert second_batch_item["variation_slots"] == [
+        {"slot_code": "info_source", "slot_name": "信息来源", "value": "门店导购"},
+        {"slot_code": "life_scene", "slot_name": "生活场景", "value": "家庭聚会"},
+    ]
+    assert next_batch_first_item["variation_slots"] == second_batch_item["variation_slots"]
+
+
+def test_layered_article_plan_resolves_asset_defaults_and_conditional_inspiration():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_007",
+        "business_rule": "成长使用反馈",
+        "corpus": "记录成长使用反馈。",
+        "content_direction": "从一个成长细节写起。",
+        "selling_painpoint_group": "营养丰富+成长发育需求",
+        "inspiration_none_source_row_nos": [25],
+        "inspiration_clue_by_source_row_no": {32: "和整理旧衣服相关"},
+        "source_row_no": 7,
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_layered_probe",
+        content_json={
+            "rule_type": "business_rule",
+            "generation_prompt_mode": "layered_article",
+            "generation_instruction": "写一篇妈妈 UGC。",
+            "hard_boundaries": ["不新增产品事实。"],
+            "writing_requirements": ["从一个真实动作写起。"],
+            "generation_requirements": ["正文80-160字。"],
+            "variation_slots": [
+                {
+                    "slot_code": "inspiration_material",
+                    "slot_name": "灵感线索",
+                    "options": ["和游戏相关", "和整理旧衣服相关", "不使用灵感线索"],
+                }
+            ],
+            "selling_painpoint_expressions": [
+                {
+                    "selling_painpoint_group": "营养丰富+成长发育需求",
+                    "expression": "长肉效果还不错",
+                    "source_row_no": 25,
+                },
+                {
+                    "selling_painpoint_group": "营养丰富+成长发育需求",
+                    "expression": "营养多样，感觉够娃长身体",
+                    "source_row_no": 32,
+                },
+                {
+                    "selling_painpoint_group": "营养丰富+成长发育需求",
+                    "expression": "日常补充得挺顺手",
+                    "source_row_no": 33,
+                },
+            ],
+        },
+        metadata_json={},
+    )
+
+    no_inspiration = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key=None,
+        prompt_mode="layered_article",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+    exact_inspiration = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=2,
+        keyword_asset_key=None,
+        prompt_mode="layered_article",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+    sentinel_inspiration = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=3,
+        keyword_asset_key=None,
+        prompt_mode="layered_article",
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert no_inspiration["generation_instruction"] == "写一篇妈妈 UGC。"
+    assert no_inspiration["hard_boundaries"] == ["不新增产品事实。"]
+    assert no_inspiration["writing_requirements"] == ["从一个真实动作写起。"]
+    assert no_inspiration["generation_requirements"] == ["正文80-160字。"]
+    assert no_inspiration["variation_slots"] == []
+    assert exact_inspiration["variation_slots"] == [
+        {
+            "slot_code": "inspiration_material",
+            "slot_name": "灵感线索",
+            "value": "和整理旧衣服相关",
+        }
+    ]
+    assert sentinel_inspiration["variation_slots"] == []
+
+
+def test_layered_article_plan_limits_inspiration_to_one_of_every_five_batch_items():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_001",
+        "business_rule": "保护力使用反馈",
+        "corpus": "记录一次日常使用反馈。",
+        "content_direction": "从普通生活细节写起。",
+        "selling_painpoint_group": "进阶保护力+容易中招",
+        "inspiration_clue_by_source_row_no": {6: "和一次户外活动相关"},
+        "variation_slots": [
+            {
+                "slot_code": "inspiration_material",
+                "slot_name": "灵感线索",
+                "options": ["和一次户外活动相关", "和朋友相关"],
+            },
+            {
+                "slot_code": "tone",
+                "slot_name": "语气",
+                "options": ["随手记录"],
+            },
+        ],
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="wangyue_v3_core_storyline_article_rules",
+        content_json={
+            "rule_type": "business_rule",
+            "generation_prompt_mode": "layered_article",
+            "inspiration_usage_interval": 5,
+            "selling_painpoint_expressions": [
+                {
+                    "selling_painpoint_group": "进阶保护力+容易中招",
+                    "expression": "保护力在线",
+                    "source_row_no": 6,
+                }
+            ],
+        },
+        metadata_json={},
+    )
+
+    plans = [
+        service._product_experience_plan_from_rule(
+            rule,
+            asset=asset,
+            item_no=item_no,
+            variation_item_no=item_no,
+            variation_batch_seed=1,
+            keyword_asset_key=None,
+            prompt_mode="layered_article",
+            quality_guard_profile_key=None,
+            model_config=None,
+        )
+        for item_no in range(1, 6)
+    ]
+
+    inspiration_items = [
+        item_no
+        for item_no, plan in enumerate(plans, start=1)
+        if any(slot["slot_code"] == "inspiration_material" for slot in plan["variation_slots"])
+    ]
+    assert inspiration_items == [1]
+    assert all(
+        any(slot["slot_code"] == "tone" for slot in plan["variation_slots"])
+        for plan in plans
+    )
+    assert all(plan["inspiration_usage_interval"] == 5 for plan in plans)
 
 
 def test_article_business_rule_override_ignores_disallowed_product_fact_fields():
@@ -3146,6 +3403,7 @@ async def test_rule_corpus_batch_plan_does_not_reference_keyword_asset():
                             "rule_id": "business_rule_001",
                             "business_rule": "使用反馈",
                             "selling_painpoint_group": "进阶保护力+容易中招",
+                            "inspiration_none_source_row_nos": [2],
                             "corpus": "生文指令：写一篇妈妈UGC。",
                             "source_row_no": 1,
                         }
@@ -3175,6 +3433,8 @@ async def test_rule_corpus_batch_plan_does_not_reference_keyword_asset():
     assert item.plan_json["selling_painpoint_group"] == "进阶保护力+容易中招"
     assert item.plan_json["selling_painpoint_expression"] == "表达一"
     assert item.plan_json["selling_painpoint_expression_source_row_no"] == 2
+    assert item.plan_json["selling_painpoint_expression_inspiration_mode"] == "none"
+    assert item.plan_json["selling_painpoint_expression_inspiration_clue"] is None
     assert "painpoint" not in item.plan_json
     assert "selling_point" not in item.plan_json
 

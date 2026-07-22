@@ -12,12 +12,14 @@
 - 只拦原始表达之外新增或改变的可核验产品事实。
 - 抽象使用感受可以自然外扩。
 - 强种草标题和主观效果判断可以直接入池。
+- 不点名竞品、未新增具体认证/成分/效果的自然比较感受可以直接入池。
 - 不强制完成选择或购买莼悦的闭环。
 - 任务复述式表达只做局部轻修，不否定种草内核。
 
 ## batch 704 金标分布
 
 - `direct_pool`：CYU-002、CYU-003、CYU-004、CYU-005、CYU-007、CYU-008
+- `direct_pool` 补充校准：CYU-009
 - `light_fix_usable`：CYU-006
 - `hold_out`：CYU-001
 
@@ -40,3 +42,12 @@
 校准过程中曾发现 item 6 的审核 JSON 因输出预算不足被截断。当前莼悦 reviewer 使用精简 JSON 契约、2400 输出预算，并在解析失败时最多重试一次；最终正式 replay 无失败。
 
 复现报告：`outputs/chunyue_migration/history_runs/batch_704/business_usability_replay_v1_verified.json`
+
+## 2026-07-20 batch 706 补充校准
+
+新增 CYU-009：“别的品牌介绍里从没这样说过”属于不点名、不新增具体认证/成分/效果的自然比较感受，人工确认 `direct_pool`。更新金标和审核 Prompt 后，对 batch 706 item 6 使用正式数据库 provider 路由强制 replay：
+
+- reviewer：`chunyue_business_usability_v1`
+- 结果：`direct_pool`
+- issues：空
+- review attempts：1

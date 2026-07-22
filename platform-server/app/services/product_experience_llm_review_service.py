@@ -1,4 +1,4 @@
-"""Versioned LLM business-usability review for Wangyue and Chunyue UGC articles."""
+"""Versioned LLM business-usability review for MAGA UGC articles."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -12,6 +12,8 @@ from app.services.product_experience_phrase_guard_service import ProductExperien
 
 CHUNYUE_ARTICLE_ASSET_KEY = "chunyue_v2_painpoint_sellingpoint_article_rules"
 CHUNYUE_REVIEW_RUBRIC_CODE = "chunyue_business_usability_v1"
+A2_REIYU_ARTICLE_ASSET_KEY = "a2_reiyu_ugc_post_rules_v1"
+A2_REIYU_REVIEW_RUBRIC_CODE = "a2_reiyu_business_usability_v1"
 WANGYUE_REVIEW_RUBRIC_CODE = "wangyue_product_experience_v1"
 
 
@@ -61,11 +63,8 @@ class ProductExperienceLLMReviewService:
         plan = plan or {}
         model_config = _review_model_config(plan)
         system_prompt = _review_system_prompt(plan)
-        review_max_tokens = (
-            2400
-            if str(plan.get("asset_key") or "") == CHUNYUE_ARTICLE_ASSET_KEY
-            else 1200
-        )
+        asset_key = str(plan.get("asset_key") or "")
+        review_max_tokens = 2400 if asset_key == CHUNYUE_ARTICLE_ASSET_KEY else 1800 if asset_key == A2_REIYU_ARTICLE_ASSET_KEY else 1200
         user_prompt = _user_prompt(
             title=title,
             body=body,
@@ -91,17 +90,18 @@ class ProductExperienceLLMReviewService:
         try:
             review = parse_product_experience_llm_review(response)
         except (json.JSONDecodeError, ValueError):
-            if str(plan.get("asset_key") or "") != CHUNYUE_ARTICLE_ASSET_KEY:
+            if asset_key not in {CHUNYUE_ARTICLE_ASSET_KEY, A2_REIYU_ARTICLE_ASSET_KEY}:
                 raise
             attempts = 2
             response = await invoke()
             review = parse_product_experience_llm_review(response)
-        review = _calibrate_review_with_context(
-            review,
-            title=title,
-            body=body,
-            phrase_review=phrase_review,
-        )
+        if asset_key != A2_REIYU_ARTICLE_ASSET_KEY:
+            review = _calibrate_review_with_context(
+                review,
+                title=title,
+                body=body,
+                phrase_review=phrase_review,
+            )
         review.review_rubric_code = _review_rubric_code(plan)
         review.review_attempts = attempts
         return review
@@ -211,9 +211,13 @@ def _is_safe_adult_cup_action(
 
 def _is_allowed_protection_feedback(issue: ProductExperienceLLMIssue) -> bool:
     evidence = issue.evidence + issue.reason
-    allowed_markers = ("接触多", "状态稳", "一直稳", "出勤", "精神头")
+    allowed_markers = ("接触多", "少中招", "容易中招", "保护力在线", "状态稳", "一直稳", "出勤", "精神头", "小状况少些")
     hard_markers = (
+        "感冒",
+        "咳嗽",
+        "传染",
         "医院",
+        "请假",
         "高烧",
         "发烧",
         "治疗",
@@ -295,14 +299,20 @@ def _review_model_config(plan: dict[str, Any]) -> dict[str, Any]:
 
 
 def _review_rubric_code(plan: dict[str, Any]) -> str:
-    if str(plan.get("asset_key") or "") == CHUNYUE_ARTICLE_ASSET_KEY:
+    asset_key = str(plan.get("asset_key") or "")
+    if asset_key == CHUNYUE_ARTICLE_ASSET_KEY:
         return CHUNYUE_REVIEW_RUBRIC_CODE
+    if asset_key == A2_REIYU_ARTICLE_ASSET_KEY:
+        return A2_REIYU_REVIEW_RUBRIC_CODE
     return WANGYUE_REVIEW_RUBRIC_CODE
 
 
 def _review_system_prompt(plan: dict[str, Any]) -> str:
-    if str(plan.get("asset_key") or "") == CHUNYUE_ARTICLE_ASSET_KEY:
+    asset_key = str(plan.get("asset_key") or "")
+    if asset_key == CHUNYUE_ARTICLE_ASSET_KEY:
         return _CHUNYUE_SYSTEM_PROMPT
+    if asset_key == A2_REIYU_ARTICLE_ASSET_KEY:
+        return _A2_REIYU_SYSTEM_PROMPT
     return _SYSTEM_PROMPT
 
 
@@ -320,6 +330,9 @@ def _user_prompt(
         key: plan.get(key)
         for key in (
             "asset_key",
+            "business_rule",
+            "hard_boundaries",
+            "activity_material",
             "post_type",
             "ugc_post_type",
             "product_appearance_mode",
@@ -339,11 +352,7 @@ def _user_prompt(
     }
     return json.dumps(
         {
-            "task": (
-                "review_chunyue_ugc_business_usability"
-                if str(plan.get("asset_key") or "") == CHUNYUE_ARTICLE_ASSET_KEY
-                else "review_wangyue_ugc_product_naturalness"
-            ),
+            "task": _review_task(plan),
             "review_rubric_code": _review_rubric_code(plan),
             "title": title or "",
             "body": body or "",
@@ -372,6 +381,15 @@ def _user_prompt(
         },
         ensure_ascii=False,
     )
+
+
+def _review_task(plan: dict[str, Any]) -> str:
+    asset_key = str(plan.get("asset_key") or "")
+    if asset_key == CHUNYUE_ARTICLE_ASSET_KEY:
+        return "review_chunyue_ugc_business_usability"
+    if asset_key == A2_REIYU_ARTICLE_ASSET_KEY:
+        return "review_a2_reiyu_ugc_business_usability"
+    return "review_wangyue_ugc_product_naturalness"
 
 
 def _extract_json_object(raw_response: str) -> dict[str, Any]:
@@ -516,9 +534,10 @@ _SYSTEM_PROMPT = """你是中文小红书母婴 UGC 内容质检员，专门判�
 - 旺玥正向声量内容允许一个短的种草证明链：生活困扰/使用履历 -> 旺玥在场 -> 一个正向变化。只要没有再叠加完整选购复盘、价格取舍、孩子接受度、妈妈安心收口，就不要因为“产品带来变化”本身判 rewrite。
 - 真实 UGC 带产品本来就可能有轻微种草感；只要产品有出现资格、只保留一个生活触发和一个产品依据，可以判 pass 或 minor，不要因为“像种草”本身就判 rewrite。
 - 强种草问答、选奶复盘、复购/长期使用里，允许出现“朋友/家人顺口问起 -> 旺玥 -> 一个成分依据 -> 一个或多个自家正向反馈 -> 一点生活毛边/继续用”的完整种草链路。只要语气像真人、产品事实正确、没有医疗治疗或绝对保证，不要仅因节点多或链路完整就判 rewrite；节点密度主要是批次分布问题，不是单篇硬伤。
-- 疾病或免疫相关场景要看措辞强度：少请假、没怎么中招、精神头在线、出门不蔫这类自家观察，在使用反馈、选奶复盘、复购/长期使用、求建议后的反馈里可以作为强种草表达；只有写成保证不生病、治疗、医生建议、体检结论、明确因旺玥所以不生病，才判 hard。
-- 保护力相关内容可以正面有力，但要区分“自家状态观察”和“公共疾病环境对照”。自家出勤稳、状态稳、精神头还行、活动后不蔫，可以 pass/minor；如果标题或正文主要靠周围孩子中招、班里请假多、好几个没来、倒了一片、这波那波来证明自家状态，必须判 rewrite，issue code 用 claim_risk 或 public_disease_contrast。改写方向是保留旺玥的保护力价值和一个自家状态反馈，删掉公共疾病环境对照，不要新增医疗事实。
-- 三天两头跑医院、高烧/发烧、备药成习惯、治疗、医生建议、没再高烧、少跑医院，或把乳铁蛋白/HMO写成“防护/自身防护/肠道”的确定功能，必须判 rewrite 或 hard，business_usability_tier 通常为 hold_out，issue code 用 claim_risk。改写方向是保留一个普通自家状态反馈，例如出勤稳、状态稳、精神头还行，不要新增医疗事实。
+- 旺玥允许抽象表达少中招、容易中招、保护力在线、状态稳、精神头在线、小状况少些；这些表达可以作为正向种草反馈，不要仅因出现“中招、保护力、状态、小状况”判问题。
+- 不论过去或现在，只要展开感冒、咳嗽、传染、发烧、医院、请假或同伴生病等具体疾病、就医和请假场景，必须判 rewrite 或 hard，business_usability_tier 通常为 hold_out，issue code 用 claim_risk 或 public_disease_contrast。改写时删除具体场景，保留一个抽象保护力或状态反馈，不要新增另一种疾病、就医、出勤或医疗事实。
+- 保护力相关内容可以正面有力，但不能靠周围孩子中招、班里请假多、好几个没来、倒了一片、这波那波来证明自家状态；这类公共疾病环境对照必须判 rewrite，issue code 用 public_disease_contrast。
+- 把乳铁蛋白/HMO写成“防护/自身防护/肠道”的确定功能，仍按原规则判 rewrite 或 hard，issue code 用 claim_risk；本轮具体疾病场景调整不改变这条成分功能边界。
 - 旺玥成分和好处的承接服从当前业务规则。乳铁蛋白/免疫球蛋白/HMO承接保护力、精神头、状态稳、抱起来沉、长肉、衣服撑起来、跑跳有劲、身形结实等积极观察时，不要仅因“成分-积极结果相连”判 rewrite 或 hard；业务规则如果需要更细的卖点侧重，会在规则语料里控制。
 - ingredient_benefit_mismatch 不再作为独立硬判项。只有同时出现医疗治疗、绝对保证、错误产品事实、疾病公共环境对照等更明确风险时，才按 claim_risk、post_type_mismatch 或 other 处理；改写方向也只处理这些明确风险，不要把强正向效果洗弱成不确定表达。
 - 必须判 rewrite 的 product_fact_number_drift：旺玥关键营养数字口径不能自行编造。可以写“多种关键营养”或业务规则给出的“30多种关键营养”，不能写成“十几种/十多种/20多种/几十种关键营养”。改写方向是保留正向营养价值，只修数字口径，不要削弱种草。
@@ -557,8 +576,8 @@ _SYSTEM_PROMPT = """你是中文小红书母婴 UGC 内容质检员，专门判�
 - rewrite：产品突然成为大问题答案、链路堆到像任务广告且伴随帖子类型错配/广告收口/事实风险/强因果风险，安心收口模板明显、合规防守句明显、标题/正文像运营任务。不要只因为链路完整就 rewrite。
 - hard：医疗治疗、绝对保证、错误产品动作、明显事实错误、严重帖子类型错配。
 - hard 或 rewrite：用医院、高烧、发烧、治疗、医生、备药、少跑医院、没再高烧等医疗化场景证明旺玥有效，或把 HMO/乳铁蛋白直接写成防护/肠道功能结论。
-- 强效果证明不是自动 hard。保护力稳了、少请假、没中招、精神变足、注意力变好、长高长肉等表达，在复购/长期使用、使用反馈、求建议后的反馈、阶段复盘、明确强种草内容里可以成立；你要判断的是它是否有使用履历、是否像真人观察、是否和帖子类型匹配、是否过频或形成假闭环。
-- 仍需判 hard 的情况：把旺玥写成治疗、保证、不生病承诺、医生/体检结论，或写成加进牛奶、早餐搭配、每天一杯、早晚固定喝等原业务规则未给出的具体产品动作。
+- 强效果证明不是自动 hard。保护力稳了、少中招、精神变足、注意力变好、长高长肉等抽象表达，在复购/长期使用、使用反馈、求建议后的反馈、阶段复盘、明确强种草内容里可以成立；但感冒、咳嗽、传染、发烧、医院、请假或同伴生病等具体场景仍按上面的确定边界处理。
+- 仍需判 hard 的情况：把旺玥写成治疗、保证、不生病承诺、医生/体检结论，或写成加进牛奶、早餐搭配等错误产品动作。“每天一杯、早晚各一杯”属于可合理虚构的正常使用频次，不因业务规则未提供就判 hard 或 rewrite。
 
 必须判 rewrite 的情况：
 - 标题像选题说明、攻略标题或卖点归纳，例如“选奶标准/日常营养安排/保护力关注/补营养/取舍/复盘/标准/配方表翻到某栏”。
@@ -566,9 +585,9 @@ _SYSTEM_PROMPT = """你是中文小红书母婴 UGC 内容质检员，专门判�
 - 使用反馈、问题解决、家庭清单里回填“当时选它/后来看到/对比过/价格/孩子接受/没换别的/一直喝”这类完整选购复盘。
 - 用“不敢说有效、不能指望、没指望靠这个、不是光靠这个、每家不一样、还在观察、后面再看、再看看、不是因为它多神奇”来制造真实感。
 - 用“心里有数、心里有底、兜底、兜住、有个着落、有谱、省心、踏实、安心”这类词做统一收口。注意：这些词不是绝对禁词，只有当它们在上下文里替代了具体生活判断、把产品价值收成妈妈安心模板时才判 rewrite。
-- 产品动作过实：每天喝、每次冲一杯、早上或下午当一顿奶喝、喝下来、不排斥、喝得顺，并接到产品价值或继续使用。
+- 产品动作过实：把旺玥加进牛奶、早餐或其它食物，写成错误便携即饮形态，或由孩子自己开罐、舀粉、倒水、冲泡。正常的大人冲泡、每天一杯、早晚各一杯、喝下来、不排斥、喝得顺可以保留。
 - 产品被写成万能答案或假闭环，比如吃饭不稳/没电/接触多后，继续叠加旺玥补充、孩子接受、价格取舍、复购保留、妈妈安心收口，并把生活问题直接归因成旺玥解决。否则，即使朋友问起后给出一个成分依据和多个自家反馈，也不要按这一条判 rewrite。
-- 当前发布时间锚点太实，特指“最近/现在/目前/今天/这几天/这阵”绑定换季、流感、季节、降温、入冬/入夏/入秋、天冷等季节/疾病大环境；不要因为昨天、刚拆快递、刚补货、家里剩半罐、班里请假、最近出勤稳这类生活记录口吻就判 rewrite。
+- 当前发布时间锚点太实，特指“最近/现在/目前/今天/这几天/这阵”绑定换季、流感、季节、降温、入冬/入夏/入秋、天冷等季节/疾病大环境；普通昨天、刚拆快递、刚补货、家里剩半罐、最近出勤稳不因此判 rewrite，但班里请假仍属于具体疾病/请假场景，按上面的确定边界处理。
 - 正文像在把业务规则翻译成人话：先说一个很薄的生活入口，马上转成“选儿童奶粉会看某方向/这个产品依据我记住/这个营养我会优先考虑”，缺少真实发帖动作里的纠结、问答、对比残缺或记录语境。单独一句具体成分大白话，例如“钙铁锌看着挺全/DHA和燕窝酸写得清楚”，不按这一条判 rewrite。
 
 通常可判 pass 或 minor 的情况：
@@ -618,6 +637,71 @@ _SYSTEM_PROMPT = """你是中文小红书母婴 UGC 内容质检员，专门判�
 """
 
 
+_A2_REIYU_SYSTEM_PROMPT = """你只审核 a2 礼遇活动 UGC 分享帖的业务可用性。审核标准版本：a2_reiyu_business_usability_v1。
+
+输入 plan.business_rule 是本篇主活动和认可路径，plan.variation_slots 是本次实际抽中的活动来源、原因、活动内容、每批检测和认可素材。先按这些已确认素材审核正文，不能用其他活动常识补规则，也不能把允许表达误判成问题。
+
+人工确认的放行边界：
+1. 活动页面、页面里或页面上提到 a2至初每批都有检测可以直接通过。只拦“往下翻才看到检测”“从活动规则发现检测”，以及在兑换、领奖或中奖时才看到检测。
+2. 必须区分“扫罐码”和“扫罐底码”：扫罐码累计集罐是正确机制，“买完奶粉扫罐码集罐”“集罐过程扫罐码累计”都必须通过；扫罐底码只用于查看检测或溯源报告。正文只写“扫码”时，集罐上下文按扫罐码理解，检测上下文按扫罐底码理解。只有明确把罐底码写成抽奖入口、集罐入口、兑换入口或中奖方式才是机制错误。不得建议改成拍罐身、购买记录等未经确认的参加方式。
+3. 新西兰旅游、旅游基金大奖、新西兰溯源之旅、2w、两万、万元等自然说法均可通过，不要求奖品名称逐字一致。抽奖奖品可以写旅游基金、金手链或金手串、夏凉被。
+4. 集罐标准是3罐小车车、6罐自行车、12罐奶粉、18罐婴儿车。6罐自行车口语称为小车车可以通过。正确档位后泛提其他档位奖品可以通过。
+5. 奶粉使用“吃、吃完”等口语可以通过。疾病、医疗效果、换季状态、抵抗力等内容不属于本活动审核范围，不要因此降级。
+6. “检测很严格、标准高、仔细看了下、别错过、值得试试”可以通过。上下文已经出现a2时，后文使用“品牌、这牌子”指代可以通过。
+7. 标题7到18字、正文200到250字只是生文约束。审核按中文、字母、数字、标点各1，emoji2计算标题长度；不超过20可以通过，超过20直接判 hard / hold_out，issue code 用 title_too_long，rewrite_required=false，不建议改标题。正文略短或略长不单独降级。
+8. “焦虑、担心、不安、不放心”等自然情绪词不因单词本身降级。“焦虑一下没了”“之前担心，现在放心”等正向转折可以通过。只有正文把a2、a2至初或活动写成持续引发负面情绪，并形成明确的品牌或产品负面经历时，才判 negative_brand_risk。
+9. “抽奖那种虚的”是消费者表达自己更偏爱确定性兑换福利的自然口语，可以通过，不按贬损活动处理。
+
+必须按活动机制审核：
+- 会员积分只能写累计后兑换会员礼。明确写积分兑换小车车、自行车、奶粉或婴儿车等集罐奖品，或兑换旅游基金、金手链、夏凉被等抽奖奖品，判 hard / hold_out，issue code 用 activity_mechanism_error。
+- plan.variation_slots 只写积分“能换东西”或“兑换会员礼”、没有提供具体积分礼品时，正文不得自行补出小玩具、绘本、奶粉周边等具体礼品；判 hard / hold_out，issue code 用 fabricated_points_reward。奖品自然别称仍按上面的放行边界处理。
+- 明确写“集罐换积分、集罐兑换积分”，判 hard / hold_out，issue code 用 activity_mechanism_error。
+- 明确写错集罐档位和奖品，或把婴儿车等集罐礼写成抽奖奖品，判 hard / hold_out。
+- 暗示活动开始前购买或家里原有的旧罐可以参加，例如“家里正好存了几个罐子”，判 hard / hold_out，issue code 用 old_can_eligibility_error。
+- 只写“奶粉喝完了把罐子存着”但没有明确说活动前旧罐可参加，不按旧罐硬错处理；判 minor / light_fix_usable，issue code 用 empty_can_storage_wording，改成直接说参加集罐。
+- 明确说自己已经中奖、已经兑换、已经拿到奖品或孩子看到兑换实物，但本篇素材没有提供该经历，判 rewrite / hold_out，issue code 用 fabricated_reward_experience。variation_slots 里的“集3罐兑换可以得小车车”只说明活动规则，不等于已经兑换；“换到小车车娃可开心了”“娃拿到小车可高兴了”都必须判 fabricated_reward_experience。
+- “多买几罐还能多换、多买多换”等自行扩张兑换次数的说法，事实主干仍正确时判 minor / light_fix_usable，局部删除即可。
+- 同篇可以同时写抽奖、集罐、积分、老客回馈，但必须符合 plan.business_rule。积分主活动里突然改写成多重福利，或单一集罐档位里混入其他机制且无法区分，按严重程度判 rewrite 或 hard。
+
+其他人工金标：
+- 同一句叠加邻居、闺蜜、导购、品牌官号等多个独立发现来源，且正文明确交代第二个独立人物或渠道并把它们堆成同一次发现经历时，判 hard / hold_out，issue code 用 source_stacking。一个自然来源直接通过。“看到a2官号推会员升级，本来没太在意，后来听说a2至初这次礼品挺丰富的，就点进去瞅了眼”是同一经历里的兴趣变化，可以直接通过。
+- 后文写喝了几个月、继续回购等老客经历，前文却写一直想囤、准备第一次尝试，属于身份冲突，判 minor / light_fix_usable，issue code 用 narrative_consistency。
+- “我家本来就喝a2至初”描述当前状态，后文回顾“之前换a2后”属于更早的历史经历，两者可以同时成立，直接通过，不要误判成时序冲突。
+- 标题写喝了两年、正文却写只喝了大半年等明确使用时长冲突，判 minor / light_fix_usable，issue code 用 usage_duration_conflict，局部统一时长即可。
+- 明确写用冷水冲调奶粉属于生活常识错误，判 minor / light_fix_usable，issue code 用 common_sense_error；只改相关冲调句，不因此淘汰整篇。
+- 活动名可以出现。“发现a2上了会员礼遇活动”通过；“这个活动叫……”“活动名称是……”“活动是会员升级”属于局部说明腔，判 minor / light_fix_usable，issue code 用 activity_naming_explanation。
+- “夸夸a2、正文、标题、卖点、痛点、本篇素材”等写作指令泄漏，或明显照抄内容方向的元话术，判 minor / light_fix_usable；影响理解时可判 rewrite。issue code 用 instruction_leakage。
+- “认真做用户关系和品质沟通、用实际行动得到用户认可”等抽象品牌总结，如果上下文自然可判 minor；如果整段像品牌汇报而非消费者分享，判 minor / light_fix_usable，issue code 用 corporate_summary_tone。不要把它升级成事实错误。
+- 普通的强推荐、活动很香、品牌靠谱、大方、好感up up不是问题。不要因为种草强或结尾积极就降级。
+- 只有正文明确把a2、a2至初或活动写成质量、安全、供应、真伪、售后争议或持续负面情绪来源时，才按实际严重程度判 negative_brand_risk；不要因单个情绪词机械降级。
+
+业务入池三档：
+- direct_pool：无需人工修改即可使用。活动事实、机制、来源和身份一致，表达即使较强也自然可读。
+- light_fix_usable：事实主干正确，只有活动名说明腔、身份小歧义、指令泄漏、病句、抽象品牌总结或未经确认的多买多换，需要局部轻修。
+- hold_out：奖品或机制明确错误、旧罐参与、多个来源叠加、虚构中奖或兑换经历、扫罐底码变成抽奖入口，或文本断裂到无法局部修复。
+
+severity 与档位：pass 通常 direct_pool；minor 通常 light_fix_usable 且 rewrite_required=false；rewrite/hard 通常 hold_out。不要把修改后能救回来等同于首轮 direct_pool。
+
+输出严格 JSON，不要 Markdown：
+{
+  "pass": true,
+  "rewrite_required": false,
+  "severity": "pass|minor|rewrite|hard",
+  "business_usability_tier": "direct_pool|light_fix_usable|hold_out",
+  "business_usability_reason": "按a2礼遇金标说明",
+  "issues": [
+    {
+      "code": "title_too_long|activity_mechanism_error|old_can_eligibility_error|empty_can_storage_wording|fabricated_reward_experience|source_stacking|narrative_consistency|usage_duration_conflict|common_sense_error|activity_naming_explanation|instruction_leakage|corporate_summary_tone|negative_brand_risk|other",
+      "evidence": "原文片段",
+      "reason": "为什么命中",
+      "rewrite_direction": "最小修改方向，不新增活动事实"
+    }
+  ],
+  "overall_reason": "一句话总结"
+}
+"""
+
+
 _CHUNYUE_SYSTEM_PROMPT = """你只审核皇家美素佳儿莼悦强种草 UGC 的业务可用性。审核标准版本：chunyue_business_usability_v1。
 
 输入 plan.selling_painpoint_expression 是本篇已确认的原始卖点痛点事实，审核时把它作为可核验产品事实的唯一依据。允许自然转述、拆开表达，也允许穿插渠道、时间、地点、动作和心情。
@@ -632,7 +716,8 @@ _CHUNYUE_SYSTEM_PROMPT = """你只审核皇家美素佳儿莼悦强种草 UGC �
 4. 不强制文章完成“最终选择/购买莼悦”的闭环。只要自然建立了与莼悦的产品关系，停在被推荐、了解到、记下来或继续关注都可以；不能因没有下单或明确选择动作判问题。
 5. 原始表达中的强因果、产品事实和效果已经业务确认，不主动降调，不因为表达力度强就判风险。
 6. 像“就靠这个依据确认的”这种直接复述任务字段、审核字段或内容方向的话，属于 brief_translation_tone；事实和种草内核成立时判 minor / light_fix_usable，不要整篇否定。
-7. 如果把产品事实写成罐身、包装、标签、说明或配料表上的文字，或发生主体归因错误、价格负向、医疗治疗、绝对保证，按实际严重程度判 rewrite/hard。
+7. “别的品牌介绍里从没这样说过”这类不点名竞品、不新增具体认证、成分或效果的自然比较感受允许 direct_pool。只有点名竞品并新增具体可核验对比事实，或出现明确贬损时，才按实际问题拦截。
+8. 如果把产品事实写成罐身、包装、标签、说明或配料表上的文字，或发生主体归因错误、价格负向、医疗治疗、绝对保证，按实际严重程度判 rewrite/hard。
 
 业务入池三档：
 - direct_pool：可直接入池。允许强种草标题、抽象使用感受和不完整购买链路。

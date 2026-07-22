@@ -201,6 +201,7 @@ class ContentCommentBatchService:
                 plan_json=copy.deepcopy(item.plan_json or {}),
                 quality_json=_quality_without_replayable_comment_reviews(before_quality),
             )
+            candidate.plan_json["review_replay"] = True
             guard.review_item(candidate)
             item.body = candidate.body
             item.quality_json = candidate.quality_json

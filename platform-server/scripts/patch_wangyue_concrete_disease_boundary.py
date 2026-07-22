@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Publish a new Wangyue asset version with the concrete-disease boundary."""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import hashlib
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import pymysql
+
+
+ASSET_TYPE = "article_business_rule_set"
+ASSET_KEY = "wangyue_v3_core_storyline_article_rules"
+BOUNDARY = (
+    "允许抽象表达“少中招、容易中招、保护力在线、状态稳、小状况少些”；"
+    "禁止展开感冒、咳嗽、传染、发烧、医院、请假或同伴生病等具体疾病、就医和请假场景。"
+)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="发布旺玥具体疾病场景边界。")
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--host", default=os.getenv("MYSQL_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("MYSQL_PORT", "3306")))
+    parser.add_argument("--user", default=os.getenv("MYSQL_USER", "maga"))
+    parser.add_argument("--password", default=os.getenv("MYSQL_PASSWORD", "maga123456"))
+    parser.add_argument("--database", default=os.getenv("MYSQL_DATABASE", "maga"))
+    parser.add_argument(
+        "--backup-dir",
+        type=Path,
+        default=Path(".local/asset-config-backups"),
+    )
+    return parser
+
+
+def _json_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    conn = pymysql.connect(
+        host=args.host,
+        port=args.port,
+        user=args.user,
+        password=args.password,
+        database=args.database,
+        charset="utf8mb4",
+        autocommit=False,
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                select id, display_name, version_no, source_name, source_uri,
+                       content_json, metadata_json
+                from asset_registry
+                where asset_type=%s and asset_key=%s
+                  and asset_stage='production' and status='active'
+                order by version_no desc, id desc
+                limit 1
+                """,
+                (ASSET_TYPE, ASSET_KEY),
+            )
+            current = cursor.fetchone()
+            if not current:
+                raise RuntimeError(f"active asset not found: {ASSET_KEY}")
+            cursor.execute(
+                """
+                select coalesce(max(version_no), 0) as max_version
+                from asset_registry
+                where asset_type=%s and asset_key=%s
+                """,
+                (ASSET_TYPE, ASSET_KEY),
+            )
+            next_version = int((cursor.fetchone() or {}).get("max_version") or 0) + 1
+
+        source_content = _json_value(current.get("content_json")) or {}
+        content = copy.deepcopy(source_content)
+        hard_boundaries = list(content.get("hard_boundaries") or [])
+        if BOUNDARY not in hard_boundaries:
+            hard_boundaries.append(BOUNDARY)
+        content["hard_boundaries"] = hard_boundaries
+
+        metadata = copy.deepcopy(_json_value(current.get("metadata_json")) or {})
+        metadata.update(
+            {
+                "concrete_disease_boundary_base_asset_id": int(current["id"]),
+                "concrete_disease_boundary_base_version_no": int(current["version_no"]),
+                "concrete_disease_boundary_published_at": datetime.now().isoformat(timespec="seconds"),
+            }
+        )
+        source_items = source_content.get("items") or []
+        next_items = content.get("items") or []
+        if source_items != next_items:
+            raise RuntimeError("items changed unexpectedly")
+        if source_content.get("selling_painpoint_expressions") != content.get("selling_painpoint_expressions"):
+            raise RuntimeError("selling_painpoint_expressions changed unexpectedly")
+        if source_content.get("variation_slots") != content.get("variation_slots"):
+            raise RuntimeError("asset variation_slots changed unexpectedly")
+
+        source_hash = hashlib.sha256(
+            json.dumps(content, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        result = {
+            "source_asset_id": int(current["id"]),
+            "source_version_no": int(current["version_no"]),
+            "target_version_no": next_version,
+            "item_count": len(next_items),
+            "hard_boundary_count_before": len(source_content.get("hard_boundaries") or []),
+            "hard_boundary_count_after": len(hard_boundaries),
+            "boundary": BOUNDARY,
+        }
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if not args.apply:
+            conn.rollback()
+            print("DRY-RUN: add --apply to create the new active production version.")
+            return
+
+        args.backup_dir.mkdir(parents=True, exist_ok=True)
+        backup_path = args.backup_dir / (
+            f"{ASSET_KEY}-v{current['version_no']}-"
+            f"{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+        )
+        backup_path.write_text(
+            json.dumps(current, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                update asset_registry
+                set status='archived'
+                where asset_type=%s and asset_key=%s
+                  and asset_stage='production' and status='active'
+                """,
+                (ASSET_TYPE, ASSET_KEY),
+            )
+            cursor.execute(
+                """
+                insert into asset_registry (
+                    asset_type, asset_key, display_name, version_no, status, asset_stage,
+                    source_name, source_uri, source_hash, content_json, metadata_json, created_by
+                ) values (%s,%s,%s,%s,'active','production',%s,%s,%s,cast(%s as json),cast(%s as json),%s)
+                """,
+                (
+                    ASSET_TYPE,
+                    ASSET_KEY,
+                    f"0705旺玥活动-V3-分层框架-具体疾病边界-v{next_version}",
+                    next_version,
+                    current.get("source_name"),
+                    current.get("source_uri"),
+                    source_hash,
+                    json.dumps(content, ensure_ascii=False),
+                    json.dumps(metadata, ensure_ascii=False),
+                    "codex_wangyue_concrete_disease_boundary_20260721",
+                ),
+            )
+            new_asset_id = int(cursor.lastrowid)
+        conn.commit()
+        print(f"APPLIED: created asset id={new_asset_id}, version={next_version}")
+        print(f"BACKUP: {backup_path.resolve()}")
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -266,8 +266,16 @@ class SellingPainpointExpressionUpdate(BaseModel):
 class ArticleBusinessRuleFieldsUpdate(BaseModel):
     corpus: str | None = None
     selling_painpoint_group: str | None = None
+    inspiration_none_source_row_nos: list[int] | None = None
+    inspiration_clue_by_source_row_no: dict[int, str] | None = None
+    writing_requirements: list[str] | None = None
+    generation_requirements: list[str] | None = None
     expected_corpus: str | None = None
     expected_selling_painpoint_group: str | None = None
+    expected_inspiration_none_source_row_nos: list[int] | None = None
+    expected_inspiration_clue_by_source_row_no: dict[int, str] | None = None
+    expected_writing_requirements: list[str] | None = None
+    expected_generation_requirements: list[str] | None = None
     created_by: str | None = "maga-operator"
 
 

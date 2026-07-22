@@ -1,6 +1,7 @@
 """Content-agent execution-layer endpoints."""
 from typing import Any
 from urllib.parse import quote
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import select
@@ -43,6 +44,8 @@ from app.schemas.content_batch_report import (
     ContentPPLRunStartResponse,
 )
 from app.schemas.prompt_debug import (
+    PromptDebugHistoryGroupDetail,
+    PromptDebugHistoryListResponse,
     PromptDebugRequest,
     PromptDebugResponse,
     PromptDebugTokenUsage,
@@ -76,6 +79,7 @@ from app.services.executor_invocation_service import (
     call_direct_llm,
 )
 from app.services.content_generation_preflight_service import ContentGenerationPreflightService
+from app.services.prompt_debug_history_service import PromptDebugHistoryService
 
 router = APIRouter()
 
@@ -249,7 +253,8 @@ async def run_prompt_debug(
     request: PromptDebugRequest,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseData[PromptDebugResponse]:
-    """Run one raw prompt against the configured LLM router without batch side effects."""
+    """Run one raw prompt and persist the workbench execution history."""
+    run_group_id = request.run_group_id or uuid4().hex
     try:
         result = await call_direct_llm(
             model_config=await _prompt_debug_model_config(db, model_code=request.model_code),
@@ -259,27 +264,69 @@ async def run_prompt_debug(
             max_tokens=request.max_tokens if request.max_tokens is not None else 1500,
         )
     except Exception as exc:
+        response = PromptDebugResponse(
+            success=False,
+            model_code=request.model_code,
+            error_message=str(exc),
+            run_group_id=run_group_id,
+        )
+        history = await PromptDebugHistoryService(db).create(
+            request=request,
+            response=response,
+            run_group_id=run_group_id,
+        )
+        response.history_id = history.id
         return ResponseData(
             message="Prompt 调试失败",
-            data=PromptDebugResponse(
-                success=False,
-                model_code=request.model_code,
-                error_message=str(exc),
-            ),
+            data=response,
         )
 
+    response = PromptDebugResponse(
+        success=True,
+        content=result.content,
+        model_code=result.model_code,
+        provider_code=result.provider_code,
+        provider_model=result.provider_model,
+        usage=PromptDebugTokenUsage(**result.usage),
+        latency_ms=result.latency_ms,
+        run_group_id=run_group_id,
+    )
+    history = await PromptDebugHistoryService(db).create(
+        request=request,
+        response=response,
+        run_group_id=run_group_id,
+    )
+    response.history_id = history.id
     return ResponseData(
         message="Prompt 调试完成",
-        data=PromptDebugResponse(
-            success=True,
-            content=result.content,
-            model_code=result.model_code,
-            provider_code=result.provider_code,
-            provider_model=result.provider_model,
-            usage=PromptDebugTokenUsage(**result.usage),
-            latency_ms=result.latency_ms,
-        ),
+        data=response,
     )
+
+
+@router.get(
+    "/prompt-debug/history",
+    response_model=ResponseData[PromptDebugHistoryListResponse],
+)
+async def list_prompt_debug_history(
+    limit: int = Query(default=30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[PromptDebugHistoryListResponse]:
+    items = await PromptDebugHistoryService(db).list_groups(limit=limit)
+    return ResponseData(data=PromptDebugHistoryListResponse(items=items))
+
+
+@router.get(
+    "/prompt-debug/history/{run_group_id}",
+    response_model=ResponseData[PromptDebugHistoryGroupDetail],
+)
+async def get_prompt_debug_history(
+    run_group_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[PromptDebugHistoryGroupDetail]:
+    detail = await PromptDebugHistoryService(db).get_group(run_group_id)
+    if not detail:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="调试历史不存在")
+    return ResponseData(data=detail)
 
 
 @router.post("/batches/start", response_model=ResponseData[ContentBatchStartResponse])

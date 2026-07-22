@@ -17,7 +17,8 @@
     "‘现在喝着挺安稳’‘宝宝喝得挺顺口’等抽象、不可量化的使用感受可以自然外扩，不按事实漂移处理。",
     "标题允许‘焦虑终结者’‘让敏敏宝宝安心’等主观效果强化和强种草表达，不仅因力度强而降级。",
     "不强制正文完成最终选择或购买莼悦；停在被推荐、了解到、记下来或继续关注均可直接入池。",
-    "‘就靠这个依据确认的’等直接复述任务字段或内容方向的表达判 light_fix_usable，不整篇否定。"
+    "‘就靠这个依据确认的’等直接复述任务字段或内容方向的表达判 light_fix_usable，不整篇否定。",
+    "‘别的品牌介绍里从没这样说过’这类不点名竞品、不新增具体认证、成分或效果的自然比较感受允许直接入池；只有具体可核验的竞品事实或贬损才拦截。"
   ],
   "items": [
     {
@@ -155,6 +156,23 @@
         "source": "batch_704_user_calibration"
       },
       "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "strong_seeding_title_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "翻开备忘录，选奶记",
+      "content": "翻看手机备忘录，上面记着妈妈群闲聊时的一句话：“奶牛不吃任何转基因饲料，所以奶质更有机。”当时就是这条信息，让我对莼悦多留了心。后来每次对比奶粉，总想起这句——别的品牌介绍里从没这样说过。昨晚喂奶，看着宝宝咕嘟咕嘟喝完，我心想：就它了，莼悦。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "奶牛不吃任何转基因饲料，所以奶质更有机"
+      },
+      "meta": {
+        "case_code": "CYU-009",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["别的品牌介绍里从没这样说过"],
+        "reason": "不点名竞品，也未新增具体竞品认证、成分或效果，只是自然的主观比较感受，允许直接入池。",
+        "source": "batch_706_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "abstract_competitive_impression_allowed", "source_type": "human_feedback"}
     }
   ]
 }

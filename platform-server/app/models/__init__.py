@@ -70,6 +70,7 @@ from app.models.content_agent import (
     ContentBatchItem,
     ContentBatchItemVersion,
     ContentFeedback,
+    ContentPromptDebugHistory,
     ExecutorRegistry,
 )
 
@@ -134,6 +135,7 @@ __all__ = [
     "ContentBatchItem",
     "ContentBatchItemVersion",
     "ContentFeedback",
+    "ContentPromptDebugHistory",
     "ContentAgentTask",
     "ContentAgentRun",
     "ContentAgentStageCall",

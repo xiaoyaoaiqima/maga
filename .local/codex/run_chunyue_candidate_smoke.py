@@ -44,12 +44,20 @@ EXTRA_RISK_TERMS = [
 EXPRESSION_SEGMENT_SEPARATOR = re.compile(r"[，。！？；、：,.!?;:\\n]+")
 
 
-def expression_content_preserved(expression: str, body: str) -> bool:
-    segments = [
+def expression_segments(expression: str) -> list[str]:
+    return [
         segment.strip()
         for segment in EXPRESSION_SEGMENT_SEPARATOR.split(str(expression or ""))
         if segment.strip()
     ]
+
+
+def expression_fragment_exactly_used(expression: str, body: str) -> bool:
+    return any(segment in str(body or "") for segment in expression_segments(expression))
+
+
+def expression_content_preserved(expression: str, body: str) -> bool:
+    segments = expression_segments(expression)
     if not segments:
         return False
     cursor = 0
@@ -155,6 +163,10 @@ async def generate_one(
         selected_expression_text,
         body,
     )
+    expression_fragment_used = expression_fragment_exactly_used(
+        selected_expression_text,
+        body,
+    )
     formal_hits = find_forbidden_hits(text)
     source_expression = selected_expression_text.lower()
     unsupported_expansion_hits = [
@@ -182,6 +194,7 @@ async def generate_one(
         "prompt_length": len(rendered_prompt),
         "expression_exactly_used": expression_exactly_used,
         "expression_content_preserved": expression_preserved,
+        "expression_fragment_exactly_used": expression_fragment_used,
         "formal_forbidden_hits": formal_hits,
         "unsupported_expansion_hits": unsupported_expansion_hits,
         "runtime_result": output.get("runtime_result") or {},
@@ -209,6 +222,15 @@ def max_similarity(items: list[dict[str, Any]]) -> tuple[float, list[int]]:
     return round(best, 4), best_pair
 
 
+def machine_passed(item: dict[str, Any]) -> bool:
+    return (
+        item["status"] in {"completed", "succeeded"}
+        and bool(item["body"])
+        and not item["formal_forbidden_hits"]
+        and not item["unsupported_expansion_hits"]
+    )
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     rules = read_rules(args.rules)[: args.limit]
     expression_pool = read_expressions(args.expressions)
@@ -227,13 +249,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         for item in items
         if item["status"] in {"completed", "succeeded"} and item["body"]
     ]
-    machine_passed = [
-        item
-        for item in generated
-        if item["expression_content_preserved"]
-        and not item["formal_forbidden_hits"]
-        and not item["unsupported_expansion_hits"]
-    ]
+    machine_passed_items = [item for item in generated if machine_passed(item)]
     similarity, pair = max_similarity(generated)
     report = {
         "batch_id": batch_id,
@@ -264,8 +280,16 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             for item in generated
             if not item["expression_content_preserved"]
         ],
-        "machine_final_pass_count": len(machine_passed),
-        "machine_final_pass_items": [item["item_no"] for item in machine_passed],
+        "expression_fragment_exactly_used_count": sum(
+            1 for item in generated if item["expression_fragment_exactly_used"]
+        ),
+        "expression_fragment_not_used_items": [
+            item["item_no"]
+            for item in generated
+            if not item["expression_fragment_exactly_used"]
+        ],
+        "machine_final_pass_count": len(machine_passed_items),
+        "machine_final_pass_items": [item["item_no"] for item in machine_passed_items],
         "max_pairwise_jaccard_2gram": similarity,
         "max_similarity_pair": pair,
         "items": items,

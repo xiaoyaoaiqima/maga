@@ -17,14 +17,28 @@ from app.core.database import get_db
 from app.services.executor_invocation_service import DirectLLMCallResult
 
 
-def _prompt_debug_app() -> FastAPI:
+class _FakePromptDebugDb:
+    def __init__(self):
+        self.records = []
+
+    def add(self, record):
+        record.id = len(self.records) + 1
+        self.records.append(record)
+
+    async def flush(self):
+        return None
+
+
+def _prompt_debug_app(db=None) -> FastAPI:
     app = FastAPI()
     app.include_router(content_agent.router, prefix="/api/v1/content-agent")
+    fake_db = db or _FakePromptDebugDb()
 
     async def override_get_db():
-        yield object()
+        yield fake_db
 
     app.dependency_overrides[get_db] = override_get_db
+    app.state.prompt_debug_db = fake_db
     return app
 
 
@@ -72,6 +86,11 @@ async def test_prompt_debug_run_returns_raw_llm_output(monkeypatch):
                 "model_code": "deepseek-v4-flash",
                 "temperature": 0.3,
                 "max_tokens": 80,
+                "run_group_id": "group-success",
+                "workbench_mode": "compare",
+                "panel_key": "right",
+                "item_index": 2,
+                "batch_size": 3,
             },
         )
 
@@ -91,7 +110,20 @@ async def test_prompt_debug_run_returns_raw_llm_output(monkeypatch):
         },
         "latency_ms": 321,
         "error_message": None,
+        "history_id": 1,
+        "run_group_id": "group-success",
     }
+    history = app.state.prompt_debug_db.records[0]
+    assert history.run_group_id == "group-success"
+    assert history.workbench_mode == "compare"
+    assert history.panel_key == "right"
+    assert history.item_index == 2
+    assert history.batch_size == 3
+    assert history.prompt == "写一条评论"
+    assert history.system_prompt == "只输出正文"
+    assert history.success is True
+    assert history.content == "我也刷到有货了，先拍两罐"
+    assert history.token_usage["total_tokens"] == 28
 
 
 @pytest.mark.asyncio
@@ -115,6 +147,7 @@ async def test_prompt_debug_run_returns_readable_model_error(monkeypatch):
             json={
                 "prompt": "写一条评论",
                 "model_code": "deepseek-v4-flash",
+                "run_group_id": "group-failed",
             },
         )
 
@@ -124,6 +157,11 @@ async def test_prompt_debug_run_returns_readable_model_error(monkeypatch):
     assert payload["data"]["success"] is False
     assert payload["data"]["model_code"] == "deepseek-v4-flash"
     assert payload["data"]["error_message"] == "未配置 API Key，无法调用模型"
+    assert payload["data"]["history_id"] == 1
+    assert payload["data"]["run_group_id"] == "group-failed"
+    history = app.state.prompt_debug_db.records[0]
+    assert history.success is False
+    assert history.error_message == "未配置 API Key，无法调用模型"
 
 
 @pytest.mark.asyncio

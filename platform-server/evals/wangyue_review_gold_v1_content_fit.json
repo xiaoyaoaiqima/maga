@@ -17,6 +17,9 @@
     "把业务规则翻译成‘这个方向我会看、产品依据我记住的是、营养这块要优先’等抽象选品总结，且成为正文主要承接时，判 block。",
     "把旺玥写成‘安排进日常奶粉里、放进日常奶粉里’，或用开罐动作生硬触发产品复盘，判 block。",
     "自家长期使用中的消化吸收体验可以直接表达，例如便便规律、胀气少、小肚子舒服、积食或排便状态前后变化；不要仅因形成消化效果链而 block。医疗化、治疗或保证有效由独立合规审核处理。",
+    "卖点效果按计划卖点痛点组合判断。保护力计划没有落到保护方向、反而用保护成分解释眼脑或精力结果时判 selling_point_effect_mismatch；计划方向已经自然成立时，可以顺带其它相关卖点。",
+    "精力双卖点是生成方向，不是正文逐项齐全审核；正文自然带到保护力、眼脑或营养丰富中的一个相关支点即可。营养丰富也可以单独承接精力、活力或成长。",
+    "每天一杯、每天早晚一杯、早晚各一杯属于正常且可合理虚构的使用频次；热奶、温奶和温度描述也允许，只要冲泡主体和产品形态正确就直接 pass。",
     "post_type 只用于生成多样化和批量分布优化。单篇内容只要有真实使用、孩子接受或自家反馈并且自然可用，就判 pass 或 watch，不得仅因复购/长期使用类型没有写满两周、补货或明确复购而 block。",
     "只有正文完全没有实际使用，仍停留在打算买、准备试、以后再看等未来意图，或求助后的回访只剩纯求助，导致内容任务本身不成立时，才可判 post_type_mismatch block。"
   ],
@@ -329,6 +332,76 @@
         "source": "batch606_item6_human_review"
       },
       "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "post_type_is_generation_direction", "source_type": "human_feedback"}
+    },
+    {
+      "title": "今晚多读了一本",
+      "content": "以前这个点她早歪在沙发上揉眼睛了。最近一直给她喝旺玥，里面加了免疫球蛋白。她晚上总想多读两本。",
+      "context": {"post_type": "使用反馈", "selling_painpoint_group": "进阶保护力+容易中招"},
+      "meta": {
+        "case_code": "WYF-023",
+        "expected_label": "block",
+        "issue_code": "selling_point_effect_mismatch",
+        "evidence": ["里面加了免疫球蛋白", "揉眼睛", "多读两本"],
+        "reason": "计划卖点是进阶保护力+容易中招，但正文没有落到保护方向，反而让保护成分承接多读书和少揉眼的眼脑结果。",
+        "source": "batch773_item1_business_feedback_20260722"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "planned_protection_replaced_by_eye_brain_effect", "source_type": "human_feedback"}
+    },
+    {
+      "title": "当妈后选奶粉的功课没白做",
+      "content": "对比了一圈，旺玥的免疫球蛋白、乳铁蛋白和HMO我都看了。喝了大半年，小状况少了许多，出门跑跳精力也足，眼脑营养也能顺带顾上。每天早上一杯热奶，都是我冲好。",
+      "context": {"post_type": "选奶复盘", "selling_painpoint_group": "进阶保护力+容易中招"},
+      "meta": {
+        "case_code": "WYF-024",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["小状况少了许多", "每天早上一杯热奶"],
+        "reason": "计划里的保护方向已经由小状况少自然落地，顺带眼脑和精力不构成错接；热奶与合理频次也允许。",
+        "source": "batch773_item2_business_feedback_20260722"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "planned_protection_present_with_extra_effect", "source_type": "human_feedback"}
+    },
+    {
+      "title": "功课没白做",
+      "content": "喝了一段时间发现，小状况少了很多，出门玩一整天也不喊累，精力跟得上。旺玥营养够全面，眼脑和身体都照顾到了。",
+      "context": {"post_type": "选奶复盘", "selling_painpoint_group": "营养丰富+营养不足-ugc"},
+      "meta": {
+        "case_code": "WYF-025",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["营养够全面", "精力跟得上"],
+        "reason": "营养丰富计划已经自然带到营养支点，可以承接精力反馈，不要求额外补齐保护力。",
+        "source": "batch773_item3_business_feedback_20260722"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "nutrition_supports_energy_without_protection", "source_type": "human_feedback"}
+    },
+    {
+      "title": "朋友说娃最近状态挺好",
+      "content": "三岁以后每天跑跑跳跳，活动量大了不少。这段时间一直喝旺玥，营养够多样，小状况也少。刚上幼儿园那会儿买的裤子，现在已经短了一截。每天一杯，看得见的成长。",
+      "context": {"post_type": "使用反馈", "selling_painpoint_group": "营养丰富+成长发育需求"},
+      "meta": {
+        "case_code": "WYF-026",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["营养够多样", "裤子，现在已经短了一截"],
+        "reason": "营养丰富与成长发育方向已经自然成立，不要求正文再补保护力或其它卖点。",
+        "source": "batch773_item7_business_feedback_20260722"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "nutrition_supports_growth_without_protection", "source_type": "human_feedback"}
+    },
+    {
+      "title": "饭搭子翻车后奶粉救场",
+      "content": "孩子四岁后体力猛，但饭量忽高忽低。试了旺玥，钙铁锌全到位，营养种类也够丰富。现在他白天疯玩精力在线，小状况也少多了，日常营养这块终于不用操心了。",
+      "context": {"post_type": "问题解决", "selling_painpoint_group": "营养丰富+营养不足"},
+      "meta": {
+        "case_code": "WYF-027",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["钙铁锌全到位", "营养种类也够丰富", "精力在线"],
+        "reason": "营养丰富计划用具体营养支点承接精力和日常状态已经足够，不要求补齐保护力。",
+        "source": "batch773_item8_business_feedback_20260722"
+      },
+      "tags": {"brand": "旺玥", "dimension": "content_fit", "boundary": "nutrition_supports_energy_without_protection", "source_type": "human_feedback"}
     }
   ]
 }

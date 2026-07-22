@@ -1,0 +1,41 @@
+{"kind":"table","sheet":"业务规则","address":"A1:O17","values":[["业务规则名称"]],"valuesTruncated":true}
+{
+  "outputCsv": "/Users/luxifa/maga/outputs/a2_reiyu_full_raw_merged_20260721/a2礼遇UGC分享贴_原始槽位_认可路径分流.csv",
+  "previewPng": "/Users/luxifa/maga/outputs/a2_reiyu_full_raw_merged_20260721/a2礼遇UGC分享贴_原始槽位_认可路径分流预览.png",
+  "columns": [
+    "业务规则名称",
+    "提示词模式",
+    "生文指令",
+    "内容方向",
+    "内容方向素材",
+    "活动了解途径素材",
+    "参加活动原因素材",
+    "活动内容素材",
+    "批批检素材",
+    "认可表达素材",
+    "正向表达素材",
+    "生文素材",
+    "硬边界",
+    "写法",
+    "生成要求"
+  ],
+  "infoSourceCount": 15,
+  "recognitionRouteCounts": {
+    "老客使用感受": 8,
+    "信息了解后的认可": 8
+  },
+  "activityCounts": {
+    "a2礼遇｜溯源抽奖": 10,
+    "a2礼遇｜会员体系积分": 8,
+    "a2礼遇｜老客回归礼": 8,
+    "a2礼遇｜多重福利叠加": 9,
+    "a2礼遇｜集罐3罐换小车车": 1,
+    "a2礼遇｜集罐6罐换自行车": 1,
+    "a2礼遇｜集罐12罐换奶粉": 13,
+    "a2礼遇｜集罐18罐换婴儿车": 1
+  },
+  "recognitionCounts": {
+    "老客使用感受": 10,
+    "信息了解后的认可": 24
+  }
+}

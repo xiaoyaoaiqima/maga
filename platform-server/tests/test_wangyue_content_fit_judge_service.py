@@ -60,6 +60,13 @@ def test_content_fit_prompt_preserves_watch_only_boundaries() -> None:
     assert "不能仅凭这个词判" in CONTENT_FIT_SYSTEM_PROMPT
     assert "消化吸收体验可以直接表达" in CONTENT_FIT_SYSTEM_PROMPT
     assert "形成明确消化效果链" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "selling_point_effect_mismatch" in CONTENT_FIT_ISSUE_CODES
+    assert "不能脱离计划做全局关键词拼盘" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "不要求两侧卖点全部显式写齐" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "营养丰富计划用钙铁锌、多种关键营养或营养丰富承接精力、活力、成长" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "每天一杯、每天早晚一杯、早晚各一杯" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "热奶、温奶和奶的温度也可以正常表达" in CONTENT_FIT_SYSTEM_PROMPT
+    assert "不能因此标 watch 或 block" in CONTENT_FIT_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio
@@ -83,11 +90,13 @@ async def test_content_fit_judge_passes_post_type_and_keeps_runtime_metadata(mon
         title="这罐快空了",
         body="这罐旺玥快空了，我又补了一罐。",
         post_type="复购长期使用",
+        selling_painpoint_group="进阶保护力+容易中招",
         model_config={"provider_code": "test-provider", "model_code": "test-model"},
     )
 
     assert result.label == "pass"
     assert "目标帖子类型：复购长期使用" in calls[0]["user_prompt"]
+    assert "计划卖点痛点组合：进阶保护力+容易中招" in calls[0]["user_prompt"]
     assert calls[0]["max_tokens"] == CONTENT_FIT_MAX_TOKENS == 800
     assert result.runtime_metadata["usage"]["total_tokens"] == 21
     assert result.runtime_metadata["latency_ms"] == 87

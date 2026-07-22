@@ -32,6 +32,7 @@ ARTICLE_RULE_MAX_EXAMPLE_SAMPLE_COUNT = 8
 MOUTH_PHRASE_BUDGET_DEFAULT_BASE = 20
 AUDIT_ONLY_DEFAULT_ASSET_KEYS = {"a2_momclass_month_center"}
 CURRENT_WANGYUE_ARTICLE_ASSET_KEY = "wangyue_v3_core_storyline_article_rules"
+NO_INSPIRATION_CLUE = "不使用灵感线索"
 SOURCE_ROW_RULE_OVERRIDE_FIELDS = {
     "story_spine",
     "scene_motive_bucket",
@@ -291,11 +292,22 @@ class ContentBatchPlanner:
         )
         group_counters: dict[str, int] = {}
         open_groups: dict[str, dict[str, int]] = {}
+        rule_occurrence_counts: dict[str, int] = {}
         for index, rule in enumerate(selected_rules):
+            rule_occurrence_key = str(
+                rule.get("rule_id")
+                or rule.get("source_row_no")
+                or rule.get("business_rule")
+                or index
+            )
+            rule_occurrence_no = rule_occurrence_counts.get(rule_occurrence_key, 0) + 1
+            rule_occurrence_counts[rule_occurrence_key] = rule_occurrence_no
             plan = self._product_experience_plan_from_rule(
                 rule,
                 asset=asset,
                 item_no=index + 1,
+                variation_item_no=rule_occurrence_no,
+                variation_batch_seed=job.id,
                 keyword_asset_key=resolved_keyword_asset_key,
                 prompt_mode=resolved_prompt_mode,
                 quality_guard_profile_key=quality_guard_profile_key,
@@ -491,6 +503,8 @@ class ContentBatchPlanner:
         *,
         asset: AssetRegistry,
         item_no: int,
+        variation_item_no: int | None = None,
+        variation_batch_seed: int | None = None,
         keyword_asset_key: str | None,
         prompt_mode: str | None = None,
         quality_guard_profile_key: str | None,
@@ -696,7 +710,14 @@ class ContentBatchPlanner:
             include_ugc_post_type_guard=resolved_rule_prompt_mode != "rule_corpus_as_prompt",
             include_product_position_guard=resolved_rule_prompt_mode != "rule_corpus_as_prompt",
         )
-        variation_slots = _resolve_rule_variation_slots(rule, item_no=item_no)
+        variation_slots = _resolve_rule_variation_slots(
+            asset,
+            rule,
+            item_no=variation_item_no if variation_item_no is not None else item_no,
+            batch_item_no=item_no,
+            batch_seed=variation_batch_seed,
+            selling_painpoint_expression=selling_painpoint_expression,
+        )
         plan = {
             "rule_type": rule_type,
             "item_no": item_no,
@@ -705,9 +726,10 @@ class ContentBatchPlanner:
             "prompt_mode": resolved_rule_prompt_mode,
             "quality_guard_profile_key": quality_guard_profile_key,
             "keyword_selection": _resolve_keyword_selection(asset),
-            "generation_requirements": (
-                rule.get("generation_requirements")
-                or _resolve_generation_requirements(asset)
+            "generation_requirements": _resolve_prompt_lines_field(
+                "generation_requirements",
+                asset,
+                rule,
             ),
             "content_path_control": content_path_control,
             "rule_asset_id": asset.id,
@@ -737,6 +759,23 @@ class ContentBatchPlanner:
                 if selling_painpoint_expression
                 else None
             ),
+            "selling_painpoint_expression_inspiration_mode": (
+                "none"
+                if selling_painpoint_expression
+                and _int_or_none(selling_painpoint_expression.get("source_row_no"))
+                in {
+                    _int_or_none(value)
+                    for value in rule.get("inspiration_none_source_row_nos") or []
+                }
+                else "auto"
+                if selling_painpoint_expression
+                else None
+            ),
+            "selling_painpoint_expression_inspiration_clue": (
+                _inspiration_clue_for_expression(rule, selling_painpoint_expression)
+                if selling_painpoint_expression
+                else None
+            ),
             "positive_evidence": positive_evidence,
             "selling_description": selling_description,
             "selling_point_surface": selling_point_surface,
@@ -761,14 +800,16 @@ class ContentBatchPlanner:
             "product_position_mode": product_position_mode,
             "ending_mode": ending_mode,
             "corpus": corpus,
-            "generation_instruction": rule.get("generation_instruction"),
-            "content_direction": rule.get("content_direction"),
+            "generation_instruction": _resolve_string_field("generation_instruction", asset, rule),
+            "content_direction": _resolve_string_field("content_direction", asset, rule),
             "activity_material": rule.get("activity_material"),
             "selling_expression": rule.get("selling_expression"),
             "selling_expression_note": rule.get("selling_expression_note"),
-            "hard_boundaries": rule.get("hard_boundaries"),
-            "writing_requirements": rule.get("writing_requirements"),
+            "hard_boundaries": _resolve_prompt_lines_field("hard_boundaries", asset, rule),
+            "writing_requirements": _resolve_prompt_lines_field("writing_requirements", asset, rule),
             "variation_slots": variation_slots,
+            "variation_slot_selection_mode": _resolve_variation_slot_selection_mode(asset),
+            "inspiration_usage_interval": _resolve_inspiration_usage_interval(asset),
             "examples": selected_examples,
             "supplements": [],
             **example_meta,
@@ -1274,10 +1315,18 @@ def _apply_source_row_rule_override(
     }
 
 
-def _resolve_rule_variation_slots(rule: dict[str, Any], *, item_no: int) -> list[dict[str, str]]:
-    raw_slots = rule.get("variation_slots")
-    if not isinstance(raw_slots, list):
-        return []
+def _resolve_rule_variation_slots(
+    asset: AssetRegistry | None,
+    rule: dict[str, Any],
+    *,
+    item_no: int,
+    batch_item_no: int | None = None,
+    batch_seed: int | None = None,
+    selling_painpoint_expression: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    raw_slots = _merged_variation_slot_definitions(asset, rule)
+    selection_mode = _resolve_variation_slot_selection_mode(asset)
+    inspiration_usage_interval = _resolve_inspiration_usage_interval(asset)
 
     selected: list[dict[str, str]] = []
     zero = max(1, item_no) - 1
@@ -1287,15 +1336,115 @@ def _resolve_rule_variation_slots(rule: dict[str, Any], *, item_no: int) -> list
         options = [str(value).strip() for value in raw_slot.get("options") or [] if str(value).strip()]
         if not options:
             continue
+        slot_code = str(raw_slot.get("slot_code") or raw_slot.get("code") or slot_index + 1).strip()
+        slot_name = str(raw_slot.get("slot_name") or raw_slot.get("name") or "变化条件").strip()
+        is_inspiration_slot = slot_code == "inspiration_material" or "灵感" in slot_name
+        if is_inspiration_slot and inspiration_usage_interval > 1:
+            batch_position = max(1, batch_item_no or item_no)
+            batch_offset = max(1, batch_seed or 1) - 1
+            if (batch_offset + batch_position - 1) % inspiration_usage_interval != 0:
+                continue
+        if is_inspiration_slot and selling_painpoint_expression:
+            source_row_no = _int_or_none(selling_painpoint_expression.get("source_row_no"))
+            none_rows = {
+                _int_or_none(value)
+                for value in rule.get("inspiration_none_source_row_nos") or []
+            }
+            if source_row_no is not None and source_row_no in none_rows:
+                continue
+            exact_clue = _inspiration_clue_for_expression(rule, selling_painpoint_expression)
+            if exact_clue:
+                if exact_clue not in options:
+                    raise ValueError("configured inspiration clue is not present in the variation slot")
+                selected.append(
+                    {
+                        "slot_code": slot_code,
+                        "slot_name": slot_name,
+                        "value": exact_clue,
+                    }
+                )
+                continue
         offset = _int_or_none(raw_slot.get("offset"))
+        if selection_mode == "batch_item_cycle" and batch_seed is not None:
+            selected_index = (
+                max(1, batch_seed)
+                - 1
+                + max(1, batch_item_no or item_no)
+                - 1
+                + slot_index
+                + (offset or 0)
+            ) % len(options)
+        else:
+            selected_index = (
+                zero + (offset if offset is not None else slot_index)
+            ) % len(options)
+        selected_value = options[selected_index]
+        if is_inspiration_slot and selected_value == NO_INSPIRATION_CLUE:
+            continue
         selected.append(
             {
-                "slot_code": str(raw_slot.get("slot_code") or raw_slot.get("code") or slot_index + 1).strip(),
-                "slot_name": str(raw_slot.get("slot_name") or raw_slot.get("name") or "变化条件").strip(),
-                "value": options[(zero + (offset if offset is not None else slot_index)) % len(options)],
+                "slot_code": slot_code,
+                "slot_name": slot_name,
+                "value": selected_value,
             }
         )
     return selected
+
+
+def _resolve_variation_slot_selection_mode(asset: AssetRegistry | None) -> str:
+    if asset is None:
+        return "occurrence_cycle"
+    metadata = asset.metadata_json or {}
+    content = asset.content_json or {}
+    mode = str(
+        content.get("variation_slot_selection_mode")
+        or metadata.get("variation_slot_selection_mode")
+        or "occurrence_cycle"
+    ).strip()
+    return mode if mode in {"occurrence_cycle", "batch_item_cycle"} else "occurrence_cycle"
+
+
+def _resolve_inspiration_usage_interval(asset: AssetRegistry | None) -> int:
+    if asset is None:
+        return 1
+    metadata = asset.metadata_json or {}
+    content = asset.content_json or {}
+    raw_interval = content.get("inspiration_usage_interval")
+    if raw_interval is None:
+        raw_interval = metadata.get("inspiration_usage_interval")
+    interval = _int_or_none(raw_interval)
+    return interval if interval is not None and interval > 0 else 1
+
+
+def _merged_variation_slot_definitions(
+    asset: AssetRegistry | None,
+    rule: dict[str, Any],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    indexes: dict[str, int] = {}
+    sources = [
+        (asset.content_json or {}).get("variation_slots") if asset else None,
+        rule.get("variation_slots"),
+    ]
+    for raw_slots in sources:
+        if not isinstance(raw_slots, list):
+            continue
+        for slot_index, raw_slot in enumerate(raw_slots):
+            if not isinstance(raw_slot, dict):
+                continue
+            key = str(
+                raw_slot.get("slot_code")
+                or raw_slot.get("code")
+                or raw_slot.get("slot_name")
+                or raw_slot.get("name")
+                or slot_index
+            ).strip()
+            if key in indexes:
+                merged[indexes[key]] = dict(raw_slot)
+            else:
+                indexes[key] = len(merged)
+                merged.append(dict(raw_slot))
+    return merged
 
 
 def _real_user_pool_config_for_rule(config: dict[str, Any], rule: dict[str, Any]) -> dict[str, Any]:
@@ -2127,6 +2276,23 @@ def _resolve_selling_painpoint_expression(
     return candidates[(max(1, item_no) - 1) % len(candidates)]
 
 
+def _inspiration_clue_for_expression(
+    rule: dict[str, Any],
+    expression: dict[str, Any],
+) -> str | None:
+    source_row_no = _int_or_none(expression.get("source_row_no"))
+    if source_row_no is None:
+        return None
+    raw_mapping = rule.get("inspiration_clue_by_source_row_no")
+    if not isinstance(raw_mapping, dict):
+        return None
+    for key, value in raw_mapping.items():
+        if _int_or_none(key) == source_row_no:
+            normalized = str(value or "").strip()
+            return normalized or None
+    return None
+
+
 def _resolve_selling_point(asset: AssetRegistry | None, rule: dict[str, Any] | None, *, item_no: int) -> str | None:
     explicit = _resolve_string_field("selling_point", asset, rule)
     if explicit:
@@ -2246,6 +2412,24 @@ def _resolve_string_list_field(field_name: str, asset: AssetRegistry | None, rul
             items = [item.strip() for item in re.split(r"[,，、/|｜\n]+", value) if item.strip()]
             if items:
                 return items
+    return []
+
+
+def _resolve_prompt_lines_field(
+    field_name: str,
+    asset: AssetRegistry | None,
+    rule: dict[str, Any] | None,
+) -> list[str]:
+    for source in (rule or {}, (asset.content_json or {}) if asset else {}, (asset.metadata_json or {}) if asset else {}):
+        if not isinstance(source, dict):
+            continue
+        value = source.get(field_name)
+        if isinstance(value, list):
+            items = [str(item or "").strip() for item in value if str(item or "").strip()]
+            if items:
+                return items
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
     return []
 
 

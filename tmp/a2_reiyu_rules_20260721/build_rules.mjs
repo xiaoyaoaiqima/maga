@@ -1,0 +1,331 @@
+import fs from "node:fs/promises";
+import { Workbook } from "@oai/artifact-tool";
+
+const outputDir = "/Users/luxifa/maga/outputs/a2_reiyu_business_rules_20260721";
+const outputPath = `${outputDir}/a2礼遇UGC分享贴_业务规则.csv`;
+const previewPath = `${outputDir}/a2礼遇UGC分享贴_业务规则预览.png`;
+
+const headers = [
+  "业务规则名称",
+  "提示词模式",
+  "生文指令",
+  "内容方向",
+  "内容方向素材",
+  "活动了解途径素材",
+  "参加活动原因素材",
+  "活动内容素材",
+  "批批检素材",
+  "产品体验素材",
+  "消费者认可素材",
+  "正向表达素材",
+  "生文素材",
+  "硬边界",
+  "写法",
+  "生成要求",
+];
+
+const join = (items) => items.join("||");
+const rotate = (items, offset) => {
+  const start = ((offset % items.length) + items.length) % items.length;
+  return [...items.slice(start), ...items.slice(0, start)];
+};
+
+const generationInstruction =
+  "你是一个普通宝妈，写1篇a2礼遇活动相关的纯分享向内容。说话不端、不像总结，短句居多但段落流畅，情绪自然有起伏。主产品是a2至初奶粉，品牌是a2。";
+
+const fallbackDirection =
+  "围绕本条指定的一类礼遇活动写：自然交代从哪里知道和为什么参加，重点讲清该活动内容；活动内容写完后，再带出a2至初现在每批都有检测；最后落到自家使用体验和消费者认可，积极推荐a2至初。";
+
+const directionOptions = join([
+  "直给自己参加了活动，原因一笔带过，马上讲本条活动内容；之后再提每批检测，最后用冲泡体验和消费者感受夸a2、推荐a2至初。",
+  "从一个生活化渠道带出活动，写清参加动作和本条福利；活动讲完再提每批检测，接自家产品体验和推荐意愿。",
+  "先有一点发现福利的惊喜，快速落到本条活动机制；再自然转到每批检测和日常冲奶体验，说清为什么更认可a2。",
+]);
+
+const sourceOptionPool = [
+  "去门店时导购聊到这次升级。",
+  "🍠刷到有人分享这次活动。",
+  "宝妈群里有人提到。",
+  "闺蜜发消息告诉我。",
+  "宝爸刷到后跟我说。",
+  "邻居宝妈聊天时说起。",
+  "同事宝妈午休时聊到。",
+];
+
+const batchDetectionOptions = join([
+  "a2至初现在每批都有检测，这个动作让消费者觉得a2做事认真。",
+  "a2至初每批都有检测；如行文自然需要，可说扫罐底码查看对应检测报告，但不要展开检测细节。",
+]);
+
+const productExperiencePool = [
+  "冲奶最怕结块，a2至初粉质很细腻，很好冲开，老母亲省心又省力。",
+  "a2至初奶香自然，口感清淡不甜腻，日常冲泡体验很好。",
+  "a2至初粉质细腻，冲泡顺滑，也不挂壁，细节做得不错。",
+];
+
+const consumerPraisePool = [
+  "从消费者角度觉得a2做事认真、品质在线，更愿意继续回购并推荐a2至初。",
+  "活动福利实在，检测信息也透明，觉得a2细节到位，很愿意推荐a2至初。",
+  "福利和日常体验都落到实处，觉得a2让人信服，会继续选择并推荐a2至初。",
+];
+
+const positiveExpressionPool = [
+  "自然融入：a2至初粉质细腻、好冲泡、冲泡顺滑；a2做得认真、细节到位。",
+  "自然融入：a2至初不挂壁、奶香自然、口感清淡、不甜腻；a2品质在线、质量稳定。",
+  "自然融入：a2至初体验感很好、细节做得不错；a2标准高、诚意满满、让人信服。",
+];
+
+const staticMaterial = join([
+  "活动名称表达：本次活动名是会员体系升级。正文如需带活动名，直接写‘发现a2上了会员体系升级活动’或自然近义句，不写‘活动叫会员体系升级’或‘活动是会员体系升级’。",
+  "检测承接：活动内容讲完后，才能自然带出a2至初现在每批都有检测。",
+]);
+
+const commonBoundaries = [
+  "全文必须完整出现a2至初；所有a2、a2至初中的a必须小写。主产品只能是a2至初奶粉，品牌是a2。",
+  "活动无需报名，禁止写报名活动。",
+  "活动内容写完后再提每批检测；禁止写成在兑换奖品、中奖或领礼时看到检测，也禁止写翻页面、仔细研究页面或从活动规则里发现检测。",
+  "扫罐底码只可用于查看检测或溯源报告，不能作为抽奖、集罐、积分、兑换的入口或方式；没有自然需要时不要写罐底码，不展开检测细节。",
+  "写集罐时只说集罐或扫罐码累计；禁止写老罐、旧罐、空罐、以前的罐子、攒罐子、翻罐子、数空罐、拿罐子去兑换。",
+  "抽奖奖品只有旅游基金大奖、金手链、夏凉被；集罐奖品只有3罐小车车、6罐自行车、12罐奶粉、18罐婴儿车。不得新增、串换奖品，不写自己中了什么，也不写中奖难度和概率。",
+  "禁止出现顺手、顺口、顺便、薅羊毛；禁止写买一罐、买两罐，可以写买好几罐或一箱。",
+  "禁止出现或暗示质量问题、风险澄清、召回、断货、没货、买不到、失败、踩雷、焦虑、担心、翻车、避雷、维权、投诉、问题批次、塌房、爆雷、断粮、缺货、抢不到、不安、不放心、有问题、出事、真伪、假货、代购不确定、被迫转奶。",
+  "禁止写小红书、肠胃、肚子、敏感、便便、粑粑、钱、预防针、大脑、眼睛、母乳、微信、QQ；如确需表达，分别改为🍠、肚肚、敏敏、💩、💰、💉、🧠、👀、母R、🌍。",
+  "不要写成品牌背书、品牌公告、客服话术、导购话术或卖点堆叠；可以积极推荐，但必须由自家冲泡体验和消费者感受承接。",
+  "不要照抄槽位素材，要换成自然大白话；不要解释活动叫什么名字。",
+];
+
+const writingRequirements = join([
+  "像普通宝妈自己发的纯分享，短句居多，长短句交替；可以有语气词或轻微地域口癖，但别刻意。",
+  "原因一笔带过，活动内容是主段；段落间用而且、另外、然后、还有等词自然衔接，不要事实堆叠。",
+  "从本条抽中的正向表达里选一些自然融入，数量可以多，但不能连续罗列或写成宣传口号。",
+  "标题从正文自然提炼，标题和正文相关。",
+]);
+
+const generationRequirements = join([
+  "标题7-18个字，正文200-250字。",
+  "正文使用换行分段，每段或单行不超过100字。",
+  "正文自然使用1-4个emoji，不能突兀，结尾禁止连续堆表情。",
+  "保持情绪有起伏，说清事情就收住，不写AI总结腔。",
+]);
+
+const rule = ({
+  name,
+  motives,
+  activities,
+  specificBoundary,
+  variationOffset = 0,
+  sourceOffset = variationOffset,
+}) => ({
+  "业务规则名称": name,
+  "提示词模式": "layered_article",
+  "生文指令": generationInstruction,
+  "内容方向": fallbackDirection,
+  "内容方向素材": directionOptions,
+  "活动了解途径素材": join(rotate(sourceOptionPool, sourceOffset)),
+  "参加活动原因素材": join(motives),
+  "活动内容素材": join(activities),
+  "批批检素材": batchDetectionOptions,
+  "产品体验素材": join(rotate(productExperiencePool, variationOffset)),
+  "消费者认可素材": join(rotate(consumerPraisePool, variationOffset)),
+  "正向表达素材": join(rotate(positiveExpressionPool, variationOffset)),
+  "生文素材": staticMaterial,
+  "硬边界": join([specificBoundary, ...commonBoundaries]),
+  "写法": writingRequirements,
+  "生成要求": generationRequirements,
+});
+
+const rules = [
+  rule({
+    name: "a2礼遇｜溯源抽奖",
+    variationOffset: 1,
+    sourceOffset: 1,
+    motives: [
+      "一开始就是被溯源抽奖吸引，想参加看看。",
+      "本来就在喝a2至初，看到有抽奖福利就想试试。",
+      "觉得这次把品质溯源和抽奖放在一起，挺有新意。",
+    ],
+    activities: [
+      "完成浏览品质溯源信息后可以参与抽奖，奖品有旅游基金大奖、金手链、夏凉被。",
+      "溯源抽奖里有2w旅游基金大奖，也有金手链和夏凉被。",
+      "看完品质溯源信息就能参与抽奖，奖池只写旅游基金大奖、金手链、夏凉被。",
+    ],
+    specificBoundary:
+      "本条主活动是溯源抽奖：先浏览品质溯源信息再参与抽奖。不得把扫罐底码写成抽奖入口，不得把积分、a2全家桶或集罐奖品写进抽奖奖池。",
+  }),
+  rule({
+    name: "a2礼遇｜会员体系积分",
+    variationOffset: 2,
+    sourceOffset: 2,
+    motives: [
+      "觉得a2至初花力气升级会员体系，长期用户能用上。",
+      "家里本来就在长期回购，看到会员权益升级就想参加。",
+      "觉得积分不再放着不用，能换会员礼挺实在。",
+    ],
+    activities: [
+      "会员体系升级后，日常购买可以累计积分，积分能兑换会员礼。",
+      "这次会员权益做了升级，长期回购时积分能慢慢累积，后续可以换会员礼。",
+      "会员积分这一层更清楚了，买奶粉积下来的积分能用来兑会员礼。",
+    ],
+    specificBoundary:
+      "本条主活动是会员体系和积分：积分只写成累计后兑换会员礼，不得写成积分兑换小车车、自行车、奶粉或婴儿车，这四类属于集罐礼。",
+  }),
+  rule({
+    name: "a2礼遇｜老客回归礼",
+    variationOffset: 0,
+    sourceOffset: 3,
+    motives: [
+      "家里一直在喝a2至初，看到老客也有回馈，感觉挺暖。",
+      "自己算老用户了，看到回归礼就想领一下。",
+      "觉得这次升级没有漏掉老客，这一点挺贴心。",
+    ],
+    activities: [
+      "老客回归礼可以领取小听粉。",
+      "这次给老用户准备了回归礼，能领一份小听粉。",
+      "会员体系升级里有老客回归礼，小听粉这一份心意挺实在。",
+    ],
+    specificBoundary:
+      "本条主活动是老客回归礼，权益是领取小听粉。不得把小听粉写成抽奖奖品、集罐奖品或积分兑换奖品。",
+  }),
+  rule({
+    name: "a2礼遇｜多重福利叠加",
+    variationOffset: 1,
+    sourceOffset: 4,
+    motives: [
+      "发现这次不是单层福利，想把能参加的都了解清楚。",
+      "本来以为只是普通活动，看到好几层权益就心动了。",
+      "觉得会员体系升级力度挺大，长期用户能用到的内容不少。",
+    ],
+    activities: [
+      "这次升级里有抽奖、集罐、积分和老客回馈，多重福利叠在一起。",
+      "会员权益升级不是单层福利，抽奖、集罐和回馈礼都能各自参加。",
+      "原本以为只有一个玩法，后来发现抽奖、集罐、积分、老客回馈都有。",
+    ],
+    specificBoundary:
+      "本条主活动是多重福利叠加，可以同时概括抽奖、集罐、积分、老客回馈，但每种机制和奖品归属必须分清；不得把多个了解来源叠加成同一次发现经历。",
+  }),
+  rule({
+    name: "a2礼遇｜集罐3罐换小车车",
+    variationOffset: 2,
+    sourceOffset: 5,
+    motives: [
+      "比起单纯抽奖，更喜欢集罐兑换这种明确的福利。",
+      "本来就在长期回购，看到集罐档位清楚就想参加。",
+      "觉得3罐这一档不绕，奖品也挺适合家里。",
+    ],
+    activities: [
+      "集罐累计到3罐，可以兑换小车车。",
+      "集3罐这一档对应的是小车车，规则看起来很直白。",
+      "买完奶粉扫罐码集罐，累计3罐能兑小车车。",
+    ],
+    specificBoundary:
+      "本条主活动是集罐礼，标准只能写3罐兑换小车车。不得改成自行车、奶粉、婴儿车或抽奖奖品。",
+  }),
+  rule({
+    name: "a2礼遇｜集罐6罐换自行车",
+    variationOffset: 1,
+    sourceOffset: 6,
+    motives: [
+      "比起单纯抽奖，更喜欢集罐兑换这种明确的福利。",
+      "家里本来就在喝a2至初，集罐礼对长期用户挺实际。",
+      "看到6罐这一档能换实用礼品，觉得这次升级挺有诚意。",
+    ],
+    activities: [
+      "集罐累计到6罐，可以兑换自行车。",
+      "集6罐这一档对应的是自行车，长期回购会觉得很实在。",
+      "买完奶粉扫罐码集罐，累计6罐能兑自行车。",
+    ],
+    specificBoundary:
+      "本条主活动是集罐礼，标准只能写6罐兑换自行车。不得改成小车车、奶粉、婴儿车或抽奖奖品。",
+  }),
+  rule({
+    name: "a2礼遇｜集罐12罐换奶粉",
+    variationOffset: 0,
+    sourceOffset: 0,
+    motives: [
+      "觉得a2至初花这么大力气升级，挺不错的。",
+      "家里本来就在长期回购，集罐能换奶粉对妈妈挺实际。",
+      "比起单纯抽奖，更喜欢集罐兑换这种明确的福利。",
+    ],
+    activities: [
+      "认真算了下，集12罐能兑换1罐奶粉，平摊下来确实省不少。",
+      "集12罐可以兑换1罐正装奶粉，长期回购会觉得很实在。",
+      "集罐这一档到12罐就能兑1罐奶粉，算下来挺有吸引力。",
+    ],
+    specificBoundary:
+      "本条主活动是集罐礼，标准只能写12罐兑换1罐奶粉。不得改成小车车、自行车、婴儿车或抽奖奖品；不要写买12罐，必须写集12罐。",
+  }),
+  rule({
+    name: "a2礼遇｜集罐18罐换婴儿车",
+    variationOffset: 2,
+    sourceOffset: 2,
+    motives: [
+      "比起单纯抽奖，更喜欢集罐兑换这种明确的福利。",
+      "家里本来就在长期回购，看到集罐能换实用礼品就想参加。",
+      "觉得18罐这一档力度挺大，长期用户更容易用上。",
+    ],
+    activities: [
+      "集罐累计到18罐，可以兑换婴儿车。",
+      "集18罐这一档对应的是婴儿车，礼品挺实用。",
+      "买完奶粉扫罐码集罐，累计18罐能兑婴儿车。",
+    ],
+    specificBoundary:
+      "本条主活动是集罐礼，标准只能写18罐兑换婴儿车。不得改成小车车、自行车、奶粉或抽奖奖品。",
+  }),
+];
+
+const workbook = Workbook.create();
+const sheet = workbook.worksheets.add("业务规则");
+const matrix = [headers, ...rules.map((item) => headers.map((header) => item[header] ?? ""))];
+sheet.getRangeByIndexes(0, 0, matrix.length, headers.length).values = matrix;
+sheet.getRangeByIndexes(0, 0, 1, headers.length).format = {
+  fill: "#1F4E78",
+  font: { bold: true, color: "#FFFFFF" },
+  wrapText: true,
+};
+sheet.getRangeByIndexes(1, 0, rules.length, headers.length).format.wrapText = true;
+sheet.freezePanes.freezeRows(1);
+sheet.showGridLines = false;
+sheet.getRange("A:P").format.columnWidth = 24;
+sheet.getRange("A:A").format.columnWidth = 28;
+sheet.getRange("B:B").format.columnWidth = 16;
+sheet.getRange("C:P").format.columnWidth = 36;
+
+const inspection = await workbook.inspect({
+  kind: "table",
+  range: "业务规则!A1:P9",
+  include: "values",
+  tableMaxRows: 9,
+  tableMaxCols: 16,
+  tableMaxCellChars: 260,
+  maxChars: 16000,
+});
+process.stdout.write(`${inspection.ndjson}\n`);
+
+await fs.mkdir(outputDir, { recursive: true });
+const preview = await workbook.render({
+  sheetName: "业务规则",
+  range: "A1:P9",
+  scale: 0.7,
+  format: "png",
+});
+await fs.writeFile(previewPath, new Uint8Array(await preview.arrayBuffer()));
+
+const csvEscape = (value) => {
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+};
+const csvText = `\uFEFF${matrix.map((row) => row.map(csvEscape).join(",")).join("\n")}\n`;
+await fs.writeFile(outputPath, csvText, "utf8");
+
+const roundTrip = await Workbook.fromCSV(csvText.slice(1), { sheetName: "RoundTrip" });
+const check = await roundTrip.inspect({
+  kind: "table",
+  range: "RoundTrip!A1:P9",
+  include: "values",
+  tableMaxRows: 9,
+  tableMaxCols: 16,
+  tableMaxCellChars: 80,
+  maxChars: 4000,
+});
+process.stdout.write(`ROUND_TRIP\n${check.ndjson}\n`);
+process.stdout.write(`OUTPUT ${outputPath}\nPREVIEW ${previewPath}\nROWS ${rules.length}\n`);

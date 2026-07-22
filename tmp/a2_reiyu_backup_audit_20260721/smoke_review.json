@@ -1,0 +1,27 @@
+[
+  {
+    "source_row": 2,
+    "title": "赶上a2至初新活动，这波囤奶真香！",
+    "body": "刷puq看到a2至初会员礼遇新活动，点进去一看，哎哟喂！抽奖、集罐、积分、回馈礼全都有，玩法特清楚，奖品也诱人～旅游基金、金手链、夏凉被，还有小车车婴儿车，心动的不行！😍 \n\n而且页面里直接讲了a2至初每批都检测，我这种爱操心的麻麻看了瞬间踏实。再说奶本身，粉质细得很，好冲不结块，娃一口接一口喝光光！我家小麻杆现在变肉球了，全靠它体质养好。亲和A2蛋白加乳铁蛋白和HMO，配得齐活～真香！良心品牌表现稳定，必须囤！值得推荐给姐妹们👍",
+    "source_category": "其他",
+    "effective_category": "其他",
+    "review": {
+      "rewrite_required": false,
+      "severity": "pass",
+      "issues": [],
+      "business_usability_tier": "direct_pool",
+      "business_usability_reason": "正文自然表达活动多重福利，提及检测直接通过，奖品列举正确，无旧罐、虚构经历、来源叠加等问题，整体符合活动审核标准。",
+      "product_appearance_naturalness": 3,
+      "decision_chain_fit": 3,
+      "product_value_strength": 3,
+      "human_realness": 3,
+      "overall_reason": "无机制错误或表达问题，可直接入池。",
+      "raw_response": "{\n  \"pass\": true,\n  \"rewrite_required\": false,\n  \"severity\": \"pass\",\n  \"business_usability_tier\": \"direct_pool\",\n  \"business_usability_reason\": \"正文自然表达活动多重福利，提及检测直接通过，奖品列举正确，无旧罐、虚构经历、来源叠加等问题，整体符合活动审核标准。\",\n  \"issues\": [],\n  \"overall_reason\": \"无机制错误或表达问题，可直接入池。\"\n}",
+      "review_rubric_code": "a2_reiyu_business_usability_v1",
+      "review_attempts": 1,
+      "pass": true
+    },
+    "attempts": 1,
+    "error": null
+  }
+]

@@ -370,6 +370,10 @@ A2_STOCK_DIRECT_INVALID_QUANTITY_UNIT_PATTERN = re.compile(
     r"[一二两三四五六七八九十百千万几半\d]+(?:小|大)?[包袋盒件桶瓶]"
 )
 A2_PRODUCT_NAME_PATTERN = re.compile(r"a2(?:至初)?", re.IGNORECASE)
+A2_CAN_COLOR_PATTERN = re.compile(
+    r"(?:蓝|红|黄|绿|紫|粉|白|黑|金|银|橙|灰|棕)(?:色|颜色)?(?:的)?(?:罐|罐子)"
+    r"|(?:罐|罐子)(?:身)?(?:是|为|看着是)?(?:蓝|红|黄|绿|紫|粉|白|黑|金|银|橙|灰|棕)(?:色|颜色)?"
+)
 A2_TRANSFER_TUTORIAL_PATTERN = re.compile(
     r"半勺|一勺|两勺|一两勺|按比例|(?:第[一二三四五六七八九十\d]+天|[一二三四五六七八九十\d]+天后)[^，。！？；;]{0,6}(?:全换|全转)"
     r"|直接换|马上适应|立刻适应"
@@ -401,7 +405,7 @@ A2_REPORT_OVERCLAIM_PATTERN = re.compile(
     r"|批批[^，。！？；;]{0,8}过检"
 )
 A2_SCAN_BEFORE_CAN_IN_HAND_PATTERN = re.compile(
-    r"(?:下单后|付款后|拍下后)[^，。！？；;]{0,12}(?:扫|扫码|扫一下)[^，。！？；;]{0,12}(?:物流码|罐底码|罐底)"
+    r"(?:下单后|付款后|拍下后)[^，。！？；;]{0,12}(?:扫|扫码|扫一下)[^，。！？；;]{0,12}(?:罐底码|物流码|二维码|罐底)"
 )
 A2_SUPPLY_PRESSURE_TRANSFER_PATTERN = re.compile(
     # 拦截“过往供应压力 -> 被动转/换奶 -> 现在有货又稳住”的回忆链路，
@@ -417,7 +421,7 @@ A2_FEEDING_ANXIETY_STOCK_PATTERN = re.compile(r"断顿|没奶喝|没奶粉喝|�
 A2_003_CONTEXT_PATTERN = re.compile(
     r"蜡样|蜡毒|那个检测|那项检测|报告里那项|报告里的那项|报告里那条|检测数值|检测这条线|检测线|检测那条线"
 )
-A2_BATCH_REPORT_MARKERS = ("物流码", "报告", "批次", "批批检", "每批", "检测", "蜡样", "质检", "这批", "检测数据", "质检数据")
+A2_BATCH_REPORT_MARKERS = ("扫罐底", "扫完罐底", "罐底码", "物流码", "二维码", "报告", "批次", "批批检", "每批", "检测", "蜡样", "质检", "这批", "检测数据", "质检数据")
 A2_SPECIFIC_ADVANTAGE_MARKERS = (
     "a2批次信息更清楚",
     "a2每批",
@@ -467,16 +471,16 @@ A2_SPECIFIC_ADVANTAGE_MARKERS = (
 A2_DIRECTION_MARKER_GROUPS: dict[str, dict[str, tuple[str, ...]]] = {
     "有货+批批检": {
         "有货信息": ("有货", "到货", "补货", "问货", "快喝完", "新到", "店里", "能买", "能拍", "买到", "来货", "发货", "上架"),
-        "批批检信息": ("批批检", "物流码", "报告", "批次", "质检", "蜡样", "检测", "未检出"),
+        "批批检信息": ("批批检", "罐底码", "物流码", "二维码", "报告", "批次", "质检", "蜡样", "检测", "未检出"),
     },
     "批批检+转奶": {
-        "批批检信息": ("批批检", "物流码", "报告", "批次", "质检", "蜡样", "检测", "未检出"),
+        "批批检信息": ("批批检", "罐底码", "物流码", "二维码", "报告", "批次", "质检", "蜡样", "检测", "未检出"),
         "转奶动作": ("转奶", "刚转", "想转", "准备转", "转过来", "慢慢转", "换奶", "过渡", "适应"),
     },
     "有货+转奶": {
         "有货信息": ("有货", "到货", "补货", "问货", "快喝完", "新到", "店里", "能买", "能拍", "买到", "来货", "发货", "上架"),
         "转奶动作": ("转奶", "刚转", "想转", "准备转", "转过来", "慢慢转", "换奶", "过渡", "适应"),
-        "批次报告": ("物流码", "报告", "批次", "检测", "未检出"),
+        "批次报告": ("罐底码", "物流码", "二维码", "报告", "批次", "检测", "未检出"),
     },
 }
 A2_LAB_NOTATION_TERMS = ("μg/kg", "ug/kg")
@@ -623,8 +627,8 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
         context_keyword_allowlist=A2_SENTIMENT_COMMENT_KEYWORDS,
         keyword_markers={
             A2_STOCK_ONLY_KEYWORD: ("有货", "到货", "补货", "问货", "快喝完", "新到", "店里", "能买", "能拍", "买到", "来货", "发货", "上架"),
-            "有货+批批检": ("有货", "到货", "补货", "问货", "按需补", "快喝完", "物流码", "报告", "批次", "检测", "质检", "蜡样", "透明"),
-            "批批检+转奶": ("批批检", "物流码", "报告", "批次", "质检", "蜡样", "转奶", "换奶", "过渡", "适应"),
+            "有货+批批检": ("有货", "到货", "补货", "问货", "按需补", "快喝完", "罐底码", "物流码", "二维码", "报告", "批次", "检测", "质检", "蜡样", "透明"),
+            "批批检+转奶": ("批批检", "罐底码", "物流码", "二维码", "报告", "批次", "质检", "蜡样", "转奶", "换奶", "过渡", "适应"),
             "有货+转奶": ("有货", "到货", "补货", "问货", "快喝完", "转奶", "换奶", "过渡", "适应"),
             A2_MEMBER_BENEFIT_KEYWORD: A2_MEMBER_BENEFIT_MARKERS,
         },
@@ -692,27 +696,22 @@ QUALITY_GUARD_PROFILES: dict[str, QualityGuardProfile] = {
             "臭臭有点稀": "便便状态我会多留意",
             "截图": "记录",
             "a2码": "a2",
-            "罐底码": "物流码",
-            "物流码底": "罐底物流码",
-            "罐底批次": "物流码批次",
-            "底部的码": "物流码",
-            "罐上批次": "物流码批次",
-            "罐子扫一扫批次": "扫物流码看批次",
-            "扫罐": "扫物流码",
-            "扫完罐底": "扫完罐底物流码看报告",
-            "物流码的码": "物流码",
             "码的码": "码",
-            "批次码": "物流码",
+            "底部的码": "罐底码",
+            "罐上批次": "罐底码对应批次",
+            "罐子扫一扫批次": "扫罐底码看批次",
+            "批次码": "罐底码",
             "那批报告": "这批报告",
             "蜡样报告细节": "蜡样检测标准",
             "检测项目": "检测项",
             "重金属报告": "报告细节",
             "继续喂": "继续喝",
             "批批报告": "批批检报告",
-            "三方检测报告": "三方检测数据",
-            "第三方检测报告": "三方检测数据",
-            "三方报告": "三方检测数据",
-            "第三方报告": "三方检测数据",
+            "三方检测报告": "三方质检报告",
+            "第三方检测报告": "三方质检报告",
+            "第三方质检报告": "三方质检报告",
+            "三方报告": "三方质检报告",
+            "第三方报告": "三方质检报告",
             "对上报文": "对上报告",
             "看说": "看到",
             "不不悬": "踏实些",
@@ -975,16 +974,11 @@ class ActivityQualityGuardService:
         repaired = body
         repairs: list[dict[str, Any]] = []
         plan = _dict_value(getattr(item, "plan_json", None))
-        preserve_crm_report_terms = (
-            str(plan.get("scenario_code") or "").strip() == "crm_ec_regular"
-            and str(plan.get("scenario_direction") or "").strip() in {"third_party_report", "can_bottom_scan"}
-        )
         for source, replacement in profile.body_replacements.items():
-            if preserve_crm_report_terms and source in {
-                "罐底码",
-                "扫罐",
+            if plan.get("review_replay") and source in {
                 "三方检测报告",
                 "第三方检测报告",
+                "第三方质检报告",
                 "三方报告",
                 "第三方报告",
             }:
@@ -1021,6 +1015,16 @@ class ActivityQualityGuardService:
                 repaired = a2_repaired
                 repairs.append({"code": "activity_body_a2_003_reference_repaired"})
         if profile.profile_key in A2_COMMENT_PROFILE_KEYS:
+            if not plan.get("review_replay"):
+                code_repaired = _normalize_a2_can_bottom_code_terms(repaired)
+                if code_repaired != repaired:
+                    repaired = code_repaired
+                    repairs.append(
+                        {
+                            "code": "activity_body_can_bottom_code_normalized",
+                            "replacement": "罐底码",
+                        }
+                    )
             competitor_repaired, competitor_hits = _generalize_a2_direct_competitor_terms(repaired)
             if competitor_repaired != repaired:
                 repaired = competitor_repaired
@@ -1259,15 +1263,20 @@ def _trim_activity_comment(text: str, max_chars: int = 60) -> str:
     return truncated or value[:max_chars]
 
 
+def _normalize_a2_can_bottom_code_terms(text: str) -> str:
+    value = str(text or "")
+    value = re.sub(r"(?:物流码|二维码)底的?(?:物流码|二维码|码)?", "罐底码", value)
+    value = re.sub(r"罐底的?(?:物流码|二维码|码)", "罐底码", value)
+    value = re.sub(r"(?:物流码|二维码)(?:的|那个|这个|这边|这里)?(?:物流码|二维码|码)", "罐底码", value)
+    value = re.sub(r"物流码|二维码", "罐底码", value)
+    value = re.sub(r"罐底码(?:的|那个|这个|这边|这里)?(?:罐底码|码)", "罐底码", value)
+    value = re.sub(r"罐底码码", "罐底码", value)
+    return value
+
+
 def _collapse_repeated_activity_terms(text: str) -> str:
     value = str(text or "")
-    value = re.sub(r"扫物流码底的?(?:物流码|码)?", "扫罐底物流码", value)
-    value = re.sub(r"物流码底的?(?:物流码|码)?", "罐底物流码", value)
-    value = re.sub(r"物流码的物流码", "物流码", value)
-    value = re.sub(r"物流码码", "物流码", value)
-    value = re.sub(r"物流码(?:那个|这个)码", "物流码", value)
-    value = re.sub(r"物流码(?:那个|这个|这边|这里)?物流码", "物流码", value)
-    for term in ("物流码", "批次报告", "检测报告", "蜡样检测", "报告里那项"):
+    for term in ("罐底码", "批次报告", "检测报告", "蜡样检测", "报告里那项"):
         value = re.sub(f"(?:{re.escape(term)}){{2,}}", term, value)
     return value
 
@@ -1481,6 +1490,16 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
     issues: list[dict[str, Any]] = []
     plan = _dict_value(getattr(item, "plan_json", None))
     rule_id = str(plan.get("rule_id") or "").strip()
+    can_color_hit = A2_CAN_COLOR_PATTERN.search(body)
+    if can_color_hit:
+        issues.append(
+            {
+                "code": "activity_body_can_color_description",
+                "message": "a2评论不要描述罐身颜色",
+                "evidence": [can_color_hit.group(0)],
+                "risk_level": "high",
+            }
+        )
     if rule_id in {A2_STOCK_DIRECT_WITH_PRODUCT_RULE_ID, A2_STOCK_DIRECT_WITHOUT_PRODUCT_RULE_ID}:
         invalid_quantity_unit_hit = _a2_stock_direct_invalid_quantity_unit_hit(body)
         if invalid_quantity_unit_hit:
@@ -1611,7 +1630,7 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
         issues.append(
             {
                 "code": "activity_body_scan_before_can_in_hand",
-                "message": "罐底物流码应是到手/拿到后扫，不写成下单后就能扫",
+                "message": "罐底码应是到手/拿到后扫，不写成下单后就能扫",
                 "evidence": [scan_before_can_hit],
                 "risk_level": "high",
             }
@@ -1646,8 +1665,8 @@ def _a2_combo_item_issues(item: Any, body: str, keyword: str) -> list[dict[str, 
             issues.append(
                 {
                     "code": "activity_body_missing_combo_marker",
-                    "message": f"{keyword}方向正文缺少批次/报告/物流码信息",
-                    "evidence": ["批次/报告/物流码"],
+                    "message": f"{keyword}方向正文缺少批次/报告/罐底码信息",
+                    "evidence": ["批次/报告/罐底码"],
                     "risk_level": "high",
                 }
             )
@@ -2290,6 +2309,8 @@ def _a2_has_any_combo_scene_marker(body: str, keyword: str) -> bool:
 def _a2_has_specific_advantage(body: str) -> bool:
     normalized = re.sub(r"\s+", "", str(body or ""))
     if any(marker in normalized for marker in A2_SPECIFIC_ADVANTAGE_MARKERS):
+        return True
+    if any(marker in normalized for marker in ("扫罐底", "扫了罐底", "扫完罐底", "查罐底码", "看罐底码", "罐底一扫")):
         return True
     # 运营确认：评论区自然短评里，若业务规则上下文已是 A2，正文出现
     # “扫罐底/物流码 + 报告/蜡样检测/批次”即可视为讲清了 A2 的可查优势，

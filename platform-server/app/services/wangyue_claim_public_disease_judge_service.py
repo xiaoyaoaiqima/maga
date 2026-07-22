@@ -16,6 +16,7 @@ CLAIM_PUBLIC_DISEASE_ISSUE_CODES = {
     "medical_treatment_claim",
     "disease_prevention_guarantee",
     "current_public_disease_environment",
+    "concrete_disease_scenario",
 }
 CLAIM_PUBLIC_DISEASE_MODEL_CODE = "deepseek-v4-flash"
 
@@ -80,9 +81,9 @@ CLAIM_PUBLIC_DISEASE_SYSTEM_PROMPT = """你只审核旺玥文章中的疾病功�
 2. 医生等医疗权威为旺玥背书防病功效：block，medical_authority_claim。把旺玥写成治疗疾病、解决感冒问题：block，medical_treatment_claim。
 3. 保证喝了不会生病、防感冒或完全不用担心：block，disease_prevention_guarantee。
 4. “现在/最近正是流感季”、班里当前大量孩子生病等公共疾病环境，用来衬托旺玥效果：block，current_public_disease_environment。
-5. 过去发生的感冒、请假，以及长期使用后的全勤、少请假、小状况少些等普通自家观察：pass。不要因为出现感冒、请假、全勤就硬拦。
-6. “感冒比以前少了”可以 pass 或 watch；标 watch 时用 own_illness_reduction_observation。明确过去式的同伴生病、班级请假可以 pass 或 watch；标 watch 时用 past_public_disease_reference。
+5. 不论过去或现在，只要展开感冒、咳嗽、传染、发烧、医院或请假等具体疾病、就医和请假场景，block，concrete_disease_scenario。明确写同伴生病，也按此项 block。
+6. 少中招、容易中招、保护力在线、状态稳、小状况少些属于抽象保护力或状态表达，可以 pass；不能因为这些抽象表达出现“中招、保护力、状态、小状况”就误判为具体疾病场景。全勤或普通出勤记录本轮不单独 block，除非同时出现第 5 条的具体场景。
 
-issue_code 只能从以下值选择：none、own_illness_reduction_observation、past_public_disease_reference、immediate_rescue_claim、medical_authority_claim、medical_treatment_claim、disease_prevention_guarantee、current_public_disease_environment。label=pass 时 issue_code 必须是 none。
+issue_code 只能从以下值选择：none、own_illness_reduction_observation、past_public_disease_reference、immediate_rescue_claim、medical_authority_claim、medical_treatment_claim、disease_prevention_guarantee、current_public_disease_environment、concrete_disease_scenario。label=pass 时 issue_code 必须是 none。
 
 只输出 JSON object：{"label":"pass|watch|block","issue_code":"上述枚举之一","evidence":"原文证据"}。"""

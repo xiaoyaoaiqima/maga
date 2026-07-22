@@ -36,3 +36,29 @@ def test_expression_content_preserved_rejects_reordered_segments():
     body = "怕影响宝宝发育，所以担心奶粉中有化学残留。"
 
     assert not MODULE.expression_content_preserved(expression, body)
+
+
+def test_expression_fragment_exactly_used_accepts_one_source_segment():
+    expression = "担心奶粉中有化学残留，怕影响宝宝发育，敏敏宝宝喝了之后很少出现敏敏情况"
+    body = "我选奶时最怕影响宝宝发育，所以会认真做功课。"
+
+    assert MODULE.expression_fragment_exactly_used(expression, body)
+
+
+def test_expression_fragment_exactly_used_rejects_rewritten_source():
+    expression = "奶牛不吃任何转基因饲料，所以奶质更有机"
+    body = "听说奶牛的饲料很讲究，感觉奶源会更自然。"
+
+    assert not MODULE.expression_fragment_exactly_used(expression, body)
+
+
+def test_machine_pass_allows_natural_rephrasing_without_exact_fragment():
+    item = {
+        "status": "completed",
+        "body": "我后来才知道，奶牛吃的饲料里不含转基因成分。",
+        "expression_fragment_exactly_used": False,
+        "formal_forbidden_hits": [],
+        "unsupported_expansion_hits": [],
+    }
+
+    assert MODULE.machine_passed(item)

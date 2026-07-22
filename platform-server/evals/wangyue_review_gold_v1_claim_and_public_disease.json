@@ -2,12 +2,13 @@
   "dataset_code": "wangyue_review_gold_v1",
   "slice": "claim_and_public_disease_v1",
   "review_status": "approved",
-  "approved_date": "2026-07-15",
-  "description": "旺玥审核金标第三批候选：只判断疾病相关功效宣称、医疗背书、即时补救和公共疾病环境，不判断一般时间逻辑、人味或种草强弱。",
+  "approved_date": "2026-07-21",
+  "description": "旺玥疾病场景金标：允许抽象保护力表达，阻断具体疾病、就医、请假和同伴生病场景，同时保留原有医疗宣称、即时补救和公共疾病环境边界。",
   "labels": ["pass", "watch", "block"],
   "rubric": [
-    "过去发生的感冒、请假，以及长期使用后的全勤、少请假、少中招等普通自家观察，不自动判 block。",
-    "过去式同伴生病或班级请假可以保留，但作为对照表达时优先标 watch，不自动改写。",
+    "少中招、容易中招、保护力在线、状态稳、小状况少些等抽象保护力或状态表达可以保留。",
+    "感冒、咳嗽、传染、发烧、医院、请假和同伴生病等具体疾病、就医或请假场景，不论过去或现在都判 block。",
+    "全勤或普通出勤记录本轮不单独 block；同时出现具体疾病、就医或请假场景时，按 concrete_disease_scenario 阻断。",
     "孩子出现当下症状后，马上把旺玥写成临时补救、治疗或加量手段，判 block。",
     "医生背书、治疗疾病、防止感冒或保证不生病等医疗化、绝对化宣称，判 block。",
     "“流感”是旺玥确定性硬禁词，无论当前或过去语境，出现即直接 ban；其它不含硬禁词的公共疾病环境表达，当前时态判 block，明确过去式不按此项硬拦。"
@@ -18,10 +19,10 @@
       "content": "去年孩子有阵子感冒，前前后后折腾了几天，现在翻到那会儿的照片还记得。",
       "meta": {
         "case_code": "WYC-001",
-        "expected_label": "pass",
-        "issue_code": "none",
+        "expected_label": "block",
+        "issue_code": "concrete_disease_scenario",
         "evidence": ["去年孩子有阵子感冒"],
-        "reason": "明确过去发生的普通经历，没有把产品写成治疗或即时补救。",
+        "reason": "感冒属于明确具体疾病场景，不因使用过去时而放行。",
         "source": "human_feedback_boundary"
       },
       "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "past_own_illness", "source_type": "human_feedback"}
@@ -31,10 +32,10 @@
       "content": "以前有点小状况就请过假，后来旺玥喝了一阵，最近回看出勤挺稳。",
       "meta": {
         "case_code": "WYC-002",
-        "expected_label": "pass",
-        "issue_code": "none",
+        "expected_label": "block",
+        "issue_code": "concrete_disease_scenario",
         "evidence": ["以前有点小状况就请过假", "旺玥喝了一阵", "最近回看出勤挺稳"],
-        "reason": "过去请假与长期使用后的普通出勤观察都在当前允许口径内。",
+        "reason": "正文展开了请假情节；出勤观察可以保留，但具体请假场景必须删除。",
         "source": "human_feedback_boundary"
       },
       "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "past_leave_and_attendance", "source_type": "human_feedback"}
@@ -57,10 +58,10 @@
       "content": "旺玥喝到现在有一阵了，最近没怎么请假，日常状态也还行。",
       "meta": {
         "case_code": "WYC-004",
-        "expected_label": "pass",
-        "issue_code": "none",
+        "expected_label": "block",
+        "issue_code": "concrete_disease_scenario",
         "evidence": ["喝到现在有一阵了", "最近没怎么请假"],
-        "reason": "少请假是有观察跨度的普通自家反馈，不是医疗保证。",
+        "reason": "少请假仍属于具体请假结果代理，本轮按明确请假场景阻断。",
         "source": "human_feedback_standard"
       },
       "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "less_leave_observation", "source_type": "human_feedback"}
@@ -70,11 +71,10 @@
       "content": "坚持喝了一阵，整体状态挺在线，回头看连感冒都比以前少了。",
       "meta": {
         "case_code": "WYC-005",
-        "expected_label": "watch",
-        "acceptable_labels": ["pass", "watch"],
-        "issue_code": "own_illness_reduction_observation",
+        "expected_label": "block",
+        "issue_code": "concrete_disease_scenario",
         "evidence": ["坚持喝了一阵", "感冒都比以前少了"],
-        "reason": "人工口径允许这类长期自家观察，但可以作为疾病效果承接观察项。",
+        "reason": "感冒属于明确具体疾病场景，即使有长期观察跨度也不保留。",
         "source": "human_feedback_boundary"
       },
       "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "less_cold_observation", "source_type": "human_feedback"}
@@ -84,11 +84,10 @@
       "content": "去年朋友家娃有阵子总生病，她看我家孩子状态还行，就问我平时怎么选奶粉。",
       "meta": {
         "case_code": "WYC-006",
-        "expected_label": "watch",
-        "acceptable_labels": ["pass", "watch"],
-        "issue_code": "past_public_disease_reference",
+        "expected_label": "block",
+        "issue_code": "concrete_disease_scenario",
         "evidence": ["去年朋友家娃有阵子总生病"],
-        "reason": "过去式同伴生病不应硬拦，但存在对照意味，保留 watch 空间。",
+        "reason": "同伴生病属于明确具体疾病场景，不因过去时放行。",
         "source": "human_feedback_boundary"
       },
       "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "past_peer_illness", "source_type": "human_feedback"}
@@ -98,11 +97,10 @@
       "content": "去年冬天班里有阵子请假的孩子挺多，我家那段时间出勤倒还算稳。",
       "meta": {
         "case_code": "WYC-007",
-        "expected_label": "watch",
-        "acceptable_labels": ["pass", "watch"],
-        "issue_code": "past_public_disease_reference",
+        "expected_label": "block",
+        "issue_code": "concrete_disease_scenario",
         "evidence": ["去年冬天", "班里有阵子请假的孩子挺多"],
-        "reason": "公共疾病环境已经明确落在过去，不依赖当前发布时间成立。",
+        "reason": "班级请假属于明确同伴请假场景，不因过去时放行。",
         "source": "human_feedback_boundary"
       },
       "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "past_class_absence", "source_type": "human_feedback"}
@@ -210,6 +208,32 @@
         "source": "human_feedback_standard"
       },
       "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "ordinary_self_observation", "source_type": "human_feedback"}
+    },
+    {
+      "title": "平时少中招",
+      "content": "喝了一阵，感觉孩子平时少中招，状态也稳。",
+      "meta": {
+        "case_code": "WYC-016",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["平时少中招", "状态也稳"],
+        "reason": "少中招和状态稳是允许保留的抽象保护力与状态表达，没有展开具体疾病场景。",
+        "source": "human_feedback_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "abstract_less_affected", "source_type": "human_feedback"}
+    },
+    {
+      "title": "保护力在线",
+      "content": "保护力在线，日常状态挺稳。",
+      "meta": {
+        "case_code": "WYC-017",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["保护力在线", "日常状态挺稳"],
+        "reason": "抽象保护力和状态表达可以保留，没有具体疾病、就医、请假或同伴生病情节。",
+        "source": "human_feedback_boundary"
+      },
+      "tags": {"brand": "旺玥", "dimension": "claim_and_public_disease", "boundary": "abstract_protection_state", "source_type": "human_feedback"}
     }
   ]
 }

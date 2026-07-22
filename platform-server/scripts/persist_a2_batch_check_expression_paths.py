@@ -1,4 +1,4 @@
-"""Persist A2 batch-check expression paths and batch variation review rules."""
+"""Persist A2 batch-check prompt bundles, expression paths, and variation rules."""
 from __future__ import annotations
 
 import argparse
@@ -41,6 +41,71 @@ TARGET_RULE_IDS = (
     "a2_direct_49",
 )
 
+OPTIONAL_COLOR_NOTE_RULE_IDS = (
+    "a2_direct_01",
+    "a2_direct_43",
+)
+
+COLOR_NOTE = "不描述罐身颜色。"
+CODE_NAMING_NOTE = "罐底的编码统一写“罐底码”或“码”，不写“物流码”“二维码”。"
+SINGLE_POINT_NOTE = (
+    "每条只围绕一个核心信息点，不把检测信息、报告、感受和便利性都堆在一句里。"
+)
+COMMON_REPORT_NOTE = "不写具体检测项目、数值或安全结论。"
+
+PROMPT_BUNDLE_UPDATES: dict[str, dict[str, Any]] = {
+    "a2_direct_45": {
+        "content_direction": (
+            "围绕a2每批产品都可查询对应检测信息，写自己选奶时会关注、买回来会查看，"
+            "或从导购、朋友那里知道后的自然反应。像消费者分享关注点，不像介绍功能。"
+        ),
+        "activity_material": ["a2每批产品都可查询对应检测信息。"],
+        "notes": [COMMON_REPORT_NOTE, SINGLE_POINT_NOTE, COLOR_NOTE],
+    },
+    "a2_direct_46": {
+        "content_direction": (
+            "围绕a2对应批次报告可以查询，写收到奶粉、开新罐、别人提醒或在母婴店了解到后查看的真实经历。"
+        ),
+        "activity_material": ["a2可查询产品对应批次报告。"],
+        "notes": [COMMON_REPORT_NOTE, SINGLE_POINT_NOTE, COLOR_NOTE],
+    },
+    "a2_direct_47": {
+        "content_direction": (
+            "围绕a2每批检测信息和对应报告可查询，写自己会主动查看、越来越关注检测透明，"
+            "或看完后的自然认可。"
+        ),
+        "activity_material": ["a2每批检测信息公开，对应批次报告可查询。"],
+        "notes": [
+            COMMON_REPORT_NOTE,
+            "不要写观望、再观察或质疑。",
+            SINGLE_POINT_NOTE,
+            COLOR_NOTE,
+        ],
+    },
+    "a2_direct_48": {
+        "content_direction": (
+            "围绕扫a2罐底码查看自己这罐对应批次报告，写收到奶粉、开新罐、第一次发现或逐渐形成习惯等真实经历。"
+            "动作说法自然变化，重点是用户行为，不是功能介绍。"
+        ),
+        "activity_material": ["扫a2罐底码可以查看自己这罐对应批次报告。"],
+        "notes": [COMMON_REPORT_NOTE, SINGLE_POINT_NOTE, CODE_NAMING_NOTE, COLOR_NOTE],
+    },
+    "a2_direct_49": {
+        "content_direction": (
+            "围绕通过a2罐底码查看对应批次的三方质检报告，写第一次发现、尝试查看或形成习惯等真实经历。"
+            "每条自然落在一个动作或感受上。"
+        ),
+        "activity_material": ["扫a2罐底码可以查看自己这罐对应批次的三方质检报告。"],
+        "notes": [
+            COMMON_REPORT_NOTE,
+            "统一写三方质检报告，不写三方检测报告。",
+            SINGLE_POINT_NOTE,
+            CODE_NAMING_NOTE,
+            COLOR_NOTE,
+        ],
+    },
+}
+
 EXPRESSION_PATHS: dict[str, list[str]] = {
     "a2_direct_45": [
         "从自己买过后开始留意每批检测切入。",
@@ -79,27 +144,27 @@ EXPRESSION_PATHS: dict[str, list[str]] = {
         "从平时买回来会顺手看一下批次信息切入。",
     ],
     "a2_direct_48": [
-        "从收到奶粉后顺手扫罐底物流码切入。",
-        "从开新罐前先扫一下罐底物流码切入。",
-        "从第一次知道罐底物流码还能看报告切入。",
-        "从宝妈群或评论区互相提醒扫码切入。",
-        "从扫不同罐时都能找到各自对应报告切入。",
-        "从买奶粉时越来越关注能不能扫码查报告切入。",
+        "从收到奶粉后顺手扫罐底码切入。",
+        "从开新罐前查一下罐底码切入。",
+        "从第一次知道罐底码还能看报告切入。",
+        "从宝妈群或评论区互相提醒看一下码切入。",
+        "从扫不同罐的码时都能找到各自对应报告切入。",
+        "从买奶粉时越来越关注罐底码能不能查报告切入。",
         "从长期给宝宝喝奶粉后想多确认批次信息切入。",
         "从家人或朋友提醒扫一下罐底码切入。",
         "从母婴店了解到罐底码可以查报告切入。",
-        "从买回来逐渐形成顺手扫码的习惯切入。",
+        "从买回来逐渐形成顺手看码的习惯切入。",
     ],
     "a2_direct_49": [
-        "从收到奶粉后顺手扫码查看三方质检报告切入。",
-        "从开新罐前先看三方质检报告切入。",
+        "从收到奶粉后顺手查看三方质检报告切入。",
+        "从开新罐前扫罐底码看三方质检报告切入。",
         "从第一次知道罐底码能看三方质检报告切入。",
-        "从宝妈群或评论区互相提醒扫码看报告切入。",
-        "从扫不同罐时都能找到各自对应的三方质检报告切入。",
+        "从宝妈群或评论区互相提醒查三方质检报告切入。",
+        "从扫不同罐的码时都能找到各自对应的三方质检报告切入。",
         "从买奶粉时越来越关注三方质检报告能不能查切入。",
         "从长期给宝宝喝奶粉后想多确认质检信息切入。",
         "从家人或朋友分享三方质检报告入口切入。",
-        "从母婴店了解到扫码可以看三方质检报告切入。",
+        "从母婴店了解到罐底码可以看三方质检报告切入。",
         "从买回来逐渐形成顺手查看三方质检报告的习惯切入。",
     ],
 }
@@ -180,9 +245,29 @@ def merge_content(content_json: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(item, dict):
             continue
         rule_id = str(item.get("rule_id") or "")
+        if rule_id in OPTIONAL_COLOR_NOTE_RULE_IDS:
+            bundle = item.get("comment_prompt_bundle")
+            if isinstance(bundle, dict):
+                notes = [str(value).strip() for value in bundle.get("notes") or [] if str(value).strip()]
+                if COLOR_NOTE not in notes:
+                    notes.append(COLOR_NOTE)
+                bundle["notes"] = notes
+
         paths = EXPRESSION_PATHS.get(rule_id)
         if not paths:
             continue
+        prompt_update = PROMPT_BUNDLE_UPDATES[rule_id]
+        content_direction = str(prompt_update["content_direction"])
+        activity_material = list(prompt_update["activity_material"])
+        bundle = item.get("comment_prompt_bundle")
+        if not isinstance(bundle, dict):
+            raise ValueError(f"{rule_id} must use comment_prompt_bundle")
+        bundle["content_direction"] = content_direction
+        bundle["activity_material"] = activity_material
+        bundle["notes"] = list(prompt_update["notes"])
+        item["corpus"] = content_direction
+        item["content_direction"] = content_direction
+        item["activity_material"] = activity_material
         item["prompt_slots"] = {"本条表达路径": list(paths)}
         item["prompt_slot_selection_mode"] = "round_robin"
         item["bundle_prompt_slots_source"] = "rule_asset"
@@ -226,6 +311,12 @@ def main(argv: list[str] | None = None) -> None:
                         rule_id: len(EXPRESSION_PATHS[rule_id])
                         for rule_id in TARGET_RULE_IDS
                     },
+                    "last_batch_check_prompt_bundle_rule_ids": list(TARGET_RULE_IDS),
+                    "last_a2_can_color_note_rule_ids": [
+                        *OPTIONAL_COLOR_NOTE_RULE_IDS,
+                        *TARGET_RULE_IDS,
+                    ],
+                    "last_a2_can_bottom_code_terms": ["罐底码", "码"],
                 }
             )
             next_version = _next_asset_version(cursor, row)
