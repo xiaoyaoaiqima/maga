@@ -2,7 +2,7 @@
   "dataset_code": "a2_reiyu_review_gold_v1",
   "slice": "narrative_consistency_v1",
   "review_status": "approved",
-  "approved_date": "2026-07-20",
+  "approved_date": "2026-07-24",
   "description": "a2 礼遇活动文章人工审核金标：判断同一篇中的购买、使用、复购身份和使用时长是否前后一致。",
   "labels": ["pass", "light_fix"],
   "label_semantics": {
@@ -16,6 +16,7 @@
     "这类问题优先做最小修改，例如删除‘想’，改成‘本来就一直囤他们家’；不因此否定整篇活动内容。",
     "‘想’不是通用禁词；只有它与同篇明确的已购、长期使用或复购身份发生冲突时才命中本规则。",
     "‘我家本来就喝a2至初’描述的是当前状态，后文回顾‘之前换a2后’属于历史经历，两者可以同时成立，不应误判为时序冲突。",
+    "‘我家一直喝这个’通常描述转奶后持续饮用，后文回顾‘宝宝喝这个转奶挺顺利’可以同时成立；只有明确写‘从出生一直喝、从来没换过’后又写转奶，才属于经历冲突。",
     "标题写喝了两年、正文却写只喝了大半年，属于明确的使用时长冲突；文章主体可用，局部统一时长后即可保留。"
   ],
   "items": [
@@ -108,6 +109,28 @@
         "activity": "会员礼遇升级活动",
         "dimension": "narrative_consistency",
         "boundary": "usage_duration_conflict",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "长期饮用回顾最初转奶",
+      "content": "我家一直喝a2至初，宝宝当时喝这个转奶挺顺利，适应得也快。",
+      "meta": {
+        "case_code": "A2RY-NC-005",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": [
+          "一直喝a2至初",
+          "当时喝这个转奶挺顺利"
+        ],
+        "reason": "前一句描述转奶后持续饮用，后一句回顾最初转入a2至初的经历，时间线可以自然成立。",
+        "source": "batch_20260724_human_recalibration"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "narrative_consistency",
+        "boundary": "continued_use_after_prior_transfer",
         "source_type": "human_feedback"
       }
     }

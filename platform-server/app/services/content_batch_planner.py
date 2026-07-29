@@ -282,6 +282,7 @@ class ContentBatchPlanner:
             limit=limit,
             allow_repeat=focus_single_rule or asset_allows_repeat,
             articles_per_prompt=normalized_articles_per_prompt,
+            randomize_order=asset.asset_key == CURRENT_WANGYUE_ARTICLE_ASSET_KEY,
         )
         used_real_user_hashes: set[str] = set()
         used_real_user_route_families: dict[str, int] = {}
@@ -610,9 +611,11 @@ class ContentBatchPlanner:
             )
         )
         selling_painpoint_group = _resolve_string_field("selling_painpoint_group", asset, rule)
+        post_type = _resolve_post_type(asset, rule)
         selling_painpoint_expression = _resolve_selling_painpoint_expression(
             asset,
             selling_painpoint_group,
+            post_type=post_type,
             item_no=item_no,
         )
         painpoint = None if selling_painpoint_group else _resolve_painpoint(asset, rule, item_no=item_no)
@@ -738,7 +741,7 @@ class ContentBatchPlanner:
             "draft_rule_override": rule.get("draft_rule_override"),
             "business_rule": business_rule,
             "product_name": product_name,
-            "post_type": _resolve_post_type(asset, rule),
+            "post_type": post_type,
             "product_appearance_mode": product_appearance_mode,
             "ugc_post_type": ugc_post_type,
             "painpoint": painpoint,
@@ -1179,7 +1182,10 @@ def _article_rules_with_draft_override(
             continue
         next_rule = dict(rule)
         if "corpus" in draft_override:
-            next_rule["corpus"] = str(draft_override.get("corpus") or "").strip()
+            next_corpus = str(draft_override.get("corpus") or "").strip()
+            next_rule["corpus"] = next_corpus
+            if "content_direction" in next_rule:
+                next_rule["content_direction"] = next_corpus
         if "selling_painpoint_group" in draft_override:
             next_rule["selling_painpoint_group"] = str(
                 draft_override.get("selling_painpoint_group") or ""
@@ -1333,7 +1339,11 @@ def _resolve_rule_variation_slots(
     for slot_index, raw_slot in enumerate(raw_slots):
         if not isinstance(raw_slot, dict):
             continue
-        options = [str(value).strip() for value in raw_slot.get("options") or [] if str(value).strip()]
+        options = [
+            option
+            for value in raw_slot.get("options") or []
+            if (option := _normalize_variation_slot_option(value)) is not None
+        ]
         if not options:
             continue
         slot_code = str(raw_slot.get("slot_code") or raw_slot.get("code") or slot_index + 1).strip()
@@ -1354,13 +1364,18 @@ def _resolve_rule_variation_slots(
                 continue
             exact_clue = _inspiration_clue_for_expression(rule, selling_painpoint_expression)
             if exact_clue:
-                if exact_clue not in options:
+                exact_option = next(
+                    (option for option in options if option[0] == exact_clue),
+                    None,
+                )
+                if exact_option is None:
                     raise ValueError("configured inspiration clue is not present in the variation slot")
                 selected.append(
                     {
                         "slot_code": slot_code,
                         "slot_name": slot_name,
                         "value": exact_clue,
+                        **({"item_id": exact_option[1]} if exact_option[1] else {}),
                     }
                 )
                 continue
@@ -1378,7 +1393,7 @@ def _resolve_rule_variation_slots(
             selected_index = (
                 zero + (offset if offset is not None else slot_index)
             ) % len(options)
-        selected_value = options[selected_index]
+        selected_value, selected_item_id = options[selected_index]
         if is_inspiration_slot and selected_value == NO_INSPIRATION_CLUE:
             continue
         selected.append(
@@ -1386,9 +1401,22 @@ def _resolve_rule_variation_slots(
                 "slot_code": slot_code,
                 "slot_name": slot_name,
                 "value": selected_value,
+                **({"item_id": selected_item_id} if selected_item_id else {}),
             }
         )
     return selected
+
+
+def _normalize_variation_slot_option(value: Any) -> tuple[str, str | None] | None:
+    if isinstance(value, dict):
+        text = str(value.get("text") or "").strip()
+        item_id = str(value.get("id") or "").strip() or None
+    else:
+        text = str(value).strip()
+        item_id = None
+    if not text:
+        return None
+    return text, item_id
 
 
 def _resolve_variation_slot_selection_mode(asset: AssetRegistry | None) -> str:
@@ -2255,9 +2283,11 @@ def _resolve_selling_painpoint_expression(
     asset: AssetRegistry | None,
     group: str | None,
     *,
+    post_type: str | None = None,
     item_no: int,
 ) -> dict[str, Any] | None:
     normalized_group = str(group or "").strip()
+    normalized_post_type = str(post_type or "").strip()
     if asset is None or not normalized_group:
         return None
     candidate_groups = {normalized_group}
@@ -2270,10 +2300,26 @@ def _resolve_selling_painpoint_expression(
         if isinstance(item, dict)
         and str(item.get("selling_painpoint_group") or "").strip() in candidate_groups
         and str(item.get("expression") or "").strip()
+        and _selling_painpoint_expression_applies_to_post_type(
+            item,
+            normalized_post_type,
+        )
     ]
     if not candidates:
         return None
+    if asset.asset_key == CURRENT_WANGYUE_ARTICLE_ASSET_KEY:
+        return SystemRandom().choice(candidates)
     return candidates[(max(1, item_no) - 1) % len(candidates)]
+
+
+def _selling_painpoint_expression_applies_to_post_type(
+    expression: dict[str, Any],
+    post_type: str,
+) -> bool:
+    if "applicable_post_types" not in expression:
+        return True
+    applicable_post_types = set(_string_list(expression.get("applicable_post_types")))
+    return bool(post_type) and post_type in applicable_post_types
 
 
 def _inspiration_clue_for_expression(
@@ -2828,19 +2874,31 @@ def _select_article_business_rules_for_generation(
     limit: int,
     allow_repeat: bool,
     articles_per_prompt: int,
+    randomize_order: bool = False,
 ) -> list[dict[str, Any]]:
     if not rules or limit <= 0:
         return []
     output_count = max(1, min(int(articles_per_prompt or 1), 2))
+    rule_count = limit if output_count <= 1 else math.ceil(limit / output_count)
+    if randomize_order:
+        randomized_rules: list[dict[str, Any]] = []
+        randomizer = SystemRandom()
+        while len(randomized_rules) < rule_count:
+            cycle = list(rules)
+            randomizer.shuffle(cycle)
+            randomized_rules.extend(cycle)
+            if not allow_repeat:
+                break
+        base_rules = randomized_rules[:rule_count]
+    else:
+        base_rules = (
+            [rules[index % len(rules)] for index in range(rule_count)]
+            if allow_repeat
+            else rules[:rule_count]
+        )
     if output_count <= 1:
-        return [rules[index % len(rules)] for index in range(limit)] if allow_repeat else rules[:limit]
+        return base_rules
 
-    group_count = math.ceil(limit / output_count)
-    base_rules = (
-        [rules[index % len(rules)] for index in range(group_count)]
-        if allow_repeat
-        else rules[:group_count]
-    )
     selected: list[dict[str, Any]] = []
     for rule in base_rules:
         for _ in range(output_count):

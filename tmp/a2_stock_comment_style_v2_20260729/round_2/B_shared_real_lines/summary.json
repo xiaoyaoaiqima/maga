@@ -1,0 +1,61 @@
+[
+  {
+    "count": 10,
+    "latency_s": 4.738,
+    "lengths": [
+      5,
+      18,
+      20,
+      19,
+      23,
+      15,
+      22,
+      22,
+      11,
+      12
+    ],
+    "han_lengths": [
+      0,
+      16,
+      17,
+      17,
+      20,
+      12,
+      19,
+      20,
+      9,
+      11
+    ],
+    "bands": [
+      "out_of_range",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "short",
+      "short"
+    ],
+    "band_counts": {
+      "short": 2,
+      "medium": 7,
+      "long": 0,
+      "out_of_range": 1
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1904,
+      "completion_tokens": 551,
+      "total_tokens": 2455,
+      "prompt_tokens_details": {
+        "cached_tokens": 1792
+      },
+      "prompt_cache_hit_tokens": 1792,
+      "prompt_cache_miss_tokens": 112
+    },
+    "run_no": 1
+  }
+]

@@ -77,6 +77,7 @@ async def test_rewrite_quality_validator_uses_direct_llm_path(monkeypatch) -> No
     assert len(calls) == 1
     assert calls[0]["model_config"]["provider"] == "test-provider"
     assert calls[0]["model_config"]["model"] == "test-model"
+    assert calls[0]["response_format"] == {"type": "json_object"}
 
 
 class _RejectRewriteQualityValidator:

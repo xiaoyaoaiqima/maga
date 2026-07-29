@@ -288,6 +288,7 @@ def test_layered_article_prompt_renders_merged_consumer_recognition_slot():
                     "slot_code": "consumer_recognition",
                     "slot_name": "认可表达",
                     "value": "消费者有被重视到，品质也更透明。a2至初奶香自然。",
+                    "item_id": "bf_001",
                 },
             ],
         },

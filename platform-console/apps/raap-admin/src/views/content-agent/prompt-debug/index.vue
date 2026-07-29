@@ -4,7 +4,7 @@ import type { PromptDebugArticle } from './output-parser';
 import type { LLMApi } from '#/api/core/llm';
 import type { PromptDebugApi } from '#/api/core/prompt-debug';
 
-import { computed, h, onMounted, reactive, ref } from 'vue';
+import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import {
@@ -46,7 +46,10 @@ import {
   runPromptDebugBatch,
 } from './batch-runner';
 import { parsePromptDebugArticles } from './output-parser';
-import { loadPromptDebugTransfer } from './prompt-transfer';
+import {
+  applyPromptDebugTransfer,
+  loadPromptDebugTransfer,
+} from './prompt-transfer';
 
 type PanelKey = 'left' | 'right';
 type WorkbenchMode = 'compare' | 'single';
@@ -404,27 +407,19 @@ async function restoreHistory(group: PromptDebugApi.HistoryGroupSummary) {
   }
 }
 
-onMounted(() => {
-  const promptKey = route.query.prompt_key;
+function applyTransferredInput(promptKey: unknown) {
   const transferredInput = loadPromptDebugTransfer(promptKey);
   if (transferredInput) {
-    panels.left.prompt = transferredInput.prompt;
-    panels.left.system_prompt = transferredInput.system_prompt || '';
-    if (transferredInput.model_code) {
-      panels.left.model_code = transferredInput.model_code;
-    }
-    if (typeof transferredInput.temperature === 'number') {
-      panels.left.temperature = transferredInput.temperature;
-    }
-    if (typeof transferredInput.max_tokens === 'number') {
-      panels.left.max_tokens = transferredInput.max_tokens;
-    }
+    applyPromptDebugTransfer(transferredInput, Object.values(panels));
     message.success('已带入完整生成配置');
   } else if (promptKey) {
     message.warning('生成 Prompt 已失效，请从生成历史重新进入');
   }
-  loadModels();
-});
+}
+
+watch(() => route.query.prompt_key, applyTransferredInput, { immediate: true });
+
+onMounted(loadModels);
 </script>
 
 <template>

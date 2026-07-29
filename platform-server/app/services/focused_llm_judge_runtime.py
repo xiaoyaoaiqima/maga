@@ -33,6 +33,7 @@ async def call_focused_judge(
         user_prompt=user_prompt,
         temperature=0,
         max_tokens=max_tokens,
+        response_format={"type": "json_object"},
     )
     response_payload = direct_llm_result_payload(response)
     raw_response = response.content
@@ -43,6 +44,7 @@ async def call_focused_judge(
             user_prompt=f"{user_prompt}\n\n上次输出格式错误。现在只输出一个合法 JSON object，不要解释。",
             temperature=0,
             max_tokens=max_tokens,
+            response_format={"type": "json_object"},
         )
         raw_response = retry.content
         response_payload = merge_focused_runtime_metadata(

@@ -89,6 +89,7 @@ class ContentBatchReportSummary(BaseSchema):
     real_user_pool_stats: dict[str, Any] = Field(default_factory=dict)
     mouth_phrase_budget_stats: dict[str, Any] = Field(default_factory=dict)
     business_usability_stats: dict[str, Any] = Field(default_factory=dict)
+    issue_pattern_stats: dict[str, Any] = Field(default_factory=dict)
 
 
 class ContentBatchReportItem(BaseSchema):
@@ -138,6 +139,7 @@ class ContentBatchReportItem(BaseSchema):
     asset_combo_key: str | None = None
     asset_reuse_reason: str | None = None
     generation_snapshot: dict[str, Any] | None = None
+    issue_pattern_context: dict[str, Any] = Field(default_factory=dict, exclude=True)
     diversity: dict[str, Any] | None = None
     quality: dict[str, Any] | None = None
     error_message: str | None = None
@@ -172,6 +174,28 @@ class ContentBatchBusinessUsabilityReviewResponse(BaseSchema):
     skipped_item_nos: list[int] = Field(default_factory=list)
     failed_items: list[dict[str, Any]] = Field(default_factory=list)
     tier_counts: dict[str, int] = Field(default_factory=dict)
+    report: ContentBatchReportResponse
+
+
+class ContentBatchWangyueDeferredRepairRequest(BaseSchema):
+    limit: int | None = Field(default=None, ge=1, le=ARTICLE_BATCH_MAX_COUNT)
+    concurrency: int = Field(default=10, ge=1, le=50)
+
+
+class ContentBatchWangyueDeferredRepairResponse(BaseSchema):
+    batch_id: int
+    selected_count: int = 0
+    repaired_count: int = 0
+    released_count: int = 0
+    held_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    selected_item_nos: list[int] = Field(default_factory=list)
+    repaired_item_nos: list[int] = Field(default_factory=list)
+    released_item_nos: list[int] = Field(default_factory=list)
+    held_item_nos: list[int] = Field(default_factory=list)
+    skipped_item_nos: list[int] = Field(default_factory=list)
+    failed_items: list[dict[str, Any]] = Field(default_factory=list)
     report: ContentBatchReportResponse
 
 
@@ -518,6 +542,8 @@ class ContentBatchItemFeedbackRequest(BaseSchema):
     feedback_text: str | None = Field(default=None, max_length=4000)
     quoted_text: str | None = Field(default=None, max_length=2000)
     feedback_categories: list[str] = Field(default_factory=list)
+    issue_codes: list[str] = Field(default_factory=list)
+    responsibility_layer: Literal["source_corpus", "generation_prompt", "audit", "audit_allowlist"] | None = None
     title: str | None = Field(default=None, max_length=255)
     body: str | None = Field(default=None, max_length=20000)
     created_by: str | None = Field(default=None, max_length=100)

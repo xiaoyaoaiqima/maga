@@ -1,0 +1,16 @@
+{
+  "source_file": "/Users/luxifa/maga/outputs/a2_sentiment/a2_confirmed_real_user_demos_20260615.jsonl",
+  "source_type": "user_confirmed_real_user_demo",
+  "items": [
+    {"style_ref_id": "R01", "demo_id": "a2_real_001", "strategy_id": "S01", "risk": "urgency_and_purchase_call"},
+    {"style_ref_id": "R02", "demo_id": "a2_real_006", "strategy_id": "S02", "risk": "multi_store_and_supply_trend_fact"},
+    {"style_ref_id": "R03", "demo_id": "a2_real_005", "strategy_id": "S03", "risk": "image_attachment_fact"},
+    {"style_ref_id": "R04", "demo_id": "a2_real_014", "strategy_id": "S04", "risk": "salesperson_source_fact"},
+    {"style_ref_id": "R05", "demo_id": "a2_real_019", "strategy_id": "S05", "risk": "stay_or_switch_and_supply_release_fact"},
+    {"style_ref_id": "R06", "demo_id": "a2_real_011", "strategy_id": "S06", "risk": "shipping_status_fact"},
+    {"style_ref_id": "R07", "demo_id": "a2_real_015", "strategy_id": "S07", "risk": "product_stage_and_store_fact"},
+    {"style_ref_id": "R08", "demo_id": "a2_real_018", "strategy_id": "S08", "risk": "product_stage_and_switching_fact"},
+    {"style_ref_id": "R09", "demo_id": "a2_real_016", "strategy_id": "S09", "risk": "store_visit_action"},
+    {"style_ref_id": "R10", "demo_id": "a2_real_012", "strategy_id": "S10", "risk": "salesperson_and_future_supply_fact"}
+  ]
+}

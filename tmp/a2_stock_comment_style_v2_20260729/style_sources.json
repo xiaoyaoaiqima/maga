@@ -1,0 +1,67 @@
+{
+  "source_file": "/Users/luxifa/maga/local_data/xhs_corpus_pool/comments.jsonl",
+  "source_type": "raw_export",
+  "selection_boundary": "No A2, milk powder, inventory, purchase, store, logistics, time, quantity, or concrete personal-experience facts in the selected comment text.",
+  "items": [
+    {
+      "style_ref_id": "R01",
+      "comment_id": "67c1c0bd0000000019011f11",
+      "text": "cool！",
+      "surface_signature": "英文单词独立成句 + 全角叹号"
+    },
+    {
+      "style_ref_id": "R02",
+      "comment_id": "664eb733000000001c00f523",
+      "text": "是的！",
+      "surface_signature": "两字肯定 + 强收尾"
+    },
+    {
+      "style_ref_id": "R03",
+      "comment_id": "67da0116000000001802dd7c",
+      "text": "真的假的",
+      "surface_signature": "四字反问 + 零标点"
+    },
+    {
+      "style_ref_id": "R04",
+      "comment_id": "67aa3f9f000000001c00c36b",
+      "text": "有点意思这个音效",
+      "surface_signature": "轻程度判断 + 宾语后置式口语倒装"
+    },
+    {
+      "style_ref_id": "R05",
+      "comment_id": "67d15ad40000000015002210",
+      "text": "学到了，谢谢。",
+      "surface_signature": "短反应 + 逗号 + 礼貌收尾"
+    },
+    {
+      "style_ref_id": "R06",
+      "comment_id": "68612f3f000000002002dc40",
+      "text": "谢谢捧场，哈哈。拱手拱手",
+      "surface_signature": "感谢、轻笑、叠词组成三拍节奏"
+    },
+    {
+      "style_ref_id": "R07",
+      "comment_id": "687640fd000000001e037ed2",
+      "text": "衔接很丝滑",
+      "surface_signature": "名词主语 + 很 + 网络感形容词"
+    },
+    {
+      "style_ref_id": "R08",
+      "comment_id": "687a35f3000000000900ffb4",
+      "text": "可以这么理解",
+      "surface_signature": "模态确认短句 + 零标点"
+    },
+    {
+      "style_ref_id": "R09",
+      "comment_id": "64ecccb8000000001900b6e3",
+      "text": "好可爱啊[偷笑R]",
+      "surface_signature": "短评价 + 句尾粒子 + 单个社区表情"
+    },
+    {
+      "style_ref_id": "R10",
+      "comment_id": "68c3e08b000000003001c4e1",
+      "text": "听劝哈哈哈",
+      "surface_signature": "两字动作词 + 连续笑声 + 零标点"
+    }
+  ]
+}

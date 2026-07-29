@@ -1,0 +1,137 @@
+{
+  "raw_output": {
+    "items": [
+      {
+        "strategy_id": "S01",
+        "response_mode": "excited_purchase_reaction",
+        "life_entry": "线上随眼看到",
+        "comment": "刷到有货了，下一罐能续上了"
+      },
+      {
+        "strategy_id": "S02",
+        "response_mode": "purchase_plan",
+        "life_entry": "线上连续几次看到可买",
+        "comment": "连着几天都看到有货，这两天准备买了"
+      },
+      {
+        "strategy_id": "S03",
+        "response_mode": "ready_to_replenish",
+        "life_entry": "家里快喝完",
+        "comment": "手里这罐见底了，正好有货，下一罐接上"
+      },
+      {
+        "strategy_id": "S04",
+        "response_mode": "replenished_success",
+        "life_entry": "家里正好需要续上",
+        "comment": "已经拿了一罐，心里踏实了"
+      },
+      {
+        "strategy_id": "S05",
+        "response_mode": "continue_familiar_choice",
+        "life_entry": "长期使用熟悉款",
+        "comment": "现在能买到了，下一罐还是选熟悉的"
+      },
+      {
+        "strategy_id": "S06",
+        "response_mode": "reply_with_intent",
+        "life_entry": "回复别人说现在有货",
+        "comment": "听你说有货了，我也想续上"
+      },
+      {
+        "strategy_id": "S07",
+        "response_mode": "store_spotted_pickup",
+        "life_entry": "日常逛商超看到",
+        "comment": "逛超市看到货架上摆着，顺手拿了一罐"
+      },
+      {
+        "strategy_id": "S08",
+        "response_mode": "availability_return_intent",
+        "life_entry": "前段时间需要多看几次",
+        "comment": "之前要盯几次才买到，现在容易多了，愿意继续选了"
+      },
+      {
+        "strategy_id": "S09",
+        "response_mode": "purchase_plan",
+        "life_entry": "家人或朋友带回有货消息",
+        "comment": "朋友说店里有了，我打算去拿一罐"
+      },
+      {
+        "strategy_id": "S10",
+        "response_mode": "continue_familiar_choice",
+        "life_entry": "原本就在等熟悉款",
+        "comment": "等了好久，现在能买了，不考虑换了，下一罐还是它"
+      }
+    ]
+  },
+  "items": [
+    "刷到有货了，下一罐能续上了",
+    "连着几天都看到有货，这两天准备买了",
+    "手里这罐见底了，正好有货，下一罐接上",
+    "已经拿了一罐，心里踏实了",
+    "现在能买到了，下一罐还是选熟悉的",
+    "听你说有货了，我也想续上",
+    "逛超市看到货架上摆着，顺手拿了一罐",
+    "之前要盯几次才买到，现在容易多了，愿意继续选了",
+    "朋友说店里有了，我打算去拿一罐",
+    "等了好久，现在能买了，不考虑换了，下一罐还是它"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 20.418,
+    "lengths": [
+      13,
+      17,
+      18,
+      12,
+      16,
+      12,
+      17,
+      23,
+      15,
+      23
+    ],
+    "han_lengths": [
+      12,
+      16,
+      16,
+      11,
+      15,
+      11,
+      16,
+      21,
+      14,
+      20
+    ],
+    "bands": [
+      "medium",
+      "medium",
+      "medium",
+      "short",
+      "medium",
+      "short",
+      "medium",
+      "medium",
+      "medium",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 2,
+      "medium": 8,
+      "long": 0,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 2003,
+      "completion_tokens": 408,
+      "total_tokens": 2411,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 2003
+    },
+    "run_no": 1
+  }
+}

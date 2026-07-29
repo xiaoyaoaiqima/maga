@@ -1,0 +1,527 @@
+{
+  "seed": 20260729,
+  "batches": [
+    {
+      "round": "round_1",
+      "batch_label": "R1-K",
+      "arm": "A_core_only",
+      "arm_label": "A｜无风格语料",
+      "items": [
+        {
+          "blind_id": "R1-K-01",
+          "strategy_id": "S03",
+          "comment": "刚好剩小半罐，打开一看能买，补了一罐"
+        },
+        {
+          "blind_id": "R1-K-02",
+          "strategy_id": "S09",
+          "comment": "我姐刚跟我说现在有货，那还挺好的"
+        },
+        {
+          "blind_id": "R1-K-03",
+          "strategy_id": "S01",
+          "comment": "嘿，还真有货了"
+        },
+        {
+          "blind_id": "R1-K-04",
+          "strategy_id": "S08",
+          "comment": "以前想买经常没货，现在好多了，基本都能买到"
+        },
+        {
+          "blind_id": "R1-K-05",
+          "strategy_id": "S06",
+          "comment": "是吧，我刚看也是有的，不用着急"
+        },
+        {
+          "blind_id": "R1-K-06",
+          "strategy_id": "S02",
+          "comment": "这阵子刷到好几次都能加购物车，库存应该挺稳的"
+        },
+        {
+          "blind_id": "R1-K-07",
+          "strategy_id": "S10",
+          "comment": "昨天去超市看到架子上摆得挺满的"
+        },
+        {
+          "blind_id": "R1-K-08",
+          "strategy_id": "S05",
+          "comment": "看到有人说要多囤点，我倒觉得不用，需要的时候买就行"
+        },
+        {
+          "blind_id": "R1-K-09",
+          "strategy_id": "S04",
+          "comment": "以前总得盯着看有没有货，现在省心多了"
+        },
+        {
+          "blind_id": "R1-K-10",
+          "strategy_id": "S07",
+          "comment": "用了挺久，时不时会看下库存，这阵子一直有"
+        }
+      ]
+    },
+    {
+      "round": "round_1",
+      "batch_label": "R1-M",
+      "arm": "C_surface_signatures",
+      "arm_label": "C｜共享纯句面特征",
+      "items": [
+        {
+          "blind_id": "R1-M-01",
+          "strategy_id": "S04",
+          "comment": "不用盯时间确实省心多了。"
+        },
+        {
+          "blind_id": "R1-M-02",
+          "strategy_id": "S02",
+          "comment": "这阵子页面上一直能加购，库存挺稳的。"
+        },
+        {
+          "blind_id": "R1-M-03",
+          "strategy_id": "S01",
+          "comment": "Nice！"
+        },
+        {
+          "blind_id": "R1-M-04",
+          "strategy_id": "S06",
+          "comment": "对，现在有货，不用太担心。"
+        },
+        {
+          "blind_id": "R1-M-05",
+          "strategy_id": "S07",
+          "comment": "一直喝这个，最近偶尔看看库存，还行。"
+        },
+        {
+          "blind_id": "R1-M-06",
+          "strategy_id": "S05",
+          "comment": "正常喝就好，没必要一次囤很多。"
+        },
+        {
+          "blind_id": "R1-M-07",
+          "strategy_id": "S10",
+          "comment": "超市货架上看到了，放着挺满的。"
+        },
+        {
+          "blind_id": "R1-M-08",
+          "strategy_id": "S08",
+          "comment": "以前要盯着时间，现在随便点开就有。"
+        },
+        {
+          "blind_id": "R1-M-09",
+          "strategy_id": "S03",
+          "comment": "正好剩最后一点，顺手补了一罐。"
+        },
+        {
+          "blind_id": "R1-M-10",
+          "strategy_id": "S09",
+          "comment": "那挺好的呀。"
+        }
+      ]
+    },
+    {
+      "round": "round_1",
+      "batch_label": "R1-R",
+      "arm": "B_shared_real_lines",
+      "arm_label": "B｜共享真人原句",
+      "items": [
+        {
+          "blind_id": "R1-R-01",
+          "strategy_id": "S06",
+          "comment": "对，我前几天也看到了，还挺好买的。"
+        },
+        {
+          "blind_id": "R1-R-02",
+          "strategy_id": "S03",
+          "comment": "刚好要续上，一看有货就补了一罐。"
+        },
+        {
+          "blind_id": "R1-R-03",
+          "strategy_id": "S09",
+          "comment": "听说了，那就好。"
+        },
+        {
+          "blind_id": "R1-R-04",
+          "strategy_id": "S04",
+          "comment": "不用天天刷了，省心很多。"
+        },
+        {
+          "blind_id": "R1-R-05",
+          "strategy_id": "S08",
+          "comment": "以前常缺货，现在倒是好买了。"
+        },
+        {
+          "blind_id": "R1-R-06",
+          "strategy_id": "S10",
+          "comment": "货架上摆了不少。"
+        },
+        {
+          "blind_id": "R1-R-07",
+          "strategy_id": "S05",
+          "comment": "其实不用囤太多，现在买得到。"
+        },
+        {
+          "blind_id": "R1-R-08",
+          "strategy_id": "S07",
+          "comment": "一直喝这个，有时会看一眼库存。"
+        },
+        {
+          "blind_id": "R1-R-09",
+          "strategy_id": "S02",
+          "comment": "最近几次看都能加购，不像之前那样秒没。"
+        },
+        {
+          "blind_id": "R1-R-10",
+          "strategy_id": "S01",
+          "comment": "哎，有货了？"
+        }
+      ]
+    },
+    {
+      "round": "round_2",
+      "batch_label": "R2-K",
+      "arm": "C_surface_signatures",
+      "arm_label": "C｜共享纯句面特征",
+      "items": [
+        {
+          "blind_id": "R2-K-01",
+          "strategy_id": "S04",
+          "comment": "以前总要问有没有货，现在不用了"
+        },
+        {
+          "blind_id": "R2-K-02",
+          "strategy_id": "S02",
+          "comment": "我这阵子看一直都能买到，挺稳的"
+        },
+        {
+          "blind_id": "R2-K-03",
+          "strategy_id": "S06",
+          "comment": "对，现在货挺足的，我前两天看也是"
+        },
+        {
+          "blind_id": "R2-K-04",
+          "strategy_id": "S01",
+          "comment": "哈哈，有货了"
+        },
+        {
+          "blind_id": "R2-K-05",
+          "strategy_id": "S03",
+          "comment": "刚开最后一罐，正好补到了"
+        },
+        {
+          "blind_id": "R2-K-06",
+          "strategy_id": "S05",
+          "comment": "不用囤太多，现在买着方便"
+        },
+        {
+          "blind_id": "R2-K-07",
+          "strategy_id": "S07",
+          "comment": "习惯了时不时看一眼，最近库存可以"
+        },
+        {
+          "blind_id": "R2-K-08",
+          "strategy_id": "S10",
+          "comment": "超市里摆得挺多的"
+        },
+        {
+          "blind_id": "R2-K-09",
+          "strategy_id": "S09",
+          "comment": "哟，那挺好的"
+        },
+        {
+          "blind_id": "R2-K-10",
+          "strategy_id": "S08",
+          "comment": "以前总碰不到，现在好买多了"
+        }
+      ]
+    },
+    {
+      "round": "round_2",
+      "batch_label": "R2-M",
+      "arm": "A_core_only",
+      "arm_label": "A｜无风格语料",
+      "items": [
+        {
+          "blind_id": "R2-M-01",
+          "strategy_id": "S05",
+          "comment": "有货就正常买呗，不用一次搬太多"
+        },
+        {
+          "blind_id": "R2-M-02",
+          "strategy_id": "S06",
+          "comment": "对的，前几天看还有，应该不用太赶"
+        },
+        {
+          "blind_id": "R2-M-03",
+          "strategy_id": "S08",
+          "comment": "以前赶着买，现在慢慢挑也行"
+        },
+        {
+          "blind_id": "R2-M-04",
+          "strategy_id": "S03",
+          "comment": "正想着要买，发现能直接加到购物车了"
+        },
+        {
+          "blind_id": "R2-M-05",
+          "strategy_id": "S04",
+          "comment": "不用老去问客服了，现在自己看就能知道"
+        },
+        {
+          "blind_id": "R2-M-06",
+          "strategy_id": "S02",
+          "comment": "这几天点进去都显示有库存，跟之前不太一样"
+        },
+        {
+          "blind_id": "R2-M-07",
+          "strategy_id": "S07",
+          "comment": "用习惯了，隔段时间会看看，最近倒是挺稳的"
+        },
+        {
+          "blind_id": "R2-M-08",
+          "strategy_id": "S09",
+          "comment": "听说了，那就不用特意跑了"
+        },
+        {
+          "blind_id": "R2-M-09",
+          "strategy_id": "S10",
+          "comment": "货架上摆得挺满的，随手拿了一罐"
+        },
+        {
+          "blind_id": "R2-M-10",
+          "strategy_id": "S01",
+          "comment": "居然有货了？有点意外"
+        }
+      ]
+    },
+    {
+      "round": "round_2",
+      "batch_label": "R2-R",
+      "arm": "B_shared_real_lines",
+      "arm_label": "B｜共享真人原句",
+      "items": [
+        {
+          "blind_id": "R2-R-01",
+          "strategy_id": "S07",
+          "comment": "用了挺久，偶尔想起来会看看，最近都挺正常的。"
+        },
+        {
+          "blind_id": "R2-R-02",
+          "strategy_id": "S02",
+          "comment": "这阵子每次点进去都有货，不用蹲点了。"
+        },
+        {
+          "blind_id": "R2-R-03",
+          "strategy_id": "S05",
+          "comment": "我觉得不用囤太多，现在挺稳的，喝完再买也不迟。"
+        },
+        {
+          "blind_id": "R2-R-04",
+          "strategy_id": "S03",
+          "comment": "正好剩最后一罐，打开一看能补上，挺巧的。"
+        },
+        {
+          "blind_id": "R2-R-05",
+          "strategy_id": "S04",
+          "comment": "以前总得来回看有没有货，现在省心多了。"
+        },
+        {
+          "blind_id": "R2-R-06",
+          "strategy_id": "S10",
+          "comment": "路过货架瞄到摆得挺满的。"
+        },
+        {
+          "blind_id": "R2-R-07",
+          "strategy_id": "S01",
+          "comment": "cool！"
+        },
+        {
+          "blind_id": "R2-R-08",
+          "strategy_id": "S06",
+          "comment": "是的！我刚看了一下，确实有货。"
+        },
+        {
+          "blind_id": "R2-R-09",
+          "strategy_id": "S09",
+          "comment": "真的假的，我赶紧问问。"
+        },
+        {
+          "blind_id": "R2-R-10",
+          "strategy_id": "S08",
+          "comment": "以前跑好几家才碰到有货，现在去一趟就能拿到。"
+        }
+      ]
+    },
+    {
+      "round": "round_3",
+      "batch_label": "R3-K",
+      "arm": "A_core_only",
+      "arm_label": "A｜无风格语料",
+      "items": [
+        {
+          "blind_id": "R3-K-01",
+          "strategy_id": "S07",
+          "comment": "喝了一年多，现在偶尔点进去看都在"
+        },
+        {
+          "blind_id": "R3-K-02",
+          "strategy_id": "S04",
+          "comment": "之前总得问客服有没有货，现在省事多了"
+        },
+        {
+          "blind_id": "R3-K-03",
+          "strategy_id": "S02",
+          "comment": "我看了好几回都能加，不像以前要蹲"
+        },
+        {
+          "blind_id": "R3-K-04",
+          "strategy_id": "S08",
+          "comment": "以前总怕断货，现在倒是随时能买到了"
+        },
+        {
+          "blind_id": "R3-K-05",
+          "strategy_id": "S09",
+          "comment": "听我妈说店里有了，那还挺方便的"
+        },
+        {
+          "blind_id": "R3-K-06",
+          "strategy_id": "S03",
+          "comment": "正想着还剩半罐，顺手就补了一罐"
+        },
+        {
+          "blind_id": "R3-K-07",
+          "strategy_id": "S05",
+          "comment": "不用囤太多吧，需要的时候再买也来得及"
+        },
+        {
+          "blind_id": "R3-K-08",
+          "strategy_id": "S01",
+          "comment": "噢，终于能加购物车了"
+        },
+        {
+          "blind_id": "R3-K-09",
+          "strategy_id": "S06",
+          "comment": "是呀，这会库存挺稳的，我刚看也有"
+        },
+        {
+          "blind_id": "R3-K-10",
+          "strategy_id": "S10",
+          "comment": "昨天逛超市随手拿了一罐，货架上摆得挺满"
+        }
+      ]
+    },
+    {
+      "round": "round_3",
+      "batch_label": "R3-M",
+      "arm": "B_shared_real_lines",
+      "arm_label": "B｜共享真人原句",
+      "items": [
+        {
+          "blind_id": "R3-M-01",
+          "strategy_id": "S02",
+          "comment": "这阵子点进去好几次都是可买状态，跟以前不太一样。"
+        },
+        {
+          "blind_id": "R3-M-02",
+          "strategy_id": "S09",
+          "comment": "听说了，那还挺好的。"
+        },
+        {
+          "blind_id": "R3-M-03",
+          "strategy_id": "S06",
+          "comment": "是的，我前天看也有货，不用急。"
+        },
+        {
+          "blind_id": "R3-M-04",
+          "strategy_id": "S04",
+          "comment": "不用老盯着看了，这阵子省心不少。"
+        },
+        {
+          "blind_id": "R3-M-05",
+          "strategy_id": "S07",
+          "comment": "用了快一年了，偶尔看看库存，这阵子挺稳的。"
+        },
+        {
+          "blind_id": "R3-M-06",
+          "strategy_id": "S10",
+          "comment": "昨天逛超市看到了，货架上挺多的。"
+        },
+        {
+          "blind_id": "R3-M-07",
+          "strategy_id": "S05",
+          "comment": "其实不用囤太多，需要的时候能买到就行。"
+        },
+        {
+          "blind_id": "R3-M-08",
+          "strategy_id": "S08",
+          "comment": "以前总怕买不到，现在倒是随便就能拿到。"
+        },
+        {
+          "blind_id": "R3-M-09",
+          "strategy_id": "S03",
+          "comment": "正好快见底了，顺手补了一罐。"
+        },
+        {
+          "blind_id": "R3-M-10",
+          "strategy_id": "S01",
+          "comment": "噢，有货了？"
+        }
+      ]
+    },
+    {
+      "round": "round_3",
+      "batch_label": "R3-R",
+      "arm": "C_surface_signatures",
+      "arm_label": "C｜共享纯句面特征",
+      "items": [
+        {
+          "blind_id": "R3-R-01",
+          "strategy_id": "S07",
+          "comment": "我偶尔看一眼，最近都能买到。"
+        },
+        {
+          "blind_id": "R3-R-02",
+          "strategy_id": "S02",
+          "comment": "这阵子看了好几回，库存一直挺稳的。"
+        },
+        {
+          "blind_id": "R3-R-03",
+          "strategy_id": "S01",
+          "comment": "终于有货了！"
+        },
+        {
+          "blind_id": "R3-R-04",
+          "strategy_id": "S06",
+          "comment": "是呢，我前两天看也还有。"
+        },
+        {
+          "blind_id": "R3-R-05",
+          "strategy_id": "S09",
+          "comment": "太好了！"
+        },
+        {
+          "blind_id": "R3-R-06",
+          "strategy_id": "S03",
+          "comment": "正好剩半罐，昨天补到一罐。"
+        },
+        {
+          "blind_id": "R3-R-07",
+          "strategy_id": "S04",
+          "comment": "以前总怕买不到，现在不用操心了。"
+        },
+        {
+          "blind_id": "R3-R-08",
+          "strategy_id": "S05",
+          "comment": "看到有货就行，不用囤太多。"
+        },
+        {
+          "blind_id": "R3-R-09",
+          "strategy_id": "S08",
+          "comment": "以前挺难买，现在容易多了。"
+        },
+        {
+          "blind_id": "R3-R-10",
+          "strategy_id": "S10",
+          "comment": "超市货架上摆得挺满的。"
+        }
+      ]
+    }
+  ]
+}

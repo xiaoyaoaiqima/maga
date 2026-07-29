@@ -1,0 +1,137 @@
+{
+  "raw_output": {
+    "items": [
+      {
+        "strategy_id": "S01",
+        "response_mode": "direct_reaction",
+        "life_entry": "线上随眼看到",
+        "comment": "cool！"
+      },
+      {
+        "strategy_id": "S02",
+        "response_mode": "stock_observation",
+        "life_entry": "线上连续几次看到可买",
+        "comment": "这阵子每次点进去都有货，不用蹲点了。"
+      },
+      {
+        "strategy_id": "S03",
+        "response_mode": "personal_replenish",
+        "life_entry": "家里快喝完时补到",
+        "comment": "正好剩最后一罐，打开一看能补上，挺巧的。"
+      },
+      {
+        "strategy_id": "S04",
+        "response_mode": "less_hassle",
+        "life_entry": "以前需要反复确认",
+        "comment": "以前总得来回看有没有货，现在省心多了。"
+      },
+      {
+        "strategy_id": "S05",
+        "response_mode": "no_need_to_stock",
+        "life_entry": "别人提到要多囤",
+        "comment": "我觉得不用囤太多，现在挺稳的，喝完再买也不迟。"
+      },
+      {
+        "strategy_id": "S06",
+        "response_mode": "casual_reply",
+        "life_entry": "回复别人说现在有货",
+        "comment": "是的！我刚看了一下，确实有货。"
+      },
+      {
+        "strategy_id": "S07",
+        "response_mode": "long_term_attention",
+        "life_entry": "长期使用会偶尔留意",
+        "comment": "用了挺久，偶尔想起来会看看，最近都挺正常的。"
+      },
+      {
+        "strategy_id": "S08",
+        "response_mode": "before_after",
+        "life_entry": "前后状态对比",
+        "comment": "以前跑好几家才碰到有货，现在去一趟就能拿到。"
+      },
+      {
+        "strategy_id": "S09",
+        "response_mode": "direct_reaction",
+        "life_entry": "家人或朋友带回消息",
+        "comment": "真的假的，我赶紧问问。"
+      },
+      {
+        "strategy_id": "S10",
+        "response_mode": "stock_observation",
+        "life_entry": "日常逛商超时看到",
+        "comment": "路过货架瞄到摆得挺满的。"
+      }
+    ]
+  },
+  "items": [
+    "cool！",
+    "这阵子每次点进去都有货，不用蹲点了。",
+    "正好剩最后一罐，打开一看能补上，挺巧的。",
+    "以前总得来回看有没有货，现在省心多了。",
+    "我觉得不用囤太多，现在挺稳的，喝完再买也不迟。",
+    "是的！我刚看了一下，确实有货。",
+    "用了挺久，偶尔想起来会看看，最近都挺正常的。",
+    "以前跑好几家才碰到有货，现在去一趟就能拿到。",
+    "真的假的，我赶紧问问。",
+    "路过货架瞄到摆得挺满的。"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 4.738,
+    "lengths": [
+      5,
+      18,
+      20,
+      19,
+      23,
+      15,
+      22,
+      22,
+      11,
+      12
+    ],
+    "han_lengths": [
+      0,
+      16,
+      17,
+      17,
+      20,
+      12,
+      19,
+      20,
+      9,
+      11
+    ],
+    "bands": [
+      "out_of_range",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "short",
+      "short"
+    ],
+    "band_counts": {
+      "short": 2,
+      "medium": 7,
+      "long": 0,
+      "out_of_range": 1
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1904,
+      "completion_tokens": 551,
+      "total_tokens": 2455,
+      "prompt_tokens_details": {
+        "cached_tokens": 1792
+      },
+      "prompt_cache_hit_tokens": 1792,
+      "prompt_cache_miss_tokens": 112
+    },
+    "run_no": 1
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "input_path": "/Users/luxifa/maga/outputs/a2_reiyu_delivery_inventory_20260723/A2礼遇_当前未交付库存_1050篇.csv",
+  "output_path": "/Users/luxifa/maga/tmp/a2_reiyu_delivery_inventory_20260723/available_1050_deterministic_audit.csv",
+  "total_count": 1050,
+  "direct_pool_count": 968,
+  "light_fix_count": 76,
+  "watch_count": 0,
+  "hold_out_count": 6
+}

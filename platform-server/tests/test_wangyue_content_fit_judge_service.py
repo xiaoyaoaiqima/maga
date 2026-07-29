@@ -98,5 +98,6 @@ async def test_content_fit_judge_passes_post_type_and_keeps_runtime_metadata(mon
     assert "目标帖子类型：复购长期使用" in calls[0]["user_prompt"]
     assert "计划卖点痛点组合：进阶保护力+容易中招" in calls[0]["user_prompt"]
     assert calls[0]["max_tokens"] == CONTENT_FIT_MAX_TOKENS == 800
+    assert calls[0]["response_format"] == {"type": "json_object"}
     assert result.runtime_metadata["usage"]["total_tokens"] == 21
     assert result.runtime_metadata["latency_ms"] == 87

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  applyPromptDebugTransfer,
   loadPromptDebugTransfer,
   savePromptDebugTransfer,
 } from '../prompt-transfer';
@@ -26,7 +27,7 @@ describe('prompt debug transfer', () => {
 
     const key = savePromptDebugTransfer(payload, storage);
 
-    expect(key).toMatch(/^content-agent-prompt-debug:/);
+    expect(key).toBe('content-agent-prompt-debug:active');
     expect(loadPromptDebugTransfer(key, storage)).toEqual(payload);
   });
 
@@ -39,5 +40,52 @@ describe('prompt debug transfer', () => {
     expect(
       loadPromptDebugTransfer('content-agent-prompt-debug:broken', storage),
     ).toBeNull();
+  });
+
+  it('applies the generation config to both comparison panels', () => {
+    const panels = [
+      {
+        max_tokens: 1500,
+        model_code: 'default-model',
+        prompt: '',
+        system_prompt: '',
+        temperature: 0.9,
+      },
+      {
+        max_tokens: 1500,
+        model_code: 'default-model',
+        prompt: '',
+        system_prompt: '',
+        temperature: 0.9,
+      },
+    ];
+
+    applyPromptDebugTransfer(
+      {
+        max_tokens: 256,
+        model_code: 'deepseek-v4-flash',
+        prompt: '完整生文 Prompt',
+        system_prompt: '系统要求',
+        temperature: 0.85,
+      },
+      panels,
+    );
+
+    expect(panels).toEqual([
+      {
+        max_tokens: 256,
+        model_code: 'deepseek-v4-flash',
+        prompt: '完整生文 Prompt',
+        system_prompt: '系统要求',
+        temperature: 0.85,
+      },
+      {
+        max_tokens: 256,
+        model_code: 'deepseek-v4-flash',
+        prompt: '完整生文 Prompt',
+        system_prompt: '系统要求',
+        temperature: 0.85,
+      },
+    ]);
   });
 });

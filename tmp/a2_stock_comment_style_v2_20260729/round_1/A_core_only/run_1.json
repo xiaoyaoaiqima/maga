@@ -1,0 +1,137 @@
+{
+  "raw_output": {
+    "items": [
+      {
+        "strategy_id": "S01",
+        "response_mode": "direct_reaction",
+        "life_entry": "线上随眼看到",
+        "comment": "嘿，还真有货了"
+      },
+      {
+        "strategy_id": "S02",
+        "response_mode": "stock_observation",
+        "life_entry": "线上连续几次看到可买",
+        "comment": "这阵子刷到好几次都能加购物车，库存应该挺稳的"
+      },
+      {
+        "strategy_id": "S03",
+        "response_mode": "personal_replenish",
+        "life_entry": "家里快喝完时补到",
+        "comment": "刚好剩小半罐，打开一看能买，补了一罐"
+      },
+      {
+        "strategy_id": "S04",
+        "response_mode": "less_hassle",
+        "life_entry": "以前需要反复确认",
+        "comment": "以前总得盯着看有没有货，现在省心多了"
+      },
+      {
+        "strategy_id": "S05",
+        "response_mode": "no_need_to_stock",
+        "life_entry": "别人提到要多囤",
+        "comment": "看到有人说要多囤点，我倒觉得不用，需要的时候买就行"
+      },
+      {
+        "strategy_id": "S06",
+        "response_mode": "casual_reply",
+        "life_entry": "回复别人说现在有货",
+        "comment": "是吧，我刚看也是有的，不用着急"
+      },
+      {
+        "strategy_id": "S07",
+        "response_mode": "long_term_attention",
+        "life_entry": "长期使用会偶尔留意",
+        "comment": "用了挺久，时不时会看下库存，这阵子一直有"
+      },
+      {
+        "strategy_id": "S08",
+        "response_mode": "before_after",
+        "life_entry": "前后状态对比",
+        "comment": "以前想买经常没货，现在好多了，基本都能买到"
+      },
+      {
+        "strategy_id": "S09",
+        "response_mode": "direct_reaction",
+        "life_entry": "家人或朋友带回消息",
+        "comment": "我姐刚跟我说现在有货，那还挺好的"
+      },
+      {
+        "strategy_id": "S10",
+        "response_mode": "stock_observation",
+        "life_entry": "日常逛商超时看到",
+        "comment": "昨天去超市看到架子上摆得挺满的"
+      }
+    ]
+  },
+  "items": [
+    "嘿，还真有货了",
+    "这阵子刷到好几次都能加购物车，库存应该挺稳的",
+    "刚好剩小半罐，打开一看能买，补了一罐",
+    "以前总得盯着看有没有货，现在省心多了",
+    "看到有人说要多囤点，我倒觉得不用，需要的时候买就行",
+    "是吧，我刚看也是有的，不用着急",
+    "用了挺久，时不时会看下库存，这阵子一直有",
+    "以前想买经常没货，现在好多了，基本都能买到",
+    "我姐刚跟我说现在有货，那还挺好的",
+    "昨天去超市看到架子上摆得挺满的"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 5.006,
+    "lengths": [
+      7,
+      22,
+      18,
+      18,
+      25,
+      15,
+      20,
+      21,
+      16,
+      15
+    ],
+    "han_lengths": [
+      6,
+      21,
+      16,
+      17,
+      23,
+      13,
+      18,
+      19,
+      15,
+      15
+    ],
+    "bands": [
+      "short",
+      "medium",
+      "medium",
+      "medium",
+      "long",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 1,
+      "medium": 8,
+      "long": 1,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1690,
+      "completion_tokens": 558,
+      "total_tokens": 2248,
+      "prompt_tokens_details": {
+        "cached_tokens": 1152
+      },
+      "prompt_cache_hit_tokens": 1152,
+      "prompt_cache_miss_tokens": 538
+    },
+    "run_no": 1
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "raw_output": {
+    "items": [
+      {
+        "strategy_id": "S01",
+        "response_mode": "direct_reaction",
+        "life_entry": "线上随眼看到",
+        "comment": "哎居然有货了，难得啊"
+      },
+      {
+        "strategy_id": "S02",
+        "response_mode": "stock_observation",
+        "life_entry": "线上连续几次看到可买",
+        "comment": "这阵子看了几回，库存都挺稳的，不用赶着抢"
+      },
+      {
+        "strategy_id": "S03",
+        "response_mode": "personal_replenish",
+        "life_entry": "家里快喝完时补到",
+        "comment": "正好剩下最后一点，一看有货就补了一罐"
+      },
+      {
+        "strategy_id": "S04",
+        "response_mode": "less_hassle",
+        "life_entry": "以前需要反复确认",
+        "comment": "之前老得盯着问，现在省心多了，看到有就添"
+      },
+      {
+        "strategy_id": "S05",
+        "response_mode": "no_need_to_stock",
+        "life_entry": "别人提到要多囤",
+        "comment": "其实不用囤太多，随喝随买就行，现在好买"
+      },
+      {
+        "strategy_id": "S06",
+        "response_mode": "casual_reply",
+        "life_entry": "回复别人说现在有货",
+        "comment": "对对，我昨天也看到了，还想着要不要再拿一罐"
+      },
+      {
+        "strategy_id": "S07",
+        "response_mode": "long_term_attention",
+        "life_entry": "长期使用会偶尔留意",
+        "comment": "一直用这个，路过时就扫一眼，最近确实都有"
+      },
+      {
+        "strategy_id": "S08",
+        "response_mode": "before_after",
+        "life_entry": "前后状态对比",
+        "comment": "以前想买还得掐点，现在随便就能拿到"
+      },
+      {
+        "strategy_id": "S09",
+        "response_mode": "direct_reaction",
+        "life_entry": "家人或朋友带回消息",
+        "comment": "真的？那太好了，不用再到处找"
+      },
+      {
+        "strategy_id": "S10",
+        "response_mode": "stock_observation",
+        "life_entry": "日常逛商超时看到",
+        "comment": "今天逛超市看到货架上摆得挺满的"
+      }
+    ]
+  },
+  "items": [
+    "哎居然有货了，难得啊",
+    "这阵子看了几回，库存都挺稳的，不用赶着抢",
+    "正好剩下最后一点，一看有货就补了一罐",
+    "之前老得盯着问，现在省心多了，看到有就添",
+    "其实不用囤太多，随喝随买就行，现在好买",
+    "对对，我昨天也看到了，还想着要不要再拿一罐",
+    "一直用这个，路过时就扫一眼，最近确实都有",
+    "以前想买还得掐点，现在随便就能拿到",
+    "真的？那太好了，不用再到处找",
+    "今天逛超市看到货架上摆得挺满的"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 4.23,
+    "lengths": [
+      10,
+      20,
+      18,
+      20,
+      19,
+      21,
+      20,
+      17,
+      14,
+      15
+    ],
+    "han_lengths": [
+      9,
+      18,
+      17,
+      18,
+      17,
+      19,
+      18,
+      16,
+      12,
+      15
+    ],
+    "bands": [
+      "short",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 1,
+      "medium": 9,
+      "long": 0,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1903,
+      "completion_tokens": 405,
+      "total_tokens": 2308,
+      "prompt_tokens_details": {
+        "cached_tokens": 1152
+      },
+      "prompt_cache_hit_tokens": 1152,
+      "prompt_cache_miss_tokens": 751
+    },
+    "run_no": 1
+  }
+}

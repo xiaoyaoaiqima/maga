@@ -1,0 +1,185 @@
+{
+  "seed": 20260729,
+  "items": [
+    {
+      "blind_id": "X01",
+      "arm": "C_texture",
+      "strategy_id": "S04",
+      "comment": "以前老得算着时间看，现在省心多了"
+    },
+    {
+      "blind_id": "X02",
+      "arm": "C_texture",
+      "strategy_id": "S06",
+      "comment": "是的是的，我前几天也看到了，挺足的"
+    },
+    {
+      "blind_id": "X03",
+      "arm": "A_free",
+      "strategy_id": "S02",
+      "comment": "这几次刷到都有货，看来确实稳下来了。"
+    },
+    {
+      "blind_id": "X04",
+      "arm": "C_texture",
+      "strategy_id": "S10",
+      "comment": "今天去超市扫了一眼，货架上摆着呢"
+    },
+    {
+      "blind_id": "X05",
+      "arm": "A_free",
+      "strategy_id": "S01",
+      "comment": "哟，有货了啊，挺难得。"
+    },
+    {
+      "blind_id": "X06",
+      "arm": "A_free",
+      "strategy_id": "S03",
+      "comment": "刚好剩个底儿，手边就补上了，没断顿。"
+    },
+    {
+      "blind_id": "X07",
+      "arm": "B_full_examples",
+      "strategy_id": "S08",
+      "comment": "以前想买还得掐点，现在随便就能拿到"
+    },
+    {
+      "blind_id": "X08",
+      "arm": "A_free",
+      "strategy_id": "S04",
+      "comment": "以前总怕买不着得来回看，现在省心多了。"
+    },
+    {
+      "blind_id": "X09",
+      "arm": "B_full_examples",
+      "strategy_id": "S01",
+      "comment": "哎居然有货了，难得啊"
+    },
+    {
+      "blind_id": "X10",
+      "arm": "B_full_examples",
+      "strategy_id": "S02",
+      "comment": "这阵子看了几回，库存都挺稳的，不用赶着抢"
+    },
+    {
+      "blind_id": "X11",
+      "arm": "C_texture",
+      "strategy_id": "S05",
+      "comment": "我倒是没多囤，反正随时能买到，吃完再买呗"
+    },
+    {
+      "blind_id": "X12",
+      "arm": "B_full_examples",
+      "strategy_id": "S10",
+      "comment": "今天逛超市看到货架上摆得挺满的"
+    },
+    {
+      "blind_id": "X13",
+      "arm": "B_full_examples",
+      "strategy_id": "S09",
+      "comment": "真的？那太好了，不用再到处找"
+    },
+    {
+      "blind_id": "X14",
+      "arm": "B_full_examples",
+      "strategy_id": "S05",
+      "comment": "其实不用囤太多，随喝随买就行，现在好买"
+    },
+    {
+      "blind_id": "X15",
+      "arm": "C_texture",
+      "strategy_id": "S09",
+      "comment": "听邻居说店里有了，我还愣了下"
+    },
+    {
+      "blind_id": "X16",
+      "arm": "A_free",
+      "strategy_id": "S05",
+      "comment": "不用囤太多吧，现在好买，喝完再说呗。"
+    },
+    {
+      "blind_id": "X17",
+      "arm": "B_full_examples",
+      "strategy_id": "S07",
+      "comment": "一直用这个，路过时就扫一眼，最近确实都有"
+    },
+    {
+      "blind_id": "X18",
+      "arm": "A_free",
+      "strategy_id": "S09",
+      "comment": "朋友说看到有货了，那感情好。"
+    },
+    {
+      "blind_id": "X19",
+      "arm": "C_texture",
+      "strategy_id": "S08",
+      "comment": "之前找过好几趟，这阵子倒是常能碰到了"
+    },
+    {
+      "blind_id": "X20",
+      "arm": "C_texture",
+      "strategy_id": "S01",
+      "comment": "哟，居然有货了"
+    },
+    {
+      "blind_id": "X21",
+      "arm": "A_free",
+      "strategy_id": "S06",
+      "comment": "对对对，我前两天看也正常卖呢，不急。"
+    },
+    {
+      "blind_id": "X22",
+      "arm": "A_free",
+      "strategy_id": "S08",
+      "comment": "以前得抢，现在随便啥时候都能买到，舒服。"
+    },
+    {
+      "blind_id": "X23",
+      "arm": "A_free",
+      "strategy_id": "S10",
+      "comment": "超市货架上摆得挺满，看来供应跟上了。"
+    },
+    {
+      "blind_id": "X24",
+      "arm": "A_free",
+      "strategy_id": "S07",
+      "comment": "一直用这个，隔段时间看一眼库存在，心里有数。"
+    },
+    {
+      "blind_id": "X25",
+      "arm": "C_texture",
+      "strategy_id": "S03",
+      "comment": "正说还剩半罐呢，刚好补上一罐"
+    },
+    {
+      "blind_id": "X26",
+      "arm": "B_full_examples",
+      "strategy_id": "S03",
+      "comment": "正好剩下最后一点，一看有货就补了一罐"
+    },
+    {
+      "blind_id": "X27",
+      "arm": "B_full_examples",
+      "strategy_id": "S06",
+      "comment": "对对，我昨天也看到了，还想着要不要再拿一罐"
+    },
+    {
+      "blind_id": "X28",
+      "arm": "C_texture",
+      "strategy_id": "S02",
+      "comment": "最近几次点进去都能加，稳稳的"
+    },
+    {
+      "blind_id": "X29",
+      "arm": "B_full_examples",
+      "strategy_id": "S04",
+      "comment": "之前老得盯着问，现在省心多了，看到有就添"
+    },
+    {
+      "blind_id": "X30",
+      "arm": "C_texture",
+      "strategy_id": "S07",
+      "comment": "喝了快一年，时不时看一眼，最近确实好买"
+    }
+  ]
+}

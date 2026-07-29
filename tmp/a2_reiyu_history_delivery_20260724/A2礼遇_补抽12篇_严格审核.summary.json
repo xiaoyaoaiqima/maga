@@ -1,0 +1,9 @@
+{
+  "input_path": "/Users/luxifa/maga/tmp/a2_reiyu_history_delivery_20260724/A2礼遇_补抽12篇.csv",
+  "output_path": "/Users/luxifa/maga/tmp/a2_reiyu_history_delivery_20260724/A2礼遇_补抽12篇_严格审核.csv",
+  "total_count": 143,
+  "direct_pool_count": 127,
+  "light_fix_count": 0,
+  "watch_count": 15,
+  "hold_out_count": 1
+}

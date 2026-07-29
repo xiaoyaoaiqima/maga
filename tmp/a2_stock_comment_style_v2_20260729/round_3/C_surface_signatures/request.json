@@ -1,0 +1,13 @@
+{
+  "endpoint": "https://api.deepseek.com/v1/chat/completions",
+  "model": "deepseek-v4-flash",
+  "system_message": "你是严格遵守批次约束的中文社区评论写手。",
+  "temperature": 0.9,
+  "max_tokens": 1200,
+  "response_format": {
+    "type": "json_object"
+  },
+  "thinking": {
+    "type": "disabled"
+  }
+}

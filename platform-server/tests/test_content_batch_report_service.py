@@ -109,6 +109,195 @@ def test_summary_separates_unreviewed_items_from_redline_failures():
     assert summary.audit_skipped_count == 1
 
 
+def _issue_pattern_item(
+    item_no: int,
+    *,
+    source_row_no: int,
+    issue_code: str | None = None,
+    atomic_item_id: str | None = None,
+    human_review: dict | None = None,
+) -> ContentBatchReportItem:
+    quality = {}
+    if issue_code:
+        guard = {"pass": False, "issue_code": issue_code}
+        quality = {
+            "a2_reiyu_text_guard": guard,
+            "review_report": {"a2_reiyu_text_guard": dict(guard)},
+        }
+    if human_review:
+        quality["human_review"] = human_review
+    variation_slots = []
+    if atomic_item_id:
+        variation_slots.append(
+            {
+                "slot_code": "brand_recognition",
+                "item_id": atomic_item_id,
+            }
+        )
+    return ContentBatchReportItem(
+        item_id=item_no,
+        item_no=item_no,
+        status="generated",
+        quality=quality,
+        generation_snapshot={
+            "business_rule": {
+                "source_row_no": source_row_no,
+                "variation_slots": variation_slots,
+            }
+        },
+    )
+
+
+def test_issue_pattern_stats_deduplicates_per_item_and_promotes_cross_rule_issue():
+    service = ContentBatchReportService(db=None)
+    items = [
+        _issue_pattern_item(
+            item_no,
+            source_row_no=item_no,
+            issue_code="positive_expression_stacking",
+            atomic_item_id=f"brand_feeling_{item_no:03d}",
+        )
+        for item_no in range(1, 5)
+    ]
+    items.extend(
+        _issue_pattern_item(item_no, source_row_no=item_no)
+        for item_no in range(5, 51)
+    )
+
+    stats = service._summary(items).issue_pattern_stats
+    pattern = stats["patterns"][0]
+
+    assert pattern["issue_code"] == "positive_expression_stacking"
+    assert pattern["count"] == 4
+    assert pattern["rate"] == 0.08
+    assert pattern["source_row_nos"] == [1, 2, 3, 4]
+    assert pattern["origin_counts"] == {"machine_guard": 4}
+    assert pattern["suggested_layer"] == "generation_prompt"
+    assert stats["prompt_candidate_issue_codes"] == ["positive_expression_stacking"]
+
+
+def test_issue_pattern_stats_prefers_concentrated_atomic_corpus():
+    service = ContentBatchReportService(db=None)
+    items = [
+        _issue_pattern_item(
+            item_no,
+            source_row_no=item_no,
+            issue_code="corporate_summary_tone",
+            atomic_item_id="brand_feeling_006",
+        )
+        for item_no in range(1, 4)
+    ]
+
+    pattern = service._summary(items).issue_pattern_stats["patterns"][0]
+
+    assert pattern["count"] == 3
+    assert pattern["atomic_ref_counts"][0] == {
+        "slot_code": "brand_recognition",
+        "item_id": "brand_feeling_006",
+        "count": 3,
+        "rate": 1.0,
+    }
+    assert pattern["suggested_layer"] == "source_corpus"
+
+
+def test_issue_pattern_stats_includes_human_issue_codes_and_explicit_layer():
+    service = ContentBatchReportService(db=None)
+    item = _issue_pattern_item(
+        1,
+        source_row_no=9,
+        human_review={
+            "action": "request_revision",
+            "issue_codes": ["unnatural_activity_transition", "none"],
+            "responsibility_layer": "source_corpus",
+        },
+    )
+
+    pattern = service._summary([item]).issue_pattern_stats["patterns"][0]
+
+    assert pattern["issue_code"] == "unnatural_activity_transition"
+    assert pattern["origin_counts"] == {"human_review": 1}
+    assert pattern["responsibility_layer_counts"] == {"source_corpus": 1}
+    assert pattern["suggested_layer"] == "source_corpus"
+
+
+def test_issue_pattern_stats_keeps_low_frequency_issue_in_audit():
+    service = ContentBatchReportService(db=None)
+    items = [
+        _issue_pattern_item(1, source_row_no=1, issue_code="old_can_eligibility_error"),
+        *[
+            _issue_pattern_item(item_no, source_row_no=item_no)
+            for item_no in range(2, 21)
+        ],
+    ]
+
+    pattern = service._summary(items).issue_pattern_stats["patterns"][0]
+
+    assert pattern["count"] == 1
+    assert pattern["suggested_layer"] == "audit"
+
+
+def test_issue_pattern_stats_routes_frequent_machine_false_positive_to_allowlist():
+    service = ContentBatchReportService(db=None)
+    items = [
+        _issue_pattern_item(
+            item_no,
+            source_row_no=item_no,
+            issue_code="contextual_negative_term",
+            human_review=(
+                {
+                    "action": "approve",
+                    "review_status": "approved",
+                    "issue_codes": ["contextual_negative_term"],
+                }
+                if item_no == 1
+                else None
+            ),
+        )
+        for item_no in range(1, 4)
+    ]
+
+    pattern = service._summary(items).issue_pattern_stats["patterns"][0]
+
+    assert pattern["count"] == 3
+    assert pattern["origin_counts"] == {"human_review": 1, "machine_guard": 3}
+    assert pattern["suggested_layer"] == "audit_allowlist"
+
+
+def test_issue_pattern_context_supports_default_report_without_leaking_item_field():
+    service = ContentBatchReportService(db=None)
+    stored_item = ContentBatchItem(
+        id=1,
+        batch_id=1,
+        item_no=1,
+        status="generated",
+        title="活动分享",
+        body="正文",
+        plan_json={
+            "source_row_no": 12,
+            "variation_slots": [
+                {
+                    "slot_code": "brand_recognition",
+                    "item_id": "brand_feeling_006",
+                }
+            ],
+        },
+        quality_json={
+            "future_business_guard": {
+                "pass": False,
+                "issue_code": "corporate_summary_tone",
+            }
+        },
+    )
+
+    report_item = service._report_item(stored_item, [], include_details=False)
+    pattern = service._summary([report_item]).issue_pattern_stats["patterns"][0]
+
+    assert report_item.generation_snapshot is None
+    assert "issue_pattern_context" not in report_item.model_dump(mode="json")
+    assert pattern["source_row_nos"] == [12]
+    assert pattern["atomic_ref_counts"][0]["item_id"] == "brand_feeling_006"
+
+
 def test_report_uses_contextual_forbidden_review_instead_of_literal_rescan():
     service = ContentBatchReportService(db=None)
 
@@ -197,6 +386,56 @@ def test_article_pool_export_blocks_a2_old_can_guard_failure():
                 "severity": "hard",
                 "business_usability_tier": "hold_out",
                 "issue_code": "old_can_eligibility_error",
+            },
+        },
+    )
+
+    assert _article_pool_item_exportable(item) is False
+
+
+def test_article_pool_export_blocks_a2_batch_detection_guard_failure():
+    item = ContentBatchReportItem(
+        item_id=1,
+        item_no=1,
+        status="generated",
+        title="批次检测",
+        body="每批都有检测，每罐都查。",
+        hard_pass=True,
+        rewrite_required=False,
+        quality={
+            "hard_pass": True,
+            "review_report": {"rewrite_required": False},
+            "a2_reiyu_batch_detection_guard": {
+                "pass": False,
+                "rewrite_required": False,
+                "severity": "hard",
+                "business_usability_tier": "hold_out",
+                "issue_code": "batch_detection_fact_error",
+            },
+        },
+    )
+
+    assert _article_pool_item_exportable(item) is False
+
+
+def test_article_pool_export_blocks_a2_text_guard_failure() -> None:
+    item = ContentBatchReportItem(
+        item_id=1,
+        item_no=1,
+        status="generated",
+        title="攒罐换来的自行车",
+        body="集6罐可以换自行车。",
+        hard_pass=True,
+        rewrite_required=False,
+        quality={
+            "hard_pass": True,
+            "review_report": {"rewrite_required": False},
+            "a2_reiyu_text_guard": {
+                "pass": False,
+                "rewrite_required": False,
+                "severity": "hard",
+                "business_usability_tier": "hold_out",
+                "issue_code": "fabricated_reward_experience",
             },
         },
     )

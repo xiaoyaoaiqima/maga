@@ -1,0 +1,96 @@
+[
+  {
+    "count": 10,
+    "latency_s": 2.505,
+    "lengths": [
+      8,
+      10,
+      22,
+      10,
+      18,
+      14,
+      25,
+      10,
+      27,
+      13
+    ],
+    "bands": [
+      "short",
+      "short",
+      "medium",
+      "short",
+      "medium",
+      "medium",
+      "long",
+      "short",
+      "long",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 4,
+      "medium": 4,
+      "long": 2,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1506,
+      "completion_tokens": 145,
+      "total_tokens": 1651,
+      "prompt_tokens_details": {
+        "cached_tokens": 1024
+      },
+      "prompt_cache_hit_tokens": 1024,
+      "prompt_cache_miss_tokens": 482
+    },
+    "run_no": 1
+  },
+  {
+    "count": 10,
+    "latency_s": 2.53,
+    "lengths": [
+      8,
+      11,
+      23,
+      13,
+      23,
+      15,
+      27,
+      10,
+      30,
+      16
+    ],
+    "bands": [
+      "short",
+      "short",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "long",
+      "short",
+      "long",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 3,
+      "medium": 5,
+      "long": 2,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1506,
+      "completion_tokens": 154,
+      "total_tokens": 1660,
+      "prompt_tokens_details": {
+        "cached_tokens": 1408
+      },
+      "prompt_cache_hit_tokens": 1408,
+      "prompt_cache_miss_tokens": 98
+    },
+    "run_no": 2
+  }
+]

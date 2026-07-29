@@ -2,7 +2,7 @@
   "dataset_code": "a2_reiyu_review_gold_v1",
   "slice": "activity_mechanism_v1",
   "review_status": "approved",
-  "approved_date": "2026-07-20",
+  "approved_date": "2026-07-24",
   "description": "a2 礼遇活动人工确认的集罐、积分、扫码和奖品归属边界。",
   "labels": ["pass", "light_fix", "reject"],
   "label_semantics": {
@@ -20,12 +20,13 @@
     "活动开始前购买或家中原有的旧罐不能参加本次集罐活动；‘家里正好存了几个罐子’‘家里刚囤了一箱，娃催我扫码’属于隐含旧罐资格错误。",
     "‘正好要补货’‘又该囤货’只表示未来购买意向；‘活动期间买完后扫罐码累计’表示活动期内新购，均不属于旧罐资格错误。只有已经在家中的库存与本次集罐、扫码或兑换发生连接时才判错。",
     "只写‘奶粉喝完了把罐子存着’但没有明确说活动前旧罐可参加时，不按旧罐硬错处理，标为 light_fix，改成直接说参加集罐。",
-    "没有素材提供中奖或兑换经历时，不能写自己已经中奖、已经兑换、已经拿到奖品或孩子已经拿到兑换实物。",
+    "已经领到小听、老客回归礼、会员权益或完成确定性集罐兑换可以写；不能自称已经抽中或拿到抽奖奖品。小听粉属于老客回归礼；全文没有老客身份时不能泛化成所有会员都能领，但前文已经写明家里一直喝、老粉或老用户时，后文说‘还能领小听粉’可以通过，不要求重复写老客资格。",
     "同篇可以同时写抽奖和集罐；明确写清各自奖品归属可以放行。",
     "先列出抽奖、集罐等玩法，再统一罗列活动奖品也可以放行；只要没有把某个奖品明确归到错误机制，就不要求逐项拆分归属。",
     "写完正确档位后，可以继续泛提其他档位奖品；只有句式明确暗示同一档位还会额外送其他档位奖品时，才标为轻修或错误。",
     "6罐换自行车后用‘小车车’口语指代这辆自行车可以放行。",
-    "奶粉使用‘吃’‘吃完’等口语表达允许，不作为审核问题。"
+    "奶粉使用‘吃’‘吃完’等口语表达允许，不作为审核问题。",
+    "检测语境里的‘扫罐码、扫码能看到检测信息’按扫罐底码查询理解，可以放行；只有明确把罐底码写成抽奖、集罐、兑换或中奖入口才是机制错误。"
   ],
   "items": [
     {
@@ -151,14 +152,14 @@
       }
     },
     {
-      "title": "虚构已经拿到集罐奖品",
+      "title": "已经拿到集罐奖品",
       "content": "集3罐能换小车车，娃拿到小车可高兴了。",
       "meta": {
         "case_code": "A2RY-AM-012",
-        "expected_label": "reject",
-        "issue_code": "fabricated_reward_experience",
-        "reason": "本篇素材没有提供已经兑换或拿到奖品的经历，却写孩子已经拿到兑换实物。",
-        "source": "user_confirmed_backup_batch_review"
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "集罐兑换是确定性权益，可以写已经完成兑换或拿到实物。",
+        "source": "user_confirmed_deterministic_reward_receipt"
       }
     },
     {
@@ -237,6 +238,62 @@
         "issue_code": "none",
         "reason": "补货是未来购买意向，且明确说明活动期间购买后累计，不涉及活动前旧罐。",
         "source": "user_confirmed_old_can_review"
+      }
+    },
+    {
+      "title": "扫罐码查询检测信息",
+      "content": "a2至初现在每批都有检测，扫罐码就能看到信息。",
+      "meta": {
+        "case_code": "A2RY-AM-020",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "检测语境中的扫罐码按扫罐底码查询理解，表达成立。",
+        "source": "user_confirmed_scan_code_detection_boundary"
+      }
+    },
+    {
+      "title": "自称抽中抽奖奖品",
+      "content": "这次抽中了新西兰旅游大奖，太惊喜了。",
+      "meta": {
+        "case_code": "A2RY-AM-021",
+        "expected_label": "reject",
+        "issue_code": "fabricated_reward_experience",
+        "reason": "抽奖可以介绍奖品，但不能自称已经抽中或拿到抽奖奖品。",
+        "source": "user_confirmed_lottery_win_boundary"
+      }
+    },
+    {
+      "title": "标题省略老客回归资格",
+      "content": "会员升级送小听粉",
+      "meta": {
+        "case_code": "A2RY-AM-022",
+        "expected_label": "light_fix",
+        "issue_code": "activity_mechanism_error",
+        "reason": "小听粉属于老客回归礼，标题省略老客资格后容易被理解为所有会员都能领取。",
+        "minimal_fix": "改为‘老客回归礼送小听粉’。",
+        "source": "batch_834_human_review"
+      }
+    },
+    {
+      "title": "多重福利素材下虚构具体福利",
+      "content": "多重福利一起上，又是积分翻倍又是专属赠品。",
+      "meta": {
+        "case_code": "A2RY-AM-023",
+        "expected_label": "reject",
+        "issue_code": "fabricated_activity_benefit",
+        "reason": "本篇素材只概括多重福利，没有提供积分翻倍或专属赠品，正文自行补出了未确认福利。",
+        "source": "batch_844_human_review"
+      }
+    },
+    {
+      "title": "上下文已经表明老客身份",
+      "content": "家里一直喝a2至初，活动肯定要参加，居然还能领小听粉，挺实在的。",
+      "meta": {
+        "case_code": "A2RY-AM-024",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "前文已经用长期饮用事实表明老客身份，后文无需重复写‘老客回归礼’。",
+        "source": "batch_20260724_human_recalibration"
       }
     }
   ]

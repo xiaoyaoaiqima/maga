@@ -417,7 +417,6 @@ WANGYUE_GROWTH_NUTRITION_DRIFT_PHRASES = (
     "更结实",
     "长得好",
     "一步搞定",
-    "一罐搞定",
     "一罐到位",
     "一次顾好",
     "一次性顾好",
@@ -737,15 +736,10 @@ WANGYUE_SENSORY_EXPERIENCE_PHRASES = (
 
 WANGYUE_ROW2_EYE_BRAIN_DRIFT_PHRASES = (
     "叶黄素",
-    "护眼",
     "视力",
     "近视",
     "眼睛营养",
     "眼睛发育",
-    "眼睛酸",
-    "眼睛不酸了",
-    "眼睛不酸",
-    "揉眼睛",
     "眼睛得跟上",
     "眼睛也不能落下",
     "脑子不够用",
@@ -1201,6 +1195,12 @@ ADULT_SELF_DRINKING_PHRASES = (
 )
 
 CHILD_SELF_BREWING_PHRASES = (
+    "每天主动要喝一杯",
+    "每天主动要喝",
+    "主动要喝一杯",
+    "主动要喝奶",
+    "催我泡奶",
+    "催我冲奶",
     "每天主动要泡",
     "主动去泡奶喝",
     "自己主动冲奶",
@@ -1950,11 +1950,7 @@ def review_product_experience_phrase(
     hard_risk_hits = _hard_risk_hits(text, is_wangyue=is_wangyue)
     adult_self_drinking_hits = _hits_prefer_longer(text, ADULT_SELF_DRINKING_PHRASES)
     formula_dry_powder_ingestion_hits = _formula_dry_powder_ingestion_hits(text)
-    ingredient_benefit_mismatch_hits = (
-        _wangyue_planned_selling_point_effect_mismatch_hits(text, plan)
-        if is_wangyue_article_rules
-        else []
-    )
+    ingredient_benefit_mismatch_hits: list[str] = []
     formula_usage_form_hits = _wangyue_formula_usage_form_hits(text) if is_wangyue else []
     wangyue_no_rewrite_block_hits = (
         _wangyue_no_rewrite_block_hits(title or "", body_text) if is_wangyue else []
@@ -3121,57 +3117,6 @@ def _wangyue_ingredient_benefit_mismatch_hits(text: str) -> list[str]:
     return ordered_hits
 
 
-def _wangyue_planned_selling_point_effect_mismatch_hits(
-    text: str,
-    plan: dict[str, Any],
-) -> list[str]:
-    """Block only when a protection-only plan is replaced by an off-lane effect."""
-    selling_group = str(plan.get("selling_painpoint_group") or "")
-    if not selling_group:
-        selling_group = str(plan.get("business_rule") or "")
-    if "进阶保护力" not in selling_group or "容易中招" not in selling_group:
-        return []
-
-    value = str(text or "")
-    product_basis_terms = ("旺玥", "皇家美素佳儿", "乳铁蛋白", "免疫球蛋白", "HMO")
-    if not any(term in value for term in product_basis_terms):
-        return []
-
-    protection_result_terms = (
-        "保护力",
-        "少中招",
-        "容易中招",
-        "小状况少",
-        "状态稳",
-        "防护",
-        "自护力",
-    )
-    if any(term in value for term in protection_result_terms):
-        return []
-
-    off_lane_effect_terms = (
-        "揉眼",
-        "多读",
-        "看书",
-        "绘本",
-        "拼图",
-        "专注",
-        "注意力",
-        "用眼",
-        "用脑",
-        "精力",
-        "精神头",
-        "喊累",
-        "不蔫",
-        "有劲",
-        "体力",
-        "活力",
-    )
-    sentences = [part.strip() for part in re.split(r"[。！？!?；;\n]", value) if part.strip()]
-    hits = [sentence for sentence in sentences if any(term in sentence for term in off_lane_effect_terms)]
-    return _merge_hits(hits)[:2]
-
-
 def _hard_risk_hits(text: str, *, is_wangyue: bool = False) -> list[str]:
     hits = _hits(text, HARD_RISK_PHRASES)
     if is_wangyue:
@@ -4156,22 +4101,7 @@ def _wangyue_eye_health_product_link_hits(text: str) -> list[str]:
         "奶香",
         "粉质",
     )
-    eye_health_terms = (
-        "近视",
-        "视力",
-        "护眼",
-        "用眼过渡",
-        "用眼过度",
-        "眼睛有点累",
-        "眼睛累",
-        "眼睛酸",
-        "眼睛不酸了",
-        "眼睛不酸",
-        "揉眼睛",
-        "眼睛都快冒星星",
-        "眼睛还亮亮",
-        "眼睛亮亮",
-    )
+    eye_health_terms = ("近视", "视力")
     hits: list[str] = []
     for sentence in sentences:
         if not any(marker in sentence for marker in product_markers):

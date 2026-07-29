@@ -1,0 +1,137 @@
+{
+  "raw_output": {
+    "items": [
+      {
+        "strategy_id": "S01",
+        "response_mode": "direct_reaction",
+        "life_entry": "线上随眼看到",
+        "comment": "噢，有货了？"
+      },
+      {
+        "strategy_id": "S02",
+        "response_mode": "stock_observation",
+        "life_entry": "线上连续几次看到可买",
+        "comment": "这阵子点进去好几次都是可买状态，跟以前不太一样。"
+      },
+      {
+        "strategy_id": "S03",
+        "response_mode": "personal_replenish",
+        "life_entry": "家里快喝完时补到",
+        "comment": "正好快见底了，顺手补了一罐。"
+      },
+      {
+        "strategy_id": "S04",
+        "response_mode": "less_hassle",
+        "life_entry": "以前需要反复确认",
+        "comment": "不用老盯着看了，这阵子省心不少。"
+      },
+      {
+        "strategy_id": "S05",
+        "response_mode": "no_need_to_stock",
+        "life_entry": "别人提到要多囤",
+        "comment": "其实不用囤太多，需要的时候能买到就行。"
+      },
+      {
+        "strategy_id": "S06",
+        "response_mode": "casual_reply",
+        "life_entry": "回复别人说现在有货",
+        "comment": "是的，我前天看也有货，不用急。"
+      },
+      {
+        "strategy_id": "S07",
+        "response_mode": "long_term_attention",
+        "life_entry": "长期使用会偶尔留意",
+        "comment": "用了快一年了，偶尔看看库存，这阵子挺稳的。"
+      },
+      {
+        "strategy_id": "S08",
+        "response_mode": "before_after",
+        "life_entry": "前后状态对比",
+        "comment": "以前总怕买不到，现在倒是随便就能拿到。"
+      },
+      {
+        "strategy_id": "S09",
+        "response_mode": "direct_reaction",
+        "life_entry": "家人或朋友带回消息",
+        "comment": "听说了，那还挺好的。"
+      },
+      {
+        "strategy_id": "S10",
+        "response_mode": "stock_observation",
+        "life_entry": "日常逛商超时看到",
+        "comment": "昨天逛超市看到了，货架上挺多的。"
+      }
+    ]
+  },
+  "items": [
+    "噢，有货了？",
+    "这阵子点进去好几次都是可买状态，跟以前不太一样。",
+    "正好快见底了，顺手补了一罐。",
+    "不用老盯着看了，这阵子省心不少。",
+    "其实不用囤太多，需要的时候能买到就行。",
+    "是的，我前天看也有货，不用急。",
+    "用了快一年了，偶尔看看库存，这阵子挺稳的。",
+    "以前总怕买不到，现在倒是随便就能拿到。",
+    "听说了，那还挺好的。",
+    "昨天逛超市看到了，货架上挺多的。"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 3.969,
+    "lengths": [
+      6,
+      24,
+      14,
+      16,
+      19,
+      15,
+      21,
+      19,
+      10,
+      16
+    ],
+    "han_lengths": [
+      4,
+      22,
+      12,
+      14,
+      17,
+      12,
+      18,
+      17,
+      8,
+      14
+    ],
+    "bands": [
+      "short",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "short",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 2,
+      "medium": 8,
+      "long": 0,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1904,
+      "completion_tokens": 385,
+      "total_tokens": 2289,
+      "prompt_tokens_details": {
+        "cached_tokens": 1792
+      },
+      "prompt_cache_hit_tokens": 1792,
+      "prompt_cache_miss_tokens": 112
+    },
+    "run_no": 1
+  }
+}

@@ -560,6 +560,7 @@ const showGenerationPrompt = async (item: ContentAgentApi.BatchReportItem) => {
   Modal.info({
     title: `第 ${item.item_no} 条生成 Prompt`,
     width: 980,
+    maskClosable: true,
     content: h('div', { class: 'snapshot-modal' }, [
       h(
         Button,

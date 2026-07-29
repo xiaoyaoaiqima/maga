@@ -117,6 +117,7 @@ const coreRoutes: RouteRecordRaw[] = [
           hideInTab: false,
           activeMenu: '/content-agent/prompt-debug',
           authority: ['admin'],
+          fullPathKey: false,
         },
       },
       {

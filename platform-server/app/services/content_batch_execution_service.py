@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 from collections.abc import Awaitable, Callable
+from copy import deepcopy
 from dataclasses import dataclass, replace
 import re
 from typing import Any
@@ -19,7 +20,9 @@ from app.services.content_agent_orchestrator import ContentAgentOrchestrator
 from app.services.content_rewrite_context import rewrite_business_rule_context
 from app.services.executor_invocation_service import ExecutorInvocationClient
 from app.services.activity_quality_guard_service import ActivityQualityGuardService
+from app.services.a2_reiyu_batch_detection_guard_service import review_a2_reiyu_batch_detection_fact
 from app.services.a2_reiyu_old_can_guard_service import review_a2_reiyu_old_can_eligibility
+from app.services.a2_reiyu_text_guard_service import review_a2_reiyu_text_surface
 from app.services.ai_flavor_humanizer_service import AIFlavorReview, review_ai_flavor
 from app.services.forbidden_term_review_service import (
     WANGYUE_STATIC_FORBIDDEN_TERMS,
@@ -358,6 +361,30 @@ class BatchBusinessUsabilityReviewResult:
 
 
 @dataclass(frozen=True)
+class BatchWangyueDeferredRepairResult:
+    batch_id: int
+    selected_count: int
+    repaired_count: int
+    released_count: int
+    held_count: int
+    skipped_count: int
+    failed_count: int
+    selected_item_nos: list[int]
+    repaired_item_nos: list[int]
+    released_item_nos: list[int]
+    held_item_nos: list[int]
+    skipped_item_nos: list[int]
+    failed_items: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class A2ReiyuBatchAuditResult:
+    batch_id: int
+    guard_issue_count: int
+    business_review: BatchBusinessUsabilityReviewResult
+
+
+@dataclass(frozen=True)
 class BatchFocusedShadowReviewResult:
     batch_id: int
     reviewed_count: int
@@ -533,6 +560,8 @@ class ContentBatchExecutionService:
             product_experience_review_step = self._rewrite_product_experience_llm_quality_items
         postprocess_steps = [
             ("a2_reiyu_title_hard_drop", self._drop_a2_reiyu_overlong_titles),
+            ("a2_reiyu_text_review", self._review_a2_reiyu_text_items),
+            ("a2_reiyu_batch_detection_review", self._review_a2_reiyu_batch_detection_items),
             ("a2_reiyu_old_can_review", self._review_a2_reiyu_old_can_items),
             ("similarity_watch", self._watch_similar_generated_items),
             ("product_experience_phrase_rewrite", self._rewrite_product_experience_phrase_items),
@@ -574,6 +603,64 @@ class ContentBatchExecutionService:
             item_ids=item_ids,
         )
 
+    async def _review_a2_reiyu_text_items(self, batch_id: int, job: ContentBatchJob) -> int:
+        if str(job.asset_key or "") != A2_REIYU_ARTICLE_ASSET_KEY:
+            return 0
+
+        async def worker(item_id: int) -> int:
+            async with self.session_factory() as db:
+                item = await self._require_item(db, item_id)
+                if item.status != "generated":
+                    return 0
+                review = review_a2_reiyu_text_surface(
+                    title=item.title,
+                    body=item.body,
+                    plan=item.plan_json,
+                )
+                payload = review.to_payload()
+                quality = dict(item.quality_json or {})
+                review_report = dict(quality.get("review_report") or {})
+                quality["a2_reiyu_text_guard"] = payload
+                review_report["a2_reiyu_text_guard"] = payload
+                quality["review_report"] = review_report
+                if not review.pass_:
+                    quality["hard_pass"] = False
+                item.quality_json = quality
+                flag_modified(item, "quality_json")
+                await db.commit()
+                return 0 if review.pass_ else 1
+
+        return await self._run_generated_item_workers(batch_id, worker)
+
+    async def _review_a2_reiyu_batch_detection_items(self, batch_id: int, job: ContentBatchJob) -> int:
+        if str(job.asset_key or "") != A2_REIYU_ARTICLE_ASSET_KEY:
+            return 0
+
+        async def worker(item_id: int) -> int:
+            async with self.session_factory() as db:
+                item = await self._require_item(db, item_id)
+                if item.status != "generated":
+                    return 0
+                review = review_a2_reiyu_batch_detection_fact(
+                    title=item.title,
+                    body=item.body,
+                    plan=item.plan_json,
+                )
+                payload = review.to_payload()
+                quality = dict(item.quality_json or {})
+                review_report = dict(quality.get("review_report") or {})
+                quality["a2_reiyu_batch_detection_guard"] = payload
+                review_report["a2_reiyu_batch_detection_guard"] = payload
+                quality["review_report"] = review_report
+                if not review.pass_:
+                    quality["hard_pass"] = False
+                item.quality_json = quality
+                flag_modified(item, "quality_json")
+                await db.commit()
+                return 0 if review.pass_ else 1
+
+        return await self._run_generated_item_workers(batch_id, worker)
+
     async def _review_a2_reiyu_old_can_items(self, batch_id: int, job: ContentBatchJob) -> int:
         if str(job.asset_key or "") != A2_REIYU_ARTICLE_ASSET_KEY:
             return 0
@@ -602,6 +689,138 @@ class ContentBatchExecutionService:
                 return 0 if review.pass_ else 1
 
         return await self._run_generated_item_workers(batch_id, worker)
+
+    async def _review_a2_reiyu_forbidden_terms_items(
+        self,
+        batch_id: int,
+        job: ContentBatchJob,
+        *,
+        concurrency: int,
+    ) -> int:
+        if str(job.asset_key or "") != A2_REIYU_ARTICLE_ASSET_KEY:
+            return 0
+
+        async def worker(item_id: int) -> int:
+            async with self.session_factory() as db:
+                item = await self._require_item(db, item_id)
+                if item.status != "generated":
+                    return 0
+                audit = await ForbiddenTermReviewService(db).audit_text(
+                    asset_key=A2_REIYU_ARTICLE_ASSET_KEY,
+                    title=item.title,
+                    body=item.body,
+                )
+                hard_hits = [
+                    hit
+                    for hit in audit.hits
+                    if (audit.enforcements.get(hit) or "hard_ban") in {"hard_ban", "block_only"}
+                ]
+                rewrite_hits = [hit for hit in audit.hits if hit not in hard_hits]
+                payload = {
+                    "pass": not hard_hits,
+                    "initial_hits": list(audit.hits),
+                    "hard_hits": hard_hits,
+                    "rewrite_hits": rewrite_hits,
+                    "rewrite_required": bool(rewrite_hits),
+                    "business_usability_tier": (
+                        "hold_out" if hard_hits else "light_fix_usable" if rewrite_hits else "direct_pool"
+                    ),
+                    "severity": "hard" if hard_hits else "rewrite" if rewrite_hits else "pass",
+                    "term_reasons": dict(audit.term_reasons),
+                    "term_enforcements": {
+                        hit: audit.enforcements.get(hit) or "hard_ban"
+                        for hit in audit.hits
+                    },
+                }
+                quality = dict(item.quality_json or {})
+                review_report = dict(quality.get("review_report") or {})
+                quality["a2_reiyu_forbidden_terms_guard"] = payload
+                quality["forbidden_terms_review"] = payload
+                review_report["a2_reiyu_forbidden_terms_guard"] = payload
+                if rewrite_hits:
+                    review_report["rewrite_required"] = True
+                    review_report["rewrite_reason"] = f"命中需后链路改写表达：{'、'.join(rewrite_hits)}"
+                if hard_hits:
+                    quality["hard_pass"] = False
+                quality["review_report"] = review_report
+                item.quality_json = quality
+                flag_modified(item, "quality_json")
+                await db.commit()
+                return int(bool(audit.hits))
+
+        return await self._run_generated_item_workers(
+            batch_id,
+            worker,
+            concurrency=concurrency,
+        )
+
+    async def review_a2_reiyu_items(
+        self,
+        batch_id: int,
+        *,
+        concurrency: int = POSTPROCESS_REWRITE_CONCURRENCY,
+    ) -> A2ReiyuBatchAuditResult:
+        if concurrency <= 0:
+            raise ValueError("concurrency must be positive")
+        job = await self._require_job(batch_id)
+        if str(job.asset_key or "") != A2_REIYU_ARTICLE_ASSET_KEY:
+            raise ValueError("batch job is not an a2 reiyu batch")
+
+        guard_issue_count = 0
+        guard_issue_count += await self._drop_a2_reiyu_overlong_titles(batch_id, job)
+        guard_issue_count += await self._review_a2_reiyu_text_items(batch_id, job)
+        guard_issue_count += await self._review_a2_reiyu_batch_detection_items(batch_id, job)
+        guard_issue_count += await self._review_a2_reiyu_old_can_items(batch_id, job)
+        guard_issue_count += await self._review_a2_reiyu_forbidden_terms_items(
+            batch_id,
+            job,
+            concurrency=concurrency,
+        )
+        business_review = await self.review_business_usability_items(
+            batch_id,
+            concurrency=concurrency,
+        )
+        await self._finalize_a2_reiyu_audit_items(batch_id)
+        return A2ReiyuBatchAuditResult(
+            batch_id=batch_id,
+            guard_issue_count=guard_issue_count,
+            business_review=business_review,
+        )
+
+    async def _finalize_a2_reiyu_audit_items(self, batch_id: int) -> None:
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(ContentBatchItem).where(
+                    ContentBatchItem.batch_id == batch_id,
+                    ContentBatchItem.status == "generated",
+                )
+            )
+            for item in result.scalars().all():
+                quality = dict(item.quality_json or {})
+                review_report = dict(quality.get("review_report") or {})
+                gold_review = quality.get("product_experience_llm_quality_review")
+                gold_available = (
+                    isinstance(gold_review, dict)
+                    and str(gold_review.get("severity") or "") != "unavailable"
+                )
+                gold_passed = bool(
+                    gold_available
+                    and gold_review.get("pass") is True
+                    and str(gold_review.get("business_usability_tier") or "direct_pool")
+                    != "hold_out"
+                )
+                quality["hard_pass"] = bool(
+                    not _a2_reiyu_guard_blocks_gold_review(quality)
+                    and gold_passed
+                )
+                quality["postprocess_mode"] = "independent_audit"
+                quality["a2_reiyu_audit_completed"] = True
+                quality.pop("audit_skipped", None)
+                review_report.pop("audit_skipped", None)
+                quality["review_report"] = review_report
+                item.quality_json = quality
+                flag_modified(item, "quality_json")
+            await db.commit()
 
     async def review_business_usability_items(
         self,
@@ -690,6 +909,97 @@ class ContentBatchExecutionService:
             worker=self._review_temporal_logic_shadow_item,
         )
 
+    async def repair_wangyue_holdout_items(
+        self,
+        batch_id: int,
+        *,
+        limit: int | None = None,
+        concurrency: int = POSTPROCESS_REWRITE_CONCURRENCY,
+    ) -> BatchWangyueDeferredRepairResult:
+        if limit is not None and limit <= 0:
+            raise ValueError("limit must be positive")
+        if concurrency <= 0:
+            raise ValueError("concurrency must be positive")
+        job = await self._require_job(batch_id)
+        if str(job.asset_key or "") != CURRENT_WANGYUE_ARTICLE_ASSET_KEY:
+            raise ValueError("deferred repair only supports the current Wangyue article asset")
+
+        result = await self.db.execute(
+            select(ContentBatchItem)
+            .where(ContentBatchItem.batch_id == batch_id, ContentBatchItem.status == "generated")
+            .order_by(ContentBatchItem.item_no)
+        )
+        selected: list[ContentBatchItem] = []
+        skipped_item_nos: list[int] = []
+        for item in result.scalars().all():
+            quality = item.quality_json if isinstance(item.quality_json, dict) else {}
+            focused_review = quality.get("wangyue_focused_pipeline_review")
+            eligible = (
+                isinstance(focused_review, dict)
+                and focused_review.get("can_auto_pool") is not True
+                and focused_review.get("blocked_by_code_hard") is not True
+                and quality.get("hard_pass") is not False
+                and (
+                    str(focused_review.get("status") or "") in {"hold", "manual_review"}
+                    or focused_review.get("decision") == "block"
+                )
+            )
+            if not eligible or (limit is not None and len(selected) >= limit):
+                skipped_item_nos.append(int(item.item_no))
+                continue
+            selected.append(item)
+
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def run_item(item: ContentBatchItem) -> dict[str, Any]:
+            async with semaphore:
+                try:
+                    return await self._review_wangyue_focused_pipeline_item(
+                        int(item.id),
+                        force=True,
+                        rewrite_policy_override=WANGYUE_EXPERIMENTAL_REWRITE_POLICY,
+                        rewrite_source_prefix="wangyue_deferred_repair",
+                        repair_history_key="wangyue_deferred_repair_history",
+                        deferred_repair=True,
+                    )
+                except Exception as exc:  # noqa: BLE001 - one failed repair must not stop the batch
+                    return {
+                        "status": "failed",
+                        "item_no": int(item.item_no),
+                        "error_message": str(exc),
+                    }
+
+        results = await asyncio.gather(*(run_item(item) for item in selected))
+        failed = [item for item in results if item.get("status") == "failed"]
+        repaired = [item for item in results if item.get("content_changed") is True]
+        released = [item for item in results if item.get("can_auto_pool") is True]
+        held = [
+            item
+            for item in results
+            if item.get("status") != "failed" and item.get("can_auto_pool") is not True
+        ]
+        return BatchWangyueDeferredRepairResult(
+            batch_id=batch_id,
+            selected_count=len(selected),
+            repaired_count=len(repaired),
+            released_count=len(released),
+            held_count=len(held),
+            skipped_count=len(skipped_item_nos),
+            failed_count=len(failed),
+            selected_item_nos=[int(item.item_no) for item in selected],
+            repaired_item_nos=[int(item["item_no"]) for item in repaired],
+            released_item_nos=[int(item["item_no"]) for item in released],
+            held_item_nos=[int(item["item_no"]) for item in held],
+            skipped_item_nos=skipped_item_nos,
+            failed_items=[
+                {
+                    "item_no": int(item["item_no"]),
+                    "error_message": str(item.get("error_message") or ""),
+                }
+                for item in failed
+            ],
+        )
+
     async def _run_wangyue_focused_pipeline_postprocess(
         self,
         batch_id: int,
@@ -706,6 +1016,10 @@ class ContentBatchExecutionService:
         item_id: int,
         *,
         force: bool,
+        rewrite_policy_override: str | None = None,
+        rewrite_source_prefix: str = "wangyue_focused_pipeline",
+        repair_history_key: str | None = None,
+        deferred_repair: bool = False,
     ) -> dict[str, Any]:
         quality_key = "wangyue_focused_pipeline_review"
         async with self.session_factory() as db:
@@ -716,6 +1030,13 @@ class ContentBatchExecutionService:
             quality = dict(item.quality_json or {})
             if not force and isinstance(quality.get(quality_key), dict):
                 return {"status": "skipped", "item_no": item.item_no}
+            repair_before = None
+            if repair_history_key:
+                repair_before = {
+                    "title": item.title or "",
+                    "body": item.body or "",
+                    "focused_review": deepcopy(quality.get(quality_key)),
+                }
 
             review_report = dict(quality.get("review_report") or {})
             quality.pop("product_experience_llm_quality_review", None)
@@ -757,7 +1078,7 @@ class ContentBatchExecutionService:
                 title=item.title or "",
                 body=item.body or "",
             )
-            rewrite_policy = _wangyue_rewrite_policy_from_plan(item.plan_json)
+            rewrite_policy = rewrite_policy_override or _wangyue_rewrite_policy_from_plan(item.plan_json)
             aggregate = aggregate_wangyue_focused_reviews(
                 initial_reviews,
                 hard_pass=quality.get("hard_pass"),
@@ -771,11 +1092,16 @@ class ContentBatchExecutionService:
                 status = "hold"
             elif aggregate.requires_rewrite:
                 try:
+                    rewrite_aggregate = aggregate.model_dump()
+                    if deferred_repair:
+                        rewrite_aggregate["rewrite_modes"] = list(
+                            rewrite_aggregate.get("rewrite_modes") or []
+                        )[:1]
                     rewrite_result = await self._rehearse_focused_rewrite_candidate(
                         item=item,
-                        aggregate=aggregate.model_dump(),
+                        aggregate=rewrite_aggregate,
                         orchestrator=orchestrator,
-                        rewrite_source_prefix="wangyue_focused_pipeline",
+                        rewrite_source_prefix=rewrite_source_prefix,
                         shadow=False,
                     )
                 except Exception as exc:  # noqa: BLE001 - failed focused rewrite must hold the item
@@ -826,13 +1152,43 @@ class ContentBatchExecutionService:
             if rewrite_result is not None:
                 payload["rewrite_result"] = rewrite_result
                 payload["post_rewrite_reviews"] = final_reviews
+            content_changed = bool(
+                repair_before
+                and (
+                    repair_before["title"] != (item.title or "")
+                    or repair_before["body"] != (item.body or "")
+                )
+            )
+            if repair_history_key and repair_before is not None:
+                repair_history = list(quality.get(repair_history_key) or [])
+                repair_history.append(
+                    {
+                        "source": rewrite_source_prefix,
+                        "before": {
+                            "title": repair_before["title"],
+                            "body": repair_before["body"],
+                        },
+                        "after": {"title": item.title or "", "body": item.body or ""},
+                        "focused_review_before": repair_before["focused_review"],
+                        "focused_review_after": deepcopy(payload),
+                        "status": status,
+                        "released": payload.get("can_auto_pool") is True,
+                        "content_changed": content_changed,
+                    }
+                )
+                quality[repair_history_key] = repair_history
             quality[quality_key] = payload
             review_report[quality_key] = dict(payload)
             quality["review_report"] = review_report
             item.quality_json = quality
             flag_modified(item, "quality_json")
             await db.commit()
-            return {"status": status, "item_no": item.item_no}
+            return {
+                "status": status,
+                "item_no": item.item_no,
+                "can_auto_pool": payload.get("can_auto_pool") is True,
+                "content_changed": content_changed,
+            }
 
     async def _review_focused_dimensions_with_unavailable(
         self,
@@ -1632,6 +1988,8 @@ class ContentBatchExecutionService:
             item = await self._require_item(db, item_id)
             quality = dict(item.quality_json or {})
             if item.status != "generated" or not _should_review_product_experience_llm_quality(item.plan_json):
+                return {"status": "skipped", "item_no": item.item_no}
+            if not force and _a2_reiyu_guard_blocks_gold_review(quality):
                 return {"status": "skipped", "item_no": item.item_no}
             if not force and isinstance(quality.get("product_experience_llm_quality_review"), dict):
                 return {"status": "skipped", "item_no": item.item_no}
@@ -3906,19 +4264,10 @@ class ContentBatchExecutionService:
             if review.physical_action_carrier_mismatch_hits
             else "写配方/成分时要让信息载体符合现实：罐装奶粉适合写看罐身、扫一眼营养成分；不要把奶粉罐动作硬写成翻配方表。"
         )
-        is_energy_pair_plan = "精力不足" in str(item.plan_json or "") and "进阶保护力" in str(
-            item.plan_json or ""
-        )
         ingredient_benefit_instruction = (
-            "本轮命中旺玥计划卖点与效果承接错误："
-            f"{'/'.join(review.ingredient_benefit_mismatch_hits)}。"
-            "本篇计划是保护力方向，但正文没有落到保护力、少中招、状态稳或小状况少，反而让产品承接了眼脑或精力结果。"
-            "只需把计划里的保护方向自然带回来，或删掉错接效果；不要为了审核补齐一整套双卖点。"
-            "不要把强效果洗成“还在观察/不一定/每家不同”，也不要新增业务规则之外的成分、产品事实或医疗事实。"
-            if review.ingredient_benefit_mismatch_hits
-            else "旺玥精力不足场景可使用进阶保护力+眼脑双引擎或进阶保护力+营养丰富作为生成方向；正文自然带到其中一个相关卖点支点即可，不要求两侧全部写齐。"
-            if is_energy_pair_plan
-            else "旺玥卖点效果服从本篇计划：保护力方向落到保护力、少中招、状态稳或小状况少；营养丰富可以自然承接精力、活力或成长，不强制同时补齐其它卖点。"
+            "旺玥UGC允许保护力、眼脑营养等卖点与孩子日常精力、专注、少揉眼或状态改善形成自然因果链；"
+            "不要求效果只落在单一卖点标签上，也不要为了审核强行补齐其它卖点。"
+            "仍不要新增治疗近视、恢复视力、保证不近视等医疗化承诺，或业务规则之外的成分和产品事实。"
         )
         supplement_replacement_instruction = (
             "本轮命中旺玥营养替代暗示："
@@ -5359,6 +5708,28 @@ def _should_mark_only_product_experience_phrase_review(
 def _postprocess_mode(job: ContentBatchJob) -> str:
     strategy = job.strategy_json if isinstance(job.strategy_json, dict) else {}
     return str(strategy.get("postprocess_mode") or "").strip()
+
+
+def _a2_reiyu_guard_blocks_gold_review(quality: dict[str, Any]) -> bool:
+    text_guard = quality.get("a2_reiyu_text_guard")
+    if (
+        isinstance(text_guard, dict)
+        and text_guard.get("pass") is False
+        and str(text_guard.get("business_usability_tier") or "hold_out") == "hold_out"
+    ):
+        return True
+    for key in (
+        "a2_reiyu_batch_detection_guard",
+        "a2_reiyu_old_can_guard",
+    ):
+        guard = quality.get(key)
+        if isinstance(guard, dict) and guard.get("pass") is False:
+            return True
+    forbidden_guard = quality.get("a2_reiyu_forbidden_terms_guard")
+    return bool(
+        isinstance(forbidden_guard, dict)
+        and forbidden_guard.get("business_usability_tier") == "hold_out"
+    )
 
 
 def _article_length_bounds(plan: dict[str, Any] | None) -> tuple[int, int]:

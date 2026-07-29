@@ -1,0 +1,9 @@
+{
+  "input_path": "/Users/luxifa/maga/outputs/a2_reiyu_history_delivery_300_20260724/A2礼遇_历史可用300篇_集罐70其他30.csv",
+  "output_path": "/Users/luxifa/maga/tmp/a2_reiyu_history_delivery_300_20260724/A2礼遇_历史可用300篇_最终Guard审核.csv",
+  "total_count": 300,
+  "direct_pool_count": 300,
+  "light_fix_count": 0,
+  "watch_count": 0,
+  "hold_out_count": 0
+}

@@ -100,6 +100,19 @@ describe('frontend controlled sidebar tabs', () => {
     }
   });
 
+  it('reuses one prompt debug tab when transfer queries change', () => {
+    const promptDebug = frontendTabRoutes.find(
+      (route) => route.path === '/content-agent/prompt-debug',
+    );
+    const rootRoute = coreRoutes.find((route) => route.path === '/');
+    const corePromptDebug = rootRoute?.children?.find(
+      (route) => route.path === 'content-agent/prompt-debug',
+    );
+
+    expect(promptDebug?.meta?.fullPathKey).toBe(false);
+    expect(corePromptDebug?.meta?.fullPathKey).toBe(false);
+  });
+
   it('removes obsolete direct legacy routes from core routes', () => {
     const rootRoute = coreRoutes.find((route) => route.path === '/');
     const routePaths = rootRoute?.children?.map((route) => route.path) ?? [];

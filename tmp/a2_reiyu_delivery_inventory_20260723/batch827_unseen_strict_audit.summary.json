@@ -1,0 +1,9 @@
+{
+  "input_path": "/Users/luxifa/maga/tmp/a2_reiyu_delivery_inventory_20260723/batch827_unseen.csv",
+  "output_path": "/Users/luxifa/maga/tmp/a2_reiyu_delivery_inventory_20260723/batch827_unseen_strict_audit.csv",
+  "total_count": 14,
+  "direct_pool_count": 14,
+  "light_fix_count": 0,
+  "watch_count": 0,
+  "hold_out_count": 0
+}

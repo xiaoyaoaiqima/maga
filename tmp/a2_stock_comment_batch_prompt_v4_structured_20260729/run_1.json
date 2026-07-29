@@ -1,0 +1,137 @@
+{
+  "raw_output": {
+    "items": [
+      {
+        "strategy_id": "S01",
+        "response_mode": "direct_reaction",
+        "life_entry": "线上随眼看到",
+        "comment": "哟，有货了？"
+      },
+      {
+        "strategy_id": "S02",
+        "response_mode": "stock_observation",
+        "life_entry": "路过母婴店门口",
+        "comment": "前两天路过母婴店，看门口海报写着有货，真难得。"
+      },
+      {
+        "strategy_id": "S03",
+        "response_mode": "personal_replenish",
+        "life_entry": "家里快喝完时发现",
+        "comment": "正愁家里那罐见底了，打开手机一看居然有货，赶紧补了一罐。"
+      },
+      {
+        "strategy_id": "S04",
+        "response_mode": "less_hassle",
+        "life_entry": "想到以前抢货的折腾",
+        "comment": "总算不用定闹钟抢了，踏实。"
+      },
+      {
+        "strategy_id": "S05",
+        "response_mode": "no_need_to_stock",
+        "life_entry": "朋友说要囤货",
+        "comment": "朋友让我多囤几罐，我说不用，现在挺稳的，喝完再买就行。"
+      },
+      {
+        "strategy_id": "S06",
+        "response_mode": "casual_reply",
+        "life_entry": "接别人的评论",
+        "comment": "是啊，最近确实好买多了。"
+      },
+      {
+        "strategy_id": "S07",
+        "response_mode": "long_term_attention",
+        "life_entry": "长期使用习惯",
+        "comment": "一直喝这个，每次快没了就瞅一眼，这阵子库存挺稳的。"
+      },
+      {
+        "strategy_id": "S08",
+        "response_mode": "before_after",
+        "life_entry": "对比之前难买的状态",
+        "comment": "以前总怕买不到，现在随手就能买到，省心。"
+      },
+      {
+        "strategy_id": "S09",
+        "response_mode": "direct_reaction",
+        "life_entry": "遛娃时听其他妈妈提起",
+        "comment": "遛娃时听旁边妈妈说有货了，赶紧回去看了一眼。"
+      },
+      {
+        "strategy_id": "S10",
+        "response_mode": "stock_observation",
+        "life_entry": "逛超市时看到",
+        "comment": "昨天逛超市货架上放得挺满的。"
+      }
+    ]
+  },
+  "items": [
+    "哟，有货了？",
+    "前两天路过母婴店，看门口海报写着有货，真难得。",
+    "正愁家里那罐见底了，打开手机一看居然有货，赶紧补了一罐。",
+    "总算不用定闹钟抢了，踏实。",
+    "朋友让我多囤几罐，我说不用，现在挺稳的，喝完再买就行。",
+    "是啊，最近确实好买多了。",
+    "一直喝这个，每次快没了就瞅一眼，这阵子库存挺稳的。",
+    "以前总怕买不到，现在随手就能买到，省心。",
+    "遛娃时听旁边妈妈说有货了，赶紧回去看了一眼。",
+    "昨天逛超市货架上放得挺满的。"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 5.524,
+    "lengths": [
+      6,
+      23,
+      28,
+      13,
+      27,
+      12,
+      25,
+      20,
+      22,
+      14
+    ],
+    "han_lengths": [
+      4,
+      20,
+      25,
+      11,
+      23,
+      10,
+      22,
+      17,
+      20,
+      13
+    ],
+    "bands": [
+      "short",
+      "medium",
+      "long",
+      "medium",
+      "long",
+      "short",
+      "long",
+      "medium",
+      "medium",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 2,
+      "medium": 5,
+      "long": 3,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1239,
+      "completion_tokens": 570,
+      "total_tokens": 1809,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 1239
+    },
+    "run_no": 1
+  }
+}

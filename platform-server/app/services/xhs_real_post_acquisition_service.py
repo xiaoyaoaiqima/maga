@@ -246,17 +246,19 @@ class XhsRealPostAcquisitionService:
             try:
                 response = await client.get(url_path, params=clean_query(query), follow_redirects=True)
                 payload = response.json()
-                if response.is_success and isinstance(payload, dict):
-                    return payload
-                retryable = response.status_code in (408, 429) or response.status_code >= 500
-                error = RuntimeError(f"HTTP {response.status_code} for {url_path}: {response.text[:300]}")
-                if not retryable:
-                    raise error
-                last_error = error
             except Exception as exc:  # noqa: BLE001 - retry transient provider failures
                 last_error = exc
                 if attempt == 4:
                     break
+                await sleep_ms(1000 * attempt * attempt)
+                continue
+            if response.is_success and isinstance(payload, dict):
+                return payload
+            error = RuntimeError(f"HTTP {response.status_code} for {url_path}")
+            retryable = response.status_code in (408, 429) or response.status_code >= 500
+            if not retryable:
+                raise error
+            last_error = error
             await sleep_ms(1000 * attempt * attempt)
         raise last_error or RuntimeError(f"TikHub request failed: {path}")
 

@@ -1,0 +1,73 @@
+{
+  "items": [
+    "批批都有检测信息",
+    "收到奶粉就查了批次信息",
+    "拆快递时顺手查了当前批次，信息一目了然，心里踏实多了",
+    "开新罐前先看一眼检测信息",
+    "冲奶前想起来查一下，这阵子每批检测信息都能看，挺直观的",
+    "宝妈群提醒后我也开始看批次检测了",
+    "被闺蜜提醒后养成习惯，每次开罐前都核对批次信息，感觉更清楚",
+    "支持检测信息公开可看",
+    "不同时间到的奶粉，我都会分别查对应批次的检测信息，心里有数",
+    "长期喝的口粮，每次到货都确认一下批次检测信息"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 2.506,
+    "lengths": [
+      8,
+      11,
+      26,
+      12,
+      27,
+      16,
+      29,
+      10,
+      29,
+      22
+    ],
+    "han_lengths": [
+      8,
+      11,
+      24,
+      12,
+      25,
+      16,
+      27,
+      10,
+      27,
+      21
+    ],
+    "bands": [
+      "short",
+      "short",
+      "long",
+      "short",
+      "long",
+      "medium",
+      "long",
+      "short",
+      "long",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 4,
+      "medium": 2,
+      "long": 4,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1537,
+      "completion_tokens": 160,
+      "total_tokens": 1697,
+      "prompt_tokens_details": {
+        "cached_tokens": 1024
+      },
+      "prompt_cache_hit_tokens": 1024,
+      "prompt_cache_miss_tokens": 513
+    },
+    "run_no": 1
+  }
+}

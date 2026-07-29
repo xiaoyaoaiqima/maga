@@ -1,0 +1,179 @@
+[
+  {
+    "count": 10,
+    "latency_s": 2.467,
+    "lengths": [
+      10,
+      11,
+      22,
+      11,
+      23,
+      12,
+      27,
+      10,
+      29,
+      12
+    ],
+    "han_lengths": [
+      8,
+      10,
+      19,
+      10,
+      20,
+      11,
+      24,
+      8,
+      26,
+      11
+    ],
+    "bands": [
+      "short",
+      "short",
+      "medium",
+      "short",
+      "medium",
+      "short",
+      "long",
+      "short",
+      "long",
+      "short"
+    ],
+    "band_counts": {
+      "short": 6,
+      "medium": 2,
+      "long": 2,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 840,
+      "completion_tokens": 165,
+      "total_tokens": 1005,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 840
+    },
+    "run_no": 1
+  },
+  {
+    "count": 10,
+    "latency_s": 3.17,
+    "lengths": [
+      13,
+      14,
+      31,
+      15,
+      29,
+      15,
+      30,
+      14,
+      31,
+      16
+    ],
+    "han_lengths": [
+      11,
+      13,
+      28,
+      14,
+      27,
+      13,
+      27,
+      12,
+      28,
+      14
+    ],
+    "bands": [
+      "medium",
+      "medium",
+      "long",
+      "medium",
+      "long",
+      "medium",
+      "long",
+      "medium",
+      "long",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 0,
+      "medium": 6,
+      "long": 4,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 840,
+      "completion_tokens": 191,
+      "total_tokens": 1031,
+      "prompt_tokens_details": {
+        "cached_tokens": 768
+      },
+      "prompt_cache_hit_tokens": 768,
+      "prompt_cache_miss_tokens": 72
+    },
+    "run_no": 2
+  },
+  {
+    "count": 10,
+    "latency_s": 3.131,
+    "lengths": [
+      10,
+      12,
+      36,
+      12,
+      32,
+      12,
+      31,
+      12,
+      32,
+      11
+    ],
+    "han_lengths": [
+      10,
+      12,
+      34,
+      12,
+      30,
+      12,
+      29,
+      12,
+      30,
+      11
+    ],
+    "bands": [
+      "short",
+      "short",
+      "long",
+      "short",
+      "long",
+      "short",
+      "long",
+      "short",
+      "long",
+      "short"
+    ],
+    "band_counts": {
+      "short": 6,
+      "medium": 0,
+      "long": 4,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 840,
+      "completion_tokens": 172,
+      "total_tokens": 1012,
+      "prompt_tokens_details": {
+        "cached_tokens": 768
+      },
+      "prompt_cache_hit_tokens": 768,
+      "prompt_cache_miss_tokens": 72
+    },
+    "run_no": 3
+  }
+]

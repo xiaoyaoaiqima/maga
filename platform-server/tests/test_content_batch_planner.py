@@ -58,6 +58,157 @@ def test_selling_painpoint_base_group_includes_ugc_suffix_but_ugc_group_stays_sc
     )["expression"] == "UGC表达"
 
 
+def test_wangyue_selling_painpoint_expression_is_random(monkeypatch):
+    class LastRandomizer:
+        @staticmethod
+        def choice(values):
+            return values[-1]
+
+    monkeypatch.setattr(
+        "app.services.content_batch_planner.SystemRandom",
+        lambda: LastRandomizer(),
+    )
+    asset = AssetRegistry(
+        asset_key="wangyue_v3_core_storyline_article_rules",
+        content_json={
+            "selling_painpoint_expressions": [
+                {
+                    "selling_painpoint_group": "进阶保护力+容易中招",
+                    "expression": "常规表达",
+                    "source_row_no": 2,
+                },
+                {
+                    "selling_painpoint_group": "进阶保护力+容易中招-ugc",
+                    "expression": "随机选中的表达",
+                    "source_row_no": 3,
+                },
+            ]
+        },
+    )
+
+    selected = _resolve_selling_painpoint_expression(
+        asset,
+        "进阶保护力+容易中招",
+        item_no=1,
+    )
+
+    assert selected["expression"] == "随机选中的表达"
+
+
+def test_selling_painpoint_expression_routes_by_post_type():
+    asset = AssetRegistry(
+        asset_key="wangyue_v3_core_storyline_article_rules",
+        content_json={
+            "selling_painpoint_expressions": [
+                {
+                    "selling_painpoint_group": "营养丰富+营养不足-ugc",
+                    "expression": "做了好久功课，最后选了这款",
+                    "source_row_no": 99,
+                    "applicable_post_types": ["对比选择"],
+                }
+            ]
+        },
+    )
+
+    selected = _resolve_selling_painpoint_expression(
+        asset,
+        "营养丰富+营养不足",
+        post_type="对比选择",
+        item_no=1,
+    )
+
+    assert selected is not None
+    assert selected["source_row_no"] == 99
+    assert (
+        _resolve_selling_painpoint_expression(
+            asset,
+            "营养丰富+营养不足",
+            post_type="阶段变化反馈",
+            item_no=1,
+        )
+        is None
+    )
+
+
+def test_unscoped_selling_painpoint_expression_remains_reusable_across_post_types():
+    asset = AssetRegistry(
+        content_json={
+            "selling_painpoint_expressions": [
+                {
+                    "selling_painpoint_group": "营养丰富+营养不足-ugc",
+                    "expression": "钙铁锌都有，营养种类也多，用着省心。",
+                    "source_row_no": 104,
+                }
+            ]
+        }
+    )
+
+    for post_type in ("家庭清单", "阶段变化反馈", "复购/长期使用"):
+        selected = _resolve_selling_painpoint_expression(
+            asset,
+            "营养丰富+营养不足",
+            post_type=post_type,
+            item_no=1,
+        )
+        assert selected is not None
+        assert selected["source_row_no"] == 104
+
+
+def test_article_business_rule_plan_omits_expression_when_post_type_has_no_candidate():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_008",
+        "business_rule": "阶段变化反馈",
+        "post_type": "阶段变化反馈",
+        "selling_painpoint_group": "营养丰富+营养不足",
+        "corpus": "旺玥已经连续喝了一段时间，不回头写选奶。",
+    }
+    asset = AssetRegistry(
+        asset_key="wangyue_v3_core_storyline_article_rules",
+        content_json={
+            "rule_type": "business_rule",
+            "generation_prompt_mode": "rule_corpus_as_prompt",
+            "selling_painpoint_expressions": [
+                {
+                    "selling_painpoint_group": "营养丰富+营养不足-ugc",
+                    "expression": "做了好久功课，最后选了这款",
+                    "source_row_no": 99,
+                    "applicable_post_types": ["对比选择"],
+                }
+            ],
+        },
+        metadata_json={},
+    )
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key=None,
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert plan["selling_painpoint_expression"] is None
+    assert plan["selling_painpoint_expression_source_row_no"] is None
+    assert plan["selling_painpoint_expression_inspiration_mode"] is None
+
+    from app.services.unified_content_generation_service import (
+        _rule_corpus_as_prompt_article_prompt,
+        _template_variables,
+    )
+
+    variables = _template_variables(
+        content_type="article",
+        output_fields=["title", "body"],
+        business_rule=plan,
+        selected_keywords=[],
+    )
+    prompt = _rule_corpus_as_prompt_article_prompt(variables, selected_keywords=[])
+    assert "做了好久功课，最后选了这款" not in prompt
+    assert "本篇素材：" not in prompt
+
+
 def test_inspiration_clue_mapping_is_scoped_to_rule_and_expression_row():
     rule = {
         "inspiration_clue_by_source_row_no": {
@@ -141,6 +292,35 @@ def test_article_business_rule_multi_output_selects_same_rule_pairs():
     ]
 
 
+def test_article_business_rule_random_selection_shuffles_each_cycle(monkeypatch):
+    class ReverseRandomizer:
+        @staticmethod
+        def shuffle(values):
+            values.reverse()
+
+    monkeypatch.setattr(
+        "app.services.content_batch_planner.SystemRandom",
+        lambda: ReverseRandomizer(),
+    )
+    rules = [{"rule_id": f"post_rule_{index:03d}"} for index in range(1, 5)]
+
+    selected = _select_article_business_rules_for_generation(
+        rules,
+        limit=5,
+        allow_repeat=True,
+        articles_per_prompt=1,
+        randomize_order=True,
+    )
+
+    assert [rule["rule_id"] for rule in selected] == [
+        "post_rule_004",
+        "post_rule_003",
+        "post_rule_002",
+        "post_rule_001",
+        "post_rule_004",
+    ]
+
+
 def test_prompt_mode_resolves_from_explicit_or_asset_config():
     asset = AssetRegistry(
         content_json={"generation_prompt_mode": "minimal-rule-prompt"},
@@ -161,13 +341,14 @@ def test_royal_article_asset_defaults_to_compact_prompt_mode():
     assert _resolve_prompt_mode(None, asset) == "royal_compact"
 
 
-def test_article_business_rule_draft_override_replaces_only_target_corpus():
+def test_article_business_rule_draft_override_replaces_only_target_content_direction():
     rules = [
         {
             "rule_id": "V2M-01",
             "source_row_no": 1,
             "business_rule": "保护力",
             "corpus": "原始保护力语料",
+            "content_direction": "原始保护力语料",
             "examples": ["保留示例"],
         },
         {
@@ -186,6 +367,7 @@ def test_article_business_rule_draft_override_replaces_only_target_corpus():
     updated = _article_rules_with_draft_override(rules, override)
 
     assert updated[0]["corpus"] == "草稿保护力语料"
+    assert updated[0]["content_direction"] == "草稿保护力语料"
     assert updated[0]["examples"] == ["保留示例"]
     assert updated[0]["draft_rule_override"] == {
         "enabled": True,
@@ -194,6 +376,7 @@ def test_article_business_rule_draft_override_replaces_only_target_corpus():
     }
     assert updated[1]["corpus"] == "原始营养语料"
     assert rules[0]["corpus"] == "原始保护力语料"
+    assert rules[0]["content_direction"] == "原始保护力语料"
 
 
 def test_article_business_rule_draft_override_replaces_selling_painpoint_group():
@@ -714,6 +897,56 @@ def test_article_business_rule_plan_can_rotate_variation_slots_by_batch_and_item
         {"slot_code": "life_scene", "slot_name": "生活场景", "value": "家庭聚会"},
     ]
     assert next_batch_first_item["variation_slots"] == second_batch_item["variation_slots"]
+
+
+def test_article_business_rule_plan_preserves_structured_corpus_item_id():
+    service = ContentBatchPlanner.__new__(ContentBatchPlanner)
+    rule = {
+        "rule_id": "business_rule_002",
+        "business_rule": "老客认可",
+        "corpus": "活动后自然写认可。",
+        "source_row_no": 2,
+        "variation_slots": [
+            {
+                "slot_code": "consumer_recognition",
+                "slot_name": "认可表达",
+                "options": [
+                    {
+                        "id": "bf_001",
+                        "text": "看完这次活动和每批检测，对a2又多了点认可。",
+                    },
+                    {
+                        "id": "bf_002",
+                        "text": "这些信息讲清楚以后，老客心里也更踏实。",
+                    },
+                ],
+            }
+        ],
+    }
+    asset = AssetRegistry(
+        asset_type="article_business_rule_set",
+        asset_key="a2_reiyu_ugc_post_rules_v1",
+        content_json={"rule_type": "business_rule"},
+        metadata_json={},
+    )
+
+    plan = service._product_experience_plan_from_rule(
+        rule,
+        asset=asset,
+        item_no=1,
+        keyword_asset_key=None,
+        quality_guard_profile_key=None,
+        model_config=None,
+    )
+
+    assert plan["variation_slots"] == [
+        {
+            "slot_code": "consumer_recognition",
+            "slot_name": "认可表达",
+            "value": "看完这次活动和每批检测，对a2又多了点认可。",
+            "item_id": "bf_001",
+        }
+    ]
 
 
 def test_layered_article_plan_resolves_asset_defaults_and_conditional_inspiration():
@@ -3363,7 +3596,20 @@ async def test_content_batch_planner_accepts_article_business_rule_set_focus_rul
 
 
 @pytest.mark.asyncio
-async def test_rule_corpus_batch_plan_does_not_reference_keyword_asset():
+async def test_rule_corpus_batch_plan_does_not_reference_keyword_asset(monkeypatch):
+    class FirstRandomizer:
+        @staticmethod
+        def choice(values):
+            return values[0]
+
+        @staticmethod
+        def shuffle(values):
+            return None
+
+    monkeypatch.setattr(
+        "app.services.content_batch_planner.SystemRandom",
+        lambda: FirstRandomizer(),
+    )
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(

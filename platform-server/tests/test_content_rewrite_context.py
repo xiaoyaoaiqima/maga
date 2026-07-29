@@ -43,3 +43,31 @@ def test_non_rule_corpus_rewrite_context_keeps_original_corpus():
     )
 
     assert context["corpus"] == "原始业务规则"
+
+
+def test_a2_layered_rewrite_context_uses_selected_materials_without_prompt_corpus():
+    context = rewrite_business_rule_context(
+        {
+            "prompt_mode": "layered_article",
+            "asset_key": "a2_reiyu_ugc_post_rules_v1",
+            "business_rule": "a2礼遇｜会员体系积分",
+            "corpus": "再另起一段，最后自然表达a2认可。",
+            "source_row_no": 4,
+            "variation_slots": [
+                {"slot_code": "content_direction", "slot_name": "内容方向", "value": "直给点说活动。"},
+                {"slot_code": "activity_content", "slot_name": "活动内容", "value": "下单可以攒积分换礼品"},
+                {"slot_code": "positive_expression", "slot_name": "正向表达", "value": "安心、放心、踏实"},
+            ],
+            "hard_boundaries": ["不虚构已经兑换到奖品。"],
+        }
+    )
+
+    assert "corpus" not in context
+    assert context["selected_materials"] == [
+        {
+            "slot_code": "activity_content",
+            "slot_name": "活动内容",
+            "value": "下单可以攒积分换礼品",
+        }
+    ]
+    assert context["hard_boundaries"] == ["不虚构已经兑换到奖品。"]

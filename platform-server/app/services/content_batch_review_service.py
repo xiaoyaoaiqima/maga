@@ -101,6 +101,8 @@ class ContentBatchReviewService:
         previous_body = item.body
         quoted_text = _normalize_quoted_text(request.quoted_text)
         feedback_categories = _normalize_feedback_categories(request.feedback_categories)
+        issue_codes = _normalize_issue_codes(request.issue_codes)
+        responsibility_layer = request.responsibility_layer
         review_status = _ACTION_STATUS[request.action]
         auto_rewrite_requested = request.auto_rewrite and request.action == "request_revision"
         if request.auto_rewrite and request.action != "request_revision":
@@ -133,6 +135,8 @@ class ContentBatchReviewService:
                 "feedback_text": request.feedback_text,
                 "quoted_text": quoted_text,
                 "feedback_categories": feedback_categories,
+                "issue_codes": issue_codes,
+                "responsibility_layer": responsibility_layer,
                 "created_by": request.created_by,
             }
         )
@@ -145,6 +149,10 @@ class ContentBatchReviewService:
             version_metadata["quoted_text"] = quoted_text
         if feedback_categories:
             version_metadata["feedback_categories"] = feedback_categories
+        if issue_codes:
+            version_metadata["issue_codes"] = issue_codes
+        if responsibility_layer:
+            version_metadata["responsibility_layer"] = responsibility_layer
         if request.action == "manual_edit":
             version_metadata["previous_content"] = {
                 "title": previous_title,
@@ -180,6 +188,8 @@ class ContentBatchReviewService:
                 "manual_edit": request.action == "manual_edit",
                 "auto_rewrite_requested": auto_rewrite_requested,
                 "feedback_categories": feedback_categories,
+                "issue_codes": issue_codes,
+                "responsibility_layer": responsibility_layer,
             },
         )
         self.db.add(feedback)
@@ -213,6 +223,8 @@ class ContentBatchReviewService:
                     "version_id": version.id,
                     "quoted_text": quoted_text,
                     "feedback_categories": feedback_categories,
+                    "issue_codes": issue_codes,
+                    "responsibility_layer": responsibility_layer,
                 },
             )
             metadata_patch = {
@@ -294,12 +306,18 @@ class ContentBatchReviewService:
             raise ValueError("no auto rewrite version to decide")
 
         review_status = _ACTION_STATUS[request.action]
+        issue_codes = _normalize_issue_codes(request.issue_codes)
+        responsibility_layer = request.responsibility_layer
         metadata: dict[str, Any] = {
             "batch_id": item.batch_id,
             "item_no": item.item_no,
             "decision_for_version_id": rewrite_version.id,
             "decision_for_version_no": rewrite_version.version_no,
         }
+        if issue_codes:
+            metadata["issue_codes"] = issue_codes
+        if responsibility_layer:
+            metadata["responsibility_layer"] = responsibility_layer
         feedback_text = (request.feedback_text or "").strip()
         if request.action == "accept_rewrite":
             feedback_text = feedback_text or "采纳系统改写版本"
@@ -328,6 +346,8 @@ class ContentBatchReviewService:
                 "action": request.action,
                 "review_status": review_status,
                 "feedback_text": feedback_text,
+                "issue_codes": issue_codes or human_review.get("issue_codes") or [],
+                "responsibility_layer": responsibility_layer or human_review.get("responsibility_layer"),
                 "created_by": request.created_by,
                 "rewrite_decision": metadata,
             }
@@ -744,6 +764,17 @@ def _normalize_feedback_categories(values: list[str] | None) -> list[str]:
     for value in values or []:
         code = str(value or "").strip()
         if code in _FEEDBACK_CATEGORY_LABELS and code not in normalized:
+            normalized.append(code)
+    return normalized
+
+
+def _normalize_issue_codes(values: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    for value in values or []:
+        code = str(value or "").strip()
+        if not code or code.lower() in {"none", "pass", "passed"} or len(code) > 100:
+            continue
+        if code not in normalized:
             normalized.append(code)
     return normalized
 

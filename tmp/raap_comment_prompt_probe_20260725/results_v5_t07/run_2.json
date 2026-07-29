@@ -1,0 +1,91 @@
+{
+  "raw_output": {
+    "short_items": [
+      "批批可查挺踏实"
+    ],
+    "medium_items": [
+      "收到奶粉先核对批次",
+      "开新罐前确认检测信息",
+      "群友说每批都能查，我留意了",
+      "支持信息公开，查起来方便",
+      "长期口粮多确认批次"
+    ],
+    "long_items": [
+      "拆快递后核对批次，点开检测信息看看，心里有数了",
+      "冲奶前查检测信息，每批对应报告一目了然，更直观",
+      "被家人提醒后养成习惯，开罐前查批次，信息透明挺好",
+      "不同时间到的奶粉分别核对批次，确认检测信息，踏实些"
+    ]
+  },
+  "items": [
+    "批批可查挺踏实",
+    "收到奶粉先核对批次",
+    "拆快递后核对批次，点开检测信息看看，心里有数了",
+    "开新罐前确认检测信息",
+    "冲奶前查检测信息，每批对应报告一目了然，更直观",
+    "群友说每批都能查，我留意了",
+    "被家人提醒后养成习惯，开罐前查批次，信息透明挺好",
+    "支持信息公开，查起来方便",
+    "不同时间到的奶粉分别核对批次，确认检测信息，踏实些",
+    "长期口粮多确认批次"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 2.497,
+    "lengths": [
+      7,
+      9,
+      23,
+      10,
+      23,
+      13,
+      24,
+      12,
+      25,
+      9
+    ],
+    "han_lengths": [
+      7,
+      9,
+      21,
+      10,
+      21,
+      12,
+      22,
+      11,
+      23,
+      9
+    ],
+    "bands": [
+      "short",
+      "short",
+      "medium",
+      "short",
+      "medium",
+      "medium",
+      "medium",
+      "short",
+      "long",
+      "short"
+    ],
+    "band_counts": {
+      "short": 5,
+      "medium": 4,
+      "long": 1,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1074,
+      "completion_tokens": 217,
+      "total_tokens": 1291,
+      "prompt_tokens_details": {
+        "cached_tokens": 1024
+      },
+      "prompt_cache_hit_tokens": 1024,
+      "prompt_cache_miss_tokens": 50
+    },
+    "run_no": 2
+  }
+}

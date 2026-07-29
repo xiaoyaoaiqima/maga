@@ -1,0 +1,9 @@
+{
+  "input_path": "/Users/luxifa/maga/tmp/a2_reiyu_delivery_inventory_20260723/A2礼遇_500篇_集罐70其他30_抽取验证.csv",
+  "output_path": "/Users/luxifa/maga/tmp/a2_reiyu_delivery_inventory_20260723/final_500_audit.csv",
+  "total_count": 500,
+  "direct_pool_count": 500,
+  "light_fix_count": 0,
+  "watch_count": 0,
+  "hold_out_count": 0
+}

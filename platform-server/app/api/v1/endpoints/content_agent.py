@@ -15,6 +15,8 @@ from app.schemas.base import ResponseData
 from app.schemas.content_batch_report import (
     ContentBatchBusinessUsabilityReviewRequest,
     ContentBatchBusinessUsabilityReviewResponse,
+    ContentBatchWangyueDeferredRepairRequest,
+    ContentBatchWangyueDeferredRepairResponse,
     ContentBatchClaimPublicDiseaseShadowReviewRequest,
     ContentBatchClaimPublicDiseaseShadowReviewResponse,
     ContentBatchContentFitShadowReviewRequest,
@@ -67,6 +69,10 @@ from app.schemas.content_agent import (
     ContentAgentTaskResponse,
 )
 from app.services.content_agent_service import ContentAgentService
+from app.services.a2_reiyu_batch_audit_service import (
+    A2ReiyuBatchAuditDispatcher,
+    A2ReiyuBatchAuditService,
+)
 from app.services.content_batch_execution_service import ContentBatchExecutionService
 from app.services.content_batch_planner import ContentBatchPlanner
 from app.services.content_batch_report_service import ContentBatchReportService
@@ -80,6 +86,7 @@ from app.services.executor_invocation_service import (
 )
 from app.services.content_generation_preflight_service import ContentGenerationPreflightService
 from app.services.prompt_debug_history_service import PromptDebugHistoryService
+from app.services.product_experience_llm_review_service import A2_REIYU_ARTICLE_ASSET_KEY
 
 router = APIRouter()
 
@@ -340,6 +347,14 @@ async def start_batch_generation(
     if not executor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="executor not found")
     invocation_client = _invocation_client_for_invoke_url(executor.invoke_url)
+    auto_queue_a2_audit = (
+        request.asset_key == A2_REIYU_ARTICLE_ASSET_KEY
+        and request.postprocess_mode is None
+    )
+    effective_postprocess_mode = (
+        "generate_only" if auto_queue_a2_audit else request.postprocess_mode
+    )
+    audit_queued = False
     try:
         model_config = await _model_config_with_maga_defaults(
             db,
@@ -355,7 +370,7 @@ async def start_batch_generation(
             style=request.style,
             count=request.count,
             articles_per_prompt=request.articles_per_prompt,
-            postprocess_mode=request.postprocess_mode,
+            postprocess_mode=effective_postprocess_mode,
             keyword_asset_key=request.keyword_asset_key,
             prompt_mode=request.prompt_mode,
             draft_corpus=request.draft_corpus,
@@ -380,6 +395,9 @@ async def start_batch_generation(
             executor_code=executor_code,
         ).execute_batch_items(job_id, limit=job.count, created_by=request.created_by)
         await db.commit()
+        if auto_queue_a2_audit and execution.generated_count > 0:
+            audit_queued = await A2ReiyuBatchAuditService(db).queue(job_id)
+            await db.commit()
         db.expire_all()
         report = await ContentBatchReportService(db).get_batch_report(job_id)
     except ValueError as exc:
@@ -395,6 +413,8 @@ async def start_batch_generation(
         ),
         report=report,
     )
+    if audit_queued:
+        A2ReiyuBatchAuditDispatcher.dispatch(job_id)
     return ResponseData(message="Batch generation completed", data=response)
 
 
@@ -600,6 +620,51 @@ async def review_batch_business_usability(
             skipped_item_nos=result.skipped_item_nos,
             failed_items=result.failed_items,
             tier_counts=result.tier_counts,
+            report=report,
+        ),
+    )
+
+
+@router.post(
+    "/batches/{batch_id}/wangyue-deferred-repair",
+    response_model=ResponseData[ContentBatchWangyueDeferredRepairResponse],
+    response_model_exclude_none=True,
+)
+async def repair_batch_wangyue_holdout(
+    batch_id: int,
+    request: ContentBatchWangyueDeferredRepairRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseData[ContentBatchWangyueDeferredRepairResponse]:
+    try:
+        result = await ContentBatchExecutionService(
+            db,
+            callback_base_url="/api/v1/content-agent",
+        ).repair_wangyue_holdout_items(
+            batch_id,
+            limit=request.limit,
+            concurrency=request.concurrency,
+        )
+        await db.commit()
+        db.expire_all()
+        report = await ContentBatchReportService(db).get_batch_report(batch_id, include_details=True)
+    except ValueError as exc:
+        raise _map_protocol_error(exc) from exc
+    return ResponseData(
+        message="Wangyue deferred repair completed",
+        data=ContentBatchWangyueDeferredRepairResponse(
+            batch_id=result.batch_id,
+            selected_count=result.selected_count,
+            repaired_count=result.repaired_count,
+            released_count=result.released_count,
+            held_count=result.held_count,
+            skipped_count=result.skipped_count,
+            failed_count=result.failed_count,
+            selected_item_nos=result.selected_item_nos,
+            repaired_item_nos=result.repaired_item_nos,
+            released_item_nos=result.released_item_nos,
+            held_item_nos=result.held_item_nos,
+            skipped_item_nos=result.skipped_item_nos,
+            failed_items=result.failed_items,
             report=report,
         ),
     )

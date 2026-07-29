@@ -556,6 +556,11 @@ async def _direct_rewrite_with_empty_retry(
     ]
     last_raw = ""
     last_error: ValueError | None = None
+    response_format = (
+        None
+        if content_type == "comment" or output_fields == ["comment"]
+        else {"type": "json_object"}
+    )
     for attempt_no, attempt_prompt in enumerate(attempts, start=1):
         raw = await _call_openai_compatible_model(
             model=model,
@@ -564,6 +569,7 @@ async def _direct_rewrite_with_empty_retry(
             temperature=temperature,
             max_tokens=max_tokens,
             model_config=model_config,
+            response_format=response_format,
         )
         last_raw = str(raw or "")
         if not last_raw.strip():
@@ -606,6 +612,10 @@ async def _direct_generate_with_empty_retry(
     last_raw = ""
     last_error: ValueError | None = None
     last_call_meta: dict[str, Any] = {}
+    is_comment = input_payload.get("content_type") == "comment" or (
+        input_payload.get("output_fields") or []
+    ) == ["comment"]
+    response_format = None if is_comment else {"type": "json_object"}
     for attempt_no, attempt_prompt in enumerate(attempts, start=1):
         call_result = await _call_openai_compatible_model(
             model=model,
@@ -614,6 +624,7 @@ async def _direct_generate_with_empty_retry(
             temperature=temperature,
             max_tokens=max_tokens,
             model_config=model_config,
+            response_format=response_format,
             return_result=True,
         )
         if isinstance(call_result, DirectLLMCallResult):
@@ -663,6 +674,7 @@ async def _call_openai_compatible_model(
     temperature: float,
     max_tokens: int | None,
     model_config: dict[str, Any],
+    response_format: dict[str, str] | None = None,
     return_result: bool = False,
 ) -> str | DirectLLMCallResult:
     result = await _call_openai_compatible_model_result(
@@ -672,6 +684,7 @@ async def _call_openai_compatible_model(
         temperature=temperature,
         max_tokens=max_tokens,
         model_config=model_config,
+        response_format=response_format,
     )
     return result if return_result else result.content
 
@@ -684,6 +697,7 @@ async def _call_openai_compatible_model_result(
     temperature: float,
     max_tokens: int | None,
     model_config: dict[str, Any],
+    response_format: dict[str, str] | None = None,
 ) -> DirectLLMCallResult:
     started = time.perf_counter()
     endpoint = _direct_model_endpoint(model_config)
@@ -710,6 +724,8 @@ async def _call_openai_compatible_model_result(
     }
     if max_tokens:
         payload["max_tokens"] = max_tokens
+    if response_format:
+        payload["response_format"] = response_format
 
     last_error = ""
     for _ in range(retry_count):
@@ -750,6 +766,7 @@ async def call_direct_llm_text(
     user_prompt: str,
     temperature: float = 0,
     max_tokens: int | None = None,
+    response_format: dict[str, str] | None = None,
 ) -> str:
     """Call the same OpenAI-compatible provider path used by MAGA direct generation."""
     result = await call_direct_llm(
@@ -758,6 +775,7 @@ async def call_direct_llm_text(
         user_prompt=user_prompt,
         temperature=temperature,
         max_tokens=max_tokens,
+        response_format=response_format,
     )
     return result.content
 
@@ -769,6 +787,7 @@ async def call_direct_llm(
     user_prompt: str,
     temperature: float = 0,
     max_tokens: int | None = None,
+    response_format: dict[str, str] | None = None,
 ) -> DirectLLMCallResult:
     """Call the direct provider path and retain provider, token, and latency metadata."""
     model = _direct_model_code(model_config, fallback_key="MAGA_DIRECT_REVIEW_MODEL")
@@ -779,6 +798,7 @@ async def call_direct_llm(
         temperature=temperature,
         max_tokens=max_tokens,
         model_config=model_config,
+        response_format=response_format,
     )
 
 

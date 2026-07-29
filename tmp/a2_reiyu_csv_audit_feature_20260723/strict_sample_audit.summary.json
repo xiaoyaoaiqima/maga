@@ -1,0 +1,9 @@
+{
+  "input_path": "/Users/luxifa/maga/tmp/a2_reiyu_csv_audit_feature_20260723/strict_sample.csv",
+  "output_path": "/Users/luxifa/maga/tmp/a2_reiyu_csv_audit_feature_20260723/strict_sample_audit.csv",
+  "total_count": 1,
+  "direct_pool_count": 1,
+  "light_fix_count": 0,
+  "watch_count": 0,
+  "hold_out_count": 0
+}

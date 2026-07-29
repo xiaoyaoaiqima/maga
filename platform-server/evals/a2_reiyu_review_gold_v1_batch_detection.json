@@ -1,0 +1,121 @@
+{
+  "dataset_code": "a2_reiyu_review_gold_v1",
+  "slice": "batch_detection_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-24",
+  "description": "a2 礼遇文章中每批检测的事实边界，以及检测信息与产品使用效果之间的因果边界。",
+  "labels": ["pass", "reject"],
+  "label_semantics": {
+    "pass": "每批检测仅承接品质、标准、品牌认真或消费者安心，或者与使用体验并列但没有因果连接。",
+    "reject": "把每批检测扩写成逐罐检测，或把检测直接解释为宝宝使用效果的成因。"
+  },
+  "rubric": [
+    "已确认事实是a2至初现在每批都有检测；可以自然概括为批次检测严格、标准高，但不能扩写为每罐单独检测、每罐都做检测、一罐一检或逐罐检测。",
+    "扫罐底码查询对应批次报告、每罐都能查到报告、每一罐都能溯源或看到每罐来源，描述的是查询和溯源能力，不等于逐罐检测，应当通过。",
+    "每批检测可以承接品质透明、品牌认真、消费者安心等认可。",
+    "宝宝长肉、吸收、肚肚状态、睡眠、抵抗力等使用效果本身允许出现，但不能用所以、怪不得、因此、说明、这下等连接词，把这些效果直接归因于每批检测。",
+    "‘每批’和‘每一批’是同一业务事实，审核召回必须覆盖两种写法。检测句后即使隔着一句报告细节，只要随后仍用‘难怪、所以、这下’把宝宝效果接回来，因果关系仍然成立。",
+    "检测信息讲完后，另起使用体验且两者没有因果连接，可以通过。"
+  ],
+  "items": [
+    {
+      "title": "每罐检测属于事实扩写",
+      "content": "a2至初现在每批都有检测，每罐都查，做事确实认真。",
+      "meta": {
+        "case_code": "A2RY-BD-001",
+        "expected_label": "reject",
+        "issue_code": "batch_detection_fact_error",
+        "reason": "把每批检测扩写成每罐都查。",
+        "source": "batch_810_human_review"
+      }
+    },
+    {
+      "title": "检测不能解释宝宝长肉",
+      "content": "a2至初现在每批都有检测，怪不得宝宝喝了以后长肉快。",
+      "meta": {
+        "case_code": "A2RY-BD-002",
+        "expected_label": "reject",
+        "issue_code": "batch_detection_effect_causality",
+        "reason": "用怪不得把检测直接解释为宝宝长肉的成因。",
+        "source": "batch_810_human_review"
+      }
+    },
+    {
+      "title": "检测严格所以更安心",
+      "content": "a2至初现在每批都有检测，批次检测做得严格，我看完心里更踏实。",
+      "meta": {
+        "case_code": "A2RY-BD-003",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "检测承接消费者安心，属于允许的认可路径。",
+        "source": "human_confirmed_boundary"
+      }
+    },
+    {
+      "title": "检测和使用体验并列",
+      "content": "a2至初现在每批都有检测，a2做事挺认真。我家喝了几个月，宝宝小脸慢慢圆了。",
+      "meta": {
+        "case_code": "A2RY-BD-004",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "检测后的品牌认可与长期使用体验分开表达，没有建立错误因果。",
+        "source": "human_confirmed_boundary"
+      }
+    },
+    {
+      "title": "跨句难怪仍形成因果",
+      "content": "a2至初现在每批都有检测。难怪一直喝着放心，宝宝肚肚舒服得很。",
+      "meta": {
+        "case_code": "A2RY-BD-005",
+        "expected_label": "reject",
+        "issue_code": "batch_detection_effect_causality",
+        "reason": "检测句后的‘难怪’仍把宝宝肚肚感受纳入检测带来的结果。",
+        "source": "batch_811_human_review"
+      }
+    },
+    {
+      "title": "检测流程细节属于事实扩写",
+      "content": "a2至初现在每批都有检测，从奶源到罐装都查一遍。",
+      "meta": {
+        "case_code": "A2RY-BD-006",
+        "expected_label": "reject",
+        "issue_code": "batch_detection_fact_error",
+        "reason": "原素材只确认每批都有检测，没有提供从奶源到罐装的检测流程。",
+        "source": "batch_812_human_review"
+      }
+    },
+    {
+      "title": "每罐查询对应批次报告",
+      "content": "扫罐底码可以查对应批次的检测报告，每一罐都能查到报告。",
+      "meta": {
+        "case_code": "A2RY-BD-007",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "描述的是每罐都可以查询其对应批次报告，不是每罐单独接受检测。",
+        "source": "batch_20260724_human_recalibration"
+      }
+    },
+    {
+      "title": "每罐可溯源",
+      "content": "扫罐底码能看到每罐来源，每一罐都能溯源，查询起来很方便。",
+      "meta": {
+        "case_code": "A2RY-BD-008",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "reason": "溯源和查看来源属于查询能力，没有扩写成逐罐检测。",
+        "source": "batch_20260724_human_recalibration"
+      }
+    },
+    {
+      "title": "每一批与隔句难怪仍形成因果",
+      "content": "a2至初现在每一批都会做检测。我扫罐底码看了报告，显示未检出。难怪宝宝最近胃口好、长肉快。",
+      "meta": {
+        "case_code": "A2RY-BD-009",
+        "expected_label": "reject",
+        "issue_code": "batch_detection_effect_causality",
+        "reason": "‘每一批’与‘每批’语义相同；中间虽然插入报告查询句，后面的‘难怪’仍把宝宝效果解释为检测带来的结果。",
+        "source": "batch_20260725_human_review"
+      }
+    }
+  ]
+}

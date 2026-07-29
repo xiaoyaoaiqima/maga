@@ -1,0 +1,137 @@
+{
+  "raw_output": {
+    "items": [
+      {
+        "strategy_id": "S01",
+        "response_mode": "direct_reaction",
+        "life_entry": "线上随眼看到",
+        "comment": "咦，有货了啊"
+      },
+      {
+        "strategy_id": "S02",
+        "response_mode": "stock_observation",
+        "life_entry": "去母婴店买其他东西",
+        "comment": "今天路过母婴店，看货架上挺多的，不像前阵子那么紧"
+      },
+      {
+        "strategy_id": "S03",
+        "response_mode": "less_hassle",
+        "life_entry": "遛娃时随口聊起",
+        "comment": "现在不用到处问了，想买就能买到，省心多了"
+      },
+      {
+        "strategy_id": "S04",
+        "response_mode": "personal_replenish",
+        "life_entry": "家里快喝完，准备去补",
+        "comment": "刚好家里剩最后一罐，打开手机一搜，嘿，能直接买"
+      },
+      {
+        "strategy_id": "S05",
+        "response_mode": "casual_reply",
+        "life_entry": "朋友发消息说看到有货",
+        "comment": "朋友跟我说她那边也有了，看来这阵子是真的稳了"
+      },
+      {
+        "strategy_id": "S06",
+        "response_mode": "long_term_attention",
+        "life_entry": "长期用，定期看看库存",
+        "comment": "我隔段时间就瞄一眼，这阵子一直都能买到，挺好"
+      },
+      {
+        "strategy_id": "S07",
+        "response_mode": "no_need_to_stock",
+        "life_entry": "看到别人囤货，自己觉得没必要",
+        "comment": "看到有人一箱箱搬，其实不用囤，随时买都有"
+      },
+      {
+        "strategy_id": "S08",
+        "response_mode": "before_after",
+        "life_entry": "对比之前抢货状态",
+        "comment": "以前要掐点抢，现在打开就有，感觉不一样了"
+      },
+      {
+        "strategy_id": "S09",
+        "response_mode": "direct_reaction",
+        "life_entry": "在超市货架前",
+        "comment": "超市里摆得整整齐齐，随手就拿了一罐"
+      },
+      {
+        "strategy_id": "S10",
+        "response_mode": "stock_observation",
+        "life_entry": "接孩子放学路上",
+        "comment": "路过母婴店看到门口堆着，看来供货跟上来了"
+      }
+    ]
+  },
+  "items": [
+    "咦，有货了啊",
+    "今天路过母婴店，看货架上挺多的，不像前阵子那么紧",
+    "现在不用到处问了，想买就能买到，省心多了",
+    "刚好家里剩最后一罐，打开手机一搜，嘿，能直接买",
+    "朋友跟我说她那边也有了，看来这阵子是真的稳了",
+    "我隔段时间就瞄一眼，这阵子一直都能买到，挺好",
+    "看到有人一箱箱搬，其实不用囤，随时买都有",
+    "以前要掐点抢，现在打开就有，感觉不一样了",
+    "超市里摆得整整齐齐，随手就拿了一罐",
+    "路过母婴店看到门口堆着，看来供货跟上来了"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 6.462,
+    "lengths": [
+      6,
+      24,
+      20,
+      23,
+      22,
+      22,
+      20,
+      20,
+      17,
+      20
+    ],
+    "han_lengths": [
+      5,
+      22,
+      18,
+      20,
+      21,
+      20,
+      18,
+      18,
+      16,
+      19
+    ],
+    "bands": [
+      "short",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 1,
+      "medium": 9,
+      "long": 0,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1239,
+      "completion_tokens": 575,
+      "total_tokens": 1814,
+      "prompt_tokens_details": {
+        "cached_tokens": 1152
+      },
+      "prompt_cache_hit_tokens": 1152,
+      "prompt_cache_miss_tokens": 87
+    },
+    "run_no": 2
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "raw_output": {
+    "items": [
+      {
+        "strategy_id": "S01",
+        "response_mode": "direct_reaction",
+        "life_entry": "线上随眼看到",
+        "comment": "哟，有货了啊，挺难得。"
+      },
+      {
+        "strategy_id": "S02",
+        "response_mode": "stock_observation",
+        "life_entry": "线上连续几次看到可买",
+        "comment": "这几次刷到都有货，看来确实稳下来了。"
+      },
+      {
+        "strategy_id": "S03",
+        "response_mode": "personal_replenish",
+        "life_entry": "家里快喝完时补到",
+        "comment": "刚好剩个底儿，手边就补上了，没断顿。"
+      },
+      {
+        "strategy_id": "S04",
+        "response_mode": "less_hassle",
+        "life_entry": "以前需要反复确认",
+        "comment": "以前总怕买不着得来回看，现在省心多了。"
+      },
+      {
+        "strategy_id": "S05",
+        "response_mode": "no_need_to_stock",
+        "life_entry": "别人提到要多囤",
+        "comment": "不用囤太多吧，现在好买，喝完再说呗。"
+      },
+      {
+        "strategy_id": "S06",
+        "response_mode": "casual_reply",
+        "life_entry": "回复别人说现在有货",
+        "comment": "对对对，我前两天看也正常卖呢，不急。"
+      },
+      {
+        "strategy_id": "S07",
+        "response_mode": "long_term_attention",
+        "life_entry": "长期使用会偶尔留意",
+        "comment": "一直用这个，隔段时间看一眼库存在，心里有数。"
+      },
+      {
+        "strategy_id": "S08",
+        "response_mode": "before_after",
+        "life_entry": "前后状态对比",
+        "comment": "以前得抢，现在随便啥时候都能买到，舒服。"
+      },
+      {
+        "strategy_id": "S09",
+        "response_mode": "direct_reaction",
+        "life_entry": "家人或朋友带回消息",
+        "comment": "朋友说看到有货了，那感情好。"
+      },
+      {
+        "strategy_id": "S10",
+        "response_mode": "stock_observation",
+        "life_entry": "日常逛商超时看到",
+        "comment": "超市货架上摆得挺满，看来供应跟上了。"
+      }
+    ]
+  },
+  "items": [
+    "哟，有货了啊，挺难得。",
+    "这几次刷到都有货，看来确实稳下来了。",
+    "刚好剩个底儿，手边就补上了，没断顿。",
+    "以前总怕买不着得来回看，现在省心多了。",
+    "不用囤太多吧，现在好买，喝完再说呗。",
+    "对对对，我前两天看也正常卖呢，不急。",
+    "一直用这个，隔段时间看一眼库存在，心里有数。",
+    "以前得抢，现在随便啥时候都能买到，舒服。",
+    "朋友说看到有货了，那感情好。",
+    "超市货架上摆得挺满，看来供应跟上了。"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 4.756,
+    "lengths": [
+      11,
+      18,
+      18,
+      19,
+      18,
+      18,
+      22,
+      20,
+      14,
+      18
+    ],
+    "han_lengths": [
+      8,
+      16,
+      15,
+      17,
+      15,
+      15,
+      19,
+      17,
+      12,
+      16
+    ],
+    "bands": [
+      "short",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 1,
+      "medium": 9,
+      "long": 0,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1653,
+      "completion_tokens": 564,
+      "total_tokens": 2217,
+      "prompt_tokens_details": {
+        "cached_tokens": 1152
+      },
+      "prompt_cache_hit_tokens": 1152,
+      "prompt_cache_miss_tokens": 501
+    },
+    "run_no": 1
+  }
+}

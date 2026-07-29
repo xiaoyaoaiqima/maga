@@ -1,0 +1,122 @@
+{
+  "dataset_code": "a2_reiyu_review_gold_v1",
+  "slice": "text_surface_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-23",
+  "description": "a2 礼遇文章中的抽奖中奖经历、品牌大小写、经历冲突、文本损坏和连续正向词堆叠边界。",
+  "labels": ["pass", "reject"],
+  "label_semantics": {
+    "pass": "品牌a2保持小写，A2仅作为蛋白成分名出现，没有自称抽奖中奖，正向表达也没有在同一句机械堆叠。",
+    "reject": "品牌a2或产品a2至初被写成大写A2，自称已抽中或拿到抽奖奖品，或在同一句连续堆叠大量正向评价。"
+  },
+  "rubric": [
+    "品牌a2和产品a2至初中的a必须小写；标题里的‘A2老粉’也属于品牌大小写错误。",
+    "A2蛋白是成分名，A2保持大写，不能被大小写审核误伤。",
+    "已经领到小听、老客回归礼、会员权益或完成集罐兑换可以写；自称抽中或拿到旅游基金、金手链、夏凉被等抽奖奖品时直接拒绝。",
+    "同篇写宝宝从出生就一直喝a2至初，同时又回顾后续转奶顺利，属于使用经历冲突，需要改写。",
+    "‘我反正是值得长期回购了’‘品实用价值感在线’属于明显病句或文本拼接损坏，需要改写。",
+    "单个或少量‘做得认真、标准高、买着放心’可以自然使用；同一句连续堆叠五类及以上正向评价时需要改写。"
+  ],
+  "items": [
+    {
+      "title": "A2老粉的会员福利真香",
+      "content": "家里一直喝a2至初。",
+      "meta": {
+        "case_code": "A2RY-TS-001",
+        "expected_label": "reject",
+        "issue_code": "brand_case_error",
+        "source": "batch_814_human_review"
+      }
+    },
+    {
+      "title": "a2老粉的会员福利真香",
+      "content": "a2至初主打A2蛋白。",
+      "meta": {
+        "case_code": "A2RY-TS-002",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "source": "human_confirmed_brand_case_boundary"
+      }
+    },
+    {
+      "title": "a2至初小听拿到手",
+      "content": "老客还能领小听，我的已经拿到了。",
+      "meta": {
+        "case_code": "A2RY-TS-004",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "source": "user_confirmed_deterministic_benefit_receipt"
+      }
+    },
+    {
+      "title": "集罐兑换更实在",
+      "content": "集12罐直接换一罐奶粉，这不比中奖靠谱多了。",
+      "meta": {
+        "case_code": "A2RY-TS-010",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "source": "user_confirmed_lottery_comparison_boundary"
+      }
+    },
+    {
+      "title": "新西兰旅游大奖抽到啦",
+      "content": "这次真抽中了新西兰旅游大奖。",
+      "meta": {
+        "case_code": "A2RY-TS-007",
+        "expected_label": "reject",
+        "issue_code": "fabricated_reward_experience",
+        "source": "user_confirmed_lottery_win_boundary"
+      }
+    },
+    {
+      "title": "a2至初会员升级福利叠加太实在",
+      "content": "而且现在a2至初每批都有检测，品质更透明了。品控在线，质量稳定，标准高，细节到位，诚意满满。",
+      "meta": {
+        "case_code": "A2RY-TS-005",
+        "expected_label": "reject",
+        "issue_code": "positive_expression_stacking",
+        "source": "batch_817_human_review"
+      }
+    },
+    {
+      "title": "a2这活动有点意思",
+      "content": "真心觉得他们做得认真，标准高，细节也到位，买着放心。",
+      "meta": {
+        "case_code": "A2RY-TS-006",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "source": "batch_817_user_confirmed_boundary"
+      }
+    },
+    {
+      "title": "a2至初从出生喝到现在",
+      "content": "我家娃从出生就喝a2至初，当初转奶也特别顺利。",
+      "meta": {
+        "case_code": "A2RY-TS-008",
+        "expected_label": "reject",
+        "issue_code": "narrative_consistency",
+        "source": "user_confirmed_backup_batch_review"
+      }
+    },
+    {
+      "title": "a2至初值得回购",
+      "content": "这牌子经得起研究，我反正是值得长期回购了。",
+      "meta": {
+        "case_code": "A2RY-TS-009",
+        "expected_label": "reject",
+        "issue_code": "malformed_text",
+        "source": "user_confirmed_backup_batch_review"
+      }
+    },
+    {
+      "title": "a2至初活动分享",
+      "content": "品实用价值感在线，完全不是走过场。",
+      "meta": {
+        "case_code": "A2RY-TS-010",
+        "expected_label": "reject",
+        "issue_code": "malformed_text",
+        "source": "user_confirmed_backup_batch_review"
+      }
+    }
+  ]
+}

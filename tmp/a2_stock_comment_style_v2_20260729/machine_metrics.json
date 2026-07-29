@@ -1,0 +1,959 @@
+{
+  "round_1": {
+    "A_core_only": {
+      "count": 10,
+      "unique_count": 10,
+      "average_length": 17.7,
+      "length_stdev": 4.69,
+      "min_length": 7,
+      "max_length": 25,
+      "max_pairwise_jaccard_2gram": 0.1333,
+      "closest_pair": {
+        "left": "S04",
+        "right": "S08",
+        "score": 0.1333
+      },
+      "response_mode_count": 8,
+      "life_entry_count": 10,
+      "source_overlap": [
+        {
+          "strategy_id": "S01",
+          "comment": "嘿，还真有货了",
+          "style_ref_id": "R03",
+          "source_text": "真的假的",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "真"
+        },
+        {
+          "strategy_id": "S02",
+          "comment": "这阵子刷到好几次都能加购物车，库存应该挺稳的",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S03",
+          "comment": "刚好剩小半罐，打开一看能买，补了一罐",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S04",
+          "comment": "以前总得盯着看有没有货，现在省心多了",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S05",
+          "comment": "看到有人说要多囤点，我倒觉得不用，需要的时候买就行",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S06",
+          "comment": "是吧，我刚看也是有的，不用着急",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "是"
+        },
+        {
+          "strategy_id": "S07",
+          "comment": "用了挺久，时不时会看下库存，这阵子一直有",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "这"
+        },
+        {
+          "strategy_id": "S08",
+          "comment": "以前想买经常没货，现在好多了，基本都能买到",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S09",
+          "comment": "我姐刚跟我说现在有货，那还挺好的",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S10",
+          "comment": "昨天去超市看到架子上摆得挺满的",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        }
+      ],
+      "max_source_overlap": 0.0,
+      "diagnostic_hits": []
+    },
+    "B_shared_real_lines": {
+      "count": 10,
+      "unique_count": 10,
+      "average_length": 12.9,
+      "length_stdev": 4.09,
+      "min_length": 6,
+      "max_length": 19,
+      "max_pairwise_jaccard_2gram": 0.0667,
+      "closest_pair": {
+        "left": "S01",
+        "right": "S03",
+        "score": 0.0667
+      },
+      "response_mode_count": 8,
+      "life_entry_count": 10,
+      "source_overlap": [
+        {
+          "strategy_id": "S01",
+          "comment": "哎，有货了？",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S02",
+          "comment": "最近几次看都能加购，不像之前那样秒没。",
+          "style_ref_id": "R01",
+          "source_text": "cool！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": ""
+        },
+        {
+          "strategy_id": "S03",
+          "comment": "刚好要续上，一看有货就补了一罐。",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S04",
+          "comment": "不用天天刷了，省心很多。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S05",
+          "comment": "其实不用囤太多，现在买得到。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "到"
+        },
+        {
+          "strategy_id": "S06",
+          "comment": "对，我前几天也看到了，还挺好买的。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0625,
+          "longest_common_substring": "到了"
+        },
+        {
+          "strategy_id": "S07",
+          "comment": "一直喝这个，有时会看一眼库存。",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0556,
+          "longest_common_substring": "这个"
+        },
+        {
+          "strategy_id": "S08",
+          "comment": "以前常缺货，现在倒是好买了。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "是"
+        },
+        {
+          "strategy_id": "S09",
+          "comment": "听说了，那就好。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S10",
+          "comment": "货架上摆了不少。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        }
+      ],
+      "max_source_overlap": 0.0625,
+      "diagnostic_hits": []
+    },
+    "C_surface_signatures": {
+      "count": 10,
+      "unique_count": 10,
+      "average_length": 13.4,
+      "length_stdev": 4.36,
+      "min_length": 5,
+      "max_length": 18,
+      "max_pairwise_jaccard_2gram": 0.0741,
+      "closest_pair": {
+        "left": "S02",
+        "right": "S07",
+        "score": 0.0741
+      },
+      "response_mode_count": 8,
+      "life_entry_count": 10,
+      "source_overlap": [
+        {
+          "strategy_id": "S01",
+          "comment": "Nice！",
+          "style_ref_id": "R01",
+          "source_text": "cool！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "c"
+        },
+        {
+          "strategy_id": "S02",
+          "comment": "这阵子页面上一直能加购，库存挺稳的。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S03",
+          "comment": "正好剩最后一点，顺手补了一罐。",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "点"
+        },
+        {
+          "strategy_id": "S04",
+          "comment": "不用盯时间确实省心多了。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S05",
+          "comment": "正常喝就好，没必要一次囤很多。",
+          "style_ref_id": "R07",
+          "source_text": "衔接很丝滑",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "很"
+        },
+        {
+          "strategy_id": "S06",
+          "comment": "对，现在有货，不用太担心。",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S07",
+          "comment": "一直喝这个，最近偶尔看看库存，还行。",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.05,
+          "longest_common_substring": "这个"
+        },
+        {
+          "strategy_id": "S08",
+          "comment": "以前要盯着时间，现在随便点开就有。",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "点"
+        },
+        {
+          "strategy_id": "S09",
+          "comment": "那挺好的呀。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S10",
+          "comment": "超市货架上看到了，放着挺满的。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0667,
+          "longest_common_substring": "到了"
+        }
+      ],
+      "max_source_overlap": 0.0667,
+      "diagnostic_hits": [
+        {
+          "strategy_id": "S01",
+          "comment": "Nice！",
+          "hits": [
+            "english_word"
+          ]
+        }
+      ]
+    }
+  },
+  "round_2": {
+    "A_core_only": {
+      "count": 10,
+      "unique_count": 10,
+      "average_length": 15.6,
+      "length_stdev": 3.14,
+      "min_length": 10,
+      "max_length": 20,
+      "max_pairwise_jaccard_2gram": 0.05,
+      "closest_pair": {
+        "left": "S01",
+        "right": "S05",
+        "score": 0.05
+      },
+      "response_mode_count": 8,
+      "life_entry_count": 10,
+      "source_overlap": [
+        {
+          "strategy_id": "S01",
+          "comment": "居然有货了？有点意外",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.1538,
+          "longest_common_substring": "有点意"
+        },
+        {
+          "strategy_id": "S02",
+          "comment": "这几天点进去都显示有库存，跟之前不太一样",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "这"
+        },
+        {
+          "strategy_id": "S03",
+          "comment": "正想着要买，发现能直接加到购物车了",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "到"
+        },
+        {
+          "strategy_id": "S04",
+          "comment": "不用老去问客服了，现在自己看就能知道",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S05",
+          "comment": "有货就正常买呗，不用一次搬太多",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S06",
+          "comment": "对的，前几天看还有，应该不用太赶",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S07",
+          "comment": "用习惯了，隔段时间会看看，最近倒是挺稳的",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "是"
+        },
+        {
+          "strategy_id": "S08",
+          "comment": "以前赶着买，现在慢慢挑也行",
+          "style_ref_id": "R08",
+          "source_text": "可以这么理解",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "以"
+        },
+        {
+          "strategy_id": "S09",
+          "comment": "听说了，那就不用特意跑了",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "意"
+        },
+        {
+          "strategy_id": "S10",
+          "comment": "货架上摆得挺满的，随手拿了一罐",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        }
+      ],
+      "max_source_overlap": 0.1538,
+      "diagnostic_hits": []
+    },
+    "B_shared_real_lines": {
+      "count": 10,
+      "unique_count": 10,
+      "average_length": 16.7,
+      "length_stdev": 5.55,
+      "min_length": 5,
+      "max_length": 23,
+      "max_pairwise_jaccard_2gram": 0.129,
+      "closest_pair": {
+        "left": "S04",
+        "right": "S08",
+        "score": 0.129
+      },
+      "response_mode_count": 8,
+      "life_entry_count": 10,
+      "source_overlap": [
+        {
+          "strategy_id": "S01",
+          "comment": "cool！",
+          "style_ref_id": "R01",
+          "source_text": "cool！",
+          "jaccard_2gram": 1.0,
+          "longest_common_substring": "cool"
+        },
+        {
+          "strategy_id": "S02",
+          "comment": "这阵子每次点进去都有货，不用蹲点了。",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "这"
+        },
+        {
+          "strategy_id": "S03",
+          "comment": "正好剩最后一罐，打开一看能补上，挺巧的。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S04",
+          "comment": "以前总得来回看有没有货，现在省心多了。",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S05",
+          "comment": "我觉得不用囤太多，现在挺稳的，喝完再买也不迟。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S06",
+          "comment": "是的！我刚看了一下，确实有货。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0909,
+          "longest_common_substring": "是的"
+        },
+        {
+          "strategy_id": "S07",
+          "comment": "用了挺久，偶尔想起来会看看，最近都挺正常的。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S08",
+          "comment": "以前跑好几家才碰到有货，现在去一趟就能拿到。",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S09",
+          "comment": "真的假的，我赶紧问问。",
+          "style_ref_id": "R03",
+          "source_text": "真的假的",
+          "jaccard_2gram": 0.375,
+          "longest_common_substring": "真的假的"
+        },
+        {
+          "strategy_id": "S10",
+          "comment": "路过货架瞄到摆得挺满的。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        }
+      ],
+      "max_source_overlap": 1.0,
+      "diagnostic_hits": [
+        {
+          "strategy_id": "S01",
+          "comment": "cool！",
+          "hits": [
+            "english_word",
+            "source_specific_word"
+          ]
+        }
+      ]
+    },
+    "C_surface_signatures": {
+      "count": 10,
+      "unique_count": 10,
+      "average_length": 11.9,
+      "length_stdev": 3.73,
+      "min_length": 6,
+      "max_length": 16,
+      "max_pairwise_jaccard_2gram": 0.1429,
+      "closest_pair": {
+        "left": "S04",
+        "right": "S08",
+        "score": 0.1429
+      },
+      "response_mode_count": 8,
+      "life_entry_count": 10,
+      "source_overlap": [
+        {
+          "strategy_id": "S01",
+          "comment": "哈哈，有货了",
+          "style_ref_id": "R10",
+          "source_text": "听劝哈哈哈",
+          "jaccard_2gram": 0.1667,
+          "longest_common_substring": "哈哈"
+        },
+        {
+          "strategy_id": "S02",
+          "comment": "我这阵子看一直都能买到，挺稳的",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S03",
+          "comment": "刚开最后一罐，正好补到了",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0769,
+          "longest_common_substring": "到了"
+        },
+        {
+          "strategy_id": "S04",
+          "comment": "以前总要问有没有货，现在不用了",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S05",
+          "comment": "不用囤太多，现在买着方便",
+          "style_ref_id": "R01",
+          "source_text": "cool！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": ""
+        },
+        {
+          "strategy_id": "S06",
+          "comment": "对，现在货挺足的，我前两天看也是",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S07",
+          "comment": "习惯了时不时看一眼，最近库存可以",
+          "style_ref_id": "R08",
+          "source_text": "可以这么理解",
+          "jaccard_2gram": 0.0556,
+          "longest_common_substring": "可以"
+        },
+        {
+          "strategy_id": "S08",
+          "comment": "以前总碰不到，现在好买多了",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "到"
+        },
+        {
+          "strategy_id": "S09",
+          "comment": "哟，那挺好的",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S10",
+          "comment": "超市里摆得挺多的",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        }
+      ],
+      "max_source_overlap": 0.1667,
+      "diagnostic_hits": [
+        {
+          "strategy_id": "S01",
+          "comment": "哈哈，有货了",
+          "hits": [
+            "laughter"
+          ]
+        }
+      ]
+    }
+  },
+  "round_3": {
+    "A_core_only": {
+      "count": 10,
+      "unique_count": 10,
+      "average_length": 16,
+      "length_stdev": 2.37,
+      "min_length": 10,
+      "max_length": 19,
+      "max_pairwise_jaccard_2gram": 0.1071,
+      "closest_pair": {
+        "left": "S04",
+        "right": "S08",
+        "score": 0.1071
+      },
+      "response_mode_count": 8,
+      "life_entry_count": 10,
+      "source_overlap": [
+        {
+          "strategy_id": "S01",
+          "comment": "噢，终于能加购物车了",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S02",
+          "comment": "我看了好几回都能加，不像以前要蹲",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S03",
+          "comment": "正想着还剩半罐，顺手就补了一罐",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S04",
+          "comment": "之前总得问客服有没有货，现在省事多了",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S05",
+          "comment": "不用囤太多吧，需要的时候再买也来得及",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S06",
+          "comment": "是呀，这会库存挺稳的，我刚看也有",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "是"
+        },
+        {
+          "strategy_id": "S07",
+          "comment": "喝了一年多，现在偶尔点进去看都在",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "点"
+        },
+        {
+          "strategy_id": "S08",
+          "comment": "以前总怕断货，现在倒是随时能买到了",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0556,
+          "longest_common_substring": "到了"
+        },
+        {
+          "strategy_id": "S09",
+          "comment": "听我妈说店里有了，那还挺方便的",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S10",
+          "comment": "昨天逛超市随手拿了一罐，货架上摆得挺满",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        }
+      ],
+      "max_source_overlap": 0.0556,
+      "diagnostic_hits": []
+    },
+    "B_shared_real_lines": {
+      "count": 10,
+      "unique_count": 10,
+      "average_length": 16,
+      "length_stdev": 4.98,
+      "min_length": 6,
+      "max_length": 24,
+      "max_pairwise_jaccard_2gram": 0.0769,
+      "closest_pair": {
+        "left": "S01",
+        "right": "S06",
+        "score": 0.0769
+      },
+      "response_mode_count": 8,
+      "life_entry_count": 10,
+      "source_overlap": [
+        {
+          "strategy_id": "S01",
+          "comment": "噢，有货了？",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S02",
+          "comment": "这阵子点进去好几次都是可买状态，跟以前不太一样。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "是"
+        },
+        {
+          "strategy_id": "S03",
+          "comment": "正好快见底了，顺手补了一罐。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S04",
+          "comment": "不用老盯着看了，这阵子省心不少。",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "这"
+        },
+        {
+          "strategy_id": "S05",
+          "comment": "其实不用囤太多，需要的时候能买到就行。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S06",
+          "comment": "是的，我前天看也有货，不用急。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0909,
+          "longest_common_substring": "是的"
+        },
+        {
+          "strategy_id": "S07",
+          "comment": "用了快一年了，偶尔看看库存，这阵子挺稳的。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S08",
+          "comment": "以前总怕买不到，现在倒是随便就能拿到。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "是"
+        },
+        {
+          "strategy_id": "S09",
+          "comment": "听说了，那还挺好的。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S10",
+          "comment": "昨天逛超市看到了，货架上挺多的。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0625,
+          "longest_common_substring": "到了"
+        }
+      ],
+      "max_source_overlap": 0.0909,
+      "diagnostic_hits": []
+    },
+    "C_surface_signatures": {
+      "count": 10,
+      "unique_count": 10,
+      "average_length": 11.9,
+      "length_stdev": 3.86,
+      "min_length": 4,
+      "max_length": 17,
+      "max_pairwise_jaccard_2gram": 0.0952,
+      "closest_pair": {
+        "left": "S04",
+        "right": "S08",
+        "score": 0.0952
+      },
+      "response_mode_count": 8,
+      "life_entry_count": 10,
+      "source_overlap": [
+        {
+          "strategy_id": "S01",
+          "comment": "终于有货了！",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S02",
+          "comment": "这阵子看了好几回，库存一直挺稳的。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        },
+        {
+          "strategy_id": "S03",
+          "comment": "正好剩半罐，昨天补到一罐。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "到"
+        },
+        {
+          "strategy_id": "S04",
+          "comment": "以前总怕买不到，现在不用操心了。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "到"
+        },
+        {
+          "strategy_id": "S05",
+          "comment": "看到有货就行，不用囤太多。",
+          "style_ref_id": "R04",
+          "source_text": "有点意思这个音效",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "有"
+        },
+        {
+          "strategy_id": "S06",
+          "comment": "是呢，我前两天看也还有。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "是"
+        },
+        {
+          "strategy_id": "S07",
+          "comment": "我偶尔看一眼，最近都能买到。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "到"
+        },
+        {
+          "strategy_id": "S08",
+          "comment": "以前挺难买，现在容易多了。",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S09",
+          "comment": "太好了！",
+          "style_ref_id": "R05",
+          "source_text": "学到了，谢谢。",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "了"
+        },
+        {
+          "strategy_id": "S10",
+          "comment": "超市货架上摆得挺满的。",
+          "style_ref_id": "R02",
+          "source_text": "是的！",
+          "jaccard_2gram": 0.0,
+          "longest_common_substring": "的"
+        }
+      ],
+      "max_source_overlap": 0.0,
+      "diagnostic_hits": []
+    }
+  },
+  "aggregate": {
+    "A_core_only": {
+      "batch_count": 3,
+      "mean_average_length": 16.43,
+      "mean_length_stdev": 3.4,
+      "mean_max_pairwise_jaccard_2gram": 0.0968,
+      "max_source_overlap_across_batches": 0.1538,
+      "diagnostic_hit_count": 0
+    },
+    "B_shared_real_lines": {
+      "batch_count": 3,
+      "mean_average_length": 15.2,
+      "mean_length_stdev": 4.87,
+      "mean_max_pairwise_jaccard_2gram": 0.0909,
+      "max_source_overlap_across_batches": 1.0,
+      "diagnostic_hit_count": 1
+    },
+    "C_surface_signatures": {
+      "batch_count": 3,
+      "mean_average_length": 12.4,
+      "mean_length_stdev": 3.98,
+      "mean_max_pairwise_jaccard_2gram": 0.1041,
+      "max_source_overlap_across_batches": 0.1667,
+      "diagnostic_hit_count": 2
+    }
+  }
+}

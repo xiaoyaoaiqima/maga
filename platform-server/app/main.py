@@ -74,6 +74,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Default bootstrap initialization failed: {e}")
 
+    try:
+        from app.services.a2_reiyu_batch_audit_service import A2ReiyuBatchAuditDispatcher
+
+        resumed_a2_audits = await A2ReiyuBatchAuditDispatcher.resume_pending()
+        if resumed_a2_audits:
+            logger.info(f"Resumed {resumed_a2_audits} pending a2 reiyu audit tasks")
+    except Exception as e:
+        logger.warning(f"Pending a2 reiyu audit recovery failed: {e}")
+
     if settings.is_maga_clean_mode:
         logger.info("MAGA clean mode: legacy scheduler bootstrap skipped")
     else:

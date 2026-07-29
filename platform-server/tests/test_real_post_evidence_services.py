@@ -71,6 +71,29 @@ async def test_xhs_real_post_acquisition_uses_maga_native_tikhub_adapter():
     assert all("rs-crawler-analysis" not in url for url in requests)
 
 
+@pytest.mark.asyncio
+async def test_xhs_real_post_acquisition_does_not_retry_or_echo_token_on_unauthorized():
+    requests: list[str] = []
+    token = "secret-token-that-must-not-appear"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        return httpx.Response(
+            401,
+            json={"detail": {"message": f"Invalid API token: {token}"}},
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(base_url="https://api.tikhub.io", transport=transport) as client:
+        service = XhsRealPostAcquisitionService(api_key=token, client=client)
+        with pytest.raises(RuntimeError) as exc_info:
+            await service.fetch_keyword(XhsSearchRequest(keyword="儿童奶粉", limit=1, delay_ms=0))
+
+    assert len(requests) == 1
+    assert token not in str(exc_info.value)
+    assert str(exc_info.value) == "HTTP 401 for /api/v1/xiaohongshu/app_v2/search_notes"
+
+
 def test_xhs_real_post_acquisition_ignores_legacy_key_env_names(monkeypatch):
     monkeypatch.setattr(acquisition_module.settings, "MAGA_TIKHUB_API_KEY", "")
     monkeypatch.delenv("MAGA_TIKHUB_API_KEY", raising=False)

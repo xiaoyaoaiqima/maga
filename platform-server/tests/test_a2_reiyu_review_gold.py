@@ -49,6 +49,16 @@ COMMON_LOGIC_GOLD_PATH = (
     / "evals"
     / "a2_reiyu_review_gold_v1_common_logic.json"
 )
+BATCH_DETECTION_GOLD_PATH = (
+    Path(__file__).parents[1]
+    / "evals"
+    / "a2_reiyu_review_gold_v1_batch_detection.json"
+)
+TEXT_SURFACE_GOLD_PATH = (
+    Path(__file__).parents[1]
+    / "evals"
+    / "a2_reiyu_review_gold_v1_text_surface.json"
+)
 
 
 def test_a2_reiyu_asset_routes_to_approved_business_usability_rubric() -> None:
@@ -79,6 +89,8 @@ def test_a2_reiyu_asset_routes_to_approved_business_usability_rubric() -> None:
     assert "3罐小车车、6罐自行车、12罐奶粉、18罐婴儿车" in prompt
     assert "活动页面、页面里或页面上提到" in prompt
     assert "集罐过程扫罐码累计" in prompt
+    assert "检测语境里的“扫罐码、扫码、扫一下能看到检测信息或报告”" in prompt
+    assert "scan_code_mechanism_error" not in prompt
     assert "不得建议改成拍罐身、购买记录" in prompt
     assert "疾病、医疗效果" in prompt
     assert "多个独立发现来源" in prompt
@@ -86,15 +98,28 @@ def test_a2_reiyu_asset_routes_to_approved_business_usability_rubric() -> None:
     assert "旅游基金、金手链、夏凉被等抽奖奖品" in prompt
     assert "集罐换积分、集罐兑换积分" in prompt
     assert "奶粉喝完了把罐子存着" in prompt
-    assert "换到小车车娃可开心了" in prompt
+    assert "可以写已经领到小听、老客回归礼或会员权益" in prompt
+    assert "只有明确说自己抽中、中奖" in prompt
     assert "之前换a2后" in prompt
     assert "用冷水冲调奶粉" in prompt
     assert "焦虑一下没了" in prompt
+    assert "转过别的牌子失败" in prompt
+    assert "没闹过肚子" in prompt
     assert "negative_brand_risk" in prompt
     assert "超过20直接判 hard / hold_out" in prompt
     assert "rewrite_required=false" in prompt
     assert "抽奖那种虚的" in prompt
+    assert "质量肯定稳定" in prompt
+    assert "不鼎力推荐" in prompt
     assert "同一经历里的兴趣变化" in prompt
+    assert "不能扩写成“每罐单独检测、每罐都做检测、一罐一检、逐罐检测”" in prompt
+    assert "每一罐都能溯源" in prompt
+    assert "从奶源到罐装都查一遍" in prompt
+    assert "batch_detection_effect_causality" in prompt
+    assert "会员升级送小听粉" in prompt
+    assert "老客回归礼送小听粉" in prompt
+    assert "前文已经写明家里一直喝、老粉或老用户" in prompt
+    assert "我家一直喝这个" in prompt
 
 
 def test_a2_reiyu_business_review_is_mark_only_in_generation_postprocess() -> None:
@@ -133,11 +158,14 @@ def test_a2_reiyu_narrative_consistency_gold_keeps_approved_boundary() -> None:
         "A2RY-NC-002",
         "A2RY-NC-003",
         "A2RY-NC-004",
+        "A2RY-NC-005",
     }
     assert items["A2RY-NC-001"]["meta"]["expected_label"] == "light_fix"
     assert items["A2RY-NC-002"]["meta"]["expected_label"] == "pass"
     assert items["A2RY-NC-003"]["meta"]["expected_label"] == "pass"
     assert items["A2RY-NC-004"]["meta"]["expected_label"] == "light_fix"
+    assert items["A2RY-NC-005"]["meta"]["expected_label"] == "pass"
+    assert "一直喝a2至初" in items["A2RY-NC-005"]["content"]
 
 
 def test_a2_reiyu_gold_pairs_original_with_user_confirmed_minimal_fix() -> None:
@@ -246,6 +274,10 @@ def test_a2_reiyu_business_allowlist_keeps_user_confirmed_passes() -> None:
         "A2RY-BA-009",
         "A2RY-BA-010",
         "A2RY-BA-011",
+        "A2RY-BA-012",
+        "A2RY-BA-013",
+        "A2RY-BA-014",
+        "A2RY-BA-015",
     }
     assert all(item["meta"]["expected_label"] == "pass" for item in items.values())
 
@@ -327,6 +359,29 @@ def test_a2_reiyu_business_allowlist_allows_negated_risk_wording() -> None:
     assert items["A2RY-BA-011"]["meta"]["expected_label"] == "pass"
 
 
+def test_a2_reiyu_business_allowlist_allows_source_aligned_positive_wording() -> None:
+    payload = json.loads(BUSINESS_ALLOWLIST_GOLD_PATH.read_text(encoding="utf-8"))
+    rubric = "\n".join(payload["rubric"])
+    items = {item["meta"]["case_code"]: item for item in payload["items"]}
+
+    assert "‘质量肯定稳定’‘没出过问题’‘不鼎力推荐’‘经得起研究’" in rubric
+    assert items["A2RY-BA-012"]["meta"]["expected_label"] == "pass"
+    assert items["A2RY-BA-013"]["meta"]["expected_label"] == "pass"
+    assert items["A2RY-BA-014"]["meta"]["expected_label"] == "pass"
+    assert "没闹过肚子" in items["A2RY-BA-014"]["content"]
+
+
+def test_a2_reiyu_business_allowlist_allows_approved_avoidance_wording() -> None:
+    payload = json.loads(BUSINESS_ALLOWLIST_GOLD_PATH.read_text(encoding="utf-8"))
+    rubric = "\n".join(payload["rubric"])
+    items = {item["meta"]["case_code"]: item for item in payload["items"]}
+
+    assert "‘👊威实验室’" in rubric
+    assert "不能建议改回‘权威实验室’" in rubric
+    assert items["A2RY-BA-015"]["meta"]["expected_label"] == "pass"
+    assert "👊威实验室" in items["A2RY-BA-015"]["content"]
+
+
 def test_a2_reiyu_activity_mechanism_gold_keeps_approved_boundary() -> None:
     payload = json.loads(ACTIVITY_MECHANISM_GOLD_PATH.read_text(encoding="utf-8"))
 
@@ -356,6 +411,11 @@ def test_a2_reiyu_activity_mechanism_gold_keeps_approved_boundary() -> None:
         "A2RY-AM-017",
         "A2RY-AM-018",
         "A2RY-AM-019",
+        "A2RY-AM-020",
+        "A2RY-AM-021",
+        "A2RY-AM-022",
+        "A2RY-AM-023",
+        "A2RY-AM-024",
     }
 
 
@@ -387,7 +447,7 @@ def test_a2_reiyu_activity_mechanism_rejects_confirmed_fact_errors() -> None:
     assert items["A2RY-AM-004"]["meta"]["expected_label"] == "reject"
     assert items["A2RY-AM-005"]["meta"]["expected_label"] == "reject"
     assert items["A2RY-AM-006"]["meta"]["expected_label"] == "reject"
-    assert items["A2RY-AM-012"]["meta"]["expected_label"] == "reject"
+    assert items["A2RY-AM-012"]["meta"]["expected_label"] == "pass"
     assert items["A2RY-AM-013"]["meta"]["expected_label"] == "reject"
     assert items["A2RY-AM-014"]["meta"]["expected_label"] == "reject"
     assert items["A2RY-AM-015"]["meta"]["expected_label"] == "reject"
@@ -395,6 +455,9 @@ def test_a2_reiyu_activity_mechanism_rejects_confirmed_fact_errors() -> None:
     assert items["A2RY-AM-017"]["meta"]["expected_label"] == "reject"
     assert items["A2RY-AM-018"]["meta"]["expected_label"] == "reject"
     assert items["A2RY-AM-019"]["meta"]["expected_label"] == "pass"
+    assert items["A2RY-AM-021"]["meta"]["expected_label"] == "reject"
+    assert items["A2RY-AM-022"]["meta"]["expected_label"] == "light_fix"
+    assert items["A2RY-AM-023"]["meta"]["expected_label"] == "reject"
 
 
 def test_a2_reiyu_activity_mechanism_keeps_confirmed_review_passes() -> None:
@@ -414,7 +477,7 @@ def test_a2_reiyu_activity_mechanism_covers_new_backup_batch_boundaries() -> Non
     payload = json.loads(ACTIVITY_MECHANISM_GOLD_PATH.read_text(encoding="utf-8"))
     items = {item["meta"]["case_code"]: item for item in payload["items"]}
 
-    assert items["A2RY-AM-012"]["meta"]["issue_code"] == "fabricated_reward_experience"
+    assert items["A2RY-AM-012"]["meta"]["expected_label"] == "pass"
     assert "娃拿到小车" in items["A2RY-AM-012"]["content"]
     assert items["A2RY-AM-013"]["meta"]["issue_code"] == "points_redeem_lottery_prize"
     assert "夏凉被和金手链" in items["A2RY-AM-013"]["content"]
@@ -427,9 +490,19 @@ def test_a2_reiyu_activity_mechanism_covers_new_backup_batch_boundaries() -> Non
     assert items["A2RY-AM-017"]["meta"]["issue_code"] == "fabricated_points_reward"
     assert "小玩具、绘本、奶粉周边" in items["A2RY-AM-017"]["content"]
     assert items["A2RY-AM-018"]["meta"]["issue_code"] == "old_can_eligibility_implied"
+    assert items["A2RY-AM-021"]["meta"]["issue_code"] == "fabricated_reward_experience"
+    assert "抽中了新西兰旅游大奖" in items["A2RY-AM-021"]["content"]
     assert "家里刚囤了一箱" in items["A2RY-AM-018"]["content"]
     assert items["A2RY-AM-019"]["meta"]["expected_label"] == "pass"
     assert "活动期间买完后扫罐码累计" in items["A2RY-AM-019"]["content"]
+    assert items["A2RY-AM-020"]["meta"]["expected_label"] == "pass"
+    assert items["A2RY-AM-020"]["meta"]["issue_code"] == "none"
+    assert "扫罐码就能看到信息" in items["A2RY-AM-020"]["content"]
+    assert items["A2RY-AM-022"]["meta"]["minimal_fix"] == "改为‘老客回归礼送小听粉’。"
+    assert items["A2RY-AM-023"]["meta"]["issue_code"] == "fabricated_activity_benefit"
+    assert "积分翻倍" in items["A2RY-AM-023"]["content"]
+    assert items["A2RY-AM-024"]["meta"]["expected_label"] == "pass"
+    assert "家里一直喝a2至初" in items["A2RY-AM-024"]["content"]
 
 
 def test_a2_reiyu_source_stacking_gold_rejects_three_discovery_sources() -> None:
@@ -462,3 +535,73 @@ def test_a2_reiyu_common_logic_gold_keeps_cold_water_as_light_fix() -> None:
     assert items["A2RY-CL-001"]["meta"]["expected_label"] == "light_fix"
     assert items["A2RY-CL-001"]["meta"]["issue_code"] == "common_sense_error"
     assert "冷水一冲就化开" in items["A2RY-CL-001"]["content"]
+
+
+def test_a2_reiyu_batch_detection_gold_keeps_fact_and_causality_boundaries() -> None:
+    payload = json.loads(BATCH_DETECTION_GOLD_PATH.read_text(encoding="utf-8"))
+
+    assert payload["dataset_code"] == "a2_reiyu_review_gold_v1"
+    assert payload["slice"] == "batch_detection_v1"
+    assert payload["labels"] == ["pass", "reject"]
+
+    items = {item["meta"]["case_code"]: item for item in payload["items"]}
+    assert set(items) == {
+        "A2RY-BD-001",
+        "A2RY-BD-002",
+        "A2RY-BD-003",
+        "A2RY-BD-004",
+        "A2RY-BD-005",
+        "A2RY-BD-006",
+        "A2RY-BD-007",
+        "A2RY-BD-008",
+        "A2RY-BD-009",
+    }
+    assert items["A2RY-BD-001"]["meta"]["issue_code"] == "batch_detection_fact_error"
+    assert "每罐都查" in items["A2RY-BD-001"]["content"]
+    assert items["A2RY-BD-002"]["meta"]["issue_code"] == "batch_detection_effect_causality"
+    assert "怪不得" in items["A2RY-BD-002"]["content"]
+    assert items["A2RY-BD-003"]["meta"]["expected_label"] == "pass"
+    assert items["A2RY-BD-004"]["meta"]["expected_label"] == "pass"
+    assert items["A2RY-BD-005"]["meta"]["issue_code"] == "batch_detection_effect_causality"
+    assert "从奶源到罐装都查一遍" in items["A2RY-BD-006"]["content"]
+    assert items["A2RY-BD-009"]["meta"]["issue_code"] == "batch_detection_effect_causality"
+    assert "每一批" in items["A2RY-BD-009"]["content"]
+    assert items["A2RY-BD-007"]["meta"]["expected_label"] == "pass"
+    assert "每一罐都能查到报告" in items["A2RY-BD-007"]["content"]
+    assert items["A2RY-BD-008"]["meta"]["expected_label"] == "pass"
+    assert "每一罐都能溯源" in items["A2RY-BD-008"]["content"]
+
+
+def test_a2_reiyu_text_surface_gold_keeps_brand_case_and_reward_boundaries() -> None:
+    payload = json.loads(TEXT_SURFACE_GOLD_PATH.read_text(encoding="utf-8"))
+
+    assert payload["dataset_code"] == "a2_reiyu_review_gold_v1"
+    assert payload["slice"] == "text_surface_v1"
+    assert payload["labels"] == ["pass", "reject"]
+
+    items = {item["meta"]["case_code"]: item for item in payload["items"]}
+    assert set(items) == {
+        "A2RY-TS-001",
+        "A2RY-TS-002",
+        "A2RY-TS-004",
+        "A2RY-TS-005",
+        "A2RY-TS-006",
+        "A2RY-TS-007",
+        "A2RY-TS-008",
+        "A2RY-TS-009",
+        "A2RY-TS-010",
+    }
+    assert items["A2RY-TS-001"]["meta"]["issue_code"] == "brand_case_error"
+    assert "A2老粉" in items["A2RY-TS-001"]["title"]
+    assert items["A2RY-TS-002"]["meta"]["expected_label"] == "pass"
+    assert "A2蛋白" in items["A2RY-TS-002"]["content"]
+    assert items["A2RY-TS-004"]["meta"]["expected_label"] == "pass"
+    assert "小听拿到手" in items["A2RY-TS-004"]["title"]
+    assert items["A2RY-TS-005"]["meta"]["issue_code"] == "positive_expression_stacking"
+    assert "诚意满满" in items["A2RY-TS-005"]["content"]
+    assert items["A2RY-TS-006"]["meta"]["expected_label"] == "pass"
+    assert items["A2RY-TS-007"]["meta"]["issue_code"] == "fabricated_reward_experience"
+    assert items["A2RY-TS-008"]["meta"]["issue_code"] == "narrative_consistency"
+    assert "从出生就喝a2至初" in items["A2RY-TS-008"]["content"]
+    assert items["A2RY-TS-009"]["meta"]["issue_code"] == "malformed_text"
+    assert items["A2RY-TS-010"]["meta"]["issue_code"] == "malformed_text"

@@ -1,0 +1,87 @@
+{
+  "raw_output": {
+    "items": [
+      "今天在货架上看到了，还挺多的",
+      "刚路过母婴店，里面货堆得挺满",
+      "我前几天囤的还没开，这阵子不用着急",
+      "线下店里一直能看到，不用特意抢",
+      "看来这阵子供应稳定了",
+      "朋友说我不用囤，她家附近很好买",
+      "家里还有两罐，看到有货就放心了",
+      "上次快喝完了才买，现在随时能拿到",
+      "这阵子确实好买，不用折腾",
+      "看到有货就顺手带了一罐"
+    ]
+  },
+  "items": [
+    "今天在货架上看到了，还挺多的",
+    "刚路过母婴店，里面货堆得挺满",
+    "我前几天囤的还没开，这阵子不用着急",
+    "线下店里一直能看到，不用特意抢",
+    "看来这阵子供应稳定了",
+    "朋友说我不用囤，她家附近很好买",
+    "家里还有两罐，看到有货就放心了",
+    "上次快喝完了才买，现在随时能拿到",
+    "这阵子确实好买，不用折腾",
+    "看到有货就顺手带了一罐"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 3.347,
+    "lengths": [
+      14,
+      14,
+      17,
+      15,
+      10,
+      15,
+      15,
+      16,
+      12,
+      11
+    ],
+    "han_lengths": [
+      13,
+      13,
+      16,
+      14,
+      10,
+      14,
+      14,
+      15,
+      11,
+      11
+    ],
+    "bands": [
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "short",
+      "medium",
+      "medium",
+      "medium",
+      "short",
+      "short"
+    ],
+    "band_counts": {
+      "short": 3,
+      "medium": 7,
+      "long": 0,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1132,
+      "completion_tokens": 134,
+      "total_tokens": 1266,
+      "prompt_tokens_details": {
+        "cached_tokens": 1024
+      },
+      "prompt_cache_hit_tokens": 1024,
+      "prompt_cache_miss_tokens": 108
+    },
+    "run_no": 3
+  }
+}

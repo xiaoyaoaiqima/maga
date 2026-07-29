@@ -1,0 +1,137 @@
+{
+  "raw_output": {
+    "items": [
+      {
+        "strategy_id": "S01",
+        "response_mode": "direct_reaction",
+        "life_entry": "线上随眼看到",
+        "comment": "哎，有货了？"
+      },
+      {
+        "strategy_id": "S02",
+        "response_mode": "stock_observation",
+        "life_entry": "线上连续几次看到可买",
+        "comment": "最近几次看都能加购，不像之前那样秒没。"
+      },
+      {
+        "strategy_id": "S03",
+        "response_mode": "personal_replenish",
+        "life_entry": "家里快喝完时补到",
+        "comment": "刚好要续上，一看有货就补了一罐。"
+      },
+      {
+        "strategy_id": "S04",
+        "response_mode": "less_hassle",
+        "life_entry": "以前需要反复确认",
+        "comment": "不用天天刷了，省心很多。"
+      },
+      {
+        "strategy_id": "S05",
+        "response_mode": "no_need_to_stock",
+        "life_entry": "别人提到要多囤",
+        "comment": "其实不用囤太多，现在买得到。"
+      },
+      {
+        "strategy_id": "S06",
+        "response_mode": "casual_reply",
+        "life_entry": "回复别人说现在有货",
+        "comment": "对，我前几天也看到了，还挺好买的。"
+      },
+      {
+        "strategy_id": "S07",
+        "response_mode": "long_term_attention",
+        "life_entry": "长期使用会偶尔留意",
+        "comment": "一直喝这个，有时会看一眼库存。"
+      },
+      {
+        "strategy_id": "S08",
+        "response_mode": "before_after",
+        "life_entry": "前后状态对比",
+        "comment": "以前常缺货，现在倒是好买了。"
+      },
+      {
+        "strategy_id": "S09",
+        "response_mode": "direct_reaction",
+        "life_entry": "家人或朋友带回消息",
+        "comment": "听说了，那就好。"
+      },
+      {
+        "strategy_id": "S10",
+        "response_mode": "stock_observation",
+        "life_entry": "日常逛商超时看到",
+        "comment": "货架上摆了不少。"
+      }
+    ]
+  },
+  "items": [
+    "哎，有货了？",
+    "最近几次看都能加购，不像之前那样秒没。",
+    "刚好要续上，一看有货就补了一罐。",
+    "不用天天刷了，省心很多。",
+    "其实不用囤太多，现在买得到。",
+    "对，我前几天也看到了，还挺好买的。",
+    "一直喝这个，有时会看一眼库存。",
+    "以前常缺货，现在倒是好买了。",
+    "听说了，那就好。",
+    "货架上摆了不少。"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 5.012,
+    "lengths": [
+      6,
+      19,
+      16,
+      12,
+      14,
+      17,
+      15,
+      14,
+      8,
+      8
+    ],
+    "han_lengths": [
+      4,
+      17,
+      14,
+      10,
+      12,
+      14,
+      13,
+      12,
+      6,
+      7
+    ],
+    "bands": [
+      "short",
+      "medium",
+      "medium",
+      "short",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "short",
+      "short"
+    ],
+    "band_counts": {
+      "short": 4,
+      "medium": 6,
+      "long": 0,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1904,
+      "completion_tokens": 527,
+      "total_tokens": 2431,
+      "prompt_tokens_details": {
+        "cached_tokens": 1152
+      },
+      "prompt_cache_hit_tokens": 1152,
+      "prompt_cache_miss_tokens": 752
+    },
+    "run_no": 1
+  }
+}

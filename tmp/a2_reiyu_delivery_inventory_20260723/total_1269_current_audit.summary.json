@@ -1,0 +1,9 @@
+{
+  "input_path": "/Users/luxifa/maga/outputs/a2_reiyu_delivery_inventory_20260723/A2礼遇_可用文章总库_1269篇.csv",
+  "output_path": "/Users/luxifa/maga/tmp/a2_reiyu_delivery_inventory_20260723/total_1269_current_audit.csv",
+  "total_count": 1269,
+  "direct_pool_count": 1237,
+  "light_fix_count": 28,
+  "watch_count": 0,
+  "hold_out_count": 4
+}

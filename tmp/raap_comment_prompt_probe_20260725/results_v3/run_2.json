@@ -1,0 +1,73 @@
+{
+  "items": [
+    "批批有信息可查",
+    "收到奶粉先查当前批次信息",
+    "拆快递时我就核对批次信息，每批都对应，心里踏实多了",
+    "开新罐前顺手确认一眼批次信息",
+    "冲奶前想起来查检测信息，这阵子养成的习惯，挺好😊",
+    "宝妈群提醒后我开始留意每批信息",
+    "老公说每批都能查，我现在冲奶前都会点开看看，踏实",
+    "支持检测信息公开，能自己看挺好",
+    "两次到货的奶粉各自查了批次信息，每批都对得上",
+    "长期喝的口粮每批都会多确认一下"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 2.453,
+    "lengths": [
+      7,
+      12,
+      25,
+      14,
+      24,
+      15,
+      24,
+      15,
+      22,
+      15
+    ],
+    "han_lengths": [
+      7,
+      12,
+      23,
+      14,
+      21,
+      15,
+      22,
+      14,
+      21,
+      15
+    ],
+    "bands": [
+      "short",
+      "short",
+      "long",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 2,
+      "medium": 7,
+      "long": 1,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1537,
+      "completion_tokens": 154,
+      "total_tokens": 1691,
+      "prompt_tokens_details": {
+        "cached_tokens": 1536
+      },
+      "prompt_cache_hit_tokens": 1536,
+      "prompt_cache_miss_tokens": 1
+    },
+    "run_no": 2
+  }
+}

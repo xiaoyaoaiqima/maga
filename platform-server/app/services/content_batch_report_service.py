@@ -78,6 +78,10 @@ CLOSURE_CLUSTER_DEFINITIONS = [
 ]
 CONTENT_PATH_SKELETON_WARNING_RATIO = 0.25
 CONTENT_PATH_SKELETON_WARNING_MIN_COUNT = 5
+ISSUE_PATTERN_MIN_COUNT = 3
+ISSUE_PATTERN_MIN_RATE = 0.05
+ISSUE_PATTERN_MIN_SOURCE_ROWS = 3
+ISSUE_PATTERN_CORPUS_CONCENTRATION = 0.7
 CONTENT_PATH_SKELETON_PARTS: dict[str, tuple[str, ...]] = {
     "selection": (
         "选奶",
@@ -801,6 +805,7 @@ class ContentBatchReportService:
             asset_combo_key=(item.plan_json or {}).get("asset_combo_key") if detail_value else None,
             asset_reuse_reason=(item.plan_json or {}).get("asset_reuse_reason") if detail_value else None,
             generation_snapshot=self._generation_snapshot(item, stage_calls, run, quality) if include_details else None,
+            issue_pattern_context=self._issue_pattern_context(item.plan_json, quality=quality),
             diversity=(diversity or None) if include_details else None,
             quality=(quality or None) if include_details else self._quality_summary(quality),
             error_message=item.error_message if item.status == "failed" else None,
@@ -835,10 +840,25 @@ class ContentBatchReportService:
             "wangyue_focused_pipeline_review",
             "ai_flavor_humanizer",
             "mouth_phrase_budget_guard",
+            "a2_reiyu_text_guard",
+            "a2_reiyu_batch_detection_guard",
+            "a2_reiyu_old_can_guard",
         ):
             value = quality.get(key)
             if isinstance(value, dict):
                 summary[key] = self._review_summary(value)
+        human_review = quality.get("human_review")
+        if isinstance(human_review, dict):
+            summary["human_review"] = {
+                key: human_review.get(key)
+                for key in (
+                    "action",
+                    "review_status",
+                    "issue_codes",
+                    "responsibility_layer",
+                )
+                if key in human_review
+            }
         for key in ("batch_variation_review", "delivery_selection"):
             value = quality.get(key)
             if isinstance(value, dict):
@@ -871,6 +891,9 @@ class ContentBatchReportService:
             "severity",
             "reasons",
             "issues",
+            "issue_code",
+            "hits",
+            "reason",
             "final_hits",
             "initial_hits",
             "body_chars",
@@ -1334,7 +1357,246 @@ class ContentBatchReportService:
             real_user_pool_stats=self._real_user_pool_stats(items),
             mouth_phrase_budget_stats=self._mouth_phrase_budget_stats(generated),
             business_usability_stats=self._business_usability_stats(generated),
+            issue_pattern_stats=self._issue_pattern_stats(items),
         )
+
+    def _issue_pattern_stats(self, items: list[ContentBatchReportItem]) -> dict[str, Any]:
+        total_checked = len(items)
+        observations: dict[str, dict[str, Any]] = {}
+
+        for item in items:
+            quality = item.quality if isinstance(item.quality, dict) else {}
+            context = self._report_issue_pattern_context(item)
+            stored_machine_origins = context.get("machine_origins")
+            machine_origins = (
+                {
+                    str(issue_code): set(origins)
+                    for issue_code, origins in stored_machine_origins.items()
+                    if isinstance(origins, list)
+                }
+                if isinstance(stored_machine_origins, dict)
+                else self._machine_issue_codes(quality)
+            )
+            stored_human_review = context.get("human_review")
+            human_review = (
+                stored_human_review
+                if isinstance(stored_human_review, dict)
+                else quality.get("human_review") if isinstance(quality.get("human_review"), dict) else {}
+            )
+            human_codes = _normalize_issue_codes(human_review.get("issue_codes"))
+            responsibility_layer = str(human_review.get("responsibility_layer") or "").strip() or None
+
+            issue_codes = set(machine_origins) | set(human_codes)
+            for issue_code in issue_codes:
+                observation = observations.setdefault(
+                    issue_code,
+                    {
+                        "item_nos": set(),
+                        "source_row_nos": set(),
+                        "slot_codes": set(),
+                        "origin_counts": Counter(),
+                        "atomic_ref_counts": Counter(),
+                        "responsibility_layer_counts": Counter(),
+                        "human_approval_count": 0,
+                        "machine_item_count": 0,
+                    },
+                )
+                observation["item_nos"].add(item.item_no)
+                source_row_no = context.get("source_row_no")
+                if source_row_no is not None:
+                    observation["source_row_nos"].add(source_row_no)
+                seen_atomic_refs: set[tuple[str, str]] = set()
+                for atomic_ref in context.get("atomic_refs") or []:
+                    slot_code = str(atomic_ref.get("slot_code") or "").strip()
+                    item_id = str(atomic_ref.get("item_id") or "").strip()
+                    if not item_id:
+                        continue
+                    atomic_key = (slot_code, item_id)
+                    if atomic_key in seen_atomic_refs:
+                        continue
+                    seen_atomic_refs.add(atomic_key)
+                    if slot_code:
+                        observation["slot_codes"].add(slot_code)
+                    observation["atomic_ref_counts"][atomic_key] += 1
+                for origin in machine_origins.get(issue_code, set()):
+                    observation["origin_counts"][origin] += 1
+                if issue_code in machine_origins:
+                    observation["machine_item_count"] += 1
+                if issue_code in human_codes:
+                    observation["origin_counts"]["human_review"] += 1
+                    if responsibility_layer:
+                        observation["responsibility_layer_counts"][responsibility_layer] += 1
+                    if human_review.get("action") == "approve" or human_review.get("review_status") == "approved":
+                        observation["human_approval_count"] += 1
+
+        patterns: list[dict[str, Any]] = []
+        for issue_code, observation in observations.items():
+            item_nos = sorted(observation["item_nos"])
+            count = len(item_nos)
+            rate = round(count / total_checked, 4) if total_checked else 0.0
+            source_row_nos = sorted(observation["source_row_nos"])
+            atomic_ref_counts = [
+                {
+                    "slot_code": slot_code or None,
+                    "item_id": item_id,
+                    "count": ref_count,
+                    "rate": round(ref_count / count, 4) if count else 0.0,
+                }
+                for (slot_code, item_id), ref_count in observation["atomic_ref_counts"].most_common()
+            ]
+            suggested_layer, reason = self._suggest_issue_layer(
+                count=count,
+                rate=rate,
+                source_row_count=len(source_row_nos),
+                atomic_ref_counts=atomic_ref_counts,
+                responsibility_layer_counts=observation["responsibility_layer_counts"],
+                human_approval_count=observation["human_approval_count"],
+                machine_count=observation["machine_item_count"],
+            )
+            patterns.append(
+                {
+                    "issue_code": issue_code,
+                    "count": count,
+                    "rate": rate,
+                    "item_nos": item_nos,
+                    "source_row_nos": source_row_nos,
+                    "slot_codes": sorted(observation["slot_codes"]),
+                    "origin_counts": dict(sorted(observation["origin_counts"].items())),
+                    "atomic_ref_counts": atomic_ref_counts,
+                    "responsibility_layer_counts": dict(
+                        sorted(observation["responsibility_layer_counts"].items())
+                    ),
+                    "suggested_layer": suggested_layer,
+                    "reason": reason,
+                }
+            )
+
+        patterns.sort(key=lambda pattern: (-pattern["count"], pattern["issue_code"]))
+        return {
+            "total_checked": total_checked,
+            "thresholds": {
+                "min_count": ISSUE_PATTERN_MIN_COUNT,
+                "min_rate": ISSUE_PATTERN_MIN_RATE,
+                "min_source_rows": ISSUE_PATTERN_MIN_SOURCE_ROWS,
+                "corpus_concentration": ISSUE_PATTERN_CORPUS_CONCENTRATION,
+            },
+            "patterns": patterns,
+            "prompt_candidate_issue_codes": [
+                pattern["issue_code"]
+                for pattern in patterns
+                if pattern["suggested_layer"] == "generation_prompt"
+            ],
+        }
+
+    def _suggest_issue_layer(
+        self,
+        *,
+        count: int,
+        rate: float,
+        source_row_count: int,
+        atomic_ref_counts: list[dict[str, Any]],
+        responsibility_layer_counts: Counter[str],
+        human_approval_count: int,
+        machine_count: int,
+    ) -> tuple[str, str]:
+        if responsibility_layer_counts:
+            layer, votes = responsibility_layer_counts.most_common(1)[0]
+            return layer, f"人工反馈已明确归因到 {layer}，共 {votes} 条"
+        if (
+            human_approval_count > 0
+            and machine_count >= ISSUE_PATTERN_MIN_COUNT
+            and rate >= ISSUE_PATTERN_MIN_RATE
+        ):
+            return "audit_allowlist", "机器频繁拦截，但已有人工按同一问题码放行"
+        top_atomic_ref = atomic_ref_counts[0] if atomic_ref_counts else None
+        if (
+            count >= ISSUE_PATTERN_MIN_COUNT
+            and top_atomic_ref is not None
+            and top_atomic_ref["rate"] >= ISSUE_PATTERN_CORPUS_CONCENTRATION
+        ):
+            return "source_corpus", "问题样本高度集中于同一原子语料，优先排查该语料"
+        if (
+            count >= ISSUE_PATTERN_MIN_COUNT
+            and rate >= ISSUE_PATTERN_MIN_RATE
+            and source_row_count >= ISSUE_PATTERN_MIN_SOURCE_ROWS
+        ):
+            return "generation_prompt", "同类问题跨多个业务规则重复出现"
+        return "audit", "当前频率或覆盖范围不足，继续由审核层拦截并观察"
+
+    def _machine_issue_codes(self, quality: dict[str, Any]) -> dict[str, set[str]]:
+        observations: dict[str, set[str]] = {}
+
+        def visit(value: Any, path: tuple[str, ...] = ()) -> None:
+            if isinstance(value, dict):
+                if path and path[0] == "human_review":
+                    return
+                explicit_pass = value.get("pass") is True or value.get("pass_") is True
+                issue_code = _normalized_issue_code(value.get("issue_code"))
+                if issue_code and not explicit_pass:
+                    observations.setdefault(issue_code, set()).add(_machine_issue_origin(path))
+                issues = value.get("issues")
+                if isinstance(issues, list):
+                    for issue in issues:
+                        code = _issue_code_from_issue_entry(issue)
+                        if code:
+                            observations.setdefault(code, set()).add(_machine_issue_origin(path + ("issues",)))
+                for key, nested in value.items():
+                    if key not in {"issue_code", "issues"}:
+                        visit(nested, path + (str(key),))
+            elif isinstance(value, list):
+                for index, nested in enumerate(value):
+                    visit(nested, path + (str(index),))
+
+        visit(quality)
+        return observations
+
+    def _report_issue_pattern_context(self, item: ContentBatchReportItem) -> dict[str, Any]:
+        if item.issue_pattern_context:
+            return item.issue_pattern_context
+        snapshot = item.generation_snapshot if isinstance(item.generation_snapshot, dict) else {}
+        business_rule = snapshot.get("business_rule") if isinstance(snapshot.get("business_rule"), dict) else {}
+        return self._issue_pattern_context(business_rule)
+
+    def _issue_pattern_context(self, plan: Any, *, quality: dict[str, Any] | None = None) -> dict[str, Any]:
+        plan = plan if isinstance(plan, dict) else {}
+        source_row_no = _int_or_none(plan.get("source_row_no"))
+        atomic_refs: list[dict[str, str]] = []
+        variation_slots = plan.get("variation_slots")
+        if isinstance(variation_slots, list):
+            for slot in variation_slots:
+                if not isinstance(slot, dict):
+                    continue
+                item_id = str(slot.get("item_id") or "").strip()
+                if not item_id:
+                    continue
+                atomic_refs.append(
+                    {
+                        "slot_code": str(slot.get("slot_code") or "").strip(),
+                        "item_id": item_id,
+                    }
+                )
+        context: dict[str, Any] = {
+            "source_row_no": source_row_no,
+            "atomic_refs": atomic_refs,
+        }
+        if isinstance(quality, dict):
+            context["machine_origins"] = {
+                issue_code: sorted(origins)
+                for issue_code, origins in self._machine_issue_codes(quality).items()
+            }
+            human_review = quality.get("human_review")
+            if isinstance(human_review, dict):
+                context["human_review"] = {
+                    key: human_review.get(key)
+                    for key in (
+                        "action",
+                        "review_status",
+                        "issue_codes",
+                        "responsibility_layer",
+                    )
+                    if key in human_review
+                }
+        return context
 
     def _forbidden_hits(self, text: str, business_terms: list[str] | None = None) -> list[str]:
         return find_forbidden_hits(text, business_terms)
@@ -1785,6 +2047,43 @@ def _feedback_categories(metadata: dict[str, Any]) -> list[str]:
     return categories
 
 
+def _normalize_issue_codes(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    issue_codes: list[str] = []
+    for value in values:
+        issue_code = _normalized_issue_code(value)
+        if issue_code and issue_code not in issue_codes:
+            issue_codes.append(issue_code)
+    return issue_codes
+
+
+def _normalized_issue_code(value: Any) -> str | None:
+    issue_code = str(value or "").strip()
+    if not issue_code or issue_code.lower() in {"none", "pass", "passed"}:
+        return None
+    if len(issue_code) > 100:
+        return None
+    return issue_code
+
+
+def _issue_code_from_issue_entry(value: Any) -> str | None:
+    if isinstance(value, dict):
+        return _normalized_issue_code(value.get("issue_code") or value.get("code"))
+    if isinstance(value, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{1,99}", value.strip()):
+        return _normalized_issue_code(value)
+    return None
+
+
+def _machine_issue_origin(path: tuple[str, ...]) -> str:
+    normalized_path = ".".join(path).lower()
+    if "guard" in normalized_path or "forbidden" in normalized_path:
+        return "machine_guard"
+    if "llm" in normalized_path or "judge" in normalized_path:
+        return "llm_review"
+    return "machine_review"
+
+
 def _feedback_evidence(feedback: ContentFeedback, item: ContentBatchItem | None) -> str | None:
     parts: list[str] = []
     if item is not None:
@@ -2117,6 +2416,19 @@ def _final_postprocess_state(quality: dict[str, Any] | None) -> dict[str, Any]:
     _append_blocking_review_reason(
         reasons,
         rewrite_reasons,
+        "a2_reiyu_text_guard",
+        quality.get("a2_reiyu_text_guard") or review_report.get("a2_reiyu_text_guard"),
+    )
+    _append_blocking_review_reason(
+        reasons,
+        rewrite_reasons,
+        "a2_reiyu_batch_detection_guard",
+        quality.get("a2_reiyu_batch_detection_guard")
+        or review_report.get("a2_reiyu_batch_detection_guard"),
+    )
+    _append_blocking_review_reason(
+        reasons,
+        rewrite_reasons,
         "a2_reiyu_old_can_guard",
         quality.get("a2_reiyu_old_can_guard") or review_report.get("a2_reiyu_old_can_guard"),
     )
@@ -2242,12 +2554,36 @@ def _bool_label(value: bool | None) -> str:
 
 
 def _business_usability_from_quality(quality: dict[str, Any]) -> dict[str, str | None]:
+    text_guard = quality.get("a2_reiyu_text_guard")
+    if isinstance(text_guard, dict) and text_guard.get("pass") is False:
+        return {
+            "tier": str(text_guard.get("business_usability_tier") or "hold_out"),
+            "reason": str(text_guard.get("reason") or "A2礼遇文本确定性审核未通过。"),
+        }
+    batch_detection_guard = quality.get("a2_reiyu_batch_detection_guard")
+    if isinstance(batch_detection_guard, dict) and batch_detection_guard.get("pass") is False:
+        return {
+            "tier": "hold_out",
+            "reason": str(
+                batch_detection_guard.get("reason")
+                or "每批检测被扩写为逐罐检测，或被错误解释为宝宝效果的成因。"
+            ),
+        }
     old_can_guard = quality.get("a2_reiyu_old_can_guard")
     if isinstance(old_can_guard, dict) and old_can_guard.get("pass") is False:
         return {
             "tier": "hold_out",
             "reason": str(old_can_guard.get("reason") or "旧罐或家庭现有库存被暗示可参加本次集罐。"),
         }
+    forbidden_guard = quality.get("a2_reiyu_forbidden_terms_guard")
+    if isinstance(forbidden_guard, dict):
+        tier = str(forbidden_guard.get("business_usability_tier") or "").strip()
+        if tier in {"light_fix_usable", "hold_out"}:
+            hits = forbidden_guard.get("hard_hits") or forbidden_guard.get("rewrite_hits") or []
+            return {
+                "tier": tier,
+                "reason": f"命中A2礼遇业务词规则：{'、'.join(str(hit) for hit in hits)}",
+            }
     review = quality.get("product_experience_llm_quality_review")
     if not isinstance(review, dict):
         return {"tier": None, "reason": None}

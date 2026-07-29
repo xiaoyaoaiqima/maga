@@ -1,0 +1,137 @@
+{
+  "raw_output": {
+    "items": [
+      {
+        "strategy_id": "S01",
+        "response_mode": "excited_purchase_reaction",
+        "life_entry": "线上随眼看到",
+        "comment": "刷到有货了，正好想买，这下能补上了。"
+      },
+      {
+        "strategy_id": "S02",
+        "response_mode": "purchase_plan",
+        "life_entry": "线上连续几次看到可买",
+        "comment": "看到好几次都有货，准备近期补一罐。"
+      },
+      {
+        "strategy_id": "S03",
+        "response_mode": "ready_to_replenish",
+        "life_entry": "家里快喝完",
+        "comment": "家里快见底了，看到有货赶紧补一罐。"
+      },
+      {
+        "strategy_id": "S04",
+        "response_mode": "replenished_success",
+        "life_entry": "家里正好需要续上",
+        "comment": "刚补到一罐，心里踏实多了。"
+      },
+      {
+        "strategy_id": "S05",
+        "response_mode": "continue_familiar_choice",
+        "life_entry": "长期使用熟悉款",
+        "comment": "现在能买到，继续买熟悉的那个。"
+      },
+      {
+        "strategy_id": "S06",
+        "response_mode": "reply_with_intent",
+        "life_entry": "回复别人说现在有货",
+        "comment": "是啊，现在有货了，我也准备补一罐。"
+      },
+      {
+        "strategy_id": "S07",
+        "response_mode": "store_spotted_pickup",
+        "life_entry": "日常逛商超看到",
+        "comment": "货架上看到有货，顺手拿了一罐。"
+      },
+      {
+        "strategy_id": "S08",
+        "response_mode": "availability_return_intent",
+        "life_entry": "前段时间需要多看几次",
+        "comment": "之前得盯着，现在容易买到了，肯定继续买。"
+      },
+      {
+        "strategy_id": "S09",
+        "response_mode": "purchase_plan",
+        "life_entry": "家人或朋友带回有货消息",
+        "comment": "朋友说现在有货，我准备去补一罐。"
+      },
+      {
+        "strategy_id": "S10",
+        "response_mode": "continue_familiar_choice",
+        "life_entry": "原本就在等熟悉款",
+        "comment": "等了一阵子，现在能买了，继续回购。"
+      }
+    ]
+  },
+  "items": [
+    "刷到有货了，正好想买，这下能补上了。",
+    "看到好几次都有货，准备近期补一罐。",
+    "家里快见底了，看到有货赶紧补一罐。",
+    "刚补到一罐，心里踏实多了。",
+    "现在能买到，继续买熟悉的那个。",
+    "是啊，现在有货了，我也准备补一罐。",
+    "货架上看到有货，顺手拿了一罐。",
+    "之前得盯着，现在容易买到了，肯定继续买。",
+    "朋友说现在有货，我准备去补一罐。",
+    "等了一阵子，现在能买了，继续回购。"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 4.923,
+    "lengths": [
+      18,
+      17,
+      17,
+      13,
+      15,
+      17,
+      15,
+      20,
+      16,
+      17
+    ],
+    "han_lengths": [
+      15,
+      15,
+      15,
+      11,
+      13,
+      14,
+      13,
+      17,
+      14,
+      14
+    ],
+    "bands": [
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 0,
+      "medium": 10,
+      "long": 0,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1946,
+      "completion_tokens": 568,
+      "total_tokens": 2514,
+      "prompt_tokens_details": {
+        "cached_tokens": 1920
+      },
+      "prompt_cache_hit_tokens": 1920,
+      "prompt_cache_miss_tokens": 26
+    },
+    "run_no": 1
+  }
+}

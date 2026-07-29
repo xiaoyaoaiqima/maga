@@ -1,0 +1,240 @@
+{
+  "dataset_code": "a2_momclass_review_gold_v1",
+  "slice": "teacher_attribution_and_logic_v1",
+  "review_status": "approved",
+  "approved_date": "2026-07-24",
+  "description": "A2 妈妈班待产妈妈文章金标：区分老师、课程或现场宝妈转述的宝宝反应，与待产妈妈自称已经亲身验证的时间冲突；同时保留明确文本损坏的轻修边界。",
+  "labels": ["pass", "light_fix", "reject"],
+  "label_semantics": {
+    "pass": "宝宝反应明确来自老师、课程资料或现场他人分享，妈妈只是在转述学习内容或表达当前选择反应；不因出现黄金便、睡眠、长肉、接受度等词机械打回。",
+    "light_fix": "场景和主体成立，但存在孤立残片、检测报告载体写错或数量搭配重复等明确表述问题；最小修改后可用。",
+    "reject": "待产妈妈明确把尚未出生或尚未饮用的宝宝反应写成自己已经亲眼验证的经历，形成真实时间与主体冲突。"
+  },
+  "rubric": [
+    "妈妈班作者默认处于孕晚期、待产、临近预产期或备产状态，不得写作者自己的宝宝已经出生、已经喝过或已经转奶。",
+    "老师、讲师、课程资料、现场工作人员或其他宝妈描述宝宝可能出现的适应、排便、睡眠、长肉和接受度，属于课堂转述，可以出现；它不是作者的亲身使用证明。",
+    "归因不要求每一句重复‘老师说’。同一课堂段落先写‘老师讲、活动上了解到、现场有人分享’，后面连续展开该知识点，默认仍属于转述，除非作者明确切换成‘我家宝宝已经、我亲眼看到、喝了几天后’等亲历口吻。",
+    "妈妈听完后写‘放心了、顾虑少了、第一罐会考虑a2至初、放进待产包’是当前真实反应，可以通过；不得把这种选择反应误判成宝宝已经使用后的效果证明。",
+    "‘黄金便、睡得香、长肉、愿意喝、肚肚舒服’不是通用禁词。只有作者在待产身份下明确声称自己已经观察到这些结果，才判 reject。",
+    "‘a2要求＜0.03，其他品牌才＜0.2’在口语比较中可以理解为其他品牌只做到或只要求到＜0.2，不因单个‘才’字机械打回；如整句比较方向真正相反，再单独判断。",
+    "‘宝宝喝着放心’等口语省略要按上下文理解为‘给宝宝喝着我放心’，只要语义清楚，不强制按书面主语补全。",
+    "明确文本损坏或对象错误仍需 light_fix，例如孤立的‘中，’、把检测报告本身写成二维码或放在罐底、以及‘超60多项’的数量重复。",
+    "扫码看到的是对应批次报告或报告结果；口语写‘扫码看到蜡毒未检出’可以理解为查看报告后的结果，不因省略‘报告显示’机械打回。"
+  ],
+  "items": [
+    {
+      "title": "老师解释黄金便反应",
+      "content": "老师说a2至初乳铁蛋白适中好吸收，宝宝每天黄金便没问题。我听完觉得顾虑少了一点。",
+      "meta": {
+        "case_code": "A2MC-TA-001",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["老师说", "宝宝每天黄金便没问题"],
+        "reason": "宝宝反应明确是老师在课堂上的描述，妈妈只表达听完后的当前感受，不是自称已经喂养验证。",
+        "source": "batch_20260724_row_108_user_recalibration"
+      },
+      "tags": {"dimension": "teacher_attribution", "boundary": "teacher_described_stool_response", "source_csv_row": 109}
+    },
+    {
+      "title": "老师解释奶粉接受度",
+      "content": "老师讲到a2至初口感清甜、适口性好，很多宝宝愿意喝，我一下放心不少。",
+      "meta": {
+        "case_code": "A2MC-TA-002",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["老师讲到", "很多宝宝愿意喝"],
+        "reason": "接受度来自老师介绍，妈妈写的是自己的选择反应。",
+        "source": "batch_20260724_row_447_user_recalibration"
+      },
+      "tags": {"dimension": "teacher_attribution", "boundary": "teacher_described_acceptance", "source_csv_row": 448}
+    },
+    {
+      "title": "提问后听老师解释肚肚反应",
+      "content": "我在妈妈班提问了老师，老师说A2蛋白亲和好吸收，宝宝肚肚舒服，嗯嗯也顺畅。",
+      "meta": {
+        "case_code": "A2MC-TA-003",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["提问了老师", "老师说", "宝宝肚肚舒服"],
+        "reason": "反应完整归属于老师回答，没有变成待产妈妈的亲历结果。",
+        "source": "batch_20260724_row_573_user_recalibration"
+      },
+      "tags": {"dimension": "teacher_attribution", "boundary": "teacher_answered_digestive_response", "source_csv_row": 574}
+    },
+    {
+      "title": "课堂段落内连续转述",
+      "content": "老师讲了检测和配方，我听得很认真。营养全面又好吸收，宝宝睡得香，我后面也能睡个安稳觉。",
+      "meta": {
+        "case_code": "A2MC-TA-004",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["老师讲了", "宝宝睡得香"],
+        "reason": "同一课堂段落连续展开老师讲解的内容，没有出现作者亲眼验证或已经使用的口吻。",
+        "source": "batch_20260724_row_71_user_recalibration"
+      },
+      "tags": {"dimension": "teacher_attribution", "boundary": "continuous_classroom_attribution", "source_csv_row": 72}
+    },
+    {
+      "title": "老师转述后形成第一罐选择",
+      "content": "听老师说a2至初的A2蛋白亲和好吸收，我心里踏实不少，第一罐会重点考虑a2至初。",
+      "meta": {
+        "case_code": "A2MC-TA-005",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["听老师说", "我心里踏实不少", "第一罐会重点考虑"],
+        "reason": "老师提供知识，妈妈据此缩小选择范围，符合妈妈班早期认知种草链路。",
+        "source": "user_confirmed_teacher_attribution_boundary"
+      },
+      "tags": {"dimension": "selection_logic", "boundary": "teacher_evidence_to_first_can_choice"}
+    },
+    {
+      "title": "现场宝妈分享使用反应",
+      "content": "旁边宝妈说她家宝宝喝着接受度不错，我先记下来，等宝宝出生后再看实际适应。",
+      "meta": {
+        "case_code": "A2MC-TA-006",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["旁边宝妈说她家宝宝", "等宝宝出生后再看"],
+        "reason": "他人经验与作者未来观察被明确分开，主体和时间均成立。",
+        "source": "user_confirmed_reported_experience_boundary"
+      },
+      "tags": {"dimension": "speaker_attribution", "boundary": "other_mother_reported_experience"}
+    },
+    {
+      "title": "口语比较不机械打回",
+      "content": "老师讲a2至初的要求是＜0.03，一般牌子才＜0.2，我听完觉得前者阈值确实更低。",
+      "meta": {
+        "case_code": "A2MC-TA-007",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["一般牌子才＜0.2", "前者阈值确实更低"],
+        "reason": "上下文已经说明＜0.03阈值更低，‘才’是口语里的程度比较，不构成方向反转。",
+        "source": "batch_20260724_row_24_recalibration"
+      },
+      "tags": {"dimension": "colloquial_logic", "boundary": "cai_threshold_comparison", "source_csv_row": 25}
+    },
+    {
+      "title": "口语省略主语可理解",
+      "content": "了解到配方和检测后，觉得宝宝喝着放心，第一罐先放进备选。",
+      "meta": {
+        "case_code": "A2MC-TA-008",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["宝宝喝着放心"],
+        "reason": "口语可自然理解为‘给宝宝喝着我放心’，语义完整，不按书面主语机械误杀。",
+        "source": "batch_20260724_row_316_recalibration"
+      },
+      "tags": {"dimension": "colloquial_logic", "boundary": "implicit_parent_subject", "source_csv_row": 317}
+    },
+    {
+      "title": "老师转述可保留但文本残片需修",
+      "content": "他们的质检指标覆盖面很广，这点真的很少见。中，感觉挺用心的。老师还讲到乳铁蛋白适中，能帮宝宝每天黄金便。",
+      "meta": {
+        "case_code": "A2MC-TA-009",
+        "expected_label": "light_fix",
+        "issue_code": "malformed_text_fragment",
+        "evidence": ["。中，"],
+        "reason": "‘老师还讲到宝宝反应’属于可接受转述；真正需要修改的是孤立残片‘中，’。",
+        "minimal_fix": "删除‘中，’，改为‘这点真的很少见，感觉挺用心的。’",
+        "source": "batch_20260724_row_631_user_recalibration"
+      },
+      "tags": {"dimension": "text_surface", "boundary": "teacher_claim_pass_but_fragment_fix", "source_csv_row": 632}
+    },
+    {
+      "title": "口语主语放行但残片需修",
+      "content": "扫罐底码能看质检报告，超多项检测数据都公开，中，挺实在的。了解到配方后，觉得宝宝喝着放心。",
+      "meta": {
+        "case_code": "A2MC-TA-010",
+        "expected_label": "light_fix",
+        "issue_code": "malformed_text_fragment",
+        "evidence": ["公开，中，挺实在的"],
+        "reason": "‘宝宝喝着放心’按自然口语放行；中间的‘中，’是明确文本损坏。",
+        "minimal_fix": "删除孤立的‘中，’并连接前后句。",
+        "source": "batch_20260724_row_316_user_recalibration"
+      },
+      "tags": {"dimension": "text_surface", "boundary": "implicit_subject_pass_but_fragment_fix", "source_csv_row": 317}
+    },
+    {
+      "title": "未检出结果与标准混写",
+      "content": "扫罐底码能看三份检测报告，蜡样毒素未检出标准比常见更严。",
+      "meta": {
+        "case_code": "A2MC-TA-011",
+        "expected_label": "light_fix",
+        "issue_code": "detection_result_standard_conflation",
+        "evidence": ["未检出标准"],
+        "reason": "未检出是报告结果，标准是阈值，两者不能组成‘未检出标准’。",
+        "minimal_fix": "拆为‘报告显示未检出，相关检测标准也比常见要求更严。’",
+        "source": "batch_20260724_row_127"
+      },
+      "tags": {"dimension": "detection_expression", "boundary": "result_vs_standard", "source_csv_row": 128}
+    },
+    {
+      "title": "检测报告不是二维码",
+      "content": "他们把检测报告直接做成二维码，扫扫就能看。",
+      "meta": {
+        "case_code": "A2MC-TA-012",
+        "expected_label": "light_fix",
+        "issue_code": "report_carrier_error",
+        "evidence": ["检测报告直接做成二维码"],
+        "reason": "二维码是报告查询入口，不是报告本身。",
+        "minimal_fix": "改为‘罐底二维码可以跳转查看对应批次检测报告。’",
+        "source": "batch_20260724_row_376"
+      },
+      "tags": {"dimension": "detection_expression", "boundary": "qr_is_report_entry", "source_csv_row": 377}
+    },
+    {
+      "title": "检测报告不直接放在罐底",
+      "content": "a2至初把检测报告放在罐底让大家扫，诚意拉满了。",
+      "meta": {
+        "case_code": "A2MC-TA-013",
+        "expected_label": "light_fix",
+        "issue_code": "report_carrier_error",
+        "evidence": ["检测报告放在罐底"],
+        "reason": "罐底是二维码入口，检测报告通过扫码查看。",
+        "minimal_fix": "改为‘罐底码一扫就能查看对应批次检测报告。’",
+        "source": "batch_20260724_row_701"
+      },
+      "tags": {"dimension": "detection_expression", "boundary": "report_not_on_can_bottom", "source_csv_row": 702}
+    },
+    {
+      "title": "数量表达重复",
+      "content": "扫罐底码就能看到质检报告，超60多项检测数据。",
+      "meta": {
+        "case_code": "A2MC-TA-014",
+        "expected_label": "light_fix",
+        "issue_code": "redundant_quantity_expression",
+        "evidence": ["超60多项"],
+        "reason": "‘超’与‘多’重复表达超过。",
+        "minimal_fix": "改为‘60多项’或‘超过60项’。",
+        "source": "batch_20260724_row_298"
+      },
+      "tags": {"dimension": "text_surface", "boundary": "redundant_quantity", "source_csv_row": 299}
+    },
+    {
+      "title": "待产妈妈自称已经验证宝宝反应",
+      "content": "我还没生，但我家宝宝已经喝a2至初一个月了，每天黄金便，这是我亲眼看到的。",
+      "meta": {
+        "case_code": "A2MC-TA-015",
+        "expected_label": "reject",
+        "issue_code": "unborn_baby_personal_usage_conflict",
+        "evidence": ["我还没生", "我家宝宝已经喝一个月", "我亲眼看到"],
+        "reason": "作者明确待产，却自称自己的宝宝已饮用并观察到结果，是真实主体和时间冲突。",
+        "source": "boundary_counterexample_from_user_rule"
+      },
+      "tags": {"dimension": "temporal_logic", "boundary": "unborn_vs_personal_usage"}
+    },
+    {
+      "title": "转述结束后切换为虚构亲历",
+      "content": "老师介绍了A2蛋白和检测报告。回家后我给还没出生的宝宝喝了几天，已经验证宝宝睡得更香。",
+      "meta": {
+        "case_code": "A2MC-TA-016",
+        "expected_label": "reject",
+        "issue_code": "reported_claim_to_impossible_personal_experience",
+        "evidence": ["还没出生的宝宝喝了几天", "已经验证"],
+        "reason": "前半段老师转述可以成立，但后半段明确切换成不可能的个人喂养经历，不能继续继承课堂归因。",
+        "source": "boundary_counterexample_from_user_rule"
+      },
+      "tags": {"dimension": "speaker_attribution", "boundary": "attribution_breaks_into_impossible_experience"}
+    }
+  ]
+}

@@ -11,6 +11,17 @@ A2_REIYU_ARTICLE_ASSET_KEY = "a2_reiyu_ugc_post_rules_v1"
 _SENTENCE_SPLIT_RE = re.compile(r"[\n。！？!?；;]+")
 _EXISTING_STOCK_PATTERNS = (
     re.compile(
+        r"(?:旧罐|老罐)(?:子)?|"
+        r"(?:以前|之前)(?:的|买|囤|喝完|吃完|用完|留|存|剩|攒|收)"
+        r"[^，。！？；;\n]{0,8}罐(?:子)?"
+    ),
+    re.compile(
+        r"(?:家里|家中)[^，。！？；;\n]{0,8}"
+        r"(?:快|马上|眼看)?[^，。！？；;\n]{0,4}"
+        r"(?:喝完|吃完|见底)[^，。！？；;\n]{0,6}"
+        r"(?:一箱|几箱|好几箱|几罐|好几罐|几个罐|\d+\s*罐|\d+\s*箱)"
+    ),
+    re.compile(
         r"(?:家里|家中|手头|柜子里|奶粉柜里)[^，。！？；;\n]{0,14}"
         r"(?:刚|已经|正好|刚好|本来就|还|现成)?[^，。！？；;\n]{0,5}"
         r"(?:囤了|买了|存了|备了|留了|放着|留着|有|剩着)[^，。！？；;\n]{0,10}"
@@ -29,6 +40,12 @@ _COLLECT_CAN_CUES = re.compile(
 _EXPLICIT_NEW_PURCHASE_CUES = re.compile(
     r"(?:活动期间|活动期内|参加活动后|看到活动后|知道活动后|发现活动后|按活动规则)"
     r"[^，。！？；;\n]{0,12}(?:买|补货|囤)"
+)
+_IMPLICIT_OLD_CAN_WORDING_PATTERNS = (
+    re.compile(
+        r"(?:平时|日常)[^，。！？；;\n]{0,5}(?:囤货|囤奶粉)"
+        r"[^，。！？；;\n]{0,8}(?:正好|刚好)?[^，。！？；;\n]{0,4}(?:能|可以)?用上"
+    ),
 )
 
 
@@ -72,10 +89,13 @@ def review_a2_reiyu_old_can_eligibility(
     for index, sentence in enumerate(sentences):
         if _EXPLICIT_NEW_PURCHASE_CUES.search(sentence):
             continue
-        if not any(pattern.search(sentence) for pattern in _EXISTING_STOCK_PATTERNS):
+        has_existing_stock = any(pattern.search(sentence) for pattern in _EXISTING_STOCK_PATTERNS)
+        has_implicit_old_can_wording = any(
+            pattern.search(sentence) for pattern in _IMPLICIT_OLD_CAN_WORDING_PATTERNS
+        )
+        if not has_existing_stock and not has_implicit_old_can_wording:
             continue
         context = "。".join(sentences[max(0, index - 1) : min(len(sentences), index + 2)])
-        if _COLLECT_CAN_CUES.search(context) or ("扫码" in context and has_collect_can_context):
-            hits.append(context)
+        hits.append(context)
 
     return A2ReiyuOldCanGuardReview(pass_=not hits, hits=list(dict.fromkeys(hits)))

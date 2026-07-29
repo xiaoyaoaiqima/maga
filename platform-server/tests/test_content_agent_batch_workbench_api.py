@@ -5188,6 +5188,87 @@ async def test_batch_workbench_exposes_business_usability_review_endpoint(
 
 
 @pytest.mark.asyncio
+async def test_batch_workbench_exposes_wangyue_deferred_repair_endpoint(
+    content_agent_workbench_client,
+    monkeypatch,
+):
+    client, session_factory = content_agent_workbench_client
+
+    async with session_factory() as session:
+        job = ContentBatchJob(
+            batch_code="batch_wangyue_deferred_repair_api",
+            asset_key="wangyue_v3_core_storyline_article_rules",
+            product_topic="0705旺玥活动",
+            count=1,
+            status="generated",
+        )
+        session.add(job)
+        await session.flush()
+        session.add(
+            ContentBatchItem(
+                batch_id=job.id,
+                item_no=1,
+                status="generated",
+                title="新罐开封",
+                body="新罐开封后，顺手复盘了一下为什么继续喝旺玥。",
+                plan_json={"asset_key": "wangyue_v3_core_storyline_article_rules"},
+                quality_json={
+                    "hard_pass": True,
+                    "review_report": {"rewrite_required": False},
+                    "wangyue_focused_pipeline_review": {
+                        "decision": "block",
+                        "status": "manual_review",
+                        "can_auto_pool": False,
+                    },
+                },
+            )
+        )
+        batch_id = job.id
+        await session.commit()
+
+    class FakeExecutionService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def repair_wangyue_holdout_items(self, batch_id, *, limit=None, concurrency=10):
+            assert limit == 1
+            assert concurrency == 2
+            return SimpleNamespace(
+                batch_id=batch_id,
+                selected_count=1,
+                repaired_count=1,
+                released_count=1,
+                held_count=0,
+                skipped_count=0,
+                failed_count=0,
+                selected_item_nos=[1],
+                repaired_item_nos=[1],
+                released_item_nos=[1],
+                held_item_nos=[],
+                skipped_item_nos=[],
+                failed_items=[],
+            )
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.content_agent.ContentBatchExecutionService",
+        FakeExecutionService,
+    )
+
+    response = await client.post(
+        f"/api/v1/content-agent/batches/{batch_id}/wangyue-deferred-repair",
+        json={"limit": 1, "concurrency": 2},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["selected_count"] == 1
+    assert data["repaired_count"] == 1
+    assert data["released_count"] == 1
+    assert data["released_item_nos"] == [1]
+    assert data["report"]["batch_id"] == batch_id
+
+
+@pytest.mark.asyncio
 async def test_batch_workbench_exposes_temporal_logic_shadow_review_endpoint(
     content_agent_workbench_client,
     monkeypatch,
@@ -5627,6 +5708,95 @@ async def test_batch_workbench_uses_default_executor_when_form_sends_blank_code(
     data = response.json()["data"]
     assert data["execution"]["generated_count"] == 1
     assert data["report"]["items"][0]["status"] == "generated"
+
+
+@pytest.mark.asyncio
+async def test_a2_batch_generation_queues_independent_audit_without_running_sync_postprocess(
+    content_agent_workbench_client,
+    monkeypatch,
+):
+    client, session_factory = content_agent_workbench_client
+    async with session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type="article_business_rule_set",
+                asset_key="a2_reiyu_ugc_post_rules_v1",
+                display_name="a2礼遇生文规则",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "rule_type": "business_rule",
+                    "activity_name": "a2礼遇",
+                    "default_generation_count": 1,
+                    "items": [
+                        {
+                            "rule_id": "a2_reiyu_001",
+                            "business_rule": "礼遇分享",
+                            "topic": "a2礼遇",
+                            "corpus": "先讲活动，再自然带出a2至初现在每批都有检测。",
+                            "source_row_no": 1,
+                        }
+                    ],
+                },
+            )
+        )
+        await session.commit()
+
+    dispatched: list[int] = []
+
+    class FakeDispatcher:
+        @classmethod
+        def dispatch(cls, batch_id: int) -> bool:
+            dispatched.append(batch_id)
+            return True
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.content_agent.A2ReiyuBatchAuditDispatcher",
+        FakeDispatcher,
+    )
+
+    response = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "a2_reiyu_ugc_post_rules_v1",
+            "product_topic": "a2礼遇",
+            "count": 1,
+            "created_by": "ops",
+        },
+    )
+
+    assert response.status_code == 200
+    batch_id = response.json()["data"]["batch_id"]
+    assert dispatched == [batch_id]
+    async with session_factory() as session:
+        job = await session.get(ContentBatchJob, batch_id)
+        item = (
+            await session.execute(
+                select(ContentBatchItem).where(ContentBatchItem.batch_id == batch_id)
+            )
+        ).scalar_one()
+    assert job.strategy_json["postprocess_mode"] == "generate_only"
+    assert job.strategy_json["a2_reiyu_audit"]["status"] == "queued"
+    assert item.quality_json["audit_skipped"] is True
+    assert "product_experience_llm_quality_review" not in item.quality_json
+
+    explicit_generate_only = await client.post(
+        "/api/v1/content-agent/batches/start",
+        json={
+            "asset_key": "a2_reiyu_ugc_post_rules_v1",
+            "product_topic": "a2礼遇",
+            "count": 1,
+            "postprocess_mode": "generate_only",
+            "created_by": "ops",
+        },
+    )
+    assert explicit_generate_only.status_code == 200
+    assert dispatched == [batch_id]
+    explicit_batch_id = explicit_generate_only.json()["data"]["batch_id"]
+    async with session_factory() as session:
+        explicit_job = await session.get(ContentBatchJob, explicit_batch_id)
+    assert "a2_reiyu_audit" not in explicit_job.strategy_json
 
 
 @pytest.mark.asyncio
@@ -6518,6 +6688,8 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
             "feedback_text": "开头再具体一点，少一点总结腔。",
             "quoted_text": "原正文比较总结。",
             "feedback_categories": ["unnatural", "too_ad_like", "unknown"],
+            "issue_codes": ["corporate_summary_tone", "none", "corporate_summary_tone"],
+            "responsibility_layer": "source_corpus",
             "auto_rewrite": True,
             "model_config": {
                 "provider_code": "aliyun",
@@ -6538,6 +6710,8 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
     assert rewritten["body"] != original_body
     assert "按运营反馈调整：开头再具体一点" in rewritten["body"]
     assert rewritten["quality"]["human_review"]["auto_rewrite"]["source"] == "operator_feedback"
+    assert rewritten["quality"]["human_review"]["issue_codes"] == ["corporate_summary_tone"]
+    assert rewritten["quality"]["human_review"]["responsibility_layer"] == "source_corpus"
     assert rewritten["quality"]["review_report"]["rewrite_reason"] == "operator_feedback"
     assert rewritten["generation_snapshot"]["rewrite_records"][-1]["capability"] == "content.rewrite"
     assert rewritten["version_compare"]["compare_type"] == "auto_rewrite"
@@ -6586,6 +6760,10 @@ async def test_batch_feedback_can_auto_rewrite_from_operator_revision(content_ag
     assert "不自然/生硬" in rewrite_instructions
     assert feedback.quoted_text == "原正文比较总结。"
     assert feedback.metadata_json["feedback_categories"] == ["unnatural", "too_ad_like"]
+    assert versions[0].metadata_json["issue_codes"] == ["corporate_summary_tone"]
+    assert versions[0].metadata_json["responsibility_layer"] == "source_corpus"
+    assert feedback.metadata_json["issue_codes"] == ["corporate_summary_tone"]
+    assert feedback.metadata_json["responsibility_layer"] == "source_corpus"
 
 
 @pytest.mark.asyncio

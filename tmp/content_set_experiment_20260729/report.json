@@ -1,0 +1,491 @@
+{
+  "model": "deepseek-v4-flash",
+  "planner_latency_s": 8.068,
+  "strategies": [
+    {
+      "strategy_id": "S01",
+      "length_band": "short",
+      "angle": "偶然发现库存充足",
+      "scene": "刷手机",
+      "subject": "我",
+      "action": "刷到有货",
+      "reaction": "惊喜",
+      "opening_style": "时间点开头",
+      "ending_style": "感叹收尾",
+      "brand_mention": false,
+      "emoji": false,
+      "punctuation": false
+    },
+    {
+      "strategy_id": "S02",
+      "length_band": "medium",
+      "angle": "线下门店货源稳定",
+      "scene": "母婴店",
+      "subject": "店员",
+      "action": "说到货稳定",
+      "reaction": "放心",
+      "opening_style": "地点开头",
+      "ending_style": "评价收尾",
+      "brand_mention": false,
+      "emoji": false,
+      "punctuation": false
+    },
+    {
+      "strategy_id": "S03",
+      "length_band": "medium",
+      "angle": "线上补货及时",
+      "scene": "家中",
+      "subject": "快递",
+      "action": "刚送到",
+      "reaction": "省心",
+      "opening_style": "事件开头",
+      "ending_style": "感受收尾",
+      "brand_mention": false,
+      "emoji": false,
+      "punctuation": false
+    },
+    {
+      "strategy_id": "S04",
+      "length_band": "long",
+      "angle": "囤货习惯改变",
+      "scene": "家里储物间",
+      "subject": "我",
+      "action": "多囤了两罐",
+      "reaction": "踏实",
+      "opening_style": "对比开头",
+      "ending_style": "总结收尾",
+      "brand_mention": false,
+      "emoji": false,
+      "punctuation": false
+    },
+    {
+      "strategy_id": "S05",
+      "length_band": "medium",
+      "angle": "朋友推荐后买到",
+      "scene": "聊天群",
+      "subject": "闺蜜",
+      "action": "说容易买到",
+      "reaction": "试一下",
+      "opening_style": "人称开头",
+      "ending_style": "行动收尾",
+      "brand_mention": false,
+      "emoji": false,
+      "punctuation": false
+    },
+    {
+      "strategy_id": "S06",
+      "length_band": "long",
+      "angle": "长期喝，库存终于不愁",
+      "scene": "日常冲奶",
+      "subject": "孩子",
+      "action": "一直喝这款",
+      "reaction": "欣慰",
+      "opening_style": "习惯开头",
+      "ending_style": "感慨收尾",
+      "brand_mention": true,
+      "emoji": false,
+      "punctuation": false
+    },
+    {
+      "strategy_id": "S07",
+      "length_band": "medium",
+      "angle": "遛娃顺路看到有货",
+      "scene": "小区门口母婴店",
+      "subject": "我",
+      "action": "路过看到一堆",
+      "reaction": "顺手拿",
+      "opening_style": "场景开头",
+      "ending_style": "轻松收尾",
+      "brand_mention": false,
+      "emoji": false,
+      "punctuation": false
+    },
+    {
+      "strategy_id": "S08",
+      "length_band": "long",
+      "angle": "库存波动后稳定",
+      "scene": "线上商城",
+      "subject": "页面",
+      "action": "显示有货",
+      "reaction": "松了口气",
+      "opening_style": "状态开头",
+      "ending_style": "对比收尾",
+      "brand_mention": false,
+      "emoji": false,
+      "punctuation": false
+    },
+    {
+      "strategy_id": "S09",
+      "length_band": "medium",
+      "angle": "接娃后顺便买",
+      "scene": "学校附近超市",
+      "subject": "货架",
+      "action": "摆得满满",
+      "reaction": "顺手囤",
+      "opening_style": "时间地点开头",
+      "ending_style": "行动收尾",
+      "brand_mention": false,
+      "emoji": true,
+      "punctuation": false
+    },
+    {
+      "strategy_id": "S10",
+      "length_band": "medium",
+      "angle": "对比之前难买",
+      "scene": "家里",
+      "subject": "我",
+      "action": "对比之前",
+      "reaction": "感慨",
+      "opening_style": "回忆开头",
+      "ending_style": "感叹收尾",
+      "brand_mention": false,
+      "emoji": false,
+      "punctuation": true
+    }
+  ],
+  "arms": {
+    "direct_batch": {
+      "comments": [
+        "有货了！刚看到",
+        "这阵子库存挺稳的，去母婴店随手就拿到了",
+        "遛弯时路过母婴店进去瞅了眼，货架上是满的",
+        "之前总担心买不到，现在好多了，不用特意囤了",
+        "接娃放学顺路去店里，看到有货就顺手带了一箱",
+        "家里快见底了，正好这阵子好买，不用焦虑了",
+        "前段时间还缺货呢，现在线上线下都能找到",
+        "昨天看到有货，赶紧补了两罐，踏实多了",
+        "这阵子挺方便的，想买的时候基本都能买到",
+        "看群里说库存稳了，去附近店里一看果然有"
+      ],
+      "latency_s": 2.986,
+      "metrics": {
+        "count": 10,
+        "unique_count": 10,
+        "lengths": [
+          7,
+          19,
+          20,
+          21,
+          21,
+          20,
+          19,
+          18,
+          19,
+          19
+        ],
+        "length_band_counts": {
+          "short": 1,
+          "medium": 9
+        },
+        "max_pairwise_jaccard_2gram": 0.0952,
+        "avg_pairwise_jaccard_2gram": 0.0192,
+        "duplicate_opening_4_count": 0,
+        "duplicate_ending_4_count": 0,
+        "brand_mention_count": 0,
+        "emoji_count": 0,
+        "period_or_exclamation_count": 1
+      },
+      "raw_output": {
+        "items": [
+          "有货了！刚看到",
+          "这阵子库存挺稳的，去母婴店随手就拿到了",
+          "遛弯时路过母婴店进去瞅了眼，货架上是满的",
+          "之前总担心买不到，现在好多了，不用特意囤了",
+          "接娃放学顺路去店里，看到有货就顺手带了一箱",
+          "家里快见底了，正好这阵子好买，不用焦虑了",
+          "前段时间还缺货呢，现在线上线下都能找到",
+          "昨天看到有货，赶紧补了两罐，踏实多了",
+          "这阵子挺方便的，想买的时候基本都能买到",
+          "看群里说库存稳了，去附近店里一看果然有"
+        ]
+      }
+    },
+    "strategy_separate": {
+      "comments": [
+        "昨晚刷手机突然看到有货，太惊喜了",
+        "母婴店店员说这阵子货源挺稳的 让我不用囤太多",
+        "快递刚送到，正好家里快用完了，省心不少",
+        "之前总担心断粮现在储物间多囤了两罐心里踏实多了",
+        "闺蜜在群里说这阵子挺好买的 我也跟着试了一下",
+        "孩子一直喝这款，最近库存稳了，冲奶时不用再纠结备货，挺省心的",
+        "带娃回家路过小区门口母婴店，货架上堆得挺满，顺手拿了两罐",
+        "之前总是断断续续的，现在页面显示有货，心里那块石头总算落地了，对比之前要好太多",
+        "昨天接娃路过学校旁超市，货架摆得满满，顺手囤了点",
+        "还记得上回跑了三家店都没找到，现在家门口的母婴店就能看到，真省心！"
+      ],
+      "latency_s": 3.619,
+      "individual_latency_s": [
+        1.438,
+        2.314,
+        1.339,
+        1.438,
+        1.579,
+        1.432,
+        0.959,
+        1.17,
+        1.033,
+        1.299
+      ],
+      "metrics": {
+        "count": 10,
+        "unique_count": 10,
+        "lengths": [
+          16,
+          22,
+          19,
+          23,
+          22,
+          30,
+          28,
+          39,
+          24,
+          33
+        ],
+        "length_band_counts": {
+          "medium": 7,
+          "gap_or_out": 2,
+          "long": 1
+        },
+        "max_pairwise_jaccard_2gram": 0.1364,
+        "avg_pairwise_jaccard_2gram": 0.0183,
+        "duplicate_opening_4_count": 0,
+        "duplicate_ending_4_count": 0,
+        "brand_mention_count": 0,
+        "emoji_count": 0,
+        "period_or_exclamation_count": 1
+      },
+      "raw_output": [
+        {
+          "comment": "昨晚刷手机突然看到有货，太惊喜了"
+        },
+        {
+          "comment": "母婴店店员说这阵子货源挺稳的 让我不用囤太多"
+        },
+        {
+          "comment": "快递刚送到，正好家里快用完了，省心不少"
+        },
+        {
+          "comment": "之前总担心断粮现在储物间多囤了两罐心里踏实多了"
+        },
+        {
+          "comment": "闺蜜在群里说这阵子挺好买的 我也跟着试了一下"
+        },
+        {
+          "comment": "孩子一直喝这款，最近库存稳了，冲奶时不用再纠结备货，挺省心的"
+        },
+        {
+          "comment": "带娃回家路过小区门口母婴店，货架上堆得挺满，顺手拿了两罐"
+        },
+        {
+          "comment": "之前总是断断续续的，现在页面显示有货，心里那块石头总算落地了，对比之前要好太多"
+        },
+        {
+          "comment": "昨天接娃路过学校旁超市，货架摆得满满，顺手囤了点"
+        },
+        {
+          "comment": "还记得上回跑了三家店都没找到，现在家门口的母婴店就能看到，真省心！"
+        }
+      ]
+    },
+    "strategy_microbatch": {
+      "comments": [
+        "昨晚刷到有货了",
+        "母婴店店员说这阵子货源挺稳定 不用跑好几家",
+        "快递刚送到，正好接上家里的库存，省心不少",
+        "以前总爱一罐一罐买，现在看到库存稳了就直接多囤了两罐，心里踏实多了",
+        "闺蜜在群里说现在这款挺好买到的，我打算试一下",
+        "孩子一直喝a2，这阵子库存挺稳的，不用再到处找，省心不少",
+        "昨晚遛娃路过小区门口母婴店，看到货架上堆了好多，顺手拿了一罐",
+        "前几天线上还显示缺货，今天再一看有货了，总算不用焦虑了，对比之前稳定不少",
+        "接娃出来看到货架上这个摆得满满的，顺手囤了两盒😊",
+        "之前找了好几家店都没有，现在总算不用跑断腿了！"
+      ],
+      "latency_s": 1.556,
+      "individual_latency_s": [
+        1.332,
+        1.393,
+        1.494,
+        1.529,
+        1.554
+      ],
+      "metrics": {
+        "count": 10,
+        "unique_count": 10,
+        "lengths": [
+          7,
+          21,
+          20,
+          33,
+          22,
+          28,
+          30,
+          36,
+          24,
+          23
+        ],
+        "length_band_counts": {
+          "short": 1,
+          "medium": 6,
+          "gap_or_out": 2,
+          "long": 1
+        },
+        "max_pairwise_jaccard_2gram": 0.1304,
+        "avg_pairwise_jaccard_2gram": 0.0242,
+        "duplicate_opening_4_count": 0,
+        "duplicate_ending_4_count": 1,
+        "brand_mention_count": 1,
+        "emoji_count": 1,
+        "period_or_exclamation_count": 1
+      },
+      "raw_output": [
+        {
+          "items": [
+            {
+              "strategy_id": "S01",
+              "comment": "昨晚刷到有货了"
+            },
+            {
+              "strategy_id": "S02",
+              "comment": "母婴店店员说这阵子货源挺稳定 不用跑好几家"
+            }
+          ]
+        },
+        {
+          "items": [
+            {
+              "strategy_id": "S03",
+              "comment": "快递刚送到，正好接上家里的库存，省心不少"
+            },
+            {
+              "strategy_id": "S04",
+              "comment": "以前总爱一罐一罐买，现在看到库存稳了就直接多囤了两罐，心里踏实多了"
+            }
+          ]
+        },
+        {
+          "items": [
+            {
+              "strategy_id": "S05",
+              "comment": "闺蜜在群里说现在这款挺好买到的，我打算试一下"
+            },
+            {
+              "strategy_id": "S06",
+              "comment": "孩子一直喝a2，这阵子库存挺稳的，不用再到处找，省心不少"
+            }
+          ]
+        },
+        {
+          "items": [
+            {
+              "strategy_id": "S07",
+              "comment": "昨晚遛娃路过小区门口母婴店，看到货架上堆了好多，顺手拿了一罐"
+            },
+            {
+              "strategy_id": "S08",
+              "comment": "前几天线上还显示缺货，今天再一看有货了，总算不用焦虑了，对比之前稳定不少"
+            }
+          ]
+        },
+        {
+          "items": [
+            {
+              "strategy_id": "S09",
+              "comment": "接娃出来看到货架上这个摆得满满的，顺手囤了两盒😊"
+            },
+            {
+              "strategy_id": "S10",
+              "comment": "之前找了好几家店都没有，现在总算不用跑断腿了！"
+            }
+          ]
+        }
+      ]
+    },
+    "strategy_batch": {
+      "comments": [
+        "昨晚刷到有货了，开心",
+        "母婴店店员说到货很稳定，放心多了",
+        "刚收到快递，线上补货真及时",
+        "以前总担心断货，现在储物间多囤了两罐，心里踏实多了",
+        "闺蜜说现在挺好买到的，我准备试试",
+        "孩子一直喝这款，现在库存不愁了，当妈的终于不用焦虑了",
+        "遛娃路过母婴店，看到货架上堆得满满",
+        "之前老是缺货，现在线上页面显示有货，总算松了口气",
+        "接娃时学校附近超市货架摆得满满，顺手囤了两罐😊",
+        "想起以前找货的辛苦，现在终于稳定了！"
+      ],
+      "latency_s": 3.786,
+      "metrics": {
+        "count": 10,
+        "unique_count": 10,
+        "lengths": [
+          10,
+          16,
+          13,
+          25,
+          16,
+          26,
+          17,
+          24,
+          23,
+          18
+        ],
+        "length_band_counts": {
+          "short": 1,
+          "medium": 8,
+          "gap_or_out": 1
+        },
+        "max_pairwise_jaccard_2gram": 0.1071,
+        "avg_pairwise_jaccard_2gram": 0.0199,
+        "duplicate_opening_4_count": 0,
+        "duplicate_ending_4_count": 0,
+        "brand_mention_count": 0,
+        "emoji_count": 1,
+        "period_or_exclamation_count": 1
+      },
+      "raw_output": {
+        "items": [
+          {
+            "strategy_id": "S01",
+            "comment": "昨晚刷到有货了，开心"
+          },
+          {
+            "strategy_id": "S02",
+            "comment": "母婴店店员说到货很稳定，放心多了"
+          },
+          {
+            "strategy_id": "S03",
+            "comment": "刚收到快递，线上补货真及时"
+          },
+          {
+            "strategy_id": "S04",
+            "comment": "以前总担心断货，现在储物间多囤了两罐，心里踏实多了"
+          },
+          {
+            "strategy_id": "S05",
+            "comment": "闺蜜说现在挺好买到的，我准备试试"
+          },
+          {
+            "strategy_id": "S06",
+            "comment": "孩子一直喝这款，现在库存不愁了，当妈的终于不用焦虑了"
+          },
+          {
+            "strategy_id": "S07",
+            "comment": "遛娃路过母婴店，看到货架上堆得满满"
+          },
+          {
+            "strategy_id": "S08",
+            "comment": "之前老是缺货，现在线上页面显示有货，总算松了口气"
+          },
+          {
+            "strategy_id": "S09",
+            "comment": "接娃时学校附近超市货架摆得满满，顺手囤了两罐😊"
+          },
+          {
+            "strategy_id": "S10",
+            "comment": "想起以前找货的辛苦，现在终于稳定了！"
+          }
+        ]
+      }
+    }
+  }
+}

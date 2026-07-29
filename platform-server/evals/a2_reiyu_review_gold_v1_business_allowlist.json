@@ -3,7 +3,7 @@
   "slice": "business_allowlist_v1",
   "review_status": "approved",
   "approved_date": "2026-07-21",
-  "description": "a2 礼遇活动人工确认的业务放行边界：奖品金额和医疗效果表达按已确认口径放行；生成提示中的正文长度不作为审核硬规则；标题按中文、字母、数字、标点各1、emoji2且上限20；自然推荐词、上下文明确后的品牌指代、已缓解的焦虑表达、正向否定风险表达和‘抽奖那种虚的’允许。",
+  "description": "a2 礼遇活动人工确认的业务放行边界：奖品金额和医疗效果表达按已确认口径放行；生成提示中的正文长度不作为审核硬规则；标题按中文、字母、数字、标点各1、emoji2且上限20；自然推荐词、上下文明确后的品牌指代、已缓解的焦虑表达、上下文正常的肚子/失败表达、正向否定风险表达、‘抽奖那种虚的’和业务规避写法‘👊威实验室’允许。",
   "labels": ["pass"],
   "label_semantics": {
     "pass": "符合当前 a2 礼遇活动业务口径，不因本切片降级或改写。"
@@ -19,7 +19,10 @@
     "‘仔细看了下’本身允许；检测承接只禁止写成翻看页面、往下翻页面或从活动规则里发现。",
     "焦虑、担心、不安、不放心等自然情绪词不能按单词机械拦截；‘焦虑一下没了’‘之前担心，现在放心’等正向转折允许。只有明确把a2、a2至初或活动写成持续负面情绪来源、形成品牌或产品负面经历时才处理。",
     "踩雷、翻车等风险词按句子极性判断，不能按单词机械拦截；‘闭眼入不踩雷’‘转奶没翻车’等正向否定风险表达允许，只有‘这款真的踩雷了’‘转奶真的翻车了’等明确负面经历才处理。",
+    "‘转过别的牌子失败’描述竞品尝试历史，‘没闹过肚子’描述正常使用感受，两者均按上下文放行；‘失败、肚子’不做词面禁用、替换或改写。",
     "‘抽奖那种虚的’是消费者表达更偏爱确定性兑换福利的自然口语，不按贬损活动处理。",
+    "正文自然转述正式正向词、推荐态度或老客使用感受时应放行；‘质量肯定稳定’‘没出过问题’‘不鼎力推荐’‘经得起研究’不能仅因措辞较强、带否定词或不够书面而作为审核问题。",
+    "‘👊威实验室’是为避免直接出现‘权威’而使用的业务规避写法，应原样放行；不能按乱码、错字或文本损坏打回，也不能建议改回‘权威实验室’。",
     "上述表达按本活动业务口径放行，不应再次作为通用逻辑、事实或文风问题计入批审结果。"
   ],
   "items": [
@@ -229,6 +232,82 @@
         "activity": "会员礼遇升级活动",
         "dimension": "business_allowlist",
         "boundary": "negated_transition_failure_wording_allowed",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "a2至初老客使用感受",
+      "content": "品控做得认真，质量肯定稳定。我家娃喝到现在也没出过问题。",
+      "meta": {
+        "case_code": "A2RY-BA-012",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["质量肯定稳定", "没出过问题"],
+        "reason": "质量稳定来自正式正向词，没出过问题是老客对自家使用历史的主观描述，没有形成品牌负面经历或绝对保证。",
+        "source": "user_confirmed_batch_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "source_aligned_positive_experience_allowed",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "a2至初值得推荐",
+      "content": "a2至初确实经得起研究，不鼎力推荐真的说不过去。",
+      "meta": {
+        "case_code": "A2RY-BA-013",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["经得起研究", "不鼎力推荐"],
+        "reason": "两种表达均来自当前正式语料，不因推荐力度强或口语表达方式降级。",
+        "source": "user_confirmed_batch_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "source_recommendation_wording_allowed",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "老客回归与肚肚状态分享",
+      "content": "中间转过别的牌子都失败，后来喝回a2至初，基本没闹过肚子。",
+      "meta": {
+        "case_code": "A2RY-BA-014",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["别的牌子都失败", "没闹过肚子"],
+        "reason": "失败描述的是竞品尝试历史，没闹过肚子是正常使用感受，没有形成a2负面经历，不能按词面误杀。",
+        "source": "user_confirmed_batch_834_review"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "会员礼遇升级活动",
+        "dimension": "business_allowlist",
+        "boundary": "contextual_stomach_and_failure_wording_allowed",
+        "source_type": "human_feedback"
+      }
+    },
+    {
+      "title": "业务规避写法保留",
+      "content": "蜡样检测报告是👊威实验室提供的，看完心里更有底。",
+      "meta": {
+        "case_code": "A2RY-BA-015",
+        "expected_label": "pass",
+        "issue_code": "none",
+        "evidence": ["👊威实验室"],
+        "reason": "这是运营为避免直接出现‘权威’而确认使用的规避写法，不是乱码或错字，审核不得改回被规避的原词。",
+        "source": "batch_20260725_user_confirmed_avoidance_wording"
+      },
+      "tags": {
+        "brand": "a2至初",
+        "activity": "每批检测转奶文章",
+        "dimension": "business_allowlist",
+        "boundary": "approved_avoidance_wording",
         "source_type": "human_feedback"
       }
     }

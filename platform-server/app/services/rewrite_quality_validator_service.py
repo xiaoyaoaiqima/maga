@@ -58,6 +58,7 @@ class RewriteQualityValidatorService:
             user_prompt=prompt,
             temperature=0,
             max_tokens=350,
+            response_format={"type": "json_object"},
         )
         judgment = parse_rewrite_quality_judgment(str(response or ""))
         if judgment is not None:
@@ -69,6 +70,7 @@ class RewriteQualityValidatorService:
             user_prompt=f"{prompt}\n\n上次输出格式错误。只输出合法 JSON object，不要解释。",
             temperature=0,
             max_tokens=350,
+            response_format={"type": "json_object"},
         )
         judgment = parse_rewrite_quality_judgment(str(retry_response or ""))
         if judgment is None:

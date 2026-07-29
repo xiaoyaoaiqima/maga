@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.services import executor_invocation_service as invocation_module
 from app.services.executor_invocation_service import (
     DirectLLMCallResult,
     ExecutorInvocationClient,
@@ -155,6 +156,59 @@ def test_normalize_comment_output_accepts_json_object_array_mode():
 
     assert output["comment"] == "报告能扫出来"
     assert output["comments"] == ["报告能扫出来", "礼盒里的东西挺实在"]
+
+
+@pytest.mark.asyncio
+async def test_direct_llm_adds_response_format_only_when_requested(monkeypatch):
+    payloads = []
+
+    class OpenAIResponse:
+        text = ""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": '{"ok":true}'}, "finish_reason": "stop"}],
+                "usage": {},
+            }
+
+    class OpenAIClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, _url, *, json, headers):
+            payloads.append(json)
+            return OpenAIResponse()
+
+    monkeypatch.setattr(invocation_module.httpx, "AsyncClient", OpenAIClient)
+    model_config = {
+        "model_code": "test-model",
+        "base_url": "https://provider.example/v1",
+        "api_key": "test-key",
+    }
+
+    await invocation_module.call_direct_llm_text(
+        model_config=model_config,
+        system_prompt="system",
+        user_prompt="plain text",
+    )
+    await invocation_module.call_direct_llm_text(
+        model_config=model_config,
+        system_prompt="system",
+        user_prompt="json object",
+        response_format={"type": "json_object"},
+    )
+
+    assert "response_format" not in payloads[0]
+    assert payloads[1]["response_format"] == {"type": "json_object"}
 
 
 @pytest.mark.asyncio
@@ -364,12 +418,16 @@ async def test_direct_llm_invoke_generates_comment_without_http_worker(monkeypat
     assert result.output["runtime_result"]["model_attempts"] == 1
     assert result.stats["adapter"] == "platform_server.direct_llm"
     assert calls[0]["model"] == "deepseek-v4-flash"
+    assert calls[0]["response_format"] is None
     assert http_client.calls == []
 
 
 @pytest.mark.asyncio
 async def test_direct_llm_generate_parses_article_json(monkeypatch):
+    calls = []
+
     async def fake_call(**kwargs):
+        calls.append(kwargs)
         return '{"title":"真实体验标题","body":"这是正文。"}'
 
     monkeypatch.setattr("app.services.executor_invocation_service._call_openai_compatible_model", fake_call)
@@ -392,6 +450,7 @@ async def test_direct_llm_generate_parses_article_json(monkeypatch):
     assert result.status == "succeeded"
     assert result.output["title"] == "真实体验标题"
     assert result.output["body"] == "这是正文。"
+    assert calls[0]["response_format"] == {"type": "json_object"}
 
 
 @pytest.mark.asyncio
@@ -609,7 +668,10 @@ async def test_direct_llm_generate_keeps_explicit_empty_result_after_retries(mon
 
 @pytest.mark.asyncio
 async def test_direct_llm_rewrite_cleans_comment_output(monkeypatch):
+    calls = []
+
     async def fake_call(**kwargs):
+        calls.append(kwargs)
         return '{"comment":"改好后的评论"}'
 
     monkeypatch.setattr("app.services.executor_invocation_service._call_openai_compatible_model", fake_call)
@@ -634,6 +696,7 @@ async def test_direct_llm_rewrite_cleans_comment_output(monkeypatch):
     assert result.output["comment"] == "改好后的评论"
     assert result.output["runtime_result"]["mode"] == "direct_llm_content_rewrite_runtime"
     assert result.output["runtime_result"]["forbidden_hits"] == ["绝对"]
+    assert calls[0]["response_format"] is None
 
 
 @pytest.mark.asyncio
@@ -665,6 +728,7 @@ async def test_direct_llm_rewrite_retries_empty_output(monkeypatch):
     assert result.output["title"] == "新标题"
     assert result.output["body"] == "新正文"
     assert result.output["runtime_result"]["model_attempts"] == 2
+    assert all(call["response_format"] == {"type": "json_object"} for call in calls)
 
 
 @pytest.mark.asyncio

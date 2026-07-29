@@ -64,6 +64,7 @@ const frontendTabRoutes: RouteRecordRaw[] = [
       order: -58,
       activeMenu: '/content-agent/prompt-debug',
       authority: ['admin'],
+      fullPathKey: false,
     },
   },
   {

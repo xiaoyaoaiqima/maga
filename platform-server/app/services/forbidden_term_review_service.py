@@ -431,6 +431,11 @@ def find_forbidden_hits(text: str, terms: list[str] | None = None) -> list[str]:
     return sorted(hits, key=len, reverse=True)
 
 
+def business_forbidden_entry_matches(text: str, entry: dict[str, Any]) -> bool:
+    """Apply the production contextual matcher to one business forbidden-term entry."""
+    return _business_entry_matches(str(text or ""), entry)
+
+
 def _business_entry_matches(text: str, entry: dict[str, Any]) -> bool:
     term = str(entry.get("term") or "")
     if not term or term not in text:
@@ -444,6 +449,8 @@ def _business_entry_matches(text: str, entry: dict[str, Any]) -> bool:
         return _matches_registration_required_context(text, term)
     if match_mode == "risk_polarity_context":
         return _matches_risk_polarity_context(text, term)
+    if match_mode == "old_can_collection_context":
+        return _matches_old_can_collection_context(text, term)
     return True
 
 
@@ -521,6 +528,46 @@ def _matches_risk_polarity_context(text: str, term: str) -> bool:
         remaining = allowed_negated_pattern.sub("", sentence)
         if term in remaining:
             return True
+    return False
+
+
+def _matches_old_can_collection_context(text: str, term: str) -> bool:
+    collection_cue = re.compile(
+        r"集罐|罐码累计|扫码累计|扫罐码集罐|集\s*\d+\s*罐|"
+        r"凑\s*\d+\s*罐|集满\s*\d+\s*罐|罐数|"
+        r"(?:换|兑|兑换)(?:小车|自行车|奶粉|正装|婴儿车)"
+    )
+    if collection_cue.search(text) is None:
+        return False
+
+    escaped_term = re.escape(term)
+    explicit_activity_purchase = re.compile(
+        rf"(?:活动期间|活动期内|活动后|参加活动后|看到活动后|知道活动后|发现活动后|按活动规则)"
+        rf"[^。！？；;\n]{{0,20}}{escaped_term}"
+    )
+    activity_cue = re.compile(
+        r"活动|会员升级|集罐|集\s*\d+\s*罐|换小车|换自行车|换奶粉|换婴儿车"
+    )
+    immediate_purchase_action = re.compile(
+        r"(?:赶紧|立马|马上|当场|随后|然后|就|决定|准备|打算)[^，。！？；;\n]{0,8}$"
+    )
+    existing_stock_tail = re.compile(
+        r"(?:正好|刚好|本来|之前|以前|已经|家里|家中|手头)[^，。！？；;\n]{0,16}$"
+    )
+
+    for sentence in re.split(r"[。！？!?；;\n]", text):
+        if term not in sentence:
+            continue
+        if explicit_activity_purchase.search(sentence):
+            continue
+        before_term = sentence.split(term, 1)[0]
+        if (
+            activity_cue.search(before_term)
+            and immediate_purchase_action.search(before_term)
+            and existing_stock_tail.search(before_term) is None
+        ):
+            continue
+        return True
     return False
 
 

@@ -18,6 +18,7 @@ from app.models.maga_core import MAGA_CORE_TABLE_NAMES
 from app.services.business_forbidden_term_service import (
     A2_REIYU_QWEN_PLUS_MODEL_CONFIG,
     A2_REIYU_UGC_POST_ASSET_KEY,
+    A2_REIYU_UGC_POST_SEED_TERMS,
     A2_SENTIMENT_COMMENT_ASSET_KEY,
     BUSINESS_FORBIDDEN_TERMS_ASSET_TYPE,
     BusinessForbiddenTermService,
@@ -223,9 +224,37 @@ async def test_deterministic_title_removal_preserves_body_terminal_punctuation(f
 
 
 @pytest.mark.asyncio
+async def test_a2_reiyu_laugh_cry_emoji_is_removed_downstream(forbidden_term_session_factory):
+    async with forbidden_term_session_factory() as session:
+        await BusinessForbiddenTermService(session).upsert_entries(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            entries=list(A2_REIYU_UGC_POST_SEED_TERMS),
+            created_by="ops",
+        )
+        item = ContentBatchItem(
+            title="老客活动分享😂",
+            body="看到会员升级活动，感觉福利挺实在😂",
+            run_id=1,
+        )
+        orchestrator = RecordingRewriteOrchestrator({"title": "不应调用", "body": "不应调用"})
+        review = await ForbiddenTermReviewService(session).review_and_rewrite_item(
+            item=item,
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            orchestrator=orchestrator,
+            executor_code="test",
+            content_type="article",
+        )
+
+    assert orchestrator.calls == []
+    assert item.title == "老客活动分享"
+    assert item.body == "看到会员升级活动，感觉福利挺实在"
+    assert review["rewrite_method"] == "deterministic_replace"
+    assert review["final_hits"] == []
+
+
+@pytest.mark.asyncio
 async def test_a2_reiyu_lexical_normalization_is_fully_downstream(forbidden_term_session_factory):
     replacements = {
-        "肚子": "肚肚",
         "便便": "💩",
         "粑粑": "💩",
         "眼睛": "👀",
@@ -257,7 +286,7 @@ async def test_a2_reiyu_lexical_normalization_is_fully_downstream(forbidden_term
 
     assert orchestrator.calls == []
     assert item.title == "👀看到的"
-    assert item.body == "宝宝肚肚舒服，💩💩都正常，🌍上也有人聊，pyq也刷到了。"
+    assert item.body == "宝宝肚子舒服，💩💩都正常，🌍上也有人聊，pyq也刷到了。"
     assert review["rewrite_method"] == "deterministic_replace"
     assert review["final_hits"] == []
 
@@ -536,12 +565,36 @@ async def test_a2_reiyu_seed_excludes_overbroad_operator_terms():
             title="集罐活动",
             body="正好家里囤了好几罐，集3罐就能换小车车。",
         )
+        ordinary_stock_audit = await ForbiddenTermReviewService(session).audit_text(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            title="老客回馈",
+            body="没喝过的宝妈可以试试，我反正是囤了好几罐。",
+        )
+        activity_purchase_audit = await ForbiddenTermReviewService(session).audit_text(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            title="集罐活动",
+            body="看到活动后囤了好几罐，买完奶粉扫罐码集罐。",
+        )
+        immediate_activity_purchase_audit = await ForbiddenTermReviewService(session).audit_text(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            title="集罐活动",
+            body="导购发消息说会员升级有活动，我一看集3罐就能换小车车，赶紧囤了好几罐a2至初。",
+        )
+        existing_stock_after_activity_audit = await ForbiddenTermReviewService(session).audit_text(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            title="集罐活动",
+            body="导购说会员升级有活动，我一看集3罐就能换小车车，正好家里囤了好几罐。",
+        )
+        natural_collect_audit = await ForbiddenTermReviewService(session).audit_text(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            title="集罐活动",
+            body="活动期间补货后攒罐子换礼物，攒着罐子慢慢参加。",
+        )
     await engine.dispose()
 
     by_term = {entry["term"]: entry for entry in entries}
     assert by_term["A2至初"]["enforcement"] == "replace"
-    assert by_term["肚子"]["replacement"] == "肚肚"
-    assert {"便便", "肠胃"}.isdisjoint(by_term)
+    assert {"便便", "肠胃", "肚子", "失败"}.isdisjoint(by_term)
     assert by_term["粑粑"]["replacement"] == "💩"
     assert by_term["眼睛"]["replacement"] == "👀"
     assert by_term["QQ"]["replacement"] == "🌍"
@@ -560,16 +613,42 @@ async def test_a2_reiyu_seed_excludes_overbroad_operator_terms():
     assert by_term["往下翻"]["match_mode"] == "detection_page_context"
     assert by_term["翻了翻活动页面"]["match_mode"] == "detection_page_context"
     assert by_term["空罐"]["enforcement"] == "hard_ban"
+    assert {"攒罐子", "攒着罐子"}.isdisjoint(by_term)
     assert by_term["囤了好几罐"]["enforcement"] == "hard_ban"
+    assert by_term["囤了好几罐"]["match_mode"] == "old_can_collection_context"
     assert by_term["质量问题"]["enforcement"] == "hard_ban"
     assert by_term["问题批次"]["enforcement"] == "hard_ban"
     assert by_term["真伪"]["enforcement"] == "hard_ban"
     assert by_term["踩雷"]["enforcement"] == "model_rewrite"
     assert by_term["积木"]["match_mode"] == "activity_prize_context"
     assert {"生病", "便秘", "抵抗力", "产品", "避免"}.isdisjoint(by_term)
+    assert natural_collect_audit.hits == []
     assert medical_audit.hits == []
     assert anxiety_audit.hits == []
     assert old_stock_audit.hits == ["囤了好几罐"]
+    assert ordinary_stock_audit.hits == []
+    assert activity_purchase_audit.hits == []
+    assert immediate_activity_purchase_audit.hits == []
+    assert existing_stock_after_activity_audit.hits == ["囤了好几罐"]
+
+
+@pytest.mark.asyncio
+async def test_a2_reiyu_allows_contextually_normal_stomach_and_failure_wording(
+    forbidden_term_session_factory,
+):
+    async with forbidden_term_session_factory() as session:
+        await BusinessForbiddenTermService(session).upsert_entries(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            entries=list(A2_REIYU_UGC_POST_SEED_TERMS),
+            created_by="ops",
+        )
+        review = await ForbiddenTermReviewService(session).audit_text(
+            asset_key=A2_REIYU_UGC_POST_ASSET_KEY,
+            title="老客活动分享",
+            body="中间转过别的牌子都失败，后来喝回a2至初，基本没闹过肚子。",
+        )
+
+    assert review.hits == []
 
 
 @pytest.mark.asyncio

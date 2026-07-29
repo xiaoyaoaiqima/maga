@@ -1,0 +1,137 @@
+{
+  "raw_output": {
+    "items": [
+      {
+        "strategy_id": "S01",
+        "response_mode": "excited_purchase_reaction",
+        "life_entry": "看到线上有货",
+        "comment": "刚好想买就刷到了，直接下单，太开心了"
+      },
+      {
+        "strategy_id": "S02",
+        "response_mode": "ready_to_replenish",
+        "life_entry": "家里只剩半罐",
+        "comment": "家里那罐见底了，正愁呢，这就补上了"
+      },
+      {
+        "strategy_id": "S03",
+        "response_mode": "replenished_success",
+        "life_entry": "刚刚拿到手",
+        "comment": "已经拿到一罐，心里踏实多了"
+      },
+      {
+        "strategy_id": "S04",
+        "response_mode": "continue_familiar_choice",
+        "life_entry": "一直喝这个牌子",
+        "comment": "一直喝这个，有货就不用换了"
+      },
+      {
+        "strategy_id": "S05",
+        "response_mode": "purchase_plan",
+        "life_entry": "路过母婴店看到",
+        "comment": "路过看到有，准备周末去买一罐"
+      },
+      {
+        "strategy_id": "S06",
+        "response_mode": "reply_with_intent",
+        "life_entry": "朋友发消息说容易买到了",
+        "comment": "朋友刚告诉我，我明天就去拿"
+      },
+      {
+        "strategy_id": "S07",
+        "response_mode": "store_spotted_pickup",
+        "life_entry": "线下货架看到",
+        "comment": "在货架上看到，顺手拿了一罐"
+      },
+      {
+        "strategy_id": "S08",
+        "response_mode": "availability_return_intent",
+        "life_entry": "之前不好买，现在方便了",
+        "comment": "之前总担心买不到，现在随时能续上了"
+      },
+      {
+        "strategy_id": "S09",
+        "response_mode": "ready_to_replenish",
+        "life_entry": "想起来该补货了",
+        "comment": "想起来了，赶紧补一罐去"
+      },
+      {
+        "strategy_id": "S10",
+        "response_mode": "excited_purchase_reaction",
+        "life_entry": "听说库存稳定",
+        "comment": "听到消息马上去看，果然有货，开心😊"
+      }
+    ]
+  },
+  "items": [
+    "刚好想买就刷到了，直接下单，太开心了",
+    "家里那罐见底了，正愁呢，这就补上了",
+    "已经拿到一罐，心里踏实多了",
+    "一直喝这个，有货就不用换了",
+    "路过看到有，准备周末去买一罐",
+    "朋友刚告诉我，我明天就去拿",
+    "在货架上看到，顺手拿了一罐",
+    "之前总担心买不到，现在随时能续上了",
+    "想起来了，赶紧补一罐去",
+    "听到消息马上去看，果然有货，开心😊"
+  ],
+  "summary": {
+    "count": 10,
+    "latency_s": 5.962,
+    "lengths": [
+      18,
+      17,
+      13,
+      13,
+      14,
+      13,
+      13,
+      17,
+      11,
+      17
+    ],
+    "han_lengths": [
+      16,
+      15,
+      12,
+      12,
+      13,
+      12,
+      12,
+      16,
+      10,
+      14
+    ],
+    "bands": [
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "medium",
+      "short",
+      "medium"
+    ],
+    "band_counts": {
+      "short": 1,
+      "medium": 9,
+      "long": 0,
+      "out_of_range": 0
+    },
+    "unique_count": 10,
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 1470,
+      "completion_tokens": 548,
+      "total_tokens": 2018,
+      "prompt_tokens_details": {
+        "cached_tokens": 1408
+      },
+      "prompt_cache_hit_tokens": 1408,
+      "prompt_cache_miss_tokens": 62
+    },
+    "run_no": 1
+  }
+}

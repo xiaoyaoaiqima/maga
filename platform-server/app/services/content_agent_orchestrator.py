@@ -267,6 +267,12 @@ class ContentAgentOrchestrator:
 
         return {**input_payload, "model_config": model_config}
 
+    async def hydrate_model_config(self, model_config: dict[str, Any]) -> dict[str, Any]:
+        """Resolve one model config through the same DB provider route used by generation."""
+        payload = await self._input_payload_with_provider_config({"model_config": model_config})
+        hydrated = payload.get("model_config") if isinstance(payload, dict) else None
+        return dict(hydrated) if isinstance(hydrated, dict) else dict(model_config)
+
     async def _provider_for_model_config(self, model_config: dict[str, Any]) -> LLMProviderConfig | None:
         provider_code = str(model_config.get("provider_code") or "").strip()
         if provider_code:

@@ -73,28 +73,42 @@ class ProductExperienceLLMReviewService:
             ai_flavor_review=ai_flavor_review,
         )
 
-        async def invoke() -> str:
+        async def invoke(*, repair_output: bool = False) -> str:
+            current_user_prompt = user_prompt
+            if repair_output:
+                current_user_prompt += (
+                    "\n\n上一次输出无法解析。只返回一个完整 JSON object，"
+                    "不要解释、不要 Markdown、不要代码块，所有字符串和括号必须闭合。"
+                )
             return str(
                 await call_direct_llm_text(
                     model_config=model_config,
                     system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    temperature=0.1,
+                    user_prompt=current_user_prompt,
+                    temperature=0.0 if repair_output else 0.1,
                     max_tokens=review_max_tokens,
+                    response_format={"type": "json_object"},
                 )
                 or ""
             )
 
-        attempts = 1
-        response = await invoke()
-        try:
-            review = parse_product_experience_llm_review(response)
-        except (json.JSONDecodeError, ValueError):
-            if asset_key not in {CHUNYUE_ARTICLE_ASSET_KEY, A2_REIYU_ARTICLE_ASSET_KEY}:
-                raise
-            attempts = 2
-            response = await invoke()
-            review = parse_product_experience_llm_review(response)
+        max_attempts = (
+            3
+            if asset_key == A2_REIYU_ARTICLE_ASSET_KEY
+            else 2
+            if asset_key == CHUNYUE_ARTICLE_ASSET_KEY
+            else 1
+        )
+        attempts = 0
+        while True:
+            attempts += 1
+            response = await invoke(repair_output=attempts > 1)
+            try:
+                review = parse_product_experience_llm_review(response)
+                break
+            except (json.JSONDecodeError, ValueError):
+                if attempts >= max_attempts:
+                    raise
         if asset_key != A2_REIYU_ARTICLE_ASSET_KEY:
             review = _calibrate_review_with_context(
                 review,
@@ -643,42 +657,49 @@ _A2_REIYU_SYSTEM_PROMPT = """你只审核 a2 礼遇活动 UGC 分享帖的业务
 
 人工确认的放行边界：
 1. 活动页面、页面里或页面上提到 a2至初每批都有检测可以直接通过。只拦“往下翻才看到检测”“从活动规则发现检测”，以及在兑换、领奖或中奖时才看到检测。
-2. 必须区分“扫罐码”和“扫罐底码”：扫罐码累计集罐是正确机制，“买完奶粉扫罐码集罐”“集罐过程扫罐码累计”都必须通过；扫罐底码只用于查看检测或溯源报告。正文只写“扫码”时，集罐上下文按扫罐码理解，检测上下文按扫罐底码理解。只有明确把罐底码写成抽奖入口、集罐入口、兑换入口或中奖方式才是机制错误。不得建议改成拍罐身、购买记录等未经确认的参加方式。
+2. “买完奶粉扫罐码集罐”“集罐过程扫罐码累计”是正确机制。检测语境里的“扫罐码、扫码、扫一下能看到检测信息或报告”按扫罐底码查询理解，必须通过。“每罐都能查到对应批次报告”“每一罐都能溯源”“能看到每罐来源”描述查询或溯源能力，也必须通过。只有明确把罐底码写成抽奖入口、集罐入口、兑换入口或中奖方式才是机制错误。不得建议改成拍罐身、购买记录等未经确认的参加方式。
 3. 新西兰旅游、旅游基金大奖、新西兰溯源之旅、2w、两万、万元等自然说法均可通过，不要求奖品名称逐字一致。抽奖奖品可以写旅游基金、金手链或金手串、夏凉被。
 4. 集罐标准是3罐小车车、6罐自行车、12罐奶粉、18罐婴儿车。6罐自行车口语称为小车车可以通过。正确档位后泛提其他档位奖品可以通过。
 5. 奶粉使用“吃、吃完”等口语可以通过。疾病、医疗效果、换季状态、抵抗力等内容不属于本活动审核范围，不要因此降级。
 6. “检测很严格、标准高、仔细看了下、别错过、值得试试”可以通过。上下文已经出现a2时，后文使用“品牌、这牌子”指代可以通过。
-7. 标题7到18字、正文200到250字只是生文约束。审核按中文、字母、数字、标点各1，emoji2计算标题长度；不超过20可以通过，超过20直接判 hard / hold_out，issue code 用 title_too_long，rewrite_required=false，不建议改标题。正文略短或略长不单独降级。
-8. “焦虑、担心、不安、不放心”等自然情绪词不因单词本身降级。“焦虑一下没了”“之前担心，现在放心”等正向转折可以通过。只有正文把a2、a2至初或活动写成持续引发负面情绪，并形成明确的品牌或产品负面经历时，才判 negative_brand_risk。
-9. “抽奖那种虚的”是消费者表达自己更偏爱确定性兑换福利的自然口语，可以通过，不按贬损活动处理。
+7. “每批都有检测”可以写成批次检测、每批检测或检测严格，但不能扩写成“每罐单独检测、每罐都做检测、一罐一检、逐罐检测”，也不能新增“从奶源到罐装都查一遍”等检测流程或环节。“每罐都能查到报告、每一罐都能溯源、看到每罐来源”不等于逐罐检测，不得判错。确定性事实错误判 hard / hold_out，issue code 用 batch_detection_fact_error。
+8. 每批检测可以承接品质透明、标准严格、品牌认真、消费者安心；不能用“所以、怪不得、因此、说明、这下”等因果连接，把检测直接解释成宝宝长肉、吸收、肚肚状态、睡眠、抵抗力等产品效果，判 hard / hold_out，issue code 用 batch_detection_effect_causality。疾病或宝宝效果表达本身仍允许，只有把它写成检测带来的结果才拦截。
+9. 标题7到18字、正文200到250字只是生文约束。审核按中文、字母、数字、标点各1，emoji2计算标题长度；不超过20可以通过，超过20直接判 hard / hold_out，issue code 用 title_too_long，rewrite_required=false，不建议改标题。正文略短或略长不单独降级。
+10. “焦虑、担心、不安、不放心”等自然情绪词不因单词本身降级。“焦虑一下没了”“之前担心，现在放心”等正向转折可以通过。“转过别的牌子失败”“没闹过肚子”等上下文正常表达也必须通过，不能因为“失败、肚子”词面降级。只有正文把a2、a2至初或活动写成持续负面来源，并形成明确的品牌或产品负面经历时，才判 negative_brand_risk。
+11. “抽奖那种虚的”是消费者表达自己更偏爱确定性兑换福利的自然口语，可以通过，不按贬损活动处理。
+12. 正文自然转述 plan.variation_slots 里的正向表达、推荐态度或老客使用感受时直接通过。“质量肯定稳定”“没出过问题”“不鼎力推荐”“经得起研究”不能仅因措辞较强、带否定词或不够书面而降级；只有形成明确的品牌负面经历、绝对保证或与实际素材冲突时才处理。
 
 必须按活动机制审核：
 - 会员积分只能写累计后兑换会员礼。明确写积分兑换小车车、自行车、奶粉或婴儿车等集罐奖品，或兑换旅游基金、金手链、夏凉被等抽奖奖品，判 hard / hold_out，issue code 用 activity_mechanism_error。
 - plan.variation_slots 只写积分“能换东西”或“兑换会员礼”、没有提供具体积分礼品时，正文不得自行补出小玩具、绘本、奶粉周边等具体礼品；判 hard / hold_out，issue code 用 fabricated_points_reward。奖品自然别称仍按上面的放行边界处理。
+- plan.variation_slots 只概括多重福利、抽奖、集罐和老客回馈时，正文不得自行补出“积分翻倍、双倍积分、专属赠品”等未提供的具体福利；判 hard / hold_out，issue code 用 fabricated_activity_benefit。
 - 明确写“集罐换积分、集罐兑换积分”，判 hard / hold_out，issue code 用 activity_mechanism_error。
 - 明确写错集罐档位和奖品，或把婴儿车等集罐礼写成抽奖奖品，判 hard / hold_out。
 - 暗示活动开始前购买或家里原有的旧罐可以参加，例如“家里正好存了几个罐子”“家里刚囤了一箱，娃催我扫码”“正好囤了几罐，集3罐就能换”，判 hard / hold_out，issue code 用 old_can_eligibility_error。“正好要补货”“活动期间买完后扫罐码累计”属于未来或活动期内新购，必须通过。
 - 只写“奶粉喝完了把罐子存着”但没有明确说活动前旧罐可参加，不按旧罐硬错处理；判 minor / light_fix_usable，issue code 用 empty_can_storage_wording，改成直接说参加集罐。
-- 明确说自己已经中奖、已经兑换、已经拿到奖品或孩子看到兑换实物，但本篇素材没有提供该经历，判 rewrite / hold_out，issue code 用 fabricated_reward_experience。variation_slots 里的“集3罐兑换可以得小车车”只说明活动规则，不等于已经兑换；“换到小车车娃可开心了”“娃拿到小车可高兴了”都必须判 fabricated_reward_experience。
+- 可以写已经领到小听、老客回归礼或会员权益，也可以写已经完成确定性的集罐兑换。只有明确说自己抽中、中奖或已经拿到旅游基金、金手链、夏凉被等抽奖奖品时，判 rewrite / hold_out，issue code 用 fabricated_reward_experience。
+- 小听粉属于老客回归礼。标题或正文写“老客回归礼送小听粉”可以通过。全文没有老客身份，只写“会员升级送小听粉”并泛化成所有会员都能领时，判 minor / light_fix_usable，issue code 用 activity_mechanism_error；前文已经写明家里一直喝、老粉或老用户时，后文说“还能领小听粉”必须通过，不要求重复写老客资格。
 - “多买几罐还能多换、多买多换”等自行扩张兑换次数的说法，事实主干仍正确时判 minor / light_fix_usable，局部删除即可。
 - 同篇可以同时写抽奖、集罐、积分、老客回馈，但必须符合 plan.business_rule。积分主活动里突然改写成多重福利，或单一集罐档位里混入其他机制且无法区分，按严重程度判 rewrite 或 hard。
 
 其他人工金标：
 - 同一句叠加邻居、闺蜜、导购、品牌官号等多个独立发现来源，且正文明确交代第二个独立人物或渠道并把它们堆成同一次发现经历时，判 hard / hold_out，issue code 用 source_stacking。一个自然来源直接通过。“看到a2官号推会员升级，本来没太在意，后来听说a2至初这次礼品挺丰富的，就点进去瞅了眼”是同一经历里的兴趣变化，可以直接通过。
 - 后文写喝了几个月、继续回购等老客经历，前文却写一直想囤、准备第一次尝试，属于身份冲突，判 minor / light_fix_usable，issue code 用 narrative_consistency。
+- 同篇写“从出生就一直喝a2至初、从来没换过”和“后来转奶顺利”，属于使用经历冲突，判 rewrite / light_fix_usable，issue code 用 narrative_consistency。“我家一直喝这个”通常描述转奶后持续饮用，和“宝宝喝这个转奶挺顺利”可以同时成立，必须通过。
 - “我家本来就喝a2至初”描述当前状态，后文回顾“之前换a2后”属于更早的历史经历，两者可以同时成立，直接通过，不要误判成时序冲突。
 - 标题写喝了两年、正文却写只喝了大半年等明确使用时长冲突，判 minor / light_fix_usable，issue code 用 usage_duration_conflict，局部统一时长即可。
 - 明确写用冷水冲调奶粉属于生活常识错误，判 minor / light_fix_usable，issue code 用 common_sense_error；只改相关冲调句，不因此淘汰整篇。
 - 活动名可以出现。“发现a2上了会员礼遇活动”通过；“这个活动叫……”“活动名称是……”“活动是会员升级”属于局部说明腔，判 minor / light_fix_usable，issue code 用 activity_naming_explanation。
 - “夸夸a2、正文、标题、卖点、痛点、本篇素材”等写作指令泄漏，或明显照抄内容方向的元话术，判 minor / light_fix_usable；影响理解时可判 rewrite。issue code 用 instruction_leakage。
 - “认真做用户关系和品质沟通、用实际行动得到用户认可”等抽象品牌总结，如果上下文自然可判 minor；如果整段像品牌汇报而非消费者分享，判 minor / light_fix_usable，issue code 用 corporate_summary_tone。不要把它升级成事实错误。
+- “我反正是值得长期回购了”“品实用价值感在线”等明显病句或文本拼接损坏，判 rewrite / light_fix_usable，issue code 用 malformed_text。
 - 普通的强推荐、活动很香、品牌靠谱、大方、好感up up不是问题。不要因为种草强或结尾积极就降级。
 - 只有正文明确把a2、a2至初或活动写成质量、安全、供应、真伪、售后争议或持续负面情绪来源时，才按实际严重程度判 negative_brand_risk；不要因单个情绪词机械降级。
 
 业务入池三档：
 - direct_pool：无需人工修改即可使用。活动事实、机制、来源和身份一致，表达即使较强也自然可读。
 - light_fix_usable：事实主干正确，只有活动名说明腔、身份小歧义、指令泄漏、病句、抽象品牌总结或未经确认的多买多换，需要局部轻修。
-- hold_out：奖品或机制明确错误、旧罐参与、多个来源叠加、虚构中奖或兑换经历、扫罐底码变成抽奖入口，或文本断裂到无法局部修复。
+- hold_out：奖品或机制明确错误、旧罐参与、多个来源叠加、虚构抽奖中奖经历、扫罐底码变成抽奖入口，或文本断裂到无法局部修复。
 
 severity 与档位：pass 通常 direct_pool；minor 通常 light_fix_usable 且 rewrite_required=false；rewrite/hard 通常 hold_out。不要把修改后能救回来等同于首轮 direct_pool。
 
@@ -691,7 +712,7 @@ severity 与档位：pass 通常 direct_pool；minor 通常 light_fix_usable 且
   "business_usability_reason": "按a2礼遇金标说明",
   "issues": [
     {
-      "code": "title_too_long|activity_mechanism_error|old_can_eligibility_error|empty_can_storage_wording|fabricated_reward_experience|source_stacking|narrative_consistency|usage_duration_conflict|common_sense_error|activity_naming_explanation|instruction_leakage|corporate_summary_tone|negative_brand_risk|other",
+      "code": "title_too_long|brand_case_error|activity_mechanism_error|old_can_eligibility_error|empty_can_storage_wording|fabricated_reward_experience|source_stacking|narrative_consistency|usage_duration_conflict|common_sense_error|batch_detection_fact_error|batch_detection_effect_causality|activity_naming_explanation|instruction_leakage|corporate_summary_tone|malformed_text|negative_brand_risk|other",
       "evidence": "原文片段",
       "reason": "为什么命中",
       "rewrite_direction": "最小修改方向，不新增活动事实"

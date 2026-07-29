@@ -1,0 +1,8 @@
+{
+  "input_path": "/Users/luxifa/Downloads/PG UGC正向词调整后模型 - 礼遇生文备用 (1).csv",
+  "output_path": "/Users/luxifa/maga/tmp/a2_reiyu_csv_audit_feature_20260723/audit.csv",
+  "total_count": 384,
+  "direct_pool_count": 334,
+  "light_fix_count": 48,
+  "hold_out_count": 2
+}

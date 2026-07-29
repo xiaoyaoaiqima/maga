@@ -21,6 +21,7 @@ FORBIDDEN_TERM_MATCH_MODES = {
     "detection_page_context",
     "registration_required_context",
     "risk_polarity_context",
+    "old_can_collection_context",
 }
 A2_SENTIMENT_COMMENT_ASSET_KEY = "a2_sentiment_comment_activity"
 A2_REIYU_UGC_POST_ASSET_KEY = "a2_reiyu_ugc_post_rules_v1"
@@ -96,7 +97,6 @@ A2_REIYU_REPLACE_TERMS = {
     "a2至现在": "a2至初现在",
     "A2蛋白质": "A2蛋白",
     "a2蛋白质": "A2蛋白",
-    "肚子": "肚肚",
     "脾胃": "肚肚状态",
     "大脑": "🧠",
     "眼睛": "👀",
@@ -113,6 +113,7 @@ A2_REIYU_REPLACE_TERMS = {
     "批批检透明": "每批都有检测，信息更透明",
     "叫会员礼遇活动": "发现a2上了会员礼遇活动",
     "emoji": "",
+    "😂": "",
     "♀️": "",
     "♂": "",
     "#": "",
@@ -133,7 +134,6 @@ A2_REIYU_MODEL_REWRITE_TERMS = (
     "笑哭R",
     "顺便看到",
     "带一嘴",
-    "失败",
     "避雷",
 )
 A2_REIYU_REGISTRATION_REWRITE_TERMS = ("报名",)
@@ -180,13 +180,11 @@ A2_REIYU_HARD_BAN_TERMS = (
     "生产批号",
     "新码",
     "空罐",
-    "攒着罐子",
-    "攒罐子",
-    "囤了好几罐",
     "扫罐底码就能抽奖",
     "一罐小车车",
     "婴儿车抽奖",
 )
+A2_REIYU_OLD_CAN_CONTEXT_HARD_BAN_TERMS = ("囤了好几罐",)
 A2_REIYU_CONTEXTUAL_PRIZE_HARD_BAN_TERMS = (
     "赢一辆",
     "积木",
@@ -248,6 +246,15 @@ A2_REIYU_UGC_POST_SEED_TERMS = (
             reason="运营确认属于供应风险、指令泄露、检测乱编、旧罐暗示或明确机制错误",
         )
         for term in A2_REIYU_HARD_BAN_TERMS
+    ),
+    *(
+        _a2_reiyu_entry(
+            term,
+            enforcement="hard_ban",
+            match_mode="old_can_collection_context",
+            reason="仅在活动前库存与集罐、扫码累计或兑换机制发生关联时拦截",
+        )
+        for term in A2_REIYU_OLD_CAN_CONTEXT_HARD_BAN_TERMS
     ),
     *(
         _a2_reiyu_entry(
