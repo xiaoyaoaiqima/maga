@@ -83,6 +83,53 @@ class AssetGenerationOptionsResponse(BaseModel):
     styles: list[str]
 
 
+class AssetNodeCorpusItem(BaseModel):
+    item_key: str
+    text: str
+    weight: float = 1.0
+    source_ref: dict[str, Any] = Field(default_factory=dict)
+
+
+class AssetNode(BaseModel):
+    node_key: str
+    node_type: str
+    name: str
+    corpus_items: list[AssetNodeCorpusItem] = Field(default_factory=list)
+    properties: dict[str, Any] = Field(default_factory=dict)
+
+
+class AssetNodeRelation(BaseModel):
+    relation_type: str
+    source_node_key: str
+    target_node_key: str
+    properties: dict[str, Any] = Field(default_factory=dict)
+
+
+class AssetNodeSelectionStep(BaseModel):
+    dimension_key: str
+    selection_mode: str
+    source_node_key: str | None = None
+    from_dimension: str | None = None
+    relation_type: str
+
+
+class AssetNodeRenderBinding(BaseModel):
+    dimension_key: str
+    variable_name: str
+    layer: str
+    order: int
+
+
+class AssetNodeGraphResponse(BaseModel):
+    schema_version: str
+    manifest: dict[str, Any]
+    nodes: list[AssetNode]
+    relations: list[AssetNodeRelation]
+    selection_strategy: list[AssetNodeSelectionStep]
+    render_bindings: list[AssetNodeRenderBinding]
+    raap_export: dict[str, Any]
+
+
 class SystemPromptKeywordAssetResponse(BaseModel):
     id: int | None = None
     asset_type: str

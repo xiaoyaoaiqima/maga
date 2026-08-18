@@ -25,6 +25,7 @@ from app.schemas.assets import (
     AssetGenerationOptionsResponse,
     AssetImportResponse,
     AssetImportRunResponse,
+    AssetNodeGraphResponse,
     AssetRegistryResponse,
     AssetRegistrySummaryResponse,
     AssetVisibilityUpdate,
@@ -36,8 +37,14 @@ from app.schemas.assets import (
     SystemPromptKeywordUpdate,
     SellingPainpointExpressionUpdate,
 )
-from app.services.asset_service import AssetService, comment_business_rule_draft_response, normalize_asset_content
+from app.services.asset_node_graph_service import compile_article_business_rule_node_graph
 from app.services.activity_quality_guard_service import resolve_quality_guard_profile
+from app.services.asset_service import (
+    AssetService,
+    comment_business_rule_draft_response,
+    normalize_asset_content,
+)
+from app.services.business_rule_asset_types import ARTICLE_BUSINESS_RULE_ASSET_TYPE
 from app.services.comment_business_rule_service import (
     COMMENT_BUSINESS_RULE_ASSET_TYPE,
     DEFAULT_COMMENT_BUSINESS_RULE_ASSET_KEY,
@@ -769,6 +776,34 @@ async def update_article_business_rule_fields(
         code=200,
         message="success",
         data=AssetRegistryResponse.model_validate(asset).model_dump(mode="json"),
+    )
+
+
+@router.get(
+    "/article-business-rule-sets/{asset_key}/node-graph",
+    response_model=ResponseData,
+)
+async def get_article_business_rule_node_graph(
+    asset_key: str,
+    asset_stage: str | None = Query(default="production"),
+    db: AsyncSession = Depends(get_db),
+):
+    asset = await AssetService(db).get_latest_asset(
+        ARTICLE_BUSINESS_RULE_ASSET_TYPE,
+        asset_key,
+        asset_stage=asset_stage,
+        compatible=True,
+    )
+    if asset is None:
+        raise HTTPException(status_code=404, detail="article business rule asset not found")
+    try:
+        graph = compile_article_business_rule_node_graph(asset)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ResponseData(
+        code=200,
+        message="success",
+        data=AssetNodeGraphResponse.model_validate(graph).model_dump(mode="json"),
     )
 
 
