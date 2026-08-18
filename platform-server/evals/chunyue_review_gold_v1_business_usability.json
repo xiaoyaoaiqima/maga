@@ -3,8 +3,8 @@
   "slice": "business_usability_v1",
   "review_rubric_code": "chunyue_business_usability_v1",
   "review_status": "approved",
-  "approved_date": "2026-07-19",
-  "description": "莼悦强种草 UGC 人工业务校准金标。可核验产品事实受本篇原始表达约束，抽象使用感受、强种草标题和不完整购买链路允许通过。",
+  "approved_date": "2026-07-31",
+  "description": "莼悦强种草 UGC 人工业务校准金标。硬产品事实受本篇原始表达与已联网确认的莼悦基础事实约束；睡眠、便便、肠胃、自护力、吸收、长肉等强种草效果允许自然外扩和组成完整效果链。",
   "labels": ["direct_pool", "light_fix_usable", "hold_out"],
   "label_semantics": {
     "direct_pool": "可直接入池。允许强种草标题、抽象使用感受和不完整购买链路。",
@@ -12,13 +12,47 @@
     "hold_out": "新增或改变可核验产品事实，或存在医疗、保证、价格负向、主体归因等硬问题。"
   },
   "rubric": [
-    "本篇 selling_painpoint_expression 是认证、成分、数字、周期、作用机制、具体孩子变化和明确因果的唯一事实依据；允许自然转述和拆开表达。",
+    "本篇 selling_painpoint_expression 是认证、数字、牧场制度等硬产品事实的主要依据；已联网确认的莼悦 HMO、OPN、OPO 基础事实可以跨本篇原始表达出现。",
     "新增‘奶源知根知底’这类可核验产品事实时判 hold_out；原始表达中的强因果和效果已经业务确认，不主动降调。",
+    "宝宝睡眠、便便、肠胃、自护力、吸收、长肉、精神头和适应情况可以自然外扩并组成完整效果链，不因种草性强自动降级。",
+    "欧盟有机规则禁止激素和生长促进剂，个体兽医治疗存在例外；‘奶牛更健康、奶源更安全’按原始卖点或消费者安心感转述，不扩成比较性证明、绝对安全或零风险。",
     "‘现在喝着挺安稳’‘宝宝喝得挺顺口’等抽象、不可量化的使用感受可以自然外扩，不按事实漂移处理。",
     "标题允许‘焦虑终结者’‘让敏敏宝宝安心’等主观效果强化和强种草表达，不仅因力度强而降级。",
     "不强制正文完成最终选择或购买莼悦；停在被推荐、了解到、记下来或继续关注均可直接入池。",
     "‘就靠这个依据确认的’等直接复述任务字段或内容方向的表达判 light_fix_usable，不整篇否定。",
     "‘别的品牌介绍里从没这样说过’这类不点名竞品、不新增具体认证、成分或效果的自然比较感受允许直接入池；只有具体可核验的竞品事实或贬损才拦截。"
+  ],
+  "fact_sources": [
+    {
+      "source_code": "chunyue_xinhua_release_20250416",
+      "url": "https://www.news.cn/food/20250416/d74e2a6bb2ac403d84176c9fbf39ba2e/c.html",
+      "supports": [
+        "5重有机HMO和有机GOS",
+        "有机活性OPN",
+        "有机乳源OPO类似结构脂",
+        "HMO和GOS帮助保护肚肚内环境",
+        "OPN支持构建肚肚屏障",
+        "OPO类似结构脂促进钙和关键脂肪酸吸收、减少钙皂形成、让大便柔软"
+      ]
+    },
+    {
+      "source_code": "chunyue_cfsn_release_20250416",
+      "url": "https://www.cfsn.cn/news/detail/36/292895.html",
+      "supports": [
+        "5重有机HMO和有机GOS",
+        "有机活性OPN",
+        "有机乳源OPO类似结构脂",
+        "荷兰有机牧场奶源与四重有机认证发布信息"
+      ]
+    },
+    {
+      "source_code": "eu_organic_livestock_rules",
+      "url": "https://agriculture.ec.europa.eu/farming/organic-farming/organic-production-and-products_en",
+      "supports": [
+        "有机畜牧禁止使用激素和生长促进剂",
+        "个体动物兽医治疗存在激素使用例外"
+      ]
+    }
   ],
   "items": [
     {
@@ -173,6 +207,142 @@
         "source": "batch_706_user_calibration"
       },
       "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "abstract_competitive_impression_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "认准荷兰自家牧场，选了莼悦",
+      "content": "想着皇家美素佳儿多年的荷兰自家牧场，心里踏实不少。宝宝喝莼悦这段时间，夜里睡得很安稳，也没有闹过肚子。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "皇家美素佳儿多年的荷兰自家牧场"
+      },
+      "meta": {
+        "case_code": "CYU-010",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["夜里睡得很安稳", "没有闹过肚子"],
+        "reason": "牧场依据之外自然增加睡眠和肠胃使用效果属于允许的强种草外扩。",
+        "source": "batch_743_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "strong_effect_expansion_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "宝宝喝得安心就是我的放心",
+      "content": "营养全面成分纯天然，每次看他喝得带劲我就安心。从掰手指算奶量到观察他便便颜色，莼悦一直稳稳陪着，晚上睡觉也踏实。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "营养全面成分纯天然，宝宝喝得安心"
+      },
+      "meta": {
+        "case_code": "CYU-011",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["观察他便便颜色", "晚上睡觉也踏实"],
+        "reason": "纯天然依据之外自然增加便便和睡眠效果，不因种草性强而降级。",
+        "source": "batch_743_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "strong_effect_expansion_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "从换季担心到踏实长肉",
+      "content": "之前换季总担心他自护力跟不上，喝莼悦后肚肚适应得不错，吸收也顺，身上慢慢长肉了，抱起来沉甸甸的。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "很重要的成分HMO以及OPN，能提升自护力保障宝宝吸收，身上长肉更快了"
+      },
+      "meta": {
+        "case_code": "CYU-012",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["换季", "自护力", "吸收也顺", "身上慢慢长肉了"],
+        "reason": "换季、自护力、吸收和长肉组成完整效果链是用户确认允许的强种草表达。",
+        "source": "batch_743_user_calibration"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "complete_effect_chain_allowed", "source_type": "human_feedback"}
+    },
+    {
+      "title": "看牧场，也看肚肚营养",
+      "content": "一开始记住的是莼悦的荷兰自家牧场，后来又看到配方里有5重有机HMO和有机活性OPN，选奶时更踏实。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "皇家美素佳儿多年的荷兰自家牧场"
+      },
+      "meta": {
+        "case_code": "CYU-013",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["5重有机HMO", "有机活性OPN"],
+        "reason": "HMO 和 OPN 属于已联网确认的莼悦基础配方事实，可以跨本篇原始表达出现。",
+        "source": "official_product_fact_20260731"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "confirmed_baseline_product_fact", "source_type": "official_release"}
+    },
+    {
+      "title": "莼悦的肚肚营养我记住了",
+      "content": "莼悦有5重有机HMO和有机GOS，帮助保护宝宝的肚肚内环境；有机活性OPN支持肚肚屏障，有机乳源OPO类似结构脂还能促进钙和关键脂肪酸吸收、减少钙皂形成，让大便柔软。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "皇家美素佳儿多年的荷兰自家牧场"
+      },
+      "meta": {
+        "case_code": "CYU-014",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["5重有机HMO和有机GOS", "有机活性OPN", "有机乳源OPO类似结构脂", "让大便柔软"],
+        "reason": "成分、肚肚屏障、吸收和大便柔软均有莼悦公开发布信息支持，属于已确认基础事实。",
+        "source": "chunyue_xinhua_release_20250416"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "confirmed_formula_mechanism", "source_type": "official_release"}
+    },
+    {
+      "title": "有机牧场的激素边界",
+      "content": "莼悦是欧盟认证的有机产品，有机牧场按标准不使用人工促生长、促产激素，这一点让我选奶时更放心。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "莼悦是欧盟认证的有机产品"
+      },
+      "meta": {
+        "case_code": "CYU-015",
+        "expected_label": "direct_pool",
+        "issue_code": "none",
+        "evidence": ["不使用人工促生长、促产激素"],
+        "reason": "欧盟有机规则禁止激素和生长促进剂，该表述保留了准确的用途边界，没有写成任何情况下绝不使用。",
+        "source": "eu_organic_livestock_rules"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "organic_hormone_rule_precise", "source_type": "official_standard"}
+    },
+    {
+      "title": "绝对不使用任何激素",
+      "content": "莼悦牧场的奶牛在任何情况下都绝不会使用任何激素，连生病治疗也完全不用。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "莼悦是欧盟认证的有机产品"
+      },
+      "meta": {
+        "case_code": "CYU-016",
+        "expected_label": "hold_out",
+        "issue_code": "product_fact_expansion",
+        "evidence": ["任何情况下都绝不会使用任何激素", "连生病治疗也完全不用"],
+        "reason": "欧盟规则允许个体动物因兽医治疗使用激素，正文抹掉例外并绝对化，改变了标准事实。",
+        "source": "eu_organic_livestock_rules"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "organic_hormone_exception_removed", "source_type": "official_standard"}
+    },
+    {
+      "title": "比其他奶源绝对安全",
+      "content": "不使用人工激素就证明莼悦奶牛一定更健康，奶源比其他奶粉都更安全，宝宝喝着绝对零风险。",
+      "context": {
+        "asset_key": "chunyue_v2_painpoint_sellingpoint_article_rules",
+        "selling_painpoint_expression": "不使用人工激素，奶牛更健康，奶源更安全"
+      },
+      "meta": {
+        "case_code": "CYU-017",
+        "expected_label": "hold_out",
+        "issue_code": "claim_risk",
+        "evidence": ["证明", "比其他奶粉都更安全", "绝对零风险"],
+        "reason": "原始卖点允许强种草转述，但不能升级为已证明的比较性安全结论、绝对保证或零风险。",
+        "source": "verified_fact_boundary_20260731"
+      },
+      "tags": {"brand": "莼悦", "dimension": "business_usability", "boundary": "comparative_absolute_safety_blocked", "source_type": "human_and_official_calibration"}
     }
   ]
 }

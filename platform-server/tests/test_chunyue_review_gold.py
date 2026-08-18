@@ -36,7 +36,25 @@ def test_chunyue_business_usability_gold_keeps_approved_boundaries() -> None:
         "CYU-007": "direct_pool",
         "CYU-008": "direct_pool",
         "CYU-009": "direct_pool",
+        "CYU-010": "direct_pool",
+        "CYU-011": "direct_pool",
+        "CYU-012": "direct_pool",
+        "CYU-013": "direct_pool",
+        "CYU-014": "direct_pool",
+        "CYU-015": "direct_pool",
+        "CYU-016": "hold_out",
+        "CYU-017": "hold_out",
     }
+
+
+def test_chunyue_gold_keeps_verified_fact_sources() -> None:
+    payload = json.loads(GOLD_PATH.read_text(encoding="utf-8"))
+
+    sources = {item["source_code"]: item for item in payload["fact_sources"]}
+    assert sources["chunyue_xinhua_release_20250416"]["url"].startswith("https://www.news.cn/")
+    assert "5重有机HMO和有机GOS" in sources["chunyue_xinhua_release_20250416"]["supports"]
+    assert "有机活性OPN" in sources["chunyue_cfsn_release_20250416"]["supports"]
+    assert "个体动物兽医治疗存在激素使用例外" in sources["eu_organic_livestock_rules"]["supports"]
 
 
 def test_chunyue_review_prompt_contains_user_confirmed_calibration() -> None:
@@ -51,6 +69,11 @@ def test_chunyue_review_prompt_contains_user_confirmed_calibration() -> None:
     assert "不强制文章完成“最终选择/购买莼悦”的闭环" in prompt
     assert "就靠这个依据确认的" in prompt
     assert "别的品牌介绍里从没这样说过" in prompt
+    assert "5 重有机 HMO" in prompt
+    assert "有机活性 OPN" in prompt
+    assert "有机牧场不使用人工促生长/促产激素" in prompt
+    assert "牧场/纯天然之外新增睡眠、便便或肠胃效果" in prompt
+    assert "换季、自护力、吸收和长肉连成完整效果链" in prompt
 
 
 def test_chunyue_review_user_prompt_carries_source_expression_and_rubric_code() -> None:
