@@ -47,6 +47,34 @@ def test_article_output_format_supports_explicit_two_items_mode():
     assert "一次生成 2 篇" not in multi
 
 
+@pytest.mark.asyncio
+async def test_complete_comment_prompt_is_model_visible_without_global_prompt_layers(unified_session_factory):
+    prompt = "# 任务\n\n一次生成10条评论。\n\n只输出一个 JSON 对象。"
+    async with unified_session_factory() as session:
+        snapshot = await UnifiedContentGenerationService(session).build_snapshot(
+            content_type="comment",
+            business_rule={
+                "asset_key": "a2_sentiment_comment_activity",
+                "prompt_mode": "complete_comment_prompt",
+                "complete_comment_prompt": prompt,
+                "output_format_mode": "json_object_items",
+                "expansion_count": 10,
+                "experiment_profile": {"profile_code": "a2_stock_comment_batch10_v1"},
+            },
+            item_no=1,
+            output_fields=["comment"],
+        )
+
+    assert snapshot.input_snapshot["rendered_prompt"] == prompt
+    assert snapshot.input_snapshot["selected_keywords"] == []
+    assert snapshot.input_snapshot["selected_prompt_slots"] == []
+    assert snapshot.input_snapshot["comment_tone"] is None
+    assert snapshot.input_snapshot["output_format"] == {
+        "mode": "json_object_items",
+        "count": 10,
+    }
+
+
 def test_rule_corpus_as_prompt_keeps_single_article_output_format():
     from app.services.unified_content_generation_service import _rule_corpus_as_prompt_article_prompt
 

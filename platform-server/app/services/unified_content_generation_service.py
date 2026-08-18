@@ -73,7 +73,8 @@ class UnifiedContentGenerationService:
         layered_article = content_type == "article" and _uses_layered_article_prompt(business_rule)
         rule_corpus_article = content_type == "article" and _uses_rule_corpus_as_prompt(business_rule)
         comment_prompt_bundle = content_type == "comment" and _uses_comment_prompt_bundle(business_rule)
-        if layered_article or rule_corpus_article or comment_prompt_bundle:
+        complete_comment_prompt = content_type == "comment" and _uses_complete_comment_prompt(business_rule)
+        if layered_article or rule_corpus_article or comment_prompt_bundle or complete_comment_prompt:
             resolved_keyword_asset_key = ""
             keyword_asset = None
             selected_keywords: list[dict[str, Any]] = []
@@ -105,15 +106,18 @@ class UnifiedContentGenerationService:
         selected_prompt_slots = (
             _select_comment_prompt_slots(
                 business_rule,
-                include_variation_slots=not comment_prompt_bundle,
+                include_variation_slots=not (comment_prompt_bundle or complete_comment_prompt),
             )
             if content_type == "comment"
-            and (not comment_prompt_bundle or _bundle_prompt_slots_source(business_rule))
+            and (
+                not (comment_prompt_bundle or complete_comment_prompt)
+                or _bundle_prompt_slots_source(business_rule)
+            )
             else []
         )
         selected_comment_tone = (
             None
-            if comment_prompt_bundle
+            if comment_prompt_bundle or complete_comment_prompt
             else _select_comment_tone(business_rule, item_no=item_no)
             if content_type == "comment"
             else None
@@ -135,7 +139,11 @@ class UnifiedContentGenerationService:
             else {}
         )
         if content_type == "comment":
-            if comment_prompt_bundle:
+            if complete_comment_prompt:
+                rendered_prompt = str(business_rule.get("complete_comment_prompt") or "").strip()
+                if not rendered_prompt:
+                    raise ValueError("complete_comment_prompt cannot be empty")
+            elif comment_prompt_bundle:
                 rendered_prompt = _comment_prompt_bundle_text(
                     business_rule,
                     output_format=comment_output_format,
@@ -149,7 +157,8 @@ class UnifiedContentGenerationService:
                     output_format=comment_output_format,
                     selected_keywords=selected_keywords,
                 )
-            rendered_prompt = _normalize_comment_prompt_labels(rendered_prompt)
+            if not complete_comment_prompt:
+                rendered_prompt = _normalize_comment_prompt_labels(rendered_prompt)
         else:
             if _uses_royal_compact_prompt(business_rule):
                 rendered_prompt = _royal_compact_article_prompt(
@@ -177,7 +186,7 @@ class UnifiedContentGenerationService:
                 )
         keyword_asset_ref = (
             None
-            if layered_article or rule_corpus_article or comment_prompt_bundle
+            if layered_article or rule_corpus_article or comment_prompt_bundle or complete_comment_prompt
             else _keyword_asset_ref(
                 keyword_asset,
                 resolved_keyword_asset_key,
@@ -870,6 +879,13 @@ def _uses_comment_prompt_bundle(rule: dict[str, Any]) -> bool:
     )
 
 
+def _uses_complete_comment_prompt(rule: dict[str, Any]) -> bool:
+    return (
+        str(rule.get("prompt_mode") or "").strip() == "complete_comment_prompt"
+        and bool(str(rule.get("complete_comment_prompt") or "").strip())
+    )
+
+
 def _bundle_prompt_slots_source(rule: dict[str, Any]) -> str | None:
     if not _uses_comment_prompt_bundle(rule) or not isinstance(rule.get("prompt_slots"), dict):
         return None
@@ -952,6 +968,11 @@ def _comment_generation_lines(output_format: dict[str, Any]) -> list[str]:
             f"生成 {count} 条评论。",
             '只输出 JSON 对象数组，每个对象包含 "comment" 字段，不要标题、编号、解释。',
         ]
+    if mode == "json_object_items":
+        return [
+            f"生成 {count} 条评论。",
+            '只输出一个 JSON 对象，items 中每个对象必须包含 "comment" 字段。',
+        ]
     return ["只输出评论正文，不要标题、编号、解释。"]
 
 
@@ -964,7 +985,7 @@ def _comment_output_format_config(rule: dict[str, Any]) -> dict[str, Any]:
         or "plain_comment"
     )
     mode = str(raw_mode or "plain_comment").strip()
-    if mode not in {"plain_comment", "json_string_array", "json_object_array"}:
+    if mode not in {"plain_comment", "json_string_array", "json_object_array", "json_object_items"}:
         mode = "plain_comment"
     count = _positive_int(
         rule.get("expansion_count")

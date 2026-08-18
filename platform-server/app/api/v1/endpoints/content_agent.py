@@ -452,8 +452,10 @@ async def start_comment_batch_generation(
             comment_batch_variation_review=request.comment_batch_variation_review,
             comment_delivery_selection=request.comment_delivery_selection,
             comment_post_context=request.comment_post_context,
+            experiment_profile_code=request.experiment_profile_code,
             count=request.count,
             concurrency=request.concurrency,
+            model_config=request.generation_model_config.model_dump(exclude_none=True),
             created_by=request.created_by,
         )
         db.expire_all()

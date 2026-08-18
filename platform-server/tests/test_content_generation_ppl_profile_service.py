@@ -1,3 +1,5 @@
+import pytest
+
 from app.schemas.content_batch_report import ContentPPLRunStartRequest
 from app.services.content_generation_ppl_profile_service import ContentGenerationPPLProfileService
 
@@ -63,3 +65,34 @@ def test_legacy_wangyue_profile_stays_available():
 
     assert profile.profile_code == "wangyue_0705_article"
     assert profile.asset_key == "wangyue_v353_protection_review_concrete_anchor_article_rules"
+
+
+def test_a2_batch10_profile_builds_one_call_comment_experiment_request():
+    service = ContentGenerationPPLProfileService()
+    profile = service.require_profile("a2_comment_batch10")
+
+    request = service.build_comment_request(
+        profile,
+        ContentPPLRunStartRequest(
+            profile_code="a2_comment_batch10",
+            model_config={"model_code": "deepseek-v4-flash"},
+        ),
+    )
+
+    assert profile.profile_code == "a2_stock_comment_batch10"
+    assert profile.default_count == 10
+    assert profile.default_comments_per_prompt == 10
+    assert request.count == 10
+    assert request.experiment_profile_code == "a2_stock_comment_batch10_v1"
+    assert request.generation_model_config.model_code == "deepseek-v4-flash"
+
+
+def test_a2_batch10_profile_rejects_non_ten_count_for_first_vertical_slice():
+    service = ContentGenerationPPLProfileService()
+    profile = service.require_profile("a2_comment_batch10")
+
+    with pytest.raises(ValueError, match="requires count=10"):
+        service.build_comment_request(
+            profile,
+            ContentPPLRunStartRequest(profile_code="a2_comment_batch10", count=20),
+        )

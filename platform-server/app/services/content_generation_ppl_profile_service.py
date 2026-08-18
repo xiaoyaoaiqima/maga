@@ -28,7 +28,9 @@ class ContentGenerationPPLProfile:
     description: str = ""
     default_count: int = 10
     default_articles_per_prompt: int = 1
+    default_comments_per_prompt: int = 1
     allow_articles_per_prompt_override: bool = True
+    experiment_profile_code: str | None = None
     aliases: tuple[str, ...] = ()
 
     def response(self) -> ContentPPLProfileResponse:
@@ -43,6 +45,8 @@ class ContentGenerationPPLProfile:
             description=self.description,
             default_count=self.default_count,
             default_articles_per_prompt=self.default_articles_per_prompt,
+            default_comments_per_prompt=self.default_comments_per_prompt,
+            experiment_profile_code=self.experiment_profile_code,
             aliases=list(self.aliases),
         )
 
@@ -98,6 +102,19 @@ PPL_PROFILES: tuple[ContentGenerationPPLProfile, ...] = (
         description="A2舆情改善评论生文：评论业务规则、评论格式和A2评论质量guard。",
         aliases=("a2_comment",),
     ),
+    ContentGenerationPPLProfile(
+        profile_code="a2_stock_comment_batch10",
+        label="A2有货评论一次生成10条",
+        content_type="comment",
+        asset_key="a2_sentiment_comment_activity",
+        keyword_asset_key=None,
+        quality_guard_profile_key="a2_sentiment_comment_202606",
+        description="A2有货评论实验切片：冻结批量Prompt，一次content.generate返回10条并保留策略字段。",
+        default_count=10,
+        default_comments_per_prompt=10,
+        experiment_profile_code="a2_stock_comment_batch10_v1",
+        aliases=("a2_comment_batch10", "a2_stock_batch10"),
+    ),
 )
 
 
@@ -146,7 +163,7 @@ class ContentGenerationPPLProfileService:
             count=request.count or profile.default_count,
             articles_per_prompt=articles_per_prompt,
             executor_code=request.executor_code or DEFAULT_EXECUTOR_CODE,
-            generation_model_config=request.generation_model_config,
+            model_config=request.generation_model_config,
             model_config_rotation=list(request.model_config_rotation),
             created_by=request.created_by,
         )
@@ -159,6 +176,10 @@ class ContentGenerationPPLProfileService:
         if profile.content_type != "comment":
             raise ValueError(f"profile {profile.profile_code} is not a comment profile")
         count = request.count or profile.default_count
+        if profile.experiment_profile_code and count != profile.default_count:
+            raise ValueError(
+                f"profile {profile.profile_code} currently requires count={profile.default_count}"
+            )
         if count > COMMENT_PPL_MAX_COUNT:
             raise ValueError(f"comment PPL profile count must be <= {COMMENT_PPL_MAX_COUNT}")
         return ContentCommentBatchStartRequest(
@@ -173,7 +194,9 @@ class ContentGenerationPPLProfileService:
             draft_corpus=request.draft_corpus,
             draft_rule_id=request.draft_rule_id,
             draft_source_row_no=request.draft_source_row_no,
+            experiment_profile_code=profile.experiment_profile_code,
             count=count,
             executor_code=request.executor_code or DEFAULT_EXECUTOR_CODE,
+            model_config=request.generation_model_config,
             created_by=request.created_by,
         )

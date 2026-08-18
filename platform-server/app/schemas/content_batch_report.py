@@ -356,9 +356,14 @@ class ContentCommentBatchStartRequest(BaseSchema):
     comment_batch_variation_review: dict[str, Any] | None = None
     comment_delivery_selection: dict[str, Any] | None = None
     comment_post_context: str | None = Field(default=None, max_length=500)
+    experiment_profile_code: str | None = Field(default=None, max_length=128)
     count: int | None = Field(default=None, ge=1, le=300)
     concurrency: int = Field(default=5, ge=1, le=50)
     executor_code: str = Field(default=DEFAULT_EXECUTOR_CODE, max_length=64)
+    generation_model_config: ContentBatchModelConfig = Field(
+        default_factory=ContentBatchModelConfig,
+        alias="model_config",
+    )
     created_by: str | None = Field(default=None, max_length=100)
 
 
@@ -400,6 +405,8 @@ class ContentPPLProfileResponse(BaseSchema):
     description: str = ""
     default_count: int = 10
     default_articles_per_prompt: int = 1
+    default_comments_per_prompt: int = 1
+    experiment_profile_code: str | None = None
     aliases: list[str] = Field(default_factory=list)
 
 

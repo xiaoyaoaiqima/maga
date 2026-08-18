@@ -28,3 +28,25 @@ def test_normalize_comment_output_accepts_json_object_array_mode():
 
     assert output["comment"] == "报告能扫出来"
     assert output["comments"] == ["报告能扫出来", "礼盒里的东西挺实在"]
+
+
+def test_normalize_comment_output_preserves_batch_strategy_metadata():
+    output = _normalize_unified_content_output(
+        '{"items":[{"strategy_id":"S01","response_mode":"purchase_plan",'
+        '"life_entry":"家里快喝完","comment":"看到有货，下一罐能接上了"}]}',
+        {
+            "content_type": "comment",
+            "output_fields": ["comment"],
+            "output_format_mode": "json_object_items",
+        },
+    )
+
+    assert output["comments"] == ["看到有货，下一罐能接上了"]
+    assert output["items"] == [
+        {
+            "strategy_id": "S01",
+            "response_mode": "purchase_plan",
+            "life_entry": "家里快喝完",
+            "comment": "看到有货，下一罐能接上了",
+        }
+    ]

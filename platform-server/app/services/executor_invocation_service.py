@@ -224,6 +224,39 @@ def _mock_unified_content_generation(input_payload: dict[str, Any]) -> dict[str,
     output_fields = input_payload.get("output_fields") or []
     if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
         business_rule = input_payload.get("business_rule") or {}
+        if _comment_output_format_mode(input_payload) == "json_object_items":
+            count = _int_or_none(input_payload.get("expansion_count")) or 10
+            response_modes = [
+                "excited_purchase_reaction",
+                "ready_to_replenish",
+                "replenished_success",
+                "continue_familiar_choice",
+                "purchase_plan",
+                "reply_with_intent",
+                "store_spotted_pickup",
+                "availability_return_intent",
+            ]
+            items = [
+                {
+                    "strategy_id": f"S{index:02d}",
+                    "response_mode": response_modes[(index - 1) % len(response_modes)],
+                    "life_entry": f"mock生活入口{index}",
+                    "comment": f"看到有货了，我准备把第{index}罐续上",
+                }
+                for index in range(1, max(1, min(count, 100)) + 1)
+            ]
+            return {
+                "comment": items[0]["comment"],
+                "comments": [item["comment"] for item in items],
+                "items": items,
+                "output_format_mode": "json_object_items",
+                "runtime_result": {
+                    "mode": "content_fake",
+                    "fake": True,
+                    "reason": "mock_executor",
+                    "expert_config_code": ((input_payload.get("expert") or {}).get("expert_config_code")),
+                },
+            }
         comment = _mock_comment_from_rule(business_rule)
         if not comment:
             comment = _mock_comment_from_rule(input_payload)
@@ -615,7 +648,13 @@ async def _direct_generate_with_empty_retry(
     is_comment = input_payload.get("content_type") == "comment" or (
         input_payload.get("output_fields") or []
     ) == ["comment"]
-    response_format = None if is_comment else {"type": "json_object"}
+    response_format = (
+        {"type": "json_object"}
+        if is_comment and _comment_output_format_mode(input_payload) == "json_object_items"
+        else None
+        if is_comment
+        else {"type": "json_object"}
+    )
     for attempt_no, attempt_prompt in enumerate(attempts, start=1):
         call_result = await _call_openai_compatible_model(
             model=model,
@@ -904,7 +943,7 @@ def _comment_output_format_mode(input_payload: dict[str, Any]) -> str:
     if isinstance(output_format, dict):
         mode = str(output_format.get("mode") or output_format.get("output_format_mode") or "").strip()
     mode = mode or str(input_payload.get("output_format_mode") or "").strip()
-    return mode if mode in {"json_string_array", "json_object_array"} else "plain_comment"
+    return mode if mode in {"json_string_array", "json_object_array", "json_object_items"} else "plain_comment"
 
 
 def _empty_retry_output_reminder(input_payload: dict[str, Any]) -> str:
@@ -914,16 +953,19 @@ def _empty_retry_output_reminder(input_payload: dict[str, Any]) -> str:
             return "评论只输出 JSON 字符串数组；文章输出标题和正文。"
         if mode == "json_object_array":
             return '评论只输出 JSON 对象数组，每个对象包含 "comment" 字段；文章输出标题和正文。'
+        if mode == "json_object_items":
+            return '评论只输出一个 JSON 对象，items 必须包含非空 comment；文章输出标题和正文。'
         return "评论只输出一条评论正文；文章输出标题和正文。"
     return "评论只输出一条评论正文；文章输出标题和正文。"
 
 
-def _normalize_comment_array_output(raw: str, *, mode: str) -> list[str]:
+def _normalize_comment_items_output(raw: str, *, mode: str) -> list[dict[str, str]]:
     parsed = _parse_json_value(raw)
-    if not isinstance(parsed, list):
+    raw_items = parsed.get("items") if mode == "json_object_items" and isinstance(parsed, dict) else parsed
+    if not isinstance(raw_items, list):
         return []
-    comments: list[str] = []
-    for item in parsed:
+    items: list[dict[str, str]] = []
+    for item in raw_items:
         if mode == "json_string_array":
             comment = _normalize_comment_text(str(item or ""))
         elif isinstance(item, dict):
@@ -941,15 +983,21 @@ def _normalize_comment_array_output(raw: str, *, mode: str) -> list[str]:
         else:
             comment = ""
         if comment:
-            comments.append(comment)
-    return comments
+            normalized = {"comment": comment}
+            if isinstance(item, dict):
+                for key in ("strategy_id", "response_mode", "life_entry"):
+                    value = str(item.get(key) or "").strip()
+                    if value:
+                        normalized[key] = value
+            items.append(normalized)
+    return items
 
 
 def _empty_content_from_unified_input(input_payload: dict[str, Any]) -> dict[str, str]:
     output_fields = input_payload.get("output_fields") or []
     if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
         mode = _comment_output_format_mode(input_payload)
-        if mode in {"json_string_array", "json_object_array"}:
+        if mode in {"json_string_array", "json_object_array", "json_object_items"}:
             return {"comment": "", "comments": [], "items": []}
         return {"comment": ""}
     return {"title": "", "body": ""}
@@ -959,14 +1007,15 @@ def _normalize_unified_content_output(raw: str, input_payload: dict[str, Any]) -
     output_fields = input_payload.get("output_fields") or []
     if output_fields == ["comment"] or input_payload.get("content_type") == "comment":
         mode = _comment_output_format_mode(input_payload)
-        if mode in {"json_string_array", "json_object_array"}:
-            comments = _normalize_comment_array_output(raw, mode=mode)
-            if not comments:
+        if mode in {"json_string_array", "json_object_array", "json_object_items"}:
+            items = _normalize_comment_items_output(raw, mode=mode)
+            if not items:
                 raise ValueError("content.generate produced empty comment array")
+            comments = [item["comment"] for item in items]
             return {
                 "comment": comments[0],
                 "comments": comments,
-                "items": [{"comment": comment} for comment in comments],
+                "items": items,
                 "output_format_mode": mode,
             }
         comment = _normalize_comment_text(raw)

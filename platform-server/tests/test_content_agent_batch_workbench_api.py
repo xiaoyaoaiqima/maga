@@ -21,6 +21,7 @@ from app.core.database import get_db
 from app.models.base import Base
 from app.models.content_agent import (
     ContentBatchJob,
+    ContentAgentEvent,
     ContentAgentStageCall,
     ContentBatchItem,
     ContentBatchItemVersion,
@@ -5064,6 +5065,93 @@ async def test_ppl_run_can_start_a2_comment_profile(content_agent_workbench_clie
     assert "业务规则" not in rendered_prompt
     assert "- 业务规则：" not in rendered_prompt
     assert "- 业务语料：" not in rendered_prompt
+
+
+@pytest.mark.asyncio
+async def test_ppl_run_a2_batch10_profile_persists_prompt_events_and_strategy_items(
+    content_agent_workbench_client,
+):
+    client, session_factory = content_agent_workbench_client
+    async with session_factory() as session:
+        session.add(
+            AssetRegistry(
+                asset_type="comment_business_rule_set",
+                asset_key="a2_sentiment_comment_activity",
+                display_name="A2舆情改善评论规则",
+                version_no=1,
+                status="active",
+                asset_stage="production",
+                content_json={
+                    "rule_type": "business_rule",
+                    "activity_name": "A2舆情改善评论",
+                    "default_generation_count": 1,
+                    "quality_guard_profile_key": "a2_sentiment_comment_202606",
+                    "items": [
+                        {
+                            "rule_id": "a2_direct_001",
+                            "business_rule": "有货-直给到货情绪",
+                            "corpus": "像妈妈看到 a2 到货后顺手接一句。",
+                            "examples": ["a2终于到货了，我去看看"],
+                            "source_row_no": 1,
+                        }
+                    ],
+                },
+                metadata_json={
+                    "rule_type": "business_rule",
+                    "default_generation_count": 1,
+                    "quality_guard_profile_key": "a2_sentiment_comment_202606",
+                },
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/content-agent/ppl-runs/start",
+        json={"profile_code": "a2_comment_batch10", "created_by": "ops"},
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["profile"]["profile_code"] == "a2_stock_comment_batch10"
+    assert data["profile"]["default_comments_per_prompt"] == 10
+    assert data["execution"]["requested_limit"] == 10
+    assert data["execution"]["generated_count"] == 10
+
+    async with session_factory() as session:
+        items = list(
+            (
+                await session.execute(
+                    select(ContentBatchItem)
+                    .where(ContentBatchItem.batch_id == data["batch_id"])
+                    .order_by(ContentBatchItem.item_no)
+                )
+            ).scalars().all()
+        )
+        run_ids = {item.run_id for item in items}
+        events = list(
+            (
+                await session.execute(
+                    select(ContentAgentEvent)
+                    .where(ContentAgentEvent.run_id.in_(run_ids))
+                    .order_by(ContentAgentEvent.id)
+                )
+            ).scalars().all()
+        )
+
+    assert len(items) == 10
+    assert len(run_ids) == 1
+    assert [item.plan_json["generated_strategy"]["strategy_id"] for item in items] == [
+        f"S{index:02d}" for index in range(1, 11)
+    ]
+    assert {event.event_type for event in events} == {
+        "experiment/profile_resolved",
+        "prompt/rendered",
+        "output/parsed",
+    }
+    prompt_event = next(event for event in events if event.event_type == "prompt/rendered")
+    assert "最重要的是整组差异性" in prompt_event.input_snapshot["rendered_prompt"]
+    output_event = next(event for event in events if event.event_type == "output/parsed")
+    assert len(output_event.output_snapshot["items"]) == 10
 
 
 @pytest.mark.asyncio

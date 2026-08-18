@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.content_agent_defaults import DEFAULT_EXECUTOR_CODE
 from app.models.content_agent import ContentBatchItem, ContentBatchItemVersion, ContentBatchJob
 from app.models.maga_assets import AssetRegistry
-from app.schemas.content_agent import ContentAgentTaskCreate
+from app.schemas.content_agent import ContentAgentEventCreate, ContentAgentTaskCreate
 from app.services.business_rule_asset_types import COMMENT_BUSINESS_RULE_ASSET_TYPES
 from app.services.comment_business_rule_service import (
     COMMENT_BUSINESS_RULE_ASSET_TYPE,
@@ -31,6 +31,7 @@ from app.services.comment_business_rule_service import (
     normalize_comment_prompt_bundle,
 )
 from app.services.comment_delivery_ledger_service import CommentDeliveryLedgerService, ledger_entry_to_dict
+from app.services.comment_experiment_profile_service import CommentExperimentProfileService
 from app.services.activity_quality_guard_service import (
     A2_NEGATIVE_POST_COMMENT_PROFILE_KEY,
     A2_PLOT_DISCUSSION_COMMENT_PROFILE_KEY,
@@ -293,11 +294,38 @@ class ContentCommentBatchService:
         comment_batch_variation_review: dict[str, Any] | None = None,
         comment_delivery_selection: dict[str, Any] | None = None,
         comment_post_context: str | None = None,
+        experiment_profile_code: str | None = None,
         count: int | None = None,
         concurrency: int = COMMENT_BATCH_EXECUTION_CONCURRENCY,
+        model_config: dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> CommentBatchExecutionResult:
         asset = await self._require_rule_asset(asset_key)
+        experiment_profile = (
+            CommentExperimentProfileService().require_profile(experiment_profile_code)
+            if experiment_profile_code
+            else None
+        )
+        if experiment_profile and experiment_profile.asset_key != asset.asset_key:
+            raise ValueError(
+                f"comment experiment profile {experiment_profile.profile_code} requires asset_key="
+                f"{experiment_profile.asset_key}"
+            )
+        if experiment_profile and any(
+            value
+            for value in (
+                scenario_code,
+                business_rule,
+                rule_id,
+                rule_ids,
+                source_row_no,
+                draft_corpus,
+                draft_comment_prompt_bundle,
+                comment_prompt_slots,
+                comment_post_context,
+            )
+        ):
+            raise ValueError("comment experiment profile cannot be combined with rule or prompt overrides")
         all_rules = self._rule_items(asset)
         scenario = _comment_scenario_from_asset(asset, scenario_code)
         focus_business_rule = _normalize_business_rule(business_rule)
@@ -346,6 +374,17 @@ class ContentCommentBatchService:
         post_context_override = _normalize_comment_post_context_override(comment_post_context)
         if post_context_override:
             rules = self._rules_with_post_context_override(rules, post_context_override)
+        if model_config and not experiment_profile:
+            rules = [
+                {
+                    **rule,
+                    "model_config": {
+                        **(rule.get("model_config") if isinstance(rule.get("model_config"), dict) else {}),
+                        **{key: value for key, value in model_config.items() if value is not None},
+                    },
+                }
+                for rule in rules
+            ]
         focus_single_rule = len(focus_rule_ids) == 1 or focus_source_row_no is not None
         focus_multiple_rules = len(focus_rule_ids) > 1
         limit = self._generation_limit(
@@ -360,12 +399,22 @@ class ContentCommentBatchService:
                 raise ValueError(
                     "comment_delivery_selection.target_count cannot exceed generated candidate count"
                 )
-        resolved_keyword_asset_key = _resolve_keyword_asset_key(keyword_asset_key, asset)
+        resolved_keyword_asset_key = (
+            None if experiment_profile else _resolve_keyword_asset_key(keyword_asset_key, asset)
+        )
         resolved_quality_guard_profile_key = quality_guard_profile_key or quality_guard_profile_key_from_asset(asset)
         quality_guard_profile = resolve_quality_guard_profile(resolved_quality_guard_profile_key)
         if resolved_quality_guard_profile_key and not quality_guard_profile:
             raise ValueError(f"unknown quality_guard_profile_key: {resolved_quality_guard_profile_key}")
-        if scenario:
+        if experiment_profile:
+            experiment_rule = experiment_profile.generation_rule()
+            experiment_rule["model_config"] = {
+                **experiment_profile.model_config,
+                **{key: value for key, value in (model_config or {}).items() if value is not None},
+            }
+            selected_rules = [experiment_rule]
+            selection_mode = "experiment_profile_single_seed"
+        elif scenario:
             selected_rules, selection_mode = self._select_rules_for_scenario(rules, scenario, limit)
         elif focus_multiple_rules:
             selected_rules = self._select_rules_even_repetition_with_remainder(rules, limit)
@@ -387,10 +436,17 @@ class ContentCommentBatchService:
             product_topic=_comment_batch_product_topic(asset),
             target_audience=None,
             style=None,
-            count=len(selected_rules),
+            count=limit if experiment_profile else len(selected_rules),
             status="planned",
             strategy_json={
-                "mode": "business_rule_focus_test" if focus_business_rule else "business_rule",
+                "mode": (
+                    "comment_experiment_profile"
+                    if experiment_profile
+                    else "business_rule_focus_test"
+                    if focus_business_rule
+                    else "business_rule"
+                ),
+                "experiment_profile": experiment_profile.snapshot() if experiment_profile else None,
                 "rule_asset_id": asset.id,
                 "rule_asset_version": asset.version_no,
                 "keyword_asset_key": resolved_keyword_asset_key,
@@ -417,6 +473,7 @@ class ContentCommentBatchService:
                 "filtered_rule_count": len(rules),
                 "selected_count": len(selected_rules),
                 "selection_mode": selection_mode,
+                "experiment_profile": experiment_profile.snapshot() if experiment_profile else None,
                 "scenario_code": scenario.get("scenario_code") if scenario else None,
                 "scenario_name": scenario.get("scenario_name") if scenario else None,
                 "scenario_directions": [
@@ -890,16 +947,18 @@ class ContentCommentBatchService:
         asset: AssetRegistry,
         item_no: int,
         rule_occurrence_no: int = 0,
-        keyword_asset_key: str = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
+        keyword_asset_key: str | None = DEFAULT_SYSTEM_KEYWORD_ASSET_KEY,
         quality_guard_profile_key: str | None = None,
     ) -> dict[str, Any]:
         uses_prompt_bundle = _uses_comment_prompt_bundle_rule(rule)
+        uses_complete_prompt = str(rule.get("prompt_mode") or "").strip() == "complete_comment_prompt"
+        uses_isolated_prompt = uses_prompt_bundle or uses_complete_prompt
         bundle_prompt_slots_source = _bundle_prompt_slots_source(rule)
-        if not uses_prompt_bundle or bundle_prompt_slots_source:
+        if not uses_isolated_prompt or bundle_prompt_slots_source:
             rule = _rule_with_rotated_prompt_slots(rule, rule_occurrence_no=rule_occurrence_no)
-        if not uses_prompt_bundle:
+        if not uses_isolated_prompt:
             rule = _rule_with_rotated_variation_slots(rule, rule_occurrence_no=rule_occurrence_no)
-        if uses_prompt_bundle:
+        if uses_isolated_prompt:
             selected_examples = []
             example_meta = {
                 "example_pool_count": len(rule.get("examples") or []),
@@ -915,7 +974,7 @@ class ContentCommentBatchService:
             "asset_key": asset.asset_key,
             "quality_guard_profile_key": quality_guard_profile_key,
         }
-        if uses_prompt_bundle:
+        if uses_isolated_prompt:
             keyword_selection, keyword_selection_meta = {}, {}
             comment_tone_options = []
         else:
@@ -929,14 +988,18 @@ class ContentCommentBatchService:
             if rule.get("activity_material")
             else rule.get("scenario_generation_requirements")
         )
-        generation_requirements = _merge_comment_generation_requirements(
-            _generation_requirements_from_asset(asset),
-            rule.get("generation_requirements"),
-            scenario_generation_requirements,
+        generation_requirements = (
+            None
+            if uses_complete_prompt
+            else _merge_comment_generation_requirements(
+                _generation_requirements_from_asset(asset),
+                rule.get("generation_requirements"),
+                scenario_generation_requirements,
+            )
         )
         plan = {
             "rule_type": "business_rule",
-            "render_reference_examples": not uses_prompt_bundle,
+            "render_reference_examples": not uses_isolated_prompt,
             "item_no": item_no,
             "asset_key": asset.asset_key,
             "keyword_asset_key": keyword_asset_key,
@@ -957,6 +1020,8 @@ class ContentCommentBatchService:
             "content_direction": rule.get("content_direction"),
             "activity_material": rule.get("activity_material"),
             "prompt_mode": rule.get("prompt_mode"),
+            "complete_comment_prompt": rule.get("complete_comment_prompt"),
+            "experiment_profile": copy.deepcopy(rule.get("experiment_profile")),
             "comment_prompt_bundle": copy.deepcopy(rule.get("comment_prompt_bundle")),
             "examples": selected_examples,
             "supplements": [],
@@ -984,10 +1049,10 @@ class ContentCommentBatchService:
             plan["output_format_mode"] = output_config["mode"]
             plan["expansion_count"] = output_config["count"]
         for key in ("prompt_slots", "comment_prompt_slots", "preselected_prompt_slots"):
-            if (not uses_prompt_bundle or bundle_prompt_slots_source) and rule.get(key):
+            if (not uses_isolated_prompt or bundle_prompt_slots_source) and rule.get(key):
                 plan[key] = rule.get(key)
         for key in ("variation_slots", "preselected_variation_slots"):
-            if not uses_prompt_bundle and rule.get(key):
+            if not uses_isolated_prompt and rule.get(key):
                 plan[key] = rule.get(key)
         if bundle_prompt_slots_source:
             plan["bundle_prompt_slots_source"] = bundle_prompt_slots_source
@@ -1084,23 +1149,30 @@ class ContentCommentBatchService:
             expanded_items: list[ContentBatchItem] = []
             try:
                 result = await orchestrator.run_single_capability(task_request, capability=CONTENT_GENERATE_CAPABILITY)
-                comments = self._generated_comments_from_output(result.output or {})
-                if not comments:
+                generated_specs = self._generated_comment_items_from_output(result.output or {})
+                if not generated_specs:
                     raise ValueError("content.generate returned empty comment")
                 used_empty_fallback = False
                 generated_items = [item]
-                if len(comments) > 1:
+                if len(generated_specs) > 1:
                     expanded_items = await self._create_expanded_comment_items(
                         db=db,
                         seed_item=item,
-                        comments=comments[1:],
+                        generated_specs=generated_specs[1:],
                     )
                     generated_items.extend(expanded_items)
+                await self._record_experiment_events(
+                    orchestrator=orchestrator,
+                    result=result,
+                    unified_input=unified.input_snapshot,
+                    generated_specs=generated_specs,
+                )
                 for index, target_item in enumerate(generated_items):
+                    self._apply_generated_strategy_to_plan(target_item, generated_specs[index])
                     await self._apply_generated_comment_to_item(
                         db=db,
                         item=target_item,
-                        comment=comments[index],
+                        comment=generated_specs[index]["comment"],
                         result=result,
                         unified_input=unified.input_snapshot,
                         orchestrator=orchestrator,
@@ -1119,36 +1191,124 @@ class ContentCommentBatchService:
                 return False
 
     @staticmethod
-    def _generated_comments_from_output(output: dict[str, Any]) -> list[str]:
+    def _generated_comment_items_from_output(output: dict[str, Any]) -> list[dict[str, str]]:
+        raw_items = output.get("items")
+        items: list[dict[str, str]] = []
+        if isinstance(raw_items, list):
+            for raw_item in raw_items:
+                if not isinstance(raw_item, dict):
+                    continue
+                comment = str(raw_item.get("comment") or "").strip()
+                if not comment:
+                    continue
+                item = {"comment": comment}
+                for key in ("strategy_id", "response_mode", "life_entry"):
+                    value = str(raw_item.get(key) or "").strip()
+                    if value:
+                        item[key] = value
+                items.append(item)
+        if items:
+            return items
         raw_comments = output.get("comments")
         if raw_comments is None:
-            raw_items = output.get("items")
-            if isinstance(raw_items, list):
-                raw_comments = [
-                    raw_item.get("comment")
-                    for raw_item in raw_items
-                    if isinstance(raw_item, dict)
-                ]
-        if raw_comments is None:
             raw_comments = [output.get("comment")]
-        return [str(comment).strip() for comment in raw_comments or [] if str(comment or "").strip()]
+        return [
+            {"comment": str(comment).strip()}
+            for comment in raw_comments or []
+            if str(comment or "").strip()
+        ]
+
+    @staticmethod
+    def _apply_generated_strategy_to_plan(item: ContentBatchItem, generated_spec: dict[str, str]) -> None:
+        strategy = {
+            key: generated_spec[key]
+            for key in ("strategy_id", "response_mode", "life_entry")
+            if generated_spec.get(key)
+        }
+        if strategy:
+            item.plan_json = {**(item.plan_json or {}), "generated_strategy": strategy}
+
+    async def _record_experiment_events(
+        self,
+        *,
+        orchestrator: ContentAgentOrchestrator,
+        result: Any,
+        unified_input: dict[str, Any],
+        generated_specs: list[dict[str, str]],
+    ) -> None:
+        profile = (unified_input.get("business_rule") or {}).get("experiment_profile")
+        if not isinstance(profile, dict) or not result.stage_calls:
+            return
+        stage_call = result.stage_calls[0]
+        expert = unified_input.get("expert") or {}
+        model_config = unified_input.get("model_config") or {}
+        common = {
+            "stage_call_id": stage_call.stage_call_id,
+            "expert_code": expert.get("expert_config_code"),
+            "model_code": model_config.get("model_code") or model_config.get("ge_model"),
+        }
+        await orchestrator.service.create_event(
+            result.run.id,
+            ContentAgentEventCreate(
+                **common,
+                step="experiment",
+                event_type="experiment/profile_resolved",
+                input_snapshot={"profile": profile},
+                metadata={"profile_code": profile.get("profile_code")},
+                idempotency_key=f"profile-resolved:{stage_call.stage_call_id}",
+                occurred_at=stage_call.started_at,
+            ),
+        )
+        await orchestrator.service.create_event(
+            result.run.id,
+            ContentAgentEventCreate(
+                **common,
+                step="prompt",
+                event_type="prompt/rendered",
+                input_snapshot={
+                    "rendered_prompt": unified_input.get("rendered_prompt") or "",
+                    "output_format": unified_input.get("output_format") or {},
+                },
+                metadata={"prompt_sha256": profile.get("prompt_sha256")},
+                idempotency_key=f"prompt-rendered:{stage_call.stage_call_id}",
+                occurred_at=stage_call.started_at,
+            ),
+        )
+        await orchestrator.service.create_event(
+            result.run.id,
+            ContentAgentEventCreate(
+                **common,
+                step="output",
+                event_type="output/parsed",
+                output_snapshot={"items": generated_specs},
+                metadata={"output_count": len(generated_specs)},
+                idempotency_key=f"output-parsed:{stage_call.stage_call_id}",
+                occurred_at=stage_call.finished_at,
+            ),
+        )
 
     async def _create_expanded_comment_items(
         self,
         *,
         db: AsyncSession,
         seed_item: ContentBatchItem,
-        comments: list[str],
+        generated_specs: list[dict[str, str]],
     ) -> list[ContentBatchItem]:
         created: list[ContentBatchItem] = []
         base_plan = dict(seed_item.plan_json or {})
-        for index, _comment in enumerate(comments, start=2):
+        for index, generated_spec in enumerate(generated_specs, start=2):
+            strategy = {
+                key: generated_spec[key]
+                for key in ("strategy_id", "response_mode", "life_entry")
+                if generated_spec.get(key)
+            }
             plan = {
                 **base_plan,
                 "item_no": seed_item.item_no * 1000 + index,
                 "expanded_from_item_id": seed_item.id,
                 "expanded_from_item_no": seed_item.item_no,
                 "expanded_index": index,
+                **({"generated_strategy": strategy} if strategy else {}),
             }
             expanded_item = ContentBatchItem(
                 batch_id=seed_item.batch_id,
@@ -1193,6 +1353,7 @@ class ContentCommentBatchService:
             "source_row_no": (item.plan_json or {}).get("source_row_no"),
             "business_rule": (item.plan_json or {}).get("business_rule"),
             "selected_keywords": unified_input.get("selected_keywords") or [],
+            "generated_strategy": copy.deepcopy((item.plan_json or {}).get("generated_strategy")),
         }
         await self._review_and_rewrite_low_information(
             item=item,
@@ -2133,7 +2294,7 @@ def _comment_generation_output_config(rule: dict[str, Any], asset: AssetRegistry
         raw_mode = raw_mode or source.get("output_format_mode") or output_format.get("mode")
         raw_count = raw_count or source.get("expansion_count") or output_format.get("count") or output_format.get("expansion_count")
     mode = str(raw_mode or "plain_comment").strip()
-    if mode not in {"json_string_array", "json_object_array"}:
+    if mode not in {"json_string_array", "json_object_array", "json_object_items"}:
         return None
     return {
         "mode": mode,
@@ -2143,7 +2304,7 @@ def _comment_generation_output_config(rule: dict[str, Any], asset: AssetRegistry
 
 def _comment_plan_output_count(plan: dict[str, Any]) -> int:
     mode = str(plan.get("output_format_mode") or ((plan.get("output_format") or {}).get("mode") if isinstance(plan.get("output_format"), dict) else "")).strip()
-    if mode not in {"json_string_array", "json_object_array"}:
+    if mode not in {"json_string_array", "json_object_array", "json_object_items"}:
         return 1
     return _comment_positive_int(
         plan.get("expansion_count")
