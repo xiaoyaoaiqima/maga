@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str = ""
     REDIS_DB: int = 0
     REDIS_TIMEOUT: int = 5
+    REDIS_ENABLED: bool = True
 
     # Rate Limiting - 限流配置
     RATE_LIMIT_ENABLED: bool = True  # 是否启用限流
@@ -171,6 +172,7 @@ class Settings(BaseSettings):
         "LOG_SENSITIVE_MASK_ENABLED",
         "LOG_INCLUDE_REQUEST_BODY",
         "LOG_INCLUDE_RESPONSE_BODY",
+        "REDIS_ENABLED",
         mode="before",
     )
     @classmethod

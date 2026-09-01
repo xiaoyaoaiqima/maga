@@ -13,7 +13,12 @@ class SysUserRole(Base):
     """用户角色关联表"""
     __tablename__ = "sys_user_role"
     
-    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    id = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+        comment="主键",
+    )
     user_id = Column(String(64), ForeignKey("sys_user.id"), nullable=False, index=True, comment="用户ID")
     role_id = Column(String(64), ForeignKey("sys_role.id"), nullable=False, index=True, comment="角色ID")
     
@@ -26,4 +31,3 @@ class SysUserRole(Base):
     
     def __repr__(self):
         return f"<SysUserRole(user_id={self.user_id}, role_id={self.role_id})>"
-

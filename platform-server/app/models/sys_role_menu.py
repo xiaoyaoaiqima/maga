@@ -13,7 +13,12 @@ class SysRoleMenu(Base):
     """角色菜单关联表"""
     __tablename__ = "sys_role_menu"
     
-    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    id = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+        comment="主键",
+    )
     role_id = Column(String(64), ForeignKey("sys_role.id"), nullable=False, index=True, comment="角色ID")
     menu_id = Column(String(64), ForeignKey("sys_menu.id"), nullable=False, index=True, comment="菜单ID")
     
@@ -26,4 +31,3 @@ class SysRoleMenu(Base):
     
     def __repr__(self):
         return f"<SysRoleMenu(role_id={self.role_id}, menu_id={self.menu_id})>"
-

@@ -16,20 +16,18 @@ make dev
 
 这会启动：
 
-- Docker 容器：MySQL / Redis / MAGA Platform Server
-- MAGA clean schema 与默认后端直连大模型执行器 seed
+- 本机 FastAPI 后端
+- 本机 Vite 前端
+- `.local/maga.sqlite3` SQLite 数据库
+- MAGA clean schema 与默认后端直连大模型执行器
 
 访问地址：
 
-- 后端: [http://localhost:5100/docs](http://localhost:5100/docs)
+- 前端：[http://localhost:3102](http://localhost:3102)
+- 后端：[http://localhost:5100/docs](http://localhost:5100/docs)
+- SQLite：`/Users/luxifa/maga/.local/maga.sqlite3`
 
-前端不放 Docker，也不由 `make dev` 自动管理；需要前端时单独在本机启动：
-
-```bash
-make frontend-start
-```
-
-`make dev` 默认不启动 Hermes/worker，生文由 `platform-server` 直连 OpenAI-compatible 大模型。Hermes 只保留为历史 demo/兼容验证链路，最新主流程不再使用它。只想重启 MAGA 后端栈并重新 seed schema 时也可以显式运行：
+本地开发不需要 Docker、MySQL 或 Redis。A2 内容主链路由 `platform-server` 在本进程内直连 OpenAI-compatible 大模型。重启前后端并重新补齐 schema：
 
 ```bash
 make dev-restart
@@ -40,8 +38,7 @@ make dev-restart
 MAGA 当前通过 `executor_registry.invoke_url` 决定生文走向：
 
 - `mock://...`：走 `platform-server` 内置 deterministic mock，只用于本地早期 smoke。
-- `llm://direct/...`：走 `platform-server` 本进程直连 OpenAI-compatible 大模型，不依赖 Hermes/worker。
-- `http(s)://...`：由 MAGA 后端按 Executor Protocol v0.1 同步 POST 到 worker 的 `/invoke`。
+- `llm://direct/...`：走 `platform-server` 本进程直连 OpenAI-compatible 大模型。
 
 推荐本地链路是：
 
@@ -60,7 +57,7 @@ MAGA 前端/接口
 
 ## 数据库初始化
 
-MAGA 当前第一阶段以 clean schema 为准，不依赖历史 Alembic 链初始化新库。本地和服务器准备数据库时使用同一条入口：
+MAGA 当前第一阶段以 clean schema 为准，不依赖历史 Alembic 链初始化新库。本地默认使用 SQLite：
 
 ```bash
 make init-clean-schema
@@ -69,56 +66,24 @@ make init-clean-schema
 `make init-clean-schema` 默认会写入 `maga_direct_llm_executor`，并把 `invoke_url` 指向 `llm://direct/content`。如果本地只想跑平台内置 mock：
 
 ```bash
-MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
+DIRECT_LLM_EXECUTOR_INVOKE_URL=mock://direct-llm/content make init-clean-schema
 ```
 
-说明：后端应用启动时也会补一个不覆盖已有记录的 executor 兜底，代码常量默认是 `llm://direct/content`；推荐开发入口仍以 `make init-clean-schema` / `make dev` 的 seed 结果为准。
-
-## 历史 demo：maga-worker
-
-Hermes `maga-worker` 现在只作为历史 demo、兼容或对照链路，最新内容生成主流程不再使用它。需要验证旧 HTTP Executor Protocol 时可手动启动：
-
-```bash
-make worker-start
-```
-
-默认监听 `http://127.0.0.1:8765`。如果要把生文路由临时切回 worker，可在 seed 时显式传入：
-
-```bash
-MAGA_WORKER_INVOKE_URL=http://host.docker.internal:8765/invoke make init-clean-schema
-```
-
-如果只想跑通 HTTP 协议链路、不触发模型生成，可临时改成：
-
-```bash
-MAGA_WORKER_RUNTIME_FAST_FAKE=1 make worker-start
-```
-
-生产 compose 中也把 `maga-worker` 放进了 `historical-demo` profile，默认不会启动：
-
-```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
-docker compose --env-file .env.prod -f docker-compose.prod.yml --profile historical-demo up -d maga-worker
-```
+说明：本地 SQLite 是独立的新数据库，不会自动迁移原 MySQL 数据。后端应用启动时也会补一个不覆盖已有记录的 executor 兜底。
 
 ## 常用命令
 
 ```bash
-make up        # 启动 mysql / redis / backend
-make dev       # 统一启动/刷新 Docker 后端栈，并 seed 直连执行器
-make dev-restart # 重启 Docker 后端栈，并重新 seed schema
+make dev       # 本机启动 SQLite 后端和 Vite 前端
+make dev-restart # 重启本机前后端，并补齐 SQLite schema
+make dev-stop  # 停止本机前后端
+make dev-status # 查看本机前后端和 SQLite 路径
+make dev-logs  # 同时查看前后端日志
 make frontend-start # 单独启动本机前端 Vite
 make frontend-stop  # 单独停止本机前端
 make frontend-status # 查看本机前端状态
-make init-clean-schema # 创建/补齐 MAGA clean schema，并 seed 默认执行器
-make worker-start # 可选：启动宿主机 maga-worker /invoke 服务
-make worker-stop  # 停止宿主机 maga-worker
-make worker-status # 查看宿主机 maga-worker 状态
-make worker-logs   # 查看宿主机 maga-worker 日志
-make dev-stop  # 停止 Docker 后端栈
-make down      # 停止容器
-make build     # 构建 backend 镜像
-make logs      # 查看容器日志
-make ps        # 查看容器状态
-make local-dev # 旧本机启动方式（不用 Docker）
+make init-clean-schema # 创建/补齐本地 SQLite schema，并 seed 默认执行器
+make docker-up    # 可选：显式启动旧 Docker 开发栈
+make docker-down  # 可选：停止 Docker 开发栈
+make docker-logs  # 可选：查看 Docker 日志
 ```

@@ -6,22 +6,21 @@ LABEL="${MAGA_LOCAL_BACKEND_LABEL:-com.luxifa.maga.backend.local}"
 BACKEND_PORT="${BACKEND_PORT:-5100}"
 BACKEND_LOG="${BACKEND_LOG:-$ROOT_DIR/.local/logs/backend-local.log}"
 PYTHON_BIN="${PYTHON_BIN:-$ROOT_DIR/.venv/bin/python}"
+DATABASE_URL="${DATABASE_URL:-sqlite+aiosqlite:///$ROOT_DIR/.local/maga.sqlite3}"
 
-MYSQL_HOST="${MYSQL_HOST:-127.0.0.1}"
-MYSQL_PORT="${MYSQL_PORT:-3306}"
-MYSQL_USER="${MYSQL_USER:-maga}"
-MYSQL_PASSWORD="${MYSQL_PASSWORD:-maga123456}"
-MYSQL_DATABASE="${MYSQL_DATABASE:-maga}"
+load_root_env() {
+  [[ -f "$ROOT_DIR/.env" ]] || return
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* || ! "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] && continue
+    local key="${line%%=*}"
+    if [[ -z "${!key+x}" ]]; then
+      export "$line"
+    fi
+  done <"$ROOT_DIR/.env"
+}
 
-MYSQL_ANALYTICS_HOST="${MYSQL_ANALYTICS_HOST:-$MYSQL_HOST}"
-MYSQL_ANALYTICS_PORT="${MYSQL_ANALYTICS_PORT:-$MYSQL_PORT}"
-MYSQL_ANALYTICS_USER="${MYSQL_ANALYTICS_USER:-$MYSQL_USER}"
-MYSQL_ANALYTICS_PASSWORD="${MYSQL_ANALYTICS_PASSWORD:-$MYSQL_PASSWORD}"
-MYSQL_ANALYTICS_DATABASE="${MYSQL_ANALYTICS_DATABASE:-$MYSQL_DATABASE}"
-
-REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
-REDIS_PORT="${REDIS_PORT:-6379}"
-REDIS_PASSWORD="${REDIS_PASSWORD:-}"
+load_root_env
 
 usage() {
   cat <<USAGE
@@ -36,28 +35,12 @@ Commands:
 
 Common env:
   BACKEND_PORT=$BACKEND_PORT
-  MYSQL_HOST=$MYSQL_HOST
-  MYSQL_PORT=$MYSQL_PORT
-  MYSQL_USER=$MYSQL_USER
-  MYSQL_DATABASE=$MYSQL_DATABASE
-  REDIS_HOST=$REDIS_HOST
-  REDIS_PORT=$REDIS_PORT
+  DATABASE_URL=$DATABASE_URL
 USAGE
 }
 
 ensure_dirs() {
   mkdir -p "$ROOT_DIR/.local/logs" "$ROOT_DIR/.local/pids"
-}
-
-stop_docker_backend_if_running() {
-  if command -v docker >/dev/null 2>&1; then
-    local container_id
-    container_id="$(docker ps --filter 'name=^/maga-backend-1$' --format '{{.ID}}' 2>/dev/null || true)"
-    if [[ -n "$container_id" ]]; then
-      echo "Stopping Docker backend container maga-backend-1 to keep port $BACKEND_PORT local..."
-      docker stop maga-backend-1 >/dev/null
-    fi
-  fi
 }
 
 is_launchctl_running() {
@@ -71,9 +54,13 @@ is_http_ready() {
 start_backend() {
   ensure_dirs
 
-  stop_docker_backend_if_running
+  if lsof -nP -iTCP:"$BACKEND_PORT" -sTCP:LISTEN >/dev/null 2>&1 && ! is_launchctl_running; then
+    echo "Port $BACKEND_PORT is already occupied by another process:" >&2
+    lsof -nP -iTCP:"$BACKEND_PORT" -sTCP:LISTEN >&2 || true
+    exit 1
+  fi
 
-  if is_http_ready; then
+  if is_launchctl_running && is_http_ready; then
     echo "Local backend is already reachable on http://127.0.0.1:$BACKEND_PORT"
     return
   fi
@@ -89,9 +76,8 @@ start_backend() {
   launchctl submit -l "$LABEL" \
     -- /bin/bash -lc "cd '$ROOT_DIR/platform-server' && exec env \
       APP_PORT='$BACKEND_PORT' \
-      MYSQL_HOST='$MYSQL_HOST' MYSQL_PORT='$MYSQL_PORT' MYSQL_USER='$MYSQL_USER' MYSQL_PASSWORD='$MYSQL_PASSWORD' MYSQL_DATABASE='$MYSQL_DATABASE' \
-      MYSQL_ANALYTICS_HOST='$MYSQL_ANALYTICS_HOST' MYSQL_ANALYTICS_PORT='$MYSQL_ANALYTICS_PORT' MYSQL_ANALYTICS_USER='$MYSQL_ANALYTICS_USER' MYSQL_ANALYTICS_PASSWORD='$MYSQL_ANALYTICS_PASSWORD' MYSQL_ANALYTICS_DATABASE='$MYSQL_ANALYTICS_DATABASE' \
-      REDIS_HOST='$REDIS_HOST' REDIS_PORT='$REDIS_PORT' REDIS_PASSWORD='$REDIS_PASSWORD' \
+      APP_ENV='development' MAGA_APP_MODE='clean' DATABASE_URL='$DATABASE_URL' MYSQL_ANALYTICS_ENABLED='false' \
+      REDIS_ENABLED='false' RATE_LIMIT_ENABLED='false' DASHBOARD_CACHE_ENABLED='false' CACHE_WARMUP_ON_STARTUP='false' \
       DAPR_HTTP_PORT='$BACKEND_PORT' \
       '$PYTHON_BIN' -m uvicorn app.main:app --host 0.0.0.0 --port '$BACKEND_PORT' >>'$BACKEND_LOG' 2>&1"
 

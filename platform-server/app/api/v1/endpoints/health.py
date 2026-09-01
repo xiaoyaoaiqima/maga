@@ -61,20 +61,20 @@ async def detailed_health_check(
     """
     dependencies = {}
 
-    # Check MySQL
+    # Check the configured primary database (SQLite locally, MySQL in production).
     try:
         await db.execute(text("SELECT 1"))
-        dependencies["mysql"] = "healthy"
+        dependencies["database"] = "healthy"
     except Exception as e:
-        dependencies["mysql"] = f"unhealthy: {str(e)}"
+        dependencies["database"] = f"unhealthy: {str(e)}"
 
-    # Check Redis
-    try:
-        redis = await get_redis()
-        await redis.ping()
-        dependencies["redis"] = "healthy"
-    except Exception as e:
-        dependencies["redis"] = f"unhealthy: {str(e)}"
+    if settings.REDIS_ENABLED:
+        try:
+            redis = await get_redis()
+            await redis.ping()
+            dependencies["redis"] = "healthy"
+        except Exception as e:
+            dependencies["redis"] = f"unhealthy: {str(e)}"
 
     # Determine overall status
     overall_status = "healthy" if all(
@@ -99,4 +99,3 @@ async def liveness_check() -> HealthResponse:
         service=settings.APP_NAME,
         version="1.0.0",
     )
-
