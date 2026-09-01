@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ContentAgentApi } from '#/api/core/content-agent';
+import type { PromptDebugTransferPayload } from '../prompt-debug/prompt-transfer';
 
 import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -551,6 +552,15 @@ const loadGenerationDebugInput = async (
       typeof modelConfig.temperature === 'number'
         ? modelConfig.temperature
         : undefined,
+    thinking_mode: (
+      typeof modelConfig.thinking === 'object' && modelConfig.thinking !== null
+        ? modelConfig.thinking.type === 'enabled'
+          ? 'enabled'
+          : modelConfig.thinking.type === 'disabled'
+            ? 'disabled'
+            : 'default'
+        : 'default'
+    ) as PromptDebugTransferPayload['thinking_mode'],
   };
 };
 

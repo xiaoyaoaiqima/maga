@@ -57,6 +57,7 @@ async def test_prompt_debug_run_returns_raw_llm_output(monkeypatch):
         assert kwargs["system_prompt"] == "只输出正文"
         assert kwargs["user_prompt"] == "写一条评论"
         assert kwargs["model_config"]["provider_code"] == "deepseek"
+        assert kwargs["model_config"]["thinking"] == {"type": "enabled"}
         return DirectLLMCallResult(
             content="我也刷到有货了，先拍两罐",
             model_code="deepseek-v4-flash",
@@ -86,6 +87,7 @@ async def test_prompt_debug_run_returns_raw_llm_output(monkeypatch):
                 "model_code": "deepseek-v4-flash",
                 "temperature": 0.3,
                 "max_tokens": 80,
+                "thinking_mode": "enabled",
                 "run_group_id": "group-success",
                 "workbench_mode": "compare",
                 "panel_key": "right",
@@ -121,6 +123,7 @@ async def test_prompt_debug_run_returns_raw_llm_output(monkeypatch):
     assert history.batch_size == 3
     assert history.prompt == "写一条评论"
     assert history.system_prompt == "只输出正文"
+    assert history.thinking_mode == "enabled"
     assert history.success is True
     assert history.content == "我也刷到有货了，先拍两罐"
     assert history.token_usage["total_tokens"] == 28
@@ -134,6 +137,7 @@ async def test_prompt_debug_run_returns_readable_model_error(monkeypatch):
     async def fake_call_direct_llm(**kwargs):
         assert kwargs["temperature"] == 0.9
         assert kwargs["max_tokens"] == 1500
+        assert kwargs["model_config"]["thinking"] == {"type": "disabled"}
         raise RuntimeError("未配置 API Key，无法调用模型")
 
     monkeypatch.setattr(content_agent, "_prompt_debug_model_config", fake_model_config)
@@ -149,6 +153,7 @@ async def test_prompt_debug_run_returns_readable_model_error(monkeypatch):
             json={
                 "prompt": "写一条评论",
                 "model_code": "deepseek-v4-flash",
+                "thinking_mode": "disabled",
                 "run_group_id": "group-failed",
             },
         )
@@ -164,6 +169,7 @@ async def test_prompt_debug_run_returns_readable_model_error(monkeypatch):
     history = app.state.prompt_debug_db.records[0]
     assert history.success is False
     assert history.temperature == 0.9
+    assert history.thinking_mode == "disabled"
     assert history.error_message == "未配置 API Key，无法调用模型"
 
 

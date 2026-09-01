@@ -92,7 +92,7 @@ router = APIRouter()
 
 
 def _normalized_executor_code(executor_code: str | None) -> str:
-    """Treat empty/whitespace executor form input as the default MAGA worker executor."""
+    """Treat empty/whitespace executor form input as the default direct LLM executor."""
     return normalize_executor_code(executor_code)
 
 
@@ -263,8 +263,11 @@ async def run_prompt_debug(
     """Run one raw prompt and persist the workbench execution history."""
     run_group_id = request.run_group_id or uuid4().hex
     try:
+        model_config = await _prompt_debug_model_config(db, model_code=request.model_code)
+        if "deepseek" in request.model_code.lower() and request.thinking_mode != "default":
+            model_config["thinking"] = {"type": request.thinking_mode}
         result = await call_direct_llm(
-            model_config=await _prompt_debug_model_config(db, model_code=request.model_code),
+            model_config=model_config,
             system_prompt=request.system_prompt or "",
             user_prompt=request.prompt,
             temperature=request.temperature if request.temperature is not None else 0.9,

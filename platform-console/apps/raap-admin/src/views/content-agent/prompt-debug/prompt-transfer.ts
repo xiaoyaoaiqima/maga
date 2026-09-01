@@ -8,6 +8,7 @@ export interface PromptDebugTransferPayload {
   prompt: string;
   system_prompt?: string;
   temperature?: number;
+  thinking_mode?: 'default' | 'disabled' | 'enabled';
 }
 
 type PromptDebugTransferTarget = {
@@ -16,6 +17,7 @@ type PromptDebugTransferTarget = {
   prompt: string;
   system_prompt: string;
   temperature: number;
+  thinking_mode: 'default' | 'disabled' | 'enabled';
 };
 
 export function applyPromptDebugTransfer(
@@ -31,6 +33,9 @@ export function applyPromptDebugTransfer(
     }
     if (typeof payload.max_tokens === 'number') {
       target.max_tokens = payload.max_tokens;
+    }
+    if (payload.thinking_mode) {
+      target.thinking_mode = payload.thinking_mode;
     }
   }
 }

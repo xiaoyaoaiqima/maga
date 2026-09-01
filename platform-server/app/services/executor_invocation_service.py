@@ -84,7 +84,7 @@ def build_invoke_envelope(
 
 
 class MockExecutorInvocationClient:
-    """Local deterministic mock for early API smoke before Hermes /invoke exists."""
+    """Local deterministic mock for API and workflow smoke tests."""
 
     async def invoke(self, *, invoke_url: str, envelope: dict[str, Any], executor_token: str | None = None) -> InvokeResult:
         input_payload = envelope.get("input") or {}
@@ -96,7 +96,7 @@ class MockExecutorInvocationClient:
             output = {
                 "asset_key": asset_key,
                 "source_hash": source_hash,
-                "warnings": ["mock asset.import output; start real maga-worker for workbook parsing"],
+                "warnings": ["mock asset.import output; use the MAGA asset import API for real workbook parsing"],
                 "assets": [
                     {
                         "asset_type": "brand_profile",
@@ -452,7 +452,7 @@ def _stats(started: float, *, adapter: str, executor: str) -> dict[str, Any]:
 
 
 class DirectLLMInvocationClient:
-    """In-process executor for content generation without Hermes / worker HTTP."""
+    """In-process executor for content generation through the configured provider."""
 
     async def invoke(self, *, invoke_url: str, envelope: dict[str, Any], executor_token: str | None = None) -> InvokeResult:
         started = time.perf_counter()
@@ -765,6 +765,9 @@ async def _call_openai_compatible_model_result(
         payload["max_tokens"] = max_tokens
     if response_format:
         payload["response_format"] = response_format
+    thinking = model_config.get("thinking")
+    if isinstance(thinking, dict) and thinking.get("type") in {"enabled", "disabled"}:
+        payload["thinking"] = {"type": thinking["type"]}
 
     last_error = ""
     for _ in range(retry_count):

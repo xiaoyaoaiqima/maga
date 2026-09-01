@@ -159,6 +159,39 @@ html.dark .prompt-debug-page .system-prompt-collapse .ant-collapse-header {
   color: var(--maga-text-muted) !important;
 }
 
+html.dark .prompt-debug-page .batch-result,
+html.dark .prompt-debug-page .article-result {
+  color: var(--maga-text) !important;
+  background: var(--maga-surface) !important;
+  border-color: var(--maga-border-strong) !important;
+}
+
+html.dark .prompt-debug-page .batch-result-header,
+html.dark .prompt-debug-page .article-result-index {
+  color: var(--maga-text) !important;
+  border-color: var(--maga-border) !important;
+}
+
+html.dark .prompt-debug-page .raw-result-content,
+html.dark .prompt-debug-page .article-result-title,
+html.dark .prompt-debug-page .article-result-body {
+  color: var(--maga-text) !important;
+}
+
+html.dark .prompt-debug-page .batch-result-status,
+html.dark .prompt-debug-page .article-result-label {
+  color: var(--maga-text-muted) !important;
+}
+
+html.dark .prompt-debug-page .batch-result-error {
+  background: rgba(127, 29, 29, 0.22) !important;
+  border-color: rgba(248, 113, 113, 0.38) !important;
+}
+
+html.dark .prompt-debug-page .batch-result-message {
+  color: #fecaca !important;
+}
+
 html.dark .prompt-debug-page .result-box-error {
   color: #fecaca !important;
   background: rgba(127, 29, 29, 0.22) !important;

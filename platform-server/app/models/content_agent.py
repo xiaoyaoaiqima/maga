@@ -1,7 +1,7 @@
 """Content-agent execution layer models.
 
 These tables keep MAGA as the marketing content source of truth while external
-executors such as the Hermes MAGA worker perform capability work through APIs.
+executors perform capability work through the configured invocation boundary.
 """
 from datetime import datetime
 from typing import Optional
@@ -119,6 +119,13 @@ class ContentPromptDebugHistory(Base):
     requested_model_code: Mapped[str] = mapped_column(String(128), nullable=False, comment="请求模型编码")
     temperature: Mapped[float] = mapped_column(Float, nullable=False, default=0.9, comment="temperature")
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1500, comment="max_tokens")
+    thinking_mode: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="default",
+        server_default="default",
+        comment="模型思考模式：default/enabled/disabled",
+    )
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True, comment="是否成功")
     content: Mapped[Optional[str]] = mapped_column(LONGTEXT_TYPE, nullable=True, comment="模型原始输出")
     model_code: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, comment="实际模型编码")
@@ -155,14 +162,14 @@ class CommentDeliveryLedger(Base):
 
 
 class ExecutorRegistry(Base):
-    """Registered execution worker, e.g. Hermes profile maga-worker."""
+    """Registered execution backend for a content-agent capability."""
 
     __tablename__ = "executor_registry"
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True, comment="主键")
     executor_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True, comment="执行器编码")
     executor_type: Mapped[str] = mapped_column(String(64), nullable=False, comment="执行器类型")
-    profile_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, comment="Hermes profile 名称")
+    profile_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, comment="可选执行配置名称")
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="展示名称")
     capabilities: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, comment="v0.0 能力列表")
     protocol_version: Mapped[str] = mapped_column(String(16), nullable=False, default="0.1", comment="协议版本")
@@ -172,7 +179,7 @@ class ExecutorRegistry(Base):
     hmac_secret_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="HMAC secret ref")
     max_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=1, comment="最大并发")
     trigger_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="push", comment="触发模式")
-    endpoint: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, comment="v0.0 HTTP worker 地址")
+    endpoint: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, comment="v0.0 HTTP 执行器地址")
     config_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, comment="非敏感配置")
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1, index=True, comment="是否启用")
     create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now(), nullable=True)

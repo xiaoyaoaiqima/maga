@@ -212,6 +212,53 @@ async def test_direct_llm_adds_response_format_only_when_requested(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_direct_llm_forwards_explicit_thinking_mode(monkeypatch):
+    payloads = []
+
+    class OpenAIResponse:
+        text = ""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                "usage": {},
+            }
+
+    class OpenAIClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, _url, *, json, headers):
+            payloads.append(json)
+            return OpenAIResponse()
+
+    monkeypatch.setattr(invocation_module.httpx, "AsyncClient", OpenAIClient)
+    model_config = {
+        "model_code": "deepseek-v4-flash",
+        "base_url": "https://provider.example/v1",
+        "api_key": "test-key",
+        "thinking": {"type": "enabled"},
+    }
+
+    await invocation_module.call_direct_llm_text(
+        model_config=model_config,
+        system_prompt="system",
+        user_prompt="prompt",
+    )
+
+    assert payloads[0]["thinking"] == {"type": "enabled"}
+
+
+@pytest.mark.asyncio
 async def test_mvp_invoke_envelope_excludes_transition_callback_urls_and_run_token():
     envelope = build_invoke_envelope(
         run_id=10,
@@ -367,7 +414,7 @@ async def test_invoke_raises_on_unexpected_status():
 async def test_mock_executor_supports_asset_import_for_local_asset_smoke():
     client = MockExecutorInvocationClient()
     result = await client.invoke(
-        invoke_url="mock://maga-worker/invoke",
+        invoke_url="mock://direct-llm/content",
         envelope={
             "stage_call_id": "asset-import-mock",
             "capability": "asset.import",

@@ -45,6 +45,7 @@ def _row(record_id, group_id, panel_key, item_index, success=True):
         requested_model_code="deepseek-v4-flash",
         temperature=0.7,
         max_tokens=1500,
+        thinking_mode="enabled",
         success=success,
         content=f"output-{panel_key}-{item_index}",
         model_code="deepseek-v4-flash",
@@ -90,4 +91,5 @@ async def test_history_detail_retains_prompt_parameters_and_outputs():
     assert detail.run_group_id == "group-1"
     assert len(detail.records) == 2
     assert detail.records[0].system_prompt == "system-left"
+    assert detail.records[0].thinking_mode == "enabled"
     assert detail.records[1].content == "output-right-0"

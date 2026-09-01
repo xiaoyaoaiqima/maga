@@ -38,6 +38,7 @@ class PromptDebugHistoryService:
             requested_model_code=request.model_code,
             temperature=request.temperature if request.temperature is not None else 0.9,
             max_tokens=request.max_tokens if request.max_tokens is not None else 1500,
+            thinking_mode=request.thinking_mode,
             success=response.success,
             content=response.content,
             model_code=response.model_code,

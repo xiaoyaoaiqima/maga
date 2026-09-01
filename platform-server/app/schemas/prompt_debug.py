@@ -15,6 +15,10 @@ class PromptDebugRequest(BaseSchema):
     model_code: str = Field(..., min_length=1, description="统一模型编码")
     temperature: Optional[float] = Field(default=None, ge=0, le=2)
     max_tokens: Optional[int] = Field(default=None, ge=1, le=20000)
+    thinking_mode: Literal["default", "enabled", "disabled"] = Field(
+        default="default",
+        description="模型思考模式；default 不发送 thinking 参数",
+    )
     system_prompt: Optional[str] = Field(default=None)
     run_group_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
     workbench_mode: Literal["single", "compare"] = "single"
@@ -70,6 +74,7 @@ class PromptDebugHistoryItem(BaseSchema):
     requested_model_code: str
     temperature: float
     max_tokens: int
+    thinking_mode: Literal["default", "enabled", "disabled"] = "default"
     success: bool
     content: Optional[str] = None
     model_code: Optional[str] = None

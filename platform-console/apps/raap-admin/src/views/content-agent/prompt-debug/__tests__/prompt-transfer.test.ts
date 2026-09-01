@@ -23,6 +23,7 @@ describe('prompt debug transfer', () => {
       prompt: '完整生文 Prompt',
       system_prompt: '系统要求',
       temperature: 0.85,
+      thinking_mode: 'disabled' as const,
     };
 
     const key = savePromptDebugTransfer(payload, storage);
@@ -50,6 +51,7 @@ describe('prompt debug transfer', () => {
         prompt: '',
         system_prompt: '',
         temperature: 0.9,
+        thinking_mode: 'default' as const,
       },
       {
         max_tokens: 1500,
@@ -57,6 +59,7 @@ describe('prompt debug transfer', () => {
         prompt: '',
         system_prompt: '',
         temperature: 0.9,
+        thinking_mode: 'default' as const,
       },
     ];
 
@@ -67,6 +70,7 @@ describe('prompt debug transfer', () => {
         prompt: '完整生文 Prompt',
         system_prompt: '系统要求',
         temperature: 0.85,
+        thinking_mode: 'disabled',
       },
       panels,
     );
@@ -78,6 +82,7 @@ describe('prompt debug transfer', () => {
         prompt: '完整生文 Prompt',
         system_prompt: '系统要求',
         temperature: 0.85,
+        thinking_mode: 'disabled',
       },
       {
         max_tokens: 256,
@@ -85,6 +90,7 @@ describe('prompt debug transfer', () => {
         prompt: '完整生文 Prompt',
         system_prompt: '系统要求',
         temperature: 0.85,
+        thinking_mode: 'disabled',
       },
     ]);
   });

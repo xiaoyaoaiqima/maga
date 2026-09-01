@@ -6,6 +6,7 @@ export namespace PromptDebugApi {
     model_code: string;
     temperature?: number;
     max_tokens?: number;
+    thinking_mode?: 'default' | 'disabled' | 'enabled';
     system_prompt?: string;
     run_group_id?: string;
     workbench_mode?: 'compare' | 'single';
@@ -45,6 +46,7 @@ export namespace PromptDebugApi {
     requested_model_code: string;
     temperature: number;
     max_tokens: number;
+    thinking_mode: 'default' | 'disabled' | 'enabled';
     success: boolean;
     content?: null | string;
     model_code?: null | string;

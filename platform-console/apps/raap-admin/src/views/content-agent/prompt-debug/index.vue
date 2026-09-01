@@ -81,6 +81,7 @@ interface DebugPanelState {
   results: DebugRunState[];
   system_prompt: string;
   temperature: number;
+  thinking_mode: 'default' | 'disabled' | 'enabled';
 }
 
 const mode = ref<WorkbenchMode>('single');
@@ -107,6 +108,16 @@ const visiblePanelKeys = computed<PanelKey[]>(() =>
   mode.value === 'compare' ? ['left', 'right'] : ['left'],
 );
 
+const thinkingModeOptions = [
+  { label: '默认', value: 'default' },
+  { label: '开启', value: 'enabled' },
+  { label: '关闭', value: 'disabled' },
+];
+
+function supportsThinkingMode(modelCode: string) {
+  return modelCode.toLowerCase().includes('deepseek');
+}
+
 function createPanelState(): DebugPanelState {
   return {
     batch_size: 2,
@@ -118,6 +129,7 @@ function createPanelState(): DebugPanelState {
     results: [],
     system_prompt: '',
     temperature: 0.9,
+    thinking_mode: 'default',
   };
 }
 
@@ -218,6 +230,9 @@ function buildRequest(
     model_code: panel.model_code,
     prompt: panel.prompt,
     temperature: panel.temperature,
+    thinking_mode: supportsThinkingMode(panel.model_code)
+      ? panel.thinking_mode
+      : 'default',
     ...metadata,
   };
   if (panel.system_prompt.trim()) {
@@ -369,6 +384,7 @@ function restorePanelFromHistory(
   panel.prompt = first.prompt;
   panel.system_prompt = first.system_prompt || '';
   panel.temperature = first.temperature;
+  panel.thinking_mode = first.thinking_mode;
   panel.results = records.map((record) => ({
     articles: parsePromptDebugArticles(record.content || ''),
     content: record.content || '',
@@ -461,7 +477,7 @@ onMounted(loadModels);
         <Card class="debug-panel" :title="panelTitle(panelKey)">
           <Form layout="vertical" class="panel-form">
             <Row :gutter="12">
-              <Col :xs="24" :md="10">
+              <Col :xs="24" :md="8">
                 <FormItem label="模型">
                   <Select
                     v-model:value="panels[panelKey].model_code"
@@ -473,7 +489,7 @@ onMounted(loadModels);
                   />
                 </FormItem>
               </Col>
-              <Col :xs="12" :md="4">
+              <Col :xs="12" :md="3">
                 <FormItem label="temperature">
                   <InputNumber
                     v-model:value="panels[panelKey].temperature"
@@ -484,13 +500,22 @@ onMounted(loadModels);
                   />
                 </FormItem>
               </Col>
-              <Col :xs="12" :md="5">
+              <Col :xs="12" :md="4">
                 <FormItem label="max_tokens">
                   <InputNumber
                     v-model:value="panels[panelKey].max_tokens"
                     :min="1"
                     :max="20_000"
                     class="full-width"
+                  />
+                </FormItem>
+              </Col>
+              <Col :xs="12" :md="4">
+                <FormItem label="思考模式">
+                  <Select
+                    v-model:value="panels[panelKey].thinking_mode"
+                    :disabled="!supportsThinkingMode(panels[panelKey].model_code)"
+                    :options="thinkingModeOptions"
                   />
                 </FormItem>
               </Col>
