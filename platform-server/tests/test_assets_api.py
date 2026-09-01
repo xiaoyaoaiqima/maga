@@ -346,8 +346,8 @@ async def asset_client():
                 ExecutorRegistry(
                     executor_code="maga_direct_llm_executor",
                     executor_type="direct_llm",
-                    profile_name="maga-worker",
-                    invoke_url="mock://maga-worker/invoke",
+                    profile_name=None,
+                    invoke_url="mock://direct-llm/content",
                     supported_capabilities_json=[{"capability": "asset.import", "schema_version": "1"}],
                     config_json={"executor_token": "test-token"},
                     enabled=1,

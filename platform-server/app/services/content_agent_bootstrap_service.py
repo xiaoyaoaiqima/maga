@@ -8,10 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.core.content_agent_defaults import (
     DEFAULT_EXECUTOR_CODE,
-    MAGA_WORKER_DISPLAY_NAME,
-    MAGA_WORKER_INVOKE_URL,
-    MAGA_WORKER_PROFILE_NAME,
-    MAGA_WORKER_SUPPORTED_CAPABILITY_SPECS,
+    DIRECT_LLM_EXECUTOR_DISPLAY_NAME,
+    DIRECT_LLM_EXECUTOR_INVOKE_URL,
+    DIRECT_LLM_SUPPORTED_CAPABILITY_SPECS,
 )
 from app.models.content_agent import ExecutorRegistry
 from app.models.agent import Agent
@@ -29,27 +28,25 @@ from app.services.business_forbidden_term_service import (
 async def seed_default_content_agent_executors(
     conn: AsyncConnection,
     *,
-    maga_worker_invoke_url: str = MAGA_WORKER_INVOKE_URL,
-    executor_token: str | None = "test-token",
+    direct_llm_invoke_url: str = DIRECT_LLM_EXECUTOR_INVOKE_URL,
     overwrite: bool = True,
 ) -> None:
     """Create or update the default MAGA executor registry rows.
 
     `overwrite=False` is used during app startup so existing production executor
     routing is not silently changed by a process restart. Explicit init/seed
-    commands use `overwrite=True` to let operators point MAGA at a real worker.
+    commands use `overwrite=True` to refresh the direct LLM route.
     """
-    config_json = {"executor_token": executor_token} if executor_token else None
     rows = [
         {
             "executor_code": DEFAULT_EXECUTOR_CODE,
-            "display_name": MAGA_WORKER_DISPLAY_NAME,
+            "display_name": DIRECT_LLM_EXECUTOR_DISPLAY_NAME,
             "executor_type": "direct_llm",
-            "profile_name": MAGA_WORKER_PROFILE_NAME,
+            "profile_name": None,
             "protocol_version": "0.1",
-            "invoke_url": maga_worker_invoke_url,
-            "supported_capabilities_json": MAGA_WORKER_SUPPORTED_CAPABILITY_SPECS,
-            "config_json": config_json,
+            "invoke_url": direct_llm_invoke_url,
+            "supported_capabilities_json": DIRECT_LLM_SUPPORTED_CAPABILITY_SPECS,
+            "config_json": None,
             "enabled": 1,
         },
     ]

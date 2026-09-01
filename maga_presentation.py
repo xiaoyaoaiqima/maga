@@ -322,7 +322,7 @@ set_slide_bg(slide5, BG_DARK)
 add_textbox(slide5, MARGIN_LEFT, Inches(0.4), Inches(6), Inches(0.6),
             "04  技术架构", font_size=28, font_color=ACCENT, bold=True)
 add_textbox(slide5, MARGIN_LEFT, Inches(0.9), Inches(8), Inches(0.4),
-            "MAGA 控制平面 + Hermes 执行平面", font_size=16, font_color=TEXT_GRAY)
+            "MAGA 单体后端 + 模型服务", font_size=16, font_color=TEXT_GRAY)
 
 # 三层架构图 - 用形状模拟
 box_w = Inches(10.5)
@@ -351,12 +351,12 @@ add_textbox(slide5, box_x + Inches(0.3), Inches(3.9), Inches(9), Inches(0.5),
 # 连接箭头
 add_shape(slide5, MSO_SHAPE.DOWN_ARROW, box_x + box_w/2 - Inches(0.25), Inches(4.8), Inches(0.5), Inches(0.35), ACCENT)
 
-# 第三层：Worker
+# 第三层：模型执行
 add_shape(slide5, MSO_SHAPE.ROUNDED_RECTANGLE, box_x, Inches(5.2), box_w, box_h, BG_CARD_ALT)
 add_textbox(slide5, box_x + Inches(0.3), Inches(5.4), Inches(4), Inches(0.4),
-            "Hermes maga-worker", font_size=18, font_color=ACCENT, bold=True)
+            "Direct LLM Executor", font_size=18, font_color=ACCENT, bold=True)
 add_textbox(slide5, box_x + Inches(0.3), Inches(5.75), Inches(9), Inches(0.5),
-            "AI 执行引擎 · LLM 调用 · GE/AE 编排 · 内容生成 · 评分改写",
+            "后端本进程执行 · OpenAI-compatible LLM 调用 · 内容生成 · 定向改写",
             font_size=14, font_color=TEXT_GRAY)
 
 # 右侧职责说明

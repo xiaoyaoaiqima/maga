@@ -34,7 +34,6 @@ critic_prompt_optimize_results/
 **/.local/
 outputs/
 /*.png
-worker/profiles/*/experts/*/lessons/
 批量生成/*
 *.csv
 

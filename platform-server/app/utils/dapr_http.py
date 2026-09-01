@@ -42,7 +42,7 @@ async def invoke_method(
     通过 Dapr 调用其他服务的方法
 
     Args:
-        app_id: 目标服务 ID，如 "maga-worker"
+        app_id: 目标服务 ID，如 "maga-backend"
         method_name: API 方法路径，如 "api/v1/content-strategies/123/combinations"
         payload: POST 请求的 JSON body
         timeout: 超时时间（秒）

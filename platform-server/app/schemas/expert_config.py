@@ -15,7 +15,7 @@ class ExpertConfigBase(BaseSchema):
     expert_config_name: str = Field(..., max_length=255, description="expert_config 名称")
     tenant_code: Optional[str] = Field(default=None, max_length=64, description="归属租户编码（NULL 表示全局共享）")
     expert_type: str = Field(..., max_length=64, description="业务类型：GENERATION/SCORE/REWRITE/... 等")
-    expert_app: str = Field(..., max_length=255, description="expert的app（Dapr app ID，如 maga-worker）")
+    expert_app: str = Field(..., max_length=255, description="expert的app（Dapr app ID，如 content-executor）")
     expert_service: str = Field(..., max_length=255, description="expert的service名称")
     expert_func: str = Field(..., max_length=255, description="expert的方法标识（历史遗留命名；当前作为 HTTP path 的一段，如 ReviewBan）")
     expert_func_name: Optional[str] = Field(default=None, max_length=128, description="expert_func 的显示名称（用于图表展示，如：内容质量、品牌匹配）")

@@ -76,9 +76,9 @@ async def content_agent_workbench_client():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                profile_name="maga-worker",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                profile_name=None,
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 supported_capabilities_json=[
                     {"capability": "asset.import", "schema_version": "1"},
                     {"capability": "content.generate", "schema_version": "1"},

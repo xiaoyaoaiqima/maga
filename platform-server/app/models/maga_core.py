@@ -1,7 +1,7 @@
 """Core MAGA content-workbench models for the clean schema path.
 
 This module intentionally excludes legacy models from the old system. Import it
-when creating a fresh MAGA schema for the MAGA + Hermes execution paradigm.
+when creating a fresh MAGA schema for the current execution architecture.
 """
 from datetime import datetime
 from typing import Optional

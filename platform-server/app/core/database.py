@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.sql import text
 
 from app.core.config import settings
-from app.core.content_agent_defaults import MAGA_WORKER_INVOKE_URL
+from app.core.content_agent_defaults import DIRECT_LLM_EXECUTOR_INVOKE_URL
 from app.models.base import Base
 from app.models.maga_core import MAGA_STARTUP_TABLE_NAMES  # noqa: F401 - registers startup models
 from app.services.content_agent_bootstrap_service import (
@@ -118,8 +118,7 @@ async def init_db() -> None:
                 # "executor not found" before an explicit seed command runs.
                 await seed_default_content_agent_executors(
                     conn,
-                    maga_worker_invoke_url=MAGA_WORKER_INVOKE_URL,
-                    executor_token=None,
+                    direct_llm_invoke_url=DIRECT_LLM_EXECUTOR_INVOKE_URL,
                     overwrite=False,
                 )
                 await seed_default_realtime_chat_agent(conn, overwrite=False)

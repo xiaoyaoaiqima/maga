@@ -270,7 +270,7 @@ async def test_run_single_capability_uses_direct_llm_executor_without_worker(db_
 
 
 @pytest.mark.asyncio
-async def test_run_single_capability_defaults_blank_executor_code_to_maga_worker(db_session):
+async def test_run_single_capability_defaults_blank_executor_code_to_direct_llm(db_session):
     db_session.add(
         ExecutorRegistry(
             executor_code="maga_direct_llm_executor",

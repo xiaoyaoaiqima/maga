@@ -78,35 +78,6 @@ services:
       timeout: 5s
       retries: 30
 
-  # Historical demo / compatibility executor.
-  # The current MAGA production path uses backend direct LLM execution
-  # via executor_code=maga_direct_llm_executor and invoke_url=llm://direct/content.
-  # This worker is kept only for old HTTP Executor Protocol validation and
-  # is not started unless the historical-demo profile is explicitly enabled.
-  maga-worker:
-    profiles: ["historical-demo"]
-    build:
-      context: ./worker
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      MAGA_WORKER_EXECUTOR_TOKEN: ${MAGA_WORKER_EXECUTOR_TOKEN:-historical-demo-token}
-      MAGA_WORKER_RUNTIME_FAST_FAKE: "0"
-      MAGA_WORKER_MODEL_BASE_URL: ${MAGA_WORKER_MODEL_BASE_URL:-}
-      MAGA_WORKER_MODEL_API_KEY: ${MAGA_WORKER_MODEL_API_KEY:-}
-      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
-      MAGA_WORKER_MODEL_TIMEOUT: ${MAGA_WORKER_MODEL_TIMEOUT:-90}
-      WORKER_WORKSPACE: /app/profiles/maga-worker
-      MAGA_WORKER_OUTPUT_DIR: /app/outputs
-    volumes:
-      - maga_worker_outputs_prod:/app/outputs
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8765/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-
 volumes:
   maga_mysql_prod:
   maga_redis_prod:
-  maga_worker_outputs_prod:

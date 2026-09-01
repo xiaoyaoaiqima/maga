@@ -7,8 +7,8 @@ from pydantic import Field
 
 from app.core.content_agent_defaults import (
     DEFAULT_EXECUTOR_CODE,
-    MAGA_WORKER_DEFAULT_AE_MODEL,
-    MAGA_WORKER_DEFAULT_GE_MODEL,
+    DIRECT_LLM_DEFAULT_AE_MODEL,
+    DIRECT_LLM_DEFAULT_GE_MODEL,
 )
 from app.services.product_experience_rule_service import DEFAULT_PRODUCT_EXPERIENCE_ASSET_KEY
 from app.schemas.base import BaseSchema, TimestampSchema
@@ -288,8 +288,8 @@ class ContentCommentBatchReviewReplayResponse(BaseSchema):
 class ContentBatchModelConfig(BaseSchema):
     provider_code: str | None = Field(default=None, max_length=64)
     model_code: str | None = Field(default=None, max_length=128)
-    ge_model: str | None = Field(default=MAGA_WORKER_DEFAULT_GE_MODEL, max_length=128)
-    ae_model: str | None = Field(default=MAGA_WORKER_DEFAULT_AE_MODEL, max_length=128)
+    ge_model: str | None = Field(default=DIRECT_LLM_DEFAULT_GE_MODEL, max_length=128)
+    ae_model: str | None = Field(default=DIRECT_LLM_DEFAULT_AE_MODEL, max_length=128)
     temperature: float | None = Field(default=None, ge=0, le=2)
     max_tokens: int | None = Field(default=None, ge=1, le=100000)
     system_prompt: str | None = None

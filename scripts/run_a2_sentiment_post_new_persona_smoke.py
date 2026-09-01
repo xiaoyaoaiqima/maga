@@ -156,7 +156,7 @@ def main() -> int:
     args = parser.parse_args()
 
     load_dotenv(ROOT / ".env")
-    bridge_worker_env_to_direct_llm_env()
+    configure_direct_llm_env()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     results = asyncio.run(run_smoke(args.rule_dir, args.limit, print_prompts_only=args.print_prompts_only))
@@ -283,13 +283,9 @@ def load_dotenv(path: Path) -> None:
             os.environ[key] = value
 
 
-def bridge_worker_env_to_direct_llm_env() -> None:
+def configure_direct_llm_env() -> None:
     if not os.getenv("MAGA_DIRECT_CONTENT_MODEL"):
         os.environ["MAGA_DIRECT_CONTENT_MODEL"] = os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash"
-    if not os.getenv("MAGA_DIRECT_MODEL_BASE_URL") and os.getenv("MAGA_WORKER_MODEL_BASE_URL"):
-        os.environ["MAGA_DIRECT_MODEL_BASE_URL"] = os.getenv("MAGA_WORKER_MODEL_BASE_URL", "")
-    if not os.getenv("MAGA_DIRECT_MODEL_API_KEY") and os.getenv("MAGA_WORKER_MODEL_API_KEY"):
-        os.environ["MAGA_DIRECT_MODEL_API_KEY"] = os.getenv("MAGA_WORKER_MODEL_API_KEY", "")
 
 
 def default_model_config() -> dict[str, Any]:

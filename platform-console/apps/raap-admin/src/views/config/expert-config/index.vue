@@ -2451,7 +2451,7 @@ function handleTableChange(pag: any) {
                 >
                   <Input
                     v-model:value="formState.expert_app"
-                    placeholder="如: maga-worker"
+                    placeholder="如: content-executor"
                   />
                   <div class="form-item-hint">服务应用标识（Dapr App ID）</div>
                 </FormItem>

@@ -34,7 +34,7 @@
 | 评论独立 capability 下线 | `comment.generate` 不再存在，评论由 `content.generate` 按 `content_type=comment` 输出 | 已完成 |
 | 单篇正式入口下线 | `/content-agent/generation/start` 不再作为运营正式入口 | 已完成 |
 | Prompt Optimizer 运行时清理 | 旧优化工作台 API/service/model/schema 从运行代码移除，历史表不 drop | 已完成 |
-| Worker profile 收敛 | `maga-worker` 只描述当前三类 capability 和统一生文链路 | 已完成 |
+| 执行层收敛 | 后端 direct LLM executor 只描述当前生文能力 | 已完成 |
 
 ## P1 下一步
 

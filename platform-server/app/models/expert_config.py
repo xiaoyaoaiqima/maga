@@ -54,7 +54,7 @@ class ExpertConfig(Base):
     expert_app: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
-        comment="expert的app（Dapr app ID，如 maga-worker）"
+        comment="expert的app（Dapr app ID，如 content-executor）"
     )
     
     expert_service: Mapped[str] = mapped_column(

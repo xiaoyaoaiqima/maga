@@ -172,7 +172,7 @@ MVP 的标准输出为：
 - 要求修改：记录不满意原因，进入后续优化队列。
 - 人工改写：保存人工改后的标题/正文，作为训练反馈样本。
 
-反馈不是新的生文必填步骤，不阻塞用户继续生成。MAGA 后台会把反馈保存为 `content_feedback` 和版本记录，后续由 `maga-worker` 的 `feedback.*` / `prompt.*` 能力用于总结问题、提出资产或 Prompt 更新建议。
+反馈不是新的生文必填步骤，不阻塞用户继续生成。MAGA 后台会把反馈保存为 `content_feedback` 和版本记录，后续由 direct LLM executor 的 `feedback.*` / `prompt.*` 能力用于总结问题、提出资产或 Prompt 更新建议。
 
 ---
 
@@ -283,7 +283,7 @@ MVP 推荐的内部工作流如下：
 输入 → 生成 → 输出
 ```
 
-实现层 capability 映射详见 [EXECUTOR_PROTOCOL.md](./EXECUTOR_PROTOCOL.md) §五。
+实现层 capability 映射详见 [AI 生文流水线协作流程](./AI_CONTENT_GENERATION_WORKFLOW.md)。
 
 ### 2. 各内部层职责
 
@@ -345,16 +345,16 @@ MVP 推荐的内部工作流如下：
 
 ### 3. Agent 执行层定位
 
-MVP 阶段允许将模型执行外置到 Hermes profile 或其他 runtime 中，但 MAGA 仍然是营销内容生成的业务工作台和 source of truth。默认 Hermes profile 统一命名为 `maga-worker`，当前只暴露 `asset.import`、`content.generate`、`content.rewrite`。
+MVP 阶段由 `platform-server` 本进程直连模型服务，MAGA 仍然是营销内容生成的业务工作台和 source of truth。当前生文执行只暴露 `content.generate`、`content.rewrite`。
 
 职责边界：
 
 - MAGA 负责业务规则、系统关键词、Expert 配置、模型参数、任务、trace、artifact、违禁词审核和人工反馈。
-- Hermes `maga-worker` 负责具体执行：按 MAGA 下发的 prompt 调用模型，返回生成或改写结果。
-- Hermes 不直接读写 MAGA 数据库，只通过 MAGA API 交互。
-- MAGA 不改造成通用 Agent 平台，只保留轻量 executor 抽象，以便未来替换执行层。
+- direct LLM executor 负责具体执行：按 MAGA 组装的 prompt 调用模型，返回生成或改写结果。
+- executor 在 `platform-server` 进程内运行，业务数据仍由 MAGA service 层统一读写。
+- MAGA 不改造成通用 Agent 平台，只保留轻量 executor 抽象。
 
-当前执行协议见：[MAGA Worker Executor Protocol](./EXECUTOR_PROTOCOL.md)。完整生文协作流程见：[AI 生文流水线协作流程](./AI_CONTENT_GENERATION_WORKFLOW.md)。
+完整生文协作流程见：[AI 生文流水线协作流程](./AI_CONTENT_GENERATION_WORKFLOW.md)。
 
 ---
 
@@ -383,7 +383,7 @@ MVP 阶段允许将模型执行外置到 Hermes profile 或其他 runtime 中，
 
 ### 3. 执行控制层
 
-MAGA 负责任务、trace、违禁词审核、相似度审核、改写触发和反馈记录。`maga-worker` 只执行 MAGA 下发的 `asset.import`、`content.generate`、`content.rewrite`。
+MAGA 负责任务、trace、违禁词审核、相似度审核、改写触发和反馈记录。direct LLM executor 只执行 `content.generate`、`content.rewrite`。
 
 旧 `xhs.*`、`comment.generate`、自动学习类能力不再作为当前运行能力。
 
@@ -406,7 +406,7 @@ MAGA 负责任务、trace、违禁词审核、相似度审核、改写触发和�
 
 运营生成内容时不需要逐个选择关键词。系统会根据启用类别自动选择，并把选择结果写入批次计划和 trace。
 
-内部可以进入系统关键词管理页维护类别、子关键词和语料。新增类别后，生成链路不需要改 worker capability 或 Expert 模板，只要模板继续使用聚合变量。
+内部可以进入系统关键词管理页维护类别、子关键词和语料。新增类别后，生成链路不需要改 executor capability 或 Expert 模板，只要模板继续使用聚合变量。
 
 ### 3. 系统关键词对生成链路的作用
 

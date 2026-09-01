@@ -17,7 +17,7 @@ if __package__ in {None, ""}:
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from app.core.content_agent_defaults import (
-    MAGA_WORKER_INVOKE_URL,
+    DIRECT_LLM_EXECUTOR_INVOKE_URL,
 )
 from app.core.config import settings
 from app.models.base import Base
@@ -35,14 +35,12 @@ def _selected_tables() -> list:
 async def seed_clean_schema(
     conn: AsyncConnection,
     *,
-    maga_worker_invoke_url: str = MAGA_WORKER_INVOKE_URL,
-    executor_token: str | None = "test-token",
+    direct_llm_invoke_url: str = DIRECT_LLM_EXECUTOR_INVOKE_URL,
 ) -> None:
     """Seed baseline executor registry rows for the clean schema."""
     await seed_default_content_agent_executors(
         conn,
-        maga_worker_invoke_url=maga_worker_invoke_url,
-        executor_token=executor_token,
+        direct_llm_invoke_url=direct_llm_invoke_url,
         overwrite=True,
     )
     await seed_default_realtime_chat_agent(conn, overwrite=True)
@@ -53,8 +51,7 @@ async def create_clean_schema(
     *,
     drop: bool = False,
     seed: bool = False,
-    maga_worker_invoke_url: str = MAGA_WORKER_INVOKE_URL,
-    executor_token: str | None = "test-token",
+    direct_llm_invoke_url: str = DIRECT_LLM_EXECUTOR_INVOKE_URL,
 ) -> None:
     """Create the clean MAGA core schema using current SQLAlchemy model metadata."""
     tables = _selected_tables()
@@ -65,8 +62,7 @@ async def create_clean_schema(
         if seed:
             await seed_clean_schema(
                 conn,
-                maga_worker_invoke_url=maga_worker_invoke_url,
-                executor_token=executor_token,
+                direct_llm_invoke_url=direct_llm_invoke_url,
             )
 
 
@@ -76,14 +72,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--drop", action="store_true", help="Drop clean core tables before creating them")
     parser.add_argument("--seed", action="store_true", help="Seed baseline executor registry rows")
     parser.add_argument(
-        "--maga-worker-invoke-url",
-        default=MAGA_WORKER_INVOKE_URL,
+        "--direct-llm-invoke-url",
+        default=DIRECT_LLM_EXECUTOR_INVOKE_URL,
         help="Invoke URL for MAGA direct LLM executor seed; defaults to backend direct LLM execution",
-    )
-    parser.add_argument(
-        "--executor-token",
-        default="test-token",
-        help="Local dev executor token written to executor_registry.config_json; pass an empty string to omit",
     )
     return parser
 
@@ -97,8 +88,7 @@ async def _amain(argv: Iterable[str] | None = None) -> None:
             engine,
             drop=args.drop,
             seed=args.seed,
-            maga_worker_invoke_url=args.maga_worker_invoke_url,
-            executor_token=args.executor_token or None,
+            direct_llm_invoke_url=args.direct_llm_invoke_url,
         )
     finally:
         await engine.dispose()

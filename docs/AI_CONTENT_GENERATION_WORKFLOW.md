@@ -6,7 +6,7 @@ Demo 主线调整为：
 
 1. 运营拆解并上传业务规则包。
 2. 系统按规则包自动规划生成任务，并自动补齐表达扩散语料。
-3. `maga-worker` 通过统一 `content.generate` 能力执行生成。
+3. direct LLM executor 通过统一 `content.generate` 能力执行生成。
 4. MAGA 对生成结果做确定性审核；是否允许进入 `content.rewrite` 由资产策略决定。旺玥 production 不调用模型改写，只有显式 experimental 才运行改写实验。
 5. 运营在批量报告里查看、审核、反馈。
 
@@ -22,7 +22,7 @@ Demo 主线调整为：
 4. 每次生成时，系统从每个启用类别中自动选择 1 个启用子关键词；后续新增类别只需要在管理页配置。
 5. `expert` 使用提示词模版把业务规则和本次选中的表达扩散语料组装成最终 prompt。
 6. `expert` 的模型配置决定 provider、model_code、temperature、max_tokens。
-7. `maga-worker` 只负责按最终 prompt 生成内容并返回结构化结果。
+7. direct LLM executor 只负责按最终 prompt 生成内容并返回结构化结果。
 
 这里的 `expert` 不是人设，也不是业务规则；它是“提示词模版 + 模型参数配置”。业务规则负责告诉模型写什么，表达扩散语料负责告诉模型怎么写，expert 负责把这些输入组装成最终提示词。
 
@@ -50,7 +50,7 @@ Demo 主线调整为：
 - 可选 `评论示例`
 - 可选 `评论补充`
 
-生成时每条 item 的计划中带完整业务规则规则、语料、示例和补充。系统再自动选择启用的表达扩散语料，并把最终组装结果写入 `plan_json.unified_generation`，worker 只输出评论正文。
+生成时每条 item 的计划中带完整业务规则规则、语料、示例和补充。系统再自动选择启用的表达扩散语料，并把最终组装结果写入 `plan_json.unified_generation`，direct LLM executor 只输出评论正文。
 
 ### 源悦活动生文
 
@@ -598,7 +598,7 @@ Prompt 预览用于在保存前查看“业务规则 + 当前页面表达扩散�
 - `comment_generator_v1`：评论生成，能力为 `content.generate`
 - `content_rewrite_v1`：审核改写，能力为 `content.rewrite`
 
-审核本身不是让模型自由判断。MAGA 后端先用系统违禁词和业务违禁词做确定性扫描；允许改写的资产才把原文、命中词、业务规则、已选表达扩散语料和改写 Expert 渲染后的 prompt 交给 `maga-worker` 执行 `content.rewrite`。旺玥 production 命中后只做精确替换或直接阻断，不进入该模型链。
+审核本身不是让模型自由判断。MAGA 后端先用系统违禁词和业务违禁词做确定性扫描；允许改写的资产才把原文、命中词、业务规则、已选表达扩散语料和改写 Expert 渲染后的 prompt 交给 direct LLM executor 执行 `content.rewrite`。旺玥 production 命中后只做精确替换或直接阻断，不进入该模型链。
 
 文章批次的审核与改写模式必须分开理解：
 
@@ -620,7 +620,7 @@ Prompt 预览用于在保存前查看“业务规则 + 当前页面表达扩散�
 
 暂不新增独立评论表。后续如果评论审核、投放、归因需要独立生命周期，再单独建表。
 
-## Worker Capability
+## Direct LLM Capability
 
 统一生成 capability：
 
@@ -690,4 +690,4 @@ content.rewrite
 - 妈妈班活动规则包继续作为活动内容规则，不被评论生成读取。
 - 产品使用体验生文入口走 `/content-agent/batches/start`，主执行链路已经统一到 `content.generate`。
 - 旧 `xhs.*` chain、`comment.generate`、单篇 `/generation/start` 已下线；文章和评论统一使用 `content.generate`，审核改写统一使用 `content.rewrite`。
-- 对外只讲 MAGA 自动调用 `maga-worker`，不把 Hermes 作为产品概念。
+- 对外只讲 MAGA 自动调用 direct LLM executor，不把 direct LLM executor 作为产品概念。

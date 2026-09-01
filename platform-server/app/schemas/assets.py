@@ -197,7 +197,7 @@ class AssetCandidateCreate(BaseModel):
     source_hash: str | None = None
     content_json: dict[str, Any]
     metadata_json: dict[str, Any] | None = None
-    created_by: str | None = "maga-worker"
+    created_by: str | None = "maga-backend"
 
 
 class AssetChangeRequestCreate(BaseModel):

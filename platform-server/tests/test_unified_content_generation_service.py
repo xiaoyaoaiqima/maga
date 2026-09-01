@@ -3464,7 +3464,7 @@ async def test_unified_generation_keeps_expert_model_config_but_uses_comment_pro
                 expert_config_code="comment_generator_v1",
                 expert_config_name="评论生成 Expert",
                 expert_type="GENERATION",
-                expert_app="maga-worker",
+                expert_app="content-executor",
                 expert_service="content.Generate",
                 expert_func="Generate",
                 model_code="deepseek-test",

@@ -342,16 +342,16 @@ class ContentAgentOrchestrator:
     def _invoke_exception_message(self, exc: Exception, capability: str) -> str:
         if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
             return (
-                "MAGA Worker 未启动或不可访问，请先在项目根目录执行 make worker-start，"
+                "内容执行器不可访问，请检查 executor_registry.invoke_url 配置，"
                 f"再重试生文。当前失败阶段：{capability}"
             )
         if isinstance(exc, httpx.ReadTimeout):
             return (
-                "MAGA Worker 响应超时，请确认 worker 仍在运行，或稍后重试。"
+                "内容执行器响应超时，请检查模型服务或稍后重试。"
                 f"当前失败阶段：{capability}"
             )
         if isinstance(exc, httpx.HTTPError):
-            return f"MAGA Worker 调用失败：{exc}。当前失败阶段：{capability}"
+            return f"内容执行器调用失败：{exc}。当前失败阶段：{capability}"
         text = str(exc).strip()
         if text:
             return text

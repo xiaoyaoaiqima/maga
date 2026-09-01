@@ -55,7 +55,7 @@ class ExpertCaller:
         通过 Dapr HTTP Invocation 调用内部服务（Async）
         
         Args:
-            expert_app: Dapr app ID (e.g., "maga-worker")
+            expert_app: Dapr app ID (e.g., "content-executor")
             method_path: FastAPI path（必须以 /api/v1/ 开头），例如：/api/v1/critic/review-ban
             payload: Request payload dictionary
             timeout: Request timeout in seconds (default: 300)

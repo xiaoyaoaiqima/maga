@@ -18,7 +18,7 @@ MAGA 当前 `platform-server` 是从老系统演化来的，仓库里同时存�
 - 不为了旧表继续扩展新功能。
 - 新开发优先走 clean schema。
 - 老系统模型不再默认保留；确认不在当前运行路径后可以物理删除，历史表由 migration 记录保留，不额外 drop。
-- 生产边界仍是 MAGA API，不让 Hermes `maga-worker` 或历史 `xhs-writer` runtime 直连 MAGA DB。
+- 生产边界仍是 MAGA API，不让外部 runtime 或历史 `xhs-writer` 直连 MAGA DB。
 - 本地开发库可以 drop/create；需要保留旧数据时另建库，不在同一库里混迁移。
 
 ## 建议的模型分层
@@ -32,7 +32,7 @@ MAGA 当前 `platform-server` 是从老系统演化来的，仓库里同时存�
 - ContentRun：一次执行。
 - RunEvent：执行 trace / AE instruct / score / decision。
 - Artifact：brief.yaml / draft / final / score report / trace。
-- ExecutorRegistry：Hermes `maga-worker` 等执行器登记。
+- ExecutorRegistry：MAGA direct LLM 等执行器登记。
 
 当前已落地的近似模型：
 
@@ -145,16 +145,10 @@ make init-clean-schema
 
 - `maga_direct_llm_executor`：统一的 MAGA 内容执行器，默认由后端本进程直连大模型。
 
-默认 `MAGA_WORKER_INVOKE_URL` 为 `llm://direct/content`，适合后端直接调用 OpenAI-compatible 大模型，不依赖 Hermes/worker。如果只想先跑平台内置 mock，可以显式切回：
+默认 `DIRECT_LLM_EXECUTOR_INVOKE_URL` 为 `llm://direct/content`，由后端直接调用 OpenAI-compatible 大模型。如果只想先跑平台内置 mock，可以显式切换：
 
 ```bash
-MAGA_WORKER_INVOKE_URL=mock://maga-worker/invoke make init-clean-schema
-```
-
-如需兼容旧 worker，可显式指定 HTTP invoke URL：
-
-```bash
-MAGA_WORKER_INVOKE_URL=http://host.docker.internal:8765/invoke make init-clean-schema
+DIRECT_LLM_EXECUTOR_INVOKE_URL=mock://direct-llm/content make init-clean-schema
 ```
 
 脚本行为：
@@ -196,7 +190,7 @@ MAGA_WORKER_INVOKE_URL=http://host.docker.internal:8765/invoke make init-clean-s
 - content-agent API
 - content-agent service
 - content-agent clean models
-- `maga-worker` `/invoke` HTTP 服务
+- `platform-server` 本进程 direct LLM executor
 
 不要依赖：
 
@@ -214,11 +208,10 @@ MAGA_WORKER_INVOKE_URL=http://host.docker.internal:8765/invoke make init-clean-s
 1. 给 app 增加配置开关，例如 `MAGA_SCHEMA_MODE=clean|legacy`：
    - clean：只注册新 MAGA 路由。
    - legacy：保持当前全量 router。
-2. 继续收敛 `/invoke` push 链路：
+2. 继续收敛直连模型链路：
    - 批量文章和评论都由 MAGA 构造 unified generation input。
-   - MAGA 按 `executor_registry.invoke_url` 调 `maga-worker`。
+   - MAGA 按 `executor_registry.invoke_url` 选择本进程 direct LLM 或显式 mock。
    - `mock://...` 只作为显式 smoke/mock 模式。
-   - `http(s)://...` 作为本地和服务器推荐执行模式。
 3. 补齐资产和反馈治理：
    - `asset_registry` 继续作为资料 source of truth。
    - `content_feedback` 记录通过、要求修改、人工改写等反馈。

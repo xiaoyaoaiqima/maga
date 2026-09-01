@@ -71,7 +71,7 @@ resolve_deploy_targets() {
               platform-console/*)
                 BUILD_FRONTEND=1
                 ;;
-              platform-server/* | worker/* | docker-compose.prod.yml | .env.prod.example)
+              platform-server/* | docker-compose.prod.yml | .env.prod.example)
                 BUILD_BACKEND=1
                 ;;
               ci/deploy_prod.sh | .gitlab-ci.yml | docs/* | README.md | AGENTS.md)
@@ -149,7 +149,7 @@ main() {
   fi
 
   if [[ "${BUILD_BACKEND}" == "1" ]]; then
-    log "building and restarting backend/worker"
+    log "building and restarting backend"
     run_compose up -d --build
   else
     log "skipping backend rebuild"
@@ -186,13 +186,6 @@ main() {
     sleep 2
   done
   curl -fsS http://127.0.0.1:5100/api/v1/health/ready >/dev/null
-
-  if [[ -n "$(run_compose ps -q maga-worker 2>/dev/null || true)" ]]; then
-    log "checking worker health"
-    run_compose exec -T maga-worker curl -fsS http://127.0.0.1:8765/health >/dev/null
-  else
-    log "skipping worker health check; maga-worker is not running"
-  fi
 
   log "checking frontend publication"
   test -x "${FRONTEND_DIR}"

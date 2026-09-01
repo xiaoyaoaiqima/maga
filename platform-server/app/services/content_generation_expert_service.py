@@ -150,7 +150,7 @@ class ContentGenerationExpertService:
         payload = {
             "expert_config_name": request.expert_config_name.strip() or spec.name,
             "expert_type": spec.expert_type,
-            "expert_app": "maga-worker",
+            "expert_app": "content-executor",
             "expert_service": "content-generation-flow",
             "expert_func": spec.capability,
             "expert_func_name": spec.stage,

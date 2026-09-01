@@ -354,8 +354,8 @@ class ContentGenerationPreflightService:
         if executor is None:
             checks.append(
                 _fail(
-                    "worker_executor",
-                    "Worker 执行器",
+                    "content_executor",
+                    "内容执行器",
                     "没有找到执行器注册信息。",
                     {"executor_code": executor_code},
                 )
@@ -373,12 +373,12 @@ class ContentGenerationPreflightService:
             "capabilities": sorted(capability_names),
         }
         if executor.enabled != 1:
-            checks.append(_fail("worker_executor", "Worker 执行器", "执行器已停用。", detail))
+            checks.append(_fail("content_executor", "内容执行器", "执行器已停用。", detail))
         elif missing:
             checks.append(
                 _fail(
-                    "worker_capabilities",
-                    "Worker 能力",
+                    "executor_capabilities",
+                    "执行器能力",
                     f"执行器缺少能力：{', '.join(missing)}。",
                     {**detail, "missing_capabilities": missing},
                 )
@@ -386,8 +386,8 @@ class ContentGenerationPreflightService:
         else:
             checks.append(
                 _pass(
-                    "worker_capabilities",
-                    "Worker 能力",
+                    "executor_capabilities",
+                    "执行器能力",
                     "执行器支持 content.generate 和 content.rewrite。",
                     detail,
                 )

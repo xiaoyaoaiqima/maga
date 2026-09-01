@@ -8725,8 +8725,8 @@ async def test_current_wangyue_production_skips_focused_and_legacy_llm_reviewers
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -9859,8 +9859,8 @@ async def test_batch_execution_generates_first_n_items_and_links_runs():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -9941,8 +9941,8 @@ async def test_batch_execution_skips_persona_style_rewrite_globally():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -10024,8 +10024,8 @@ async def test_wangyue_batch_execution_repairs_duplicate_titles():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -10222,8 +10222,8 @@ async def test_a2_reiyu_overlong_title_is_dropped_without_rewrite_call():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -10422,8 +10422,8 @@ async def test_wangyue_batch_execution_repairs_copied_reference_titles():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -10495,8 +10495,8 @@ async def test_wangyue_title_guard_avoids_recent_activity_titles():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -10605,8 +10605,8 @@ async def test_wangyue_batch_execution_cleans_model_title_format_without_fallbac
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -10684,8 +10684,8 @@ async def test_wangyue_batch_execution_repairs_dangling_title_after_format_clean
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -10745,8 +10745,8 @@ async def test_batch_execution_rewrites_business_forbidden_terms():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -10826,8 +10826,8 @@ async def test_batch_execution_blocks_when_forbidden_terms_survive_rewrite():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -10900,8 +10900,8 @@ async def test_batch_execution_blocks_royal_friso_structure_risks_without_rewrit
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="mock://maga-worker/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="mock://direct-llm/content",
                 enabled=1,
                 config_json={},
             )
@@ -11082,8 +11082,8 @@ async def test_multi_output_group_keeps_partial_article_when_model_returns_one()
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -12140,8 +12140,8 @@ async def test_batch_execution_runs_items_with_configured_concurrency():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -12179,7 +12179,7 @@ async def test_batch_execution_runs_items_with_configured_concurrency():
 
 
 @pytest.mark.asyncio
-async def test_batch_execution_reports_worker_start_hint_when_executor_is_unreachable():
+async def test_batch_execution_reports_executor_config_hint_when_executor_is_unreachable():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(
@@ -12193,7 +12193,7 @@ async def test_batch_execution_reports_worker_start_hint_when_executor_is_unreac
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
+                display_name="MAGA direct LLM executor",
                 invoke_url="http://127.0.0.1:8766/invoke",
                 enabled=1,
                 config_json={},
@@ -12230,9 +12230,9 @@ async def test_batch_execution_reports_worker_start_hint_when_executor_is_unreac
 
     assert item.status == "failed"
     assert item.run_id == stage.run_id
-    assert "make worker-start" in item.error_message
+    assert "executor_registry.invoke_url" in item.error_message
     assert stage.status == "failed"
-    assert "make worker-start" in stage.error_message
+    assert "executor_registry.invoke_url" in stage.error_message
 
 
 @pytest.mark.asyncio
@@ -12250,8 +12250,8 @@ async def test_batch_execution_watches_later_item_when_similarity_is_too_high():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -12321,8 +12321,8 @@ async def test_batch_execution_watches_recent_history_for_similarity():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -12409,8 +12409,8 @@ async def test_batch_execution_keeps_similarity_as_watch_when_similarity_stays_h
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -12478,8 +12478,8 @@ async def test_batch_execution_deletes_dry_powder_then_llm_checks_fluency_once()
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -12559,8 +12559,8 @@ async def test_batch_execution_marks_manual_when_phrase_rewrite_still_fails_rule
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -12632,8 +12632,8 @@ async def test_batch_execution_skips_persona_rewrite_for_wangyue_article_busines
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -12698,8 +12698,8 @@ async def test_batch_execution_rewrites_wangyue_after_symptom_remedy_chain():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -12767,8 +12767,8 @@ async def test_batch_execution_cleans_temporal_context_for_wangyue_article_busin
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -12835,8 +12835,8 @@ async def test_batch_execution_allows_short_wangyue_body_but_blocks_250_chars_wi
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -12963,8 +12963,8 @@ async def test_batch_execution_skips_ai_flavor_after_article_length_block():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13018,8 +13018,8 @@ async def test_mouth_phrase_rewrite_cannot_reintroduce_product_experience_issue(
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13090,8 +13090,8 @@ async def test_mouth_phrase_rewrite_refreshes_product_experience_review():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13160,8 +13160,8 @@ async def test_batch_execution_cleans_common_ai_closure_for_wangyue_article_busi
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13227,8 +13227,8 @@ async def test_batch_execution_cleans_odd_phrases_for_wangyue_article_business_r
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13296,8 +13296,8 @@ async def test_batch_execution_rewrites_semantic_odd_phrase_for_wangyue_article_
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13368,8 +13368,8 @@ async def test_batch_execution_rewrites_adult_self_drinking_for_wangyue_article_
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13437,8 +13437,8 @@ async def test_batch_execution_rewrites_child_self_brewing_action_for_wangyue_ar
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13511,8 +13511,8 @@ async def test_batch_execution_rewrites_wangyue_growth_nutrition_row4_drift():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13589,8 +13589,8 @@ async def test_batch_execution_rewrites_row2_drinking_action_residue_with_model(
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13661,8 +13661,8 @@ async def test_batch_execution_blocks_unfixed_wangyue_context_mistakes_for_artic
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13741,8 +13741,8 @@ async def test_batch_execution_rewrites_child_product_promo_context_for_wangyue_
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13819,8 +13819,8 @@ async def test_batch_execution_blocks_unfixed_mixed_script_pronoun():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13891,8 +13891,8 @@ async def test_batch_execution_keeps_wangyue_digestive_context_for_article_busin
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -13962,8 +13962,8 @@ async def test_batch_execution_uses_unified_content_generate_runtime_output():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={"executor_token": "test-token"},
             )
@@ -14022,8 +14022,8 @@ async def test_batch_execution_generate_only_skips_postprocess_rewrite():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={"executor_token": "test-token"},
             )
@@ -14082,8 +14082,8 @@ async def test_batch_execution_audit_only_reviews_forbidden_terms_without_rewrit
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={"executor_token": "test-token"},
             )
@@ -14154,8 +14154,8 @@ async def test_batch_execution_rewrites_ai_flavor_after_generation():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -14236,8 +14236,8 @@ async def test_batch_execution_rechecks_forbidden_terms_after_ai_flavor_rewrite(
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -14304,8 +14304,8 @@ async def test_batch_execution_runs_ai_flavor_without_legacy_llm_reviewer():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -14377,8 +14377,8 @@ async def test_batch_execution_preserves_body_for_title_only_ai_flavor_rewrite()
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -14458,8 +14458,8 @@ async def test_batch_execution_rewrites_ai_flavor_after_legacy_reviewer_cutover(
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -14529,8 +14529,8 @@ async def test_batch_execution_cleans_time_event_introduced_by_ai_flavor():
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
@@ -14613,8 +14613,8 @@ async def test_batch_execution_retries_ai_flavor_when_first_rewrite_still_fails(
             ExecutorRegistry(
                 executor_code="maga_direct_llm_executor",
                 executor_type="direct_llm",
-                display_name="Hermes MAGA worker",
-                invoke_url="http://maga-worker.test/invoke",
+                display_name="MAGA direct LLM executor",
+                invoke_url="http://executor.test/invoke",
                 enabled=1,
                 config_json={},
             )
